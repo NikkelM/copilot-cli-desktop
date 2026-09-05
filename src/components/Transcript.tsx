@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
-import { toEntries, type ToolEntry } from '../lib/transcriptEntries';
+import { sameEntry, toEntries, type Entry, type ToolEntry } from '../lib/transcriptEntries';
 
 /** Distance from the bottom still treated as "following along". */
 const PIN_THRESHOLD_PX = 80;
@@ -150,13 +150,28 @@ export function Transcript({
       </li>
       {entries.map((entry) => (
         <li key={entry.key} className="entry">
-          {entry.kind === 'tool' ? (
-            <ToolRow entry={entry} />
-          ) : (
-            <div className={`message ${entry.variant}`}>{entry.body}</div>
-          )}
+          <EntryRow entry={entry} />
         </li>
       ))}
     </ol>
   );
 }
+
+/**
+ * One row, skipped on re-render unless something about it actually changed.
+ *
+ * The entry list is rebuilt from scratch on every render, so each row arrives as a new
+ * object and nothing is reference-equal. Without this, a single streamed event re-renders
+ * the whole transcript, and the cost of receiving one grows with how much history is on
+ * screen - measured at 2000 rows, it was several times the cost at 200.
+ */
+const EntryRow = memo(
+  function EntryRow({ entry }: { entry: Entry }) {
+    return entry.kind === 'tool' ? (
+      <ToolRow entry={entry} />
+    ) : (
+      <div className={`message ${entry.variant}`}>{entry.body}</div>
+    );
+  },
+  (before, after) => sameEntry(before.entry, after.entry),
+);
