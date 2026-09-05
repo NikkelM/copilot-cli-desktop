@@ -185,6 +185,124 @@ body {
   gap: 10px;
 }
 
+.elicitation {
+  padding: 14px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: #10203a;
+}
+
+.elicitation-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.elicitation-badge {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.elicitation-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.elicitation-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.elicitation-label {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.elicitation-required {
+  color: var(--accent);
+}
+
+.elicitation-help {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.elicitation-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.elicitation-choice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.elicitation-input {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.elicitation-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.elicitation-url {
+  display: block;
+  margin-bottom: 12px;
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.elicitation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.elicitation-actions button {
+  padding: 5px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.elicitation-actions button.secondary {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.elicitation-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .permission {
   padding: 12px 14px;
   border: 1px solid #9e6a03;

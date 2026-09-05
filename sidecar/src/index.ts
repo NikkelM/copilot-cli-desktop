@@ -7,8 +7,16 @@
  */
 import { createInterface } from 'node:readline';
 
-import type { JsonRpcRequest, JsonRpcResponse, PermissionChoice } from '../../shared/protocol.js';
+import type {
+  ElicitationAction,
+  ElicitationFieldValue,
+  JsonRpcRequest,
+  JsonRpcResponse,
+  PermissionChoice,
+} from '../../shared/protocol.js';
 import {
+  NOTIFY_ELICITATION_REQUESTED,
+  NOTIFY_ELICITATION_RESOLVED,
   NOTIFY_PERMISSION_REQUESTED,
   NOTIFY_PERMISSION_RESOLVED,
   NOTIFY_SESSION_EVENT,
@@ -50,6 +58,9 @@ const runtime = new SessionRuntime({
     notify(NOTIFY_PERMISSION_REQUESTED, { sessionId, requestId, request }),
   onPermissionResolved: (sessionId, requestId) =>
     notify(NOTIFY_PERMISSION_RESOLVED, { sessionId, requestId }),
+  onElicitationRequest: (sessionId, requestId, context) =>
+    notify(NOTIFY_ELICITATION_REQUESTED, { sessionId, requestId, ...context }),
+  onElicitationResolved: (requestId) => notify(NOTIFY_ELICITATION_RESOLVED, { requestId }),
 });
 
 async function dispatch(request: JsonRpcRequest): Promise<unknown> {
@@ -107,6 +118,16 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
         choice: PermissionChoice;
       };
       runtime.resolvePermission(requestId, choice);
+      return null;
+    }
+
+    case 'sessions.resolveElicitation': {
+      const { requestId, action, content } = request.params as {
+        requestId: string;
+        action: ElicitationAction;
+        content?: Record<string, ElicitationFieldValue>;
+      };
+      runtime.resolveElicitation(requestId, action, content);
       return null;
     }
 

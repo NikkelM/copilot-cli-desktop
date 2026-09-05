@@ -35,16 +35,26 @@ type FakeSession = ReturnType<typeof makeSession>;
 function makeRuntime(options: Partial<RuntimeOptions> = {}) {
   const sessions = new Map<string, FakeSession>();
   const permissionHandlers = new Map<string, (request: unknown) => unknown>();
+  const elicitationHandlers = new Map<string, (context: unknown) => unknown>();
 
   const client = {
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => []),
-    resumeSession: vi.fn(async (id: string, config: { onPermissionRequest: (r: unknown) => unknown }) => {
-      const session = makeSession(id);
-      sessions.set(id, session);
-      permissionHandlers.set(id, config.onPermissionRequest);
-      return session;
-    }),
+    resumeSession: vi.fn(
+      async (
+        id: string,
+        config: {
+          onPermissionRequest: (r: unknown) => unknown;
+          onUserInputRequest?: (r: unknown) => unknown;
+        },
+      ) => {
+        const session = makeSession(id);
+        sessions.set(id, session);
+        permissionHandlers.set(id, config.onPermissionRequest);
+        if (config.onUserInputRequest) elicitationHandlers.set(id, config.onUserInputRequest);
+        return session;
+      },
+    ),
   };
 
   const runtime = new SessionRuntime({
@@ -53,7 +63,7 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
     ...options,
   });
 
-  return { runtime, client, sessions, permissionHandlers };
+  return { runtime, client, sessions, permissionHandlers, elicitationHandlers };
 }
 
 describe('SessionRuntime', () => {
@@ -217,5 +227,89 @@ describe('permissions', () => {
     const pending = permissionHandlers.get('a')?.({ kind: 'shell' });
     await runtime.shutdown();
     await expect(pending).resolves.toEqual({ kind: 'user-not-available' });
+  });
+});
+
+
+describe('questions from the agent', () => {
+  const ask = (handlers: Map<string, (r: unknown) => unknown>, question = 'Which database?') =>
+    handlers.get('a')?.({ question, choices: ['PostgreSQL', 'MySQL'] });
+
+  it('registers a handler so the agent can ask at all', async () => {
+    const { runtime, elicitationHandlers } = makeRuntime({ onElicitationRequest: vi.fn() });
+    await runtime.send('a', 'x');
+    expect(elicitationHandlers.has('a')).toBe(true);
+  });
+
+  it('passes the question and its choices to the UI', async () => {
+    const onElicitationRequest = vi.fn();
+    const { runtime, elicitationHandlers } = makeRuntime({ onElicitationRequest });
+    await runtime.send('a', 'x');
+
+    void ask(elicitationHandlers);
+
+    const context = onElicitationRequest.mock.calls[0]?.[2] as {
+      kind: string;
+      message: string;
+      choices: string[];
+    };
+    expect(context.kind).toBe('input');
+    expect(context.message).toBe('Which database?');
+    expect(context.choices).toEqual(['PostgreSQL', 'MySQL']);
+  });
+
+  // The legacy variant answers with a single string, not a set of fields.
+  it('returns the answer in the shape the CLI expects', async () => {
+    const onElicitationRequest = vi.fn();
+    const { runtime, elicitationHandlers } = makeRuntime({ onElicitationRequest });
+    await runtime.send('a', 'x');
+
+    const answered = ask(elicitationHandlers);
+    runtime.resolveElicitation(onElicitationRequest.mock.calls[0]?.[1] as string, 'accept', {
+      answer: 'PostgreSQL',
+    });
+
+    await expect(answered).resolves.toEqual({ answer: 'PostgreSQL', wasFreeform: true });
+  });
+
+  it('sends an empty answer when declined, rather than a value the user never gave', async () => {
+    const onElicitationRequest = vi.fn();
+    const { runtime, elicitationHandlers } = makeRuntime({ onElicitationRequest });
+    await runtime.send('a', 'x');
+
+    const answered = ask(elicitationHandlers);
+    runtime.resolveElicitation(onElicitationRequest.mock.calls[0]?.[1] as string, 'decline', {
+      answer: 'ignored',
+    });
+
+    await expect(answered).resolves.toEqual({ answer: '', wasFreeform: true });
+  });
+
+  it('answers emptily when there is no UI to ask', async () => {
+    const { runtime, elicitationHandlers } = makeRuntime();
+    await runtime.send('a', 'x');
+
+    await expect(ask(elicitationHandlers)).resolves.toEqual({ answer: '', wasFreeform: true });
+  });
+
+  // The agent blocks on this promise just as it does for permissions.
+  it('settles a pending question when the turn is aborted', async () => {
+    const { runtime, elicitationHandlers } = makeRuntime({ onElicitationRequest: vi.fn() });
+    await runtime.send('a', 'x');
+
+    const answered = ask(elicitationHandlers);
+    await runtime.abort('a');
+
+    await expect(answered).resolves.toEqual({ answer: '', wasFreeform: true });
+  });
+
+  it('settles a pending question when the session is evicted', async () => {
+    const { runtime, elicitationHandlers } = makeRuntime({ onElicitationRequest: vi.fn() });
+    await runtime.send('a', 'x');
+
+    const answered = ask(elicitationHandlers);
+    await runtime.evict('a');
+
+    await expect(answered).resolves.toEqual({ answer: '', wasFreeform: true });
   });
 });

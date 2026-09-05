@@ -2,8 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import type {
+  ElicitationAction,
+  ElicitationFieldValue,
+  ElicitationResolvedNotification,
   GetTranscriptResult,
   ListSessionsResult,
+  PendingElicitation,
   PendingPermission,
   PermissionChoice,
   PermissionResolvedNotification,
@@ -86,4 +90,22 @@ export function onPermissionRequested(handler: (payload: PendingPermission) => v
 /** A pending request was answered or abandoned and should no longer be shown. */
 export function onPermissionResolved(handler: (payload: PermissionResolvedNotification) => void) {
   return listen<PermissionResolvedNotification>('permission-resolved', (e) => handler(e.payload));
+}
+
+/** The agent is asking the user a question and is blocked until it is answered. */
+export function onElicitationRequested(handler: (payload: PendingElicitation) => void) {
+  return listen<PendingElicitation>('elicitation-requested', (e) => handler(e.payload));
+}
+
+export function onElicitationResolved(handler: (payload: ElicitationResolvedNotification) => void) {
+  return listen<ElicitationResolvedNotification>('elicitation-resolved', (e) => handler(e.payload));
+}
+
+/** Answer a question from the agent, unblocking it. */
+export function resolveElicitation(
+  requestId: string,
+  action: ElicitationAction,
+  content?: Record<string, ElicitationFieldValue>,
+): Promise<void> {
+  return request<void>('sessions.resolveElicitation', { requestId, action, content });
 }

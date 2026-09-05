@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
+  ElicitationAction,
+  ElicitationFieldValue,
+  PendingElicitation,
   PendingPermission,
   PermissionChoice,
   SessionSummary,
   TranscriptEvent,
 } from '../shared/protocol';
 import { toPreview } from '../shared/preview';
-
-/**
- * A transcript entry, possibly one shown optimistically before the runtime echoes it.
- * Sending is slow on a cold session, so the prompt appears immediately and is then
- * replaced by the authoritative event rather than duplicated.
- */
-type TimelineEvent = TranscriptEvent & { local?: boolean };
 import { Composer } from './components/Composer';
+import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { PermissionPrompt } from './components/PermissionPrompt';
 import { Sidebar } from './components/Sidebar';
 import { Transcript } from './components/Transcript';
@@ -22,11 +19,14 @@ import {
   abortSession,
   getTranscript,
   listSessions,
+  onElicitationRequested,
+  onElicitationResolved,
   onPermissionRequested,
   onPermissionResolved,
   onSessionEvent,
   onSessionLoaded,
   onSessionsChanged,
+  resolveElicitation,
   resolvePermission,
   sendMessage,
   setApprovalPolicy,
@@ -35,6 +35,13 @@ import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
 import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
+
+/**
+ * A transcript entry, possibly one shown optimistically before the runtime echoes it.
+ * Sending is slow on a cold session, so the prompt appears immediately and is then
+ * replaced by the authoritative event rather than duplicated.
+ */
+type TimelineEvent = TranscriptEvent & { local?: boolean };
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -47,6 +54,7 @@ export default function App() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PendingPermission[]>([]);
+  const [elicitations, setElicitations] = useState<PendingElicitation[]>([]);
   const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
   /** Session ids in activation order, most recent first. Fixes the active group's order. */
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
@@ -182,6 +190,32 @@ export default function App() {
     }),
   );
 
+  useTauriEvent(() =>
+    onElicitationRequested((pending) => {
+      setElicitations((current) =>
+        current.some((e) => e.requestId === pending.requestId) ? current : [...current, pending],
+      );
+    }),
+  );
+
+  useTauriEvent(() =>
+    onElicitationResolved(({ requestId }) => {
+      setElicitations((current) => current.filter((e) => e.requestId !== requestId));
+    }),
+  );
+
+  function handleElicitation(
+    pending: PendingElicitation,
+    action: ElicitationAction,
+    content?: Record<string, ElicitationFieldValue>,
+  ) {
+    // Drop it immediately so the form cannot be submitted twice.
+    setElicitations((current) => current.filter((e) => e.requestId !== pending.requestId));
+    void resolveElicitation(pending.requestId, action, content).catch((e: unknown) =>
+      setError(String(e)),
+    );
+  }
+
   function handlePermission(pending: PendingPermission, choice: PermissionChoice) {
     // Drop it immediately so the prompt cannot be answered twice.
     setPermissions((current) => current.filter((p) => p.requestId !== pending.requestId));
@@ -221,6 +255,7 @@ export default function App() {
 
   const selected = sessions.find((session) => session.sessionId === selectedId) ?? null;
   const sessionPermissions = permissions.filter((p) => p.sessionId === selectedId);
+  const sessionElicitations = elicitations.filter((e) => e.sessionId === selectedId);
   const ordered = useMemo(() => orderSessions(sessions, activeOrder), [sessions, activeOrder]);
 
   return (
@@ -260,6 +295,14 @@ export default function App() {
             />
 
             <div className="footer">
+              {sessionElicitations.map((pending) => (
+                <ElicitationPrompt
+                  key={pending.requestId}
+                  pending={pending}
+                  onResolve={(action, content) => handleElicitation(pending, action, content)}
+                />
+              ))}
+
               {sessionPermissions.map((pending) => (
                 <PermissionPrompt
                   key={pending.requestId}

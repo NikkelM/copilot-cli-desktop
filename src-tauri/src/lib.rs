@@ -55,6 +55,8 @@ impl Sidecar {
                             "sessions.changed" => "sessions-changed",
                             "permission.requested" => "permission-requested",
                             "permission.resolved" => "permission-resolved",
+                            "elicitation.requested" => "elicitation-requested",
+                            "elicitation.resolved" => "elicitation-resolved",
                             _ => continue,
                         };
                         let payload = message.get("params").cloned().unwrap_or(Value::Null);

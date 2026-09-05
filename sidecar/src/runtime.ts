@@ -2,13 +2,41 @@ import {
   CopilotClient,
   RuntimeConnection,
   type CopilotSession,
+  type ElicitationContext,
+  type ElicitationResult,
   type PermissionRequest,
   type PermissionRequestResult,
   type SessionEvent,
 } from '@github/copilot-sdk';
 
-import type { PermissionChoice } from '../../shared/protocol.js';
+import type { ElicitationAction, ElicitationFieldValue, PermissionChoice } from '../../shared/protocol.js';
 import { resolveCliPath } from './paths.js';
+import { PendingRequests } from './pending.js';
+
+/**
+ * The legacy ask_user shapes. Declared here because the package root does not re-export
+ * them, though they are what `onUserInputRequest` is handed and must return.
+ */
+interface UserInputRequest {
+  question: string;
+  choices?: string[];
+  allowFreeform?: boolean;
+}
+
+interface UserInputResponse {
+  answer: string;
+  wasFreeform: boolean;
+}
+
+/** How a question was posed, which decides the shape of the answer. */
+export interface AskContext {
+  kind: 'input' | 'form';
+  message: string;
+  schema: Record<string, unknown> | null;
+  choices: string[];
+  mode: 'form' | 'url' | null;
+  url: string | null;
+}
 
 /** How a session answers tool permission requests. */
 export type ApprovalPolicy = 'prompt' | 'approve-all';
@@ -25,12 +53,6 @@ async function defaultClientFactory(): Promise<CopilotClient> {
 }
 
 /** A request waiting on the user, with the resolver that unblocks the agent. */
-interface PendingPermission {
-  sessionId: string;
-  resolve: (result: PermissionRequestResult) => void;
-  timer: NodeJS.Timeout;
-}
-
 interface LoadedSession {
   session: CopilotSession;
   unsubscribe: () => void;
@@ -55,6 +77,10 @@ export interface RuntimeOptions {
   onPermissionRequest?: (sessionId: string, requestId: string, request: PermissionRequest) => void;
   /** Tells the UI a pending request is no longer awaiting an answer. */
   onPermissionResolved?: (sessionId: string, requestId: string) => void;
+  /** Asks the UI to put a question from the agent to the user. */
+  onElicitationRequest?: (sessionId: string, requestId: string, context: AskContext) => void;
+  /** Tells the UI a question is no longer awaiting an answer. */
+  onElicitationResolved?: (requestId: string) => void;
   /**
    * Overrides how the CLI client is created.
    * Exists so the eviction and permission rules can be exercised without spawning a real
@@ -89,7 +115,6 @@ export class SessionRuntime {
 
   private readonly maxLoadedSessions: number;
   private readonly idleTimeoutMs: number;
-  private readonly permissionTimeoutMs: number;
   private readonly onEvent?: (sessionId: string, event: SessionEvent) => void;
   private readonly onLoadedChange?: (sessionId: string, loaded: boolean) => void;
   private readonly onPermissionRequest?: (
@@ -98,21 +123,44 @@ export class SessionRuntime {
     request: PermissionRequest,
   ) => void;
   private readonly onPermissionResolved?: (sessionId: string, requestId: string) => void;
+  private readonly onElicitationRequest?: (
+    sessionId: string,
+    requestId: string,
+    context: AskContext,
+  ) => void;
+  private readonly onElicitationResolved?: (requestId: string) => void;
   private readonly createClient: () => Promise<CopilotClient>;
 
-  /** Permission requests awaiting a user decision, keyed by request id. */
-  private readonly pendingPermissions = new Map<string, PendingPermission>();
-  private nextPermissionId = 1;
+  /** Tool calls waiting on an approve or deny decision. */
+  private readonly permissions: PendingRequests<PermissionRequestResult>;
+  /** Schema-driven questions waiting on an answer. */
+  private readonly elicitations: PendingRequests<ElicitationResult>;
+  /** Legacy ask_user questions waiting on an answer. */
+  private readonly userInputs: PendingRequests<UserInputResponse>;
 
   constructor(options: RuntimeOptions = {}) {
     this.maxLoadedSessions = options.maxLoadedSessions ?? 2;
     this.idleTimeoutMs = options.idleTimeoutMs ?? 10 * 60_000;
-    this.permissionTimeoutMs = options.permissionTimeoutMs ?? 5 * 60_000;
     this.onEvent = options.onEvent;
     this.onLoadedChange = options.onLoadedChange;
     this.onPermissionRequest = options.onPermissionRequest;
     this.onPermissionResolved = options.onPermissionResolved;
+    this.onElicitationRequest = options.onElicitationRequest;
+    this.onElicitationResolved = options.onElicitationResolved;
     this.createClient = options.createClient ?? defaultClientFactory;
+
+    const timeout = options.permissionTimeoutMs ?? 5 * 60_000;
+    this.permissions = new PendingRequests<PermissionRequestResult>('perm', timeout, () => ({
+      kind: 'user-not-available',
+    }));
+    // Giving up on a question is a decline: the agent asked and nobody answered.
+    this.elicitations = new PendingRequests<ElicitationResult>('elicit', timeout, () => ({
+      action: 'decline',
+    }));
+    this.userInputs = new PendingRequests<UserInputResponse>('input', timeout, () => ({
+      answer: '',
+      wasFreeform: true,
+    }));
   }
 
   /** Whether the CLI executable could be located on this machine. */
@@ -179,6 +227,10 @@ export class SessionRuntime {
 
     const session = await client.resumeSession(sessionId, {
       onPermissionRequest: (request) => this.decidePermission(sessionId, request),
+      // The CLI picks one of two ask_user variants per session, so both are handled.
+      // The legacy one arrives here as a user input request.
+      onUserInputRequest: (request) => this.askUserInput(sessionId, request),
+      onElicitationRequest: (context) => this.askElicitation(sessionId, context),
       streaming: true,
     });
 
@@ -203,7 +255,7 @@ export class SessionRuntime {
    * blanket approval.
    *
    * The returned promise is what blocks the agent, so every path must settle it:
-   * a user decision, the timeout below, or the session being torn down.
+   * a user decision, the timeout, or the session being torn down.
    */
   private decidePermission(
     sessionId: string,
@@ -219,20 +271,12 @@ export class SessionRuntime {
       return Promise.resolve({ kind: 'user-not-available' });
     }
 
-    const requestId = `perm-${this.nextPermissionId++}`;
-
-    return new Promise<PermissionRequestResult>((resolve) => {
-      const timer = setTimeout(() => {
-        this.settlePermission(requestId, { kind: 'user-not-available' });
-      }, this.permissionTimeoutMs);
-      timer.unref();
-
-      this.pendingPermissions.set(requestId, { sessionId, resolve, timer });
-      this.onPermissionRequest?.(sessionId, requestId, request);
-    });
+    const { requestId, answered } = this.permissions.add(sessionId);
+    this.onPermissionRequest(sessionId, requestId, request);
+    return answered;
   }
 
-  /** Apply the user's decision to a pending request. */
+  /** Apply the user's decision to a pending permission request. */
   resolvePermission(requestId: string, choice: PermissionChoice): void {
     const result: PermissionRequestResult =
       choice === 'approve-once'
@@ -245,21 +289,84 @@ export class SessionRuntime {
   }
 
   private settlePermission(requestId: string, result: PermissionRequestResult): void {
-    const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return;
+    const sessionId = this.permissions.settle(requestId, result);
+    if (sessionId) this.onPermissionResolved?.(sessionId, requestId);
+  }
 
-    clearTimeout(pending.timer);
-    this.pendingPermissions.delete(requestId);
-    pending.resolve(result);
-    this.onPermissionResolved?.(pending.sessionId, requestId);
+  /**
+   * Put a schema-driven question to the user.
+   *
+   * Like permissions, the returned promise is what the agent blocks on. With no UI to
+   * ask, declining is the honest answer rather than inventing one.
+   */
+  private askElicitation(sessionId: string, context: ElicitationContext): Promise<ElicitationResult> {
+    if (!this.onElicitationRequest) return Promise.resolve({ action: 'decline' });
+
+    const { requestId, answered } = this.elicitations.add(sessionId);
+    this.onElicitationRequest(sessionId, requestId, {
+      kind: 'form',
+      message: context.message,
+      schema: (context.requestedSchema ?? null) as Record<string, unknown> | null,
+      choices: [],
+      mode: context.mode ?? null,
+      url: context.url ?? null,
+    });
+    return answered;
+  }
+
+  /**
+   * Put a legacy ask_user question to the user.
+   *
+   * The CLI answers this with a single string rather than a set of fields, so the UI is
+   * shown one question with the suggested choices, and freeform text stays available.
+   */
+  private askUserInput(sessionId: string, request: UserInputRequest): Promise<UserInputResponse> {
+    if (!this.onElicitationRequest) return Promise.resolve({ answer: '', wasFreeform: true });
+
+    const { requestId, answered } = this.userInputs.add(sessionId);
+    this.onElicitationRequest(sessionId, requestId, {
+      kind: 'input',
+      message: request.question,
+      schema: null,
+      choices: request.choices ?? [],
+      mode: null,
+      url: null,
+    });
+    return answered;
+  }
+
+  /** Apply the user's answer to a pending question, whichever variant it was. */
+  resolveElicitation(
+    requestId: string,
+    action: ElicitationAction,
+    content?: Record<string, ElicitationFieldValue>,
+  ): void {
+    if (requestId.startsWith('input-')) {
+      const given = content?.answer;
+      const answer = action === 'accept' && given !== undefined ? String(given) : '';
+      // The CLI expects a string either way; an empty answer reads as "no preference".
+      if (this.userInputs.settle(requestId, { answer, wasFreeform: true })) {
+        this.onElicitationResolved?.(requestId);
+      }
+      return;
+    }
+
+    // Content is only meaningful on accept; sending it otherwise would imply an answer
+    // the user did not give.
+    const result: ElicitationResult = action === 'accept' ? { action, content } : { action };
+    if (this.elicitations.settle(requestId, result)) this.onElicitationResolved?.(requestId);
   }
 
   /** Settle every request for a session, so tearing it down cannot leave the agent hanging. */
-  private abandonPermissions(sessionId: string): void {
-    for (const [requestId, pending] of this.pendingPermissions) {
-      if (pending.sessionId === sessionId) {
-        this.settlePermission(requestId, { kind: 'user-not-available' });
-      }
+  private abandonPending(sessionId: string): void {
+    for (const requestId of this.permissions.abandon(sessionId, { kind: 'user-not-available' })) {
+      this.onPermissionResolved?.(sessionId, requestId);
+    }
+    for (const requestId of this.elicitations.abandon(sessionId, { action: 'cancel' })) {
+      this.onElicitationResolved?.(requestId);
+    }
+    for (const requestId of this.userInputs.abandon(sessionId, { answer: '', wasFreeform: true })) {
+      this.onElicitationResolved?.(requestId);
     }
   }
 
@@ -269,10 +376,8 @@ export class SessionRuntime {
 
     // Anything already waiting should follow the new policy rather than sit there.
     if (policy === 'approve-all') {
-      for (const [requestId, pending] of this.pendingPermissions) {
-        if (pending.sessionId === sessionId) {
-          this.settlePermission(requestId, { kind: 'approve-for-session' });
-        }
+      for (const requestId of this.permissions.ids(sessionId)) {
+        this.settlePermission(requestId, { kind: 'approve-for-session' });
       }
     }
   }
@@ -332,7 +437,7 @@ export class SessionRuntime {
     if (entry.idleTimer) clearTimeout(entry.idleTimer);
     entry.unsubscribe();
     this.loaded.delete(sessionId);
-    this.abandonPermissions(sessionId);
+    this.abandonPending(sessionId);
 
     const index = this.order.indexOf(sessionId);
     if (index !== -1) this.order.splice(index, 1);
@@ -354,7 +459,7 @@ export class SessionRuntime {
   async abort(sessionId: string): Promise<void> {
     // Anything waiting on the user belongs to the turn being stopped, so settle it too;
     // otherwise the promise the agent is blocked on would never resolve.
-    this.abandonPermissions(sessionId);
+    this.abandonPending(sessionId);
     await this.loaded.get(sessionId)?.session.abort();
   }
 
