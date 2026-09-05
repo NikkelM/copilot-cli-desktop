@@ -1,27 +1,47 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { SessionSummary, TranscriptEvent } from '../shared/protocol';
+import type {
+  PendingPermission,
+  PermissionChoice,
+  SessionSummary,
+  TranscriptEvent,
+} from '../shared/protocol';
+
+/**
+ * A transcript entry, possibly one shown optimistically before the runtime echoes it.
+ * Sending is slow on a cold session, so the prompt appears immediately and is then
+ * replaced by the authoritative event rather than duplicated.
+ */
+type TimelineEvent = TranscriptEvent & { local?: boolean };
 import { Composer } from './components/Composer';
+import { PermissionPrompt } from './components/PermissionPrompt';
 import { Sidebar } from './components/Sidebar';
 import { Transcript } from './components/Transcript';
 import {
   abortSession,
   getTranscript,
   listSessions,
+  onPermissionRequested,
+  onPermissionResolved,
   onSessionEvent,
   onSessionLoaded,
+  resolvePermission,
   sendMessage,
+  setApprovalPolicy,
 } from './lib/sidecar';
+import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [events, setEvents] = useState<TranscriptEvent[]>([]);
+  const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [permissions, setPermissions] = useState<PendingPermission[]>([]);
+  const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
 
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
@@ -46,38 +66,77 @@ export default function App() {
       .catch((e: unknown) => setError(String(e)));
   }, [selectedId]);
 
-  useEffect(() => {
-    const unlisten = onSessionEvent(({ sessionId, event }) => {
+  useTauriEvent(() =>
+    onSessionEvent(({ sessionId, event }) => {
       if (sessionId !== selectedRef.current) return;
 
       if (event.type === 'assistant.turn_start') setBusy(true);
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') setBusy(false);
       if (event.type === 'session.error') setError(describeError(event));
 
-      setEvents((current) => [...current, event]);
-    });
-    return () => {
-      void unlisten.then((off) => off());
-    };
-  }, []);
+      setEvents((current) => {
+        // Replace the optimistic prompt with the runtime's own echo, rather than
+        // showing the same message twice.
+        if (event.type === 'user.message') {
+          const index = current.findIndex(
+            (entry) => entry.local && entry.type === 'user.message' && contentOf(entry) === contentOf(event),
+          );
+          if (index !== -1) {
+            const next = [...current];
+            next[index] = event;
+            return next;
+          }
+        }
+        return [...current, event];
+      });
+    }),
+  );
 
-  useEffect(() => {
-    const unlisten = onSessionLoaded(({ sessionId, loaded }) => {
+  useTauriEvent(() =>
+    onSessionLoaded(({ sessionId, loaded }) => {
       setSessions((current) =>
         current.map((session) => (session.sessionId === sessionId ? { ...session, loaded } : session)),
       );
-    });
-    return () => {
-      void unlisten.then((off) => off());
-    };
-  }, []);
+    }),
+  );
+
+  useTauriEvent(() =>
+    onPermissionRequested((pending) => {
+      setPermissions((current) =>
+        // Guard against the same request arriving twice.
+        current.some((p) => p.requestId === pending.requestId) ? current : [...current, pending],
+      );
+    }),
+  );
+
+  useTauriEvent(() =>
+    onPermissionResolved(({ requestId }) => {
+      setPermissions((current) => current.filter((p) => p.requestId !== requestId));
+    }),
+  );
+
+  function handlePermission(pending: PendingPermission, choice: PermissionChoice) {
+    // Drop it immediately so the prompt cannot be answered twice.
+    setPermissions((current) => current.filter((p) => p.requestId !== pending.requestId));
+    void resolvePermission(pending.sessionId, pending.requestId, choice).catch((e: unknown) =>
+      setError(String(e)),
+    );
+  }
+
+  function toggleAllowAll(sessionId: string, enabled: boolean) {
+    setAllowAll((current) => ({ ...current, [sessionId]: enabled }));
+    void setApprovalPolicy(sessionId, enabled ? 'approve-all' : 'prompt').catch((e: unknown) =>
+      setError(String(e)),
+    );
+  }
 
   async function handleSend(prompt: string) {
     if (!selectedId) return;
     setError(null);
 
-    // Show the prompt straight away; the echoed user.message arrives with the stream.
-    setEvents((current) => [...current, { type: 'user.message', data: { content: prompt } }]);
+    // Show the prompt straight away; resuming a cold session takes seconds, and the
+    // runtime's own echo replaces this entry when it arrives.
+    setEvents((current) => [...current, { type: 'user.message', data: { content: prompt }, local: true }]);
 
     const wasCold = !sessions.find((s) => s.sessionId === selectedId)?.loaded;
     setResuming(wasCold);
@@ -94,6 +153,7 @@ export default function App() {
   }
 
   const selected = sessions.find((session) => session.sessionId === selectedId) ?? null;
+  const sessionPermissions = permissions.filter((p) => p.sessionId === selectedId);
 
   return (
     <div className="app">
@@ -107,10 +167,20 @@ export default function App() {
                 <h1>{selected.title ?? 'Untitled session'}</h1>
                 <p className="cwd">{selected.cwd}</p>
               </div>
-              <label className="toggle">
-                <input type="checkbox" checked={showRaw} onChange={(e) => setShowRaw(e.target.checked)} />
-                Raw events
-              </label>
+              <div className="header-controls">
+                <label className="toggle" title="Approve every tool call in this session without asking">
+                  <input
+                    type="checkbox"
+                    checked={allowAll[selected.sessionId] ?? false}
+                    onChange={(e) => toggleAllowAll(selected.sessionId, e.target.checked)}
+                  />
+                  Allow all
+                </label>
+                <label className="toggle">
+                  <input type="checkbox" checked={showRaw} onChange={(e) => setShowRaw(e.target.checked)} />
+                  Raw events
+                </label>
+              </div>
             </header>
 
             {error && <p className="error">{error}</p>}
@@ -118,12 +188,22 @@ export default function App() {
 
             <Transcript events={events} showRaw={showRaw} sessionId={selected.sessionId} />
 
-            <Composer
-              disabled={!selectedId}
-              busy={busy}
-              onSend={(prompt) => void handleSend(prompt)}
-              onAbort={() => selectedId && void abortSession(selectedId)}
-            />
+            <div className="footer">
+              {sessionPermissions.map((pending) => (
+                <PermissionPrompt
+                  key={pending.requestId}
+                  pending={pending}
+                  onResolve={(choice) => handlePermission(pending, choice)}
+                />
+              ))}
+
+              <Composer
+                disabled={!selectedId}
+                busy={busy}
+                onSend={(prompt) => void handleSend(prompt)}
+                onAbort={() => selectedId && void abortSession(selectedId)}
+              />
+            </div>
           </>
         ) : (
           <div className="placeholder">
@@ -142,4 +222,9 @@ export default function App() {
 function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? data.message : 'Session error';
+}
+
+function contentOf(event: TranscriptEvent): string | null {
+  const data = event.data as { content?: unknown } | null;
+  return typeof data?.content === 'string' ? data.content : null;
 }

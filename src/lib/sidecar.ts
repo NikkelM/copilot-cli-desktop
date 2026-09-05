@@ -4,6 +4,9 @@ import { listen } from '@tauri-apps/api/event';
 import type {
   GetTranscriptResult,
   ListSessionsResult,
+  PendingPermission,
+  PermissionChoice,
+  PermissionResolvedNotification,
   RuntimeStatus,
   SendParams,
   SendResult,
@@ -47,6 +50,15 @@ export function setApprovalPolicy(sessionId: string, policy: 'prompt' | 'approve
   return request<void>('sessions.setApprovalPolicy', { sessionId, policy });
 }
 
+/** Answer a pending tool permission request, unblocking the agent. */
+export function resolvePermission(
+  sessionId: string,
+  requestId: string,
+  choice: PermissionChoice,
+): Promise<void> {
+  return request<void>('sessions.resolvePermission', { sessionId, requestId, choice });
+}
+
 /** Live session events forwarded from the sidecar. */
 export function onSessionEvent(handler: (payload: SessionEventNotification) => void) {
   return listen<SessionEventNotification>('session-event', (e) => handler(e.payload));
@@ -55,4 +67,14 @@ export function onSessionEvent(handler: (payload: SessionEventNotification) => v
 /** Notifies when a session is resumed into, or released from, memory. */
 export function onSessionLoaded(handler: (payload: SessionLoadedNotification) => void) {
   return listen<SessionLoadedNotification>('session-loaded', (e) => handler(e.payload));
+}
+
+/** A tool call is waiting on the user before it can run. */
+export function onPermissionRequested(handler: (payload: PendingPermission) => void) {
+  return listen<PendingPermission>('permission-requested', (e) => handler(e.payload));
+}
+
+/** A pending request was answered or abandoned and should no longer be shown. */
+export function onPermissionResolved(handler: (payload: PermissionResolvedNotification) => void) {
+  return listen<PermissionResolvedNotification>('permission-resolved', (e) => handler(e.payload));
 }

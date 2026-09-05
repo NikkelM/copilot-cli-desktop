@@ -80,6 +80,26 @@ export interface SetApprovalPolicyParams {
   policy: 'prompt' | 'approve-all';
 }
 
+/** What the user chose for a pending permission request. */
+export type PermissionChoice = 'approve-once' | 'approve-for-session' | 'reject';
+
+export interface ResolvePermissionParams {
+  sessionId: string;
+  requestId: string;
+  choice: PermissionChoice;
+}
+
+/**
+ * A tool permission request awaiting a decision.
+ * `request` is the SDK's PermissionRequest, a union discriminated by `kind`
+ * (shell, write, read, mcp, custom-tool, url, ...).
+ */
+export interface PendingPermission {
+  sessionId: string;
+  requestId: string;
+  request: Record<string, unknown>;
+}
+
 /** Requests the frontend may issue. */
 export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };
@@ -88,6 +108,7 @@ export interface SidecarRequests {
   'sessions.abort': { params: { sessionId: string }; result: void };
   'sessions.evict': { params: { sessionId: string }; result: void };
   'sessions.setApprovalPolicy': { params: SetApprovalPolicyParams; result: void };
+  'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'runtime.status': { params: void; result: RuntimeStatus };
 }
 
@@ -104,9 +125,17 @@ export interface SessionLoadedNotification {
   loaded: boolean;
 }
 
+/** Sent when a pending request is answered or abandoned, so the UI can clear it. */
+export interface PermissionResolvedNotification {
+  sessionId: string;
+  requestId: string;
+}
+
 /** Method names used by sidecar-initiated notifications. */
 export const NOTIFY_SESSION_EVENT = 'session.event';
 export const NOTIFY_SESSION_LOADED = 'session.loaded';
+export const NOTIFY_PERMISSION_REQUESTED = 'permission.requested';
+export const NOTIFY_PERMISSION_RESOLVED = 'permission.resolved';
 
 export interface JsonRpcRequest<M extends SidecarMethod = SidecarMethod> {
   jsonrpc: '2.0';

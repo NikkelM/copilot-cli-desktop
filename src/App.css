@@ -163,6 +163,12 @@ body {
   font-size: 18px;
 }
 
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .toggle {
   display: flex;
   align-items: center;
@@ -171,6 +177,84 @@ body {
   font-size: 12px;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.permission {
+  padding: 12px 14px;
+  border: 1px solid #9e6a03;
+  border-radius: 8px;
+  background: #2d2000;
+}
+
+.permission-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.permission-kind {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #9e6a03;
+  color: #fff;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.permission-detail {
+  max-height: 220px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.permission-warning {
+  margin: 0 0 8px;
+  color: #e3b341;
+  font-size: 12px;
+}
+
+.permission-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.permission-actions button {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.permission-actions button.secondary {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.permission-actions button.danger {
+  background: transparent;
+  color: #f85149;
+  border-color: #f85149;
 }
 
 .cwd {
