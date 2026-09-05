@@ -52,6 +52,8 @@ impl Sidecar {
                         let event = match method {
                             "session.event" => "session-event",
                             "session.loaded" => "session-loaded",
+                            "permission.requested" => "permission-requested",
+                            "permission.resolved" => "permission-resolved",
                             _ => continue,
                         };
                         let payload = message.get("params").cloned().unwrap_or(Value::Null);

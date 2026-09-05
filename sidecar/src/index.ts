@@ -7,8 +7,13 @@
  */
 import { createInterface } from 'node:readline';
 
-import type { JsonRpcRequest, JsonRpcResponse } from '../../shared/protocol.js';
-import { NOTIFY_SESSION_EVENT, NOTIFY_SESSION_LOADED } from '../../shared/protocol.js';
+import type { JsonRpcRequest, JsonRpcResponse, PermissionChoice } from '../../shared/protocol.js';
+import {
+  NOTIFY_PERMISSION_REQUESTED,
+  NOTIFY_PERMISSION_RESOLVED,
+  NOTIFY_SESSION_EVENT,
+  NOTIFY_SESSION_LOADED,
+} from '../../shared/protocol.js';
 import { readTranscript } from './eventLog.js';
 import { type ApprovalPolicy, SessionRuntime } from './runtime.js';
 import { listSessions } from './sessionIndex.js';
@@ -33,6 +38,10 @@ function notify(method: string, params: unknown): void {
 const runtime = new SessionRuntime({
   onEvent: (sessionId, event) => notify(NOTIFY_SESSION_EVENT, { sessionId, event }),
   onLoadedChange: (sessionId, loaded) => notify(NOTIFY_SESSION_LOADED, { sessionId, loaded }),
+  onPermissionRequest: (sessionId, requestId, request) =>
+    notify(NOTIFY_PERMISSION_REQUESTED, { sessionId, requestId, request }),
+  onPermissionResolved: (sessionId, requestId) =>
+    notify(NOTIFY_PERMISSION_RESOLVED, { sessionId, requestId }),
 });
 
 async function dispatch(request: JsonRpcRequest): Promise<unknown> {
@@ -77,6 +86,15 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
         policy: ApprovalPolicy;
       };
       runtime.setApprovalPolicy(sessionId, policy);
+      return null;
+    }
+
+    case 'sessions.resolvePermission': {
+      const { requestId, choice } = request.params as {
+        requestId: string;
+        choice: PermissionChoice;
+      };
+      runtime.resolvePermission(requestId, choice);
       return null;
     }
 
