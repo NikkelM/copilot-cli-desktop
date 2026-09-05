@@ -1,0 +1,144 @@
+import { describe, expect, it } from 'vitest';
+
+import type { TranscriptEvent } from '../../shared/protocol';
+import { toEntries, type ToolEntry } from './Transcript';
+
+const event = (type: string, data: Record<string, unknown> = {}): TranscriptEvent => ({ type, data });
+
+const CWD = 'C:\\work\\repo';
+
+describe('toEntries', () => {
+  it('renders user and assistant messages', () => {
+    const entries = toEntries(
+      [event('user.message', { content: 'hello' }), event('assistant.message', { content: 'hi' })],
+      null,
+    );
+    expect(entries).toEqual([
+      { kind: 'message', variant: 'user', body: 'hello' },
+      { kind: 'message', variant: 'assistant', body: 'hi' },
+    ]);
+  });
+
+  // These carry only tool requests, and the tool has its own entry. Rendering them showed
+  // a wall of JSON in the transcript.
+  it('drops assistant messages that have no text', () => {
+    const entries = toEntries([event('assistant.message', { content: '', toolRequests: [{}] })], null);
+    expect(entries).toEqual([]);
+  });
+
+  it('hides events it has no rendering for, including permission requests', () => {
+    const entries = toEntries(
+      [event('permission.requested', { requestId: 'x' }), event('model.messages_snapshot', {})],
+      null,
+    );
+    expect(entries).toEqual([]);
+  });
+
+  it('pairs a tool start with its completion into one entry', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 't1',
+          toolName: 'powershell',
+          arguments: { command: 'echo hi' },
+        }),
+        event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'hi' } }),
+      ],
+      null,
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ kind: 'tool', name: 'powershell', summary: 'echo hi', status: 'ok', output: 'hi' });
+  });
+
+  it('reports a failed tool with its error message', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: {} }),
+        event('tool.execution_complete', {
+          toolCallId: 't1',
+          success: false,
+          error: { message: 'The user rejected this tool call.' },
+        }),
+      ],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ status: 'failed', output: 'The user rejected this tool call.' });
+  });
+
+  // An interrupted turn never emits a completion, so without this the row claims to be
+  // running forever, including on every later replay.
+  it.each(['abort', 'session.idle', 'session.shutdown'])('cancels pending tools on %s', (stopper) => {
+    const entries = toEntries(
+      [event('tool.execution_start', { toolCallId: 't1', toolName: 'create', arguments: {} }), event(stopper)],
+      null,
+    );
+    expect((entries[0] as ToolEntry).status).toBe('cancelled');
+  });
+
+  it('leaves a tool running while the turn is still going', () => {
+    const entries = toEntries([event('tool.execution_start', { toolCallId: 't1', toolName: 'create' })], null);
+    expect((entries[0] as ToolEntry).status).toBe('running');
+  });
+
+  it('summarises file tools by path, relative to the working directory', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 't1',
+          toolName: 'create',
+          arguments: { path: 'C:\\work\\repo\\src\\index.ts', file_text: 'ignored' },
+        }),
+      ],
+      CWD,
+    );
+    expect((entries[0] as ToolEntry).summary).toBe('src/index.ts');
+  });
+
+  it('keeps paths outside the working directory absolute', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 't1',
+          toolName: 'create',
+          arguments: { path: 'C:\\elsewhere\\note.txt' },
+        }),
+      ],
+      CWD,
+    );
+    expect((entries[0] as ToolEntry).summary).toBe('C:\\elsewhere\\note.txt');
+  });
+
+  it('summarises searches by pattern and shells by command', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', { toolCallId: 'a', toolName: 'grep', arguments: { pattern: 'TODO', paths: [] } }),
+        event('tool.execution_start', { toolCallId: 'b', toolName: 'powershell', arguments: { command: 'ls' } }),
+      ],
+      null,
+    );
+    expect((entries[0] as ToolEntry).summary).toBe('TODO');
+    expect((entries[1] as ToolEntry).summary).toBe('ls');
+  });
+
+  it('survives a completion whose start was never seen', () => {
+    const entries = toEntries(
+      [event('tool.execution_complete', { toolCallId: 'orphan', success: true, result: { content: 'done' } })],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ kind: 'tool', status: 'ok', output: 'done' });
+  });
+
+  it('interleaves tools and messages in order', () => {
+    const entries = toEntries(
+      [
+        event('user.message', { content: 'do it' }),
+        event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'go' } }),
+        event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'ok' } }),
+        event('assistant.message', { content: 'done' }),
+      ],
+      null,
+    );
+    expect(entries.map((e) => e.kind)).toEqual(['message', 'tool', 'message']);
+  });
+});

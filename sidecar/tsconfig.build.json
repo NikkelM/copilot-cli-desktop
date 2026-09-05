@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false
+  },
+  // Tests are still type-checked by tsconfig.json; they just must not reach dist.
+  // Both paths are listed because the shared directory is included from outside this
+  // project root, which a bare `**` pattern does not reach.
+  "exclude": ["**/*.test.ts", "../shared/**/*.test.ts"]
+}

@@ -13,6 +13,17 @@ import { resolveCliPath } from './paths.js';
 /** How a session answers tool permission requests. */
 export type ApprovalPolicy = 'prompt' | 'approve-all';
 
+/**
+ * One server process hosts every session; that is the whole point of the design.
+ * Stdio avoids opening a listening port for something only this app talks to.
+ */
+async function defaultClientFactory(): Promise<CopilotClient> {
+  const cliPath = resolveCliPath();
+  return new CopilotClient({
+    connection: RuntimeConnection.forStdio(cliPath ? { path: cliPath } : {}),
+  });
+}
+
 /** A request waiting on the user, with the resolver that unblocks the agent. */
 interface PendingPermission {
   sessionId: string;
@@ -44,6 +55,12 @@ export interface RuntimeOptions {
   onPermissionRequest?: (sessionId: string, requestId: string, request: PermissionRequest) => void;
   /** Tells the UI a pending request is no longer awaiting an answer. */
   onPermissionResolved?: (sessionId: string, requestId: string) => void;
+  /**
+   * Overrides how the CLI client is created.
+   * Exists so the eviction and permission rules can be exercised without spawning a real
+   * CLI, since those govern the memory behaviour the whole app is built around.
+   */
+  createClient?: () => Promise<CopilotClient>;
 }
 
 /**
@@ -81,6 +98,7 @@ export class SessionRuntime {
     request: PermissionRequest,
   ) => void;
   private readonly onPermissionResolved?: (sessionId: string, requestId: string) => void;
+  private readonly createClient: () => Promise<CopilotClient>;
 
   /** Permission requests awaiting a user decision, keyed by request id. */
   private readonly pendingPermissions = new Map<string, PendingPermission>();
@@ -94,6 +112,7 @@ export class SessionRuntime {
     this.onLoadedChange = options.onLoadedChange;
     this.onPermissionRequest = options.onPermissionRequest;
     this.onPermissionResolved = options.onPermissionResolved;
+    this.createClient = options.createClient ?? defaultClientFactory;
   }
 
   /** Whether the CLI executable could be located on this machine. */
@@ -124,14 +143,7 @@ export class SessionRuntime {
     if (this.starting) return this.starting;
 
     const starting = (async () => {
-      const cliPath = resolveCliPath();
-
-      // One server process hosts every session; that is the whole point of the design.
-      // Stdio avoids opening a listening port for something only this app talks to.
-      const client = new CopilotClient({
-        connection: RuntimeConnection.forStdio(cliPath ? { path: cliPath } : {}),
-      });
-
+      const client = await this.createClient();
       await client.start();
       return client;
     })();
