@@ -81,10 +81,28 @@ Other useful scripts:
 
 ```bash
 npm run typecheck      # frontend and sidecar
-npm run check          # ordering rules for the session list
+npm test               # vitest, or npm run test:watch
 npm run build:sidecar  # compile the sidecar only
 npm run tauri build    # production bundle
 ```
+
+### Tests
+
+Vitest, run in Node with no DOM. Coverage is deliberately concentrated on logic where a
+mistake is silent rather than obvious:
+
+- **Session index** runs real SQL against a temporary database built with the CLI's own
+  schema. Every bug here so far has been about which column or file the data came from,
+  which a stubbed data layer would not have caught.
+- **Runtime** covers the memory rules the whole design rests on: lazy start, resume
+  deduplication, LRU eviction, never evicting mid-turn, and settling permission requests
+  on every teardown path, since the agent blocks on that promise.
+- **Transcript** covers the event to entry mapping, including pairing tool calls and
+  cancelling ones interrupted before they completed.
+- **Ordering** covers the rule that the active group must not reshuffle while in use.
+
+`RuntimeOptions.createClient` exists so the runtime can be exercised without spawning a
+real CLI.
 
 Environment overrides, mostly for testing:
 

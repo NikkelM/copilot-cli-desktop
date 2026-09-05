@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace sidecar",
-    "check": "node scripts/check-ordering.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "build:sidecar": "npm run build --workspace sidecar",
     "tauri": "tauri",
     "app": "npm run build:sidecar && tauri dev"
@@ -29,6 +30,7 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",
     "typescript": "~6.0.3",
-    "vite": "^8.0.16"
+    "vite": "^8.0.16",
+    "vitest": "^5.0.0"
   }
 }

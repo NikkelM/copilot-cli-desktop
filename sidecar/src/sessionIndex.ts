@@ -1,12 +1,10 @@
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { SessionSummary } from '../../shared/protocol.js';
-import { sessionStateDir, sessionStoreDb } from './paths.js';
-
-/** How much of the last message to keep for the sidebar preview. */
-const PREVIEW_LENGTH = 160;
+import { toPreview } from '../../shared/preview.js';
+import { sessionEventLog, sessionStateDir, sessionStoreDb } from './paths.js';
 
 /**
  * The session's display name, which lives outside the history database.
@@ -86,26 +84,49 @@ export function listSessions(): SessionSummary[] {
       )
       .all() as unknown as SessionRow[];
 
-    return rows.map((row) => ({
+    const sessions = rows.map((row) => ({
       sessionId: row.id,
       title: readSessionName(row.id) ?? row.summary,
       cwd: row.cwd,
       repository: row.repository,
       branch: row.branch,
       createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      updatedAt: lastActivity(row.id, row.updated_at) ?? row.updated_at,
       preview: toPreview(row.preview),
       loaded: false,
     }));
+
+    // The SQL ordering used the turn timestamp, which lastActivity may have superseded.
+    return sessions.sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
   } finally {
     db.close();
   }
 }
 
-/** Collapse whitespace and clip, so the sidebar never renders a wall of text. */
-function toPreview(raw: string | null): string | null {
-  if (!raw) return null;
-  const flat = raw.replace(/\s+/g, ' ').trim();
-  if (!flat) return null;
-  return flat.length > PREVIEW_LENGTH ? `${flat.slice(0, PREVIEW_LENGTH - 1)}…` : flat;
+/**
+ * When the session last did anything, as an ISO timestamp.
+ *
+ * The `turns` table lags: rows are flushed well after the fact, and for a session held
+ * open by this app the newest turn was measured eight minutes behind the log. The event
+ * log is appended on every event, so its mtime is the truthful signal. Both are
+ * considered, since a session with no log has only the database to go on.
+ */
+export function lastActivity(sessionId: string, fromTurns: string | null): string | null {
+  let logged: string | null = null;
+  try {
+    logged = statSync(sessionEventLog(sessionId)).mtime.toISOString();
+  } catch {
+    logged = null; // No log yet, or unreadable.
+  }
+
+  if (!logged) return fromTurns;
+  if (!fromTurns) return logged;
+  return toTime(logged) > toTime(fromTurns) ? logged : fromTurns;
+}
+
+/** SQLite writes `YYYY-MM-DD HH:MM:SS` in UTC without a zone marker, so make it explicit. */
+export function toTime(value: string): number {
+  const normalised = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+  const parsed = new Date(normalised).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
 }

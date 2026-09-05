@@ -6,6 +6,7 @@ import type {
   SessionSummary,
   TranscriptEvent,
 } from '../shared/protocol';
+import { toPreview } from '../shared/preview';
 
 /**
  * A transcript entry, possibly one shown optimistically before the runtime echoes it.
@@ -71,6 +72,21 @@ export default function App() {
 
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {
+      // The sidebar preview comes from the turns table, which is flushed well after the
+      // fact, so a loaded session would keep showing an older reply. Its own events are
+      // already streaming here, so use them and skip the wait entirely. This applies to
+      // every loaded session, not just the one on screen.
+      const spoken = event.type === 'assistant.message' ? contentOf(event) : null;
+      if (spoken) {
+        setSessions((current) =>
+          current.map((session) =>
+            session.sessionId === sessionId
+              ? { ...session, preview: toPreview(spoken), updatedAt: new Date().toISOString() }
+              : session,
+          ),
+        );
+      }
+
       if (sessionId !== selectedRef.current) return;
 
       if (event.type === 'assistant.turn_start') setBusy(true);

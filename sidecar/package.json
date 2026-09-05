@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/sidecar/src/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node --no-warnings=ExperimentalWarning dist/sidecar/src/index.js"
   },

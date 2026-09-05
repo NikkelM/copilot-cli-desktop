@@ -9,7 +9,7 @@ const MAX_OUTPUT = 4000;
 /** Distance from the bottom still treated as "following along". */
 const PIN_THRESHOLD_PX = 80;
 
-interface MessageEntry {
+export interface MessageEntry {
   kind: 'message';
   variant: 'user' | 'assistant' | 'failed';
   body: string;
@@ -19,7 +19,7 @@ interface MessageEntry {
  * One tool invocation, pairing its start with its completion.
  * Kept as a single unit so the command, its status and its output collapse together.
  */
-interface ToolEntry {
+export interface ToolEntry {
   kind: 'tool';
   name: string;
   /** One line summarising what ran, shown while collapsed. */
@@ -28,7 +28,7 @@ interface ToolEntry {
   status: 'running' | 'ok' | 'failed' | 'cancelled';
 }
 
-type Entry = MessageEntry | ToolEntry;
+export type Entry = MessageEntry | ToolEntry;
 
 function text(data: Record<string, unknown>, key: string): string | null {
   const value = data[key];
@@ -81,7 +81,7 @@ function clip(value: string): string {
  * they are paired by `toolCallId` into a single entry. Anything not handled here is
  * invisible, so new event types need a case rather than a fallback.
  */
-function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[] {
+export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[] {
   const entries: Entry[] = [];
   /** In-flight tool calls, so a completion can fill in the entry it belongs to. */
   const pending = new Map<string, ToolEntry>();
