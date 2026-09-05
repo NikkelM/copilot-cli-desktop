@@ -116,7 +116,7 @@ export default function App() {
             {error && <p className="error">{error}</p>}
             {resuming && <p className="notice">Resuming into the shared runtime. This takes a few seconds.</p>}
 
-            <Transcript events={events} showRaw={showRaw} />
+            <Transcript events={events} showRaw={showRaw} sessionId={selected.sessionId} />
 
             <Composer
               disabled={!selectedId}

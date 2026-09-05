@@ -53,6 +53,33 @@ body {
   font-size: 12px;
 }
 
+.search {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search input {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.no-matches {
+  padding: 16px 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .session-list {
   margin: 0;
   padding: 0;
