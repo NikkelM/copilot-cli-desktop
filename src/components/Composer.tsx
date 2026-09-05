@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent } from 'react';
 
 interface ComposerProps {
   disabled: boolean;
@@ -9,6 +9,12 @@ interface ComposerProps {
    * a better claim on the keyboard.
    */
   focusOn: string | null;
+  /**
+   * The text being written. Held outside, because an unsent message belongs to the
+   * session it was meant for rather than to the box it was typed in.
+   */
+  value: string;
+  onChange: (value: string) => void;
   onSend: (prompt: string) => void;
   onAbort: () => void;
 }
@@ -17,8 +23,7 @@ interface ComposerProps {
  * Sending is the only action that costs memory: it resumes the session in the shared
  * CLI server. Everything above this component is a pure disk read.
  */
-export function Composer({ disabled, busy, focusOn, onSend, onAbort }: ComposerProps) {
-  const [value, setValue] = useState('');
+export function Composer({ disabled, busy, focusOn, value, onChange, onSend, onAbort }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -29,7 +34,6 @@ export function Composer({ disabled, busy, focusOn, onSend, onAbort }: ComposerP
     const prompt = value.trim();
     if (!prompt || disabled) return;
     onSend(prompt);
-    setValue('');
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -44,7 +48,7 @@ export function Composer({ disabled, busy, focusOn, onSend, onAbort }: ComposerP
       <textarea
         ref={inputRef}
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
         placeholder={busy ? 'Agent is working. Enter queues a follow-up.' : 'Send a message. Enter to send, Shift+Enter for a newline.'}
         rows={3}
