@@ -42,16 +42,3 @@ export function resolveCliPath(): string | null {
 
   return candidates.find((candidate) => candidate && existsSync(candidate)) ?? null;
 }
-
-/** The SDK bundled alongside the installed CLI, guaranteeing a version match. */
-export function resolveBundledSdkPath(): string | null {
-  const cli = resolveCliPath();
-  if (!cli) return null;
-
-  const marker = join('@github', 'copilot') + (process.platform === 'win32' ? '\\' : '/');
-  const idx = cli.lastIndexOf(marker);
-  if (idx === -1) return null;
-
-  const sdk = join(cli.slice(0, idx + marker.length), 'copilot-sdk');
-  return existsSync(sdk) ? sdk : null;
-}

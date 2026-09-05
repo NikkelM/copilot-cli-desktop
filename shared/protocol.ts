@@ -64,14 +64,49 @@ export interface RuntimeStatus {
   maxLoadedSessions: number;
 }
 
-/** Requests the frontend may issue. Phase 2 entries are not implemented yet. */
+export interface SendParams {
+  sessionId: string;
+  prompt: string;
+  /** `enqueue` queues behind an in-flight turn instead of starting a new one. */
+  mode?: 'enqueue' | 'immediate';
+}
+
+export interface SendResult {
+  messageId: string;
+}
+
+export interface SetApprovalPolicyParams {
+  sessionId: string;
+  policy: 'prompt' | 'approve-all';
+}
+
+/** Requests the frontend may issue. */
 export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };
   'sessions.transcript': { params: GetTranscriptParams; result: GetTranscriptResult };
+  'sessions.send': { params: SendParams; result: SendResult };
+  'sessions.abort': { params: { sessionId: string }; result: void };
+  'sessions.evict': { params: { sessionId: string }; result: void };
+  'sessions.setApprovalPolicy': { params: SetApprovalPolicyParams; result: void };
   'runtime.status': { params: void; result: RuntimeStatus };
 }
 
 export type SidecarMethod = keyof SidecarRequests;
+
+/** Notifications the sidecar pushes to the frontend. */
+export interface SessionEventNotification {
+  sessionId: string;
+  event: TranscriptEvent;
+}
+
+export interface SessionLoadedNotification {
+  sessionId: string;
+  loaded: boolean;
+}
+
+/** Method names used by sidecar-initiated notifications. */
+export const NOTIFY_SESSION_EVENT = 'session.event';
+export const NOTIFY_SESSION_LOADED = 'session.loaded';
 
 export interface JsonRpcRequest<M extends SidecarMethod = SidecarMethod> {
   jsonrpc: '2.0';
