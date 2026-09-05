@@ -1,66 +1,13 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import type { ElicitationFieldValue, PendingElicitation } from '../../shared/protocol';
-
-/**
- * One field of an elicitation schema. Mirrors the SDK's ElicitationSchemaField, which is
- * a union rather than a single shape, so the discriminating keys are all optional here
- * and narrowed when choosing a control.
- */
-interface Field {
-  type?: string;
-  title?: string;
-  description?: string;
-  enum?: string[];
-  enumNames?: string[];
-  oneOf?: { const: string; title: string }[];
-  items?: { type?: string; enum?: string[]; anyOf?: { const: string; title: string }[] };
-  default?: ElicitationFieldValue;
-}
-
-interface Option {
-  value: string;
-  label: string;
-}
-
-/** Collapse the enum, enumNames and oneOf spellings into one list of options. */
-function optionsOf(field: Field): Option[] {
-  if (field.oneOf) return field.oneOf.map((o) => ({ value: o.const, label: o.title }));
-
-  if (field.enum) {
-    return field.enum.map((value, index) => ({ value, label: field.enumNames?.[index] ?? value }));
-  }
-
-  const items = field.items;
-  if (items?.anyOf) return items.anyOf.map((o) => ({ value: o.const, label: o.title }));
-  if (items?.enum) return items.enum.map((value) => ({ value, label: value }));
-
-  return [];
-}
-
-function initialValues(fields: Record<string, Field>): Record<string, ElicitationFieldValue> {
-  const values: Record<string, ElicitationFieldValue> = {};
-
-  for (const [name, field] of Object.entries(fields)) {
-    const options = optionsOf(field);
-
-    if (field.default !== undefined) {
-      values[name] = field.default;
-    } else if (field.type === 'boolean') {
-      values[name] = false;
-    } else if (field.type === 'array') {
-      values[name] = [];
-    } else if (options.length > 0) {
-      // Preselect so Enter confirms the obvious answer without any pointing, the way the
-      // CLI behaves. The schema's default is the recommendation when it gives one.
-      values[name] = options[0]?.value ?? '';
-    } else {
-      values[name] = '';
-    }
-  }
-
-  return values;
-}
+import {
+  formOf,
+  initialValues,
+  isIncomplete,
+  optionsOf,
+  type Field,
+} from '../lib/elicitationForm';
 
 interface ElicitationPromptProps {
   pending: PendingElicitation;
@@ -75,24 +22,7 @@ interface ElicitationPromptProps {
  * judgement.
  */
 export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps) {
-  // The legacy variant carries a question and suggestions rather than a schema, so it is
-  // presented as one field. Both variants then render through the same controls.
-  const schema =
-    pending.kind === 'input'
-      ? {
-          properties: {
-            answer: {
-              type: 'string',
-              title: 'Answer',
-              ...(pending.choices.length > 0 ? { enum: pending.choices } : {}),
-            } as Field,
-          },
-          required: ['answer'],
-        }
-      : ((pending.schema ?? {}) as { properties?: Record<string, Field>; required?: string[] });
-
-  const fields = schema.properties ?? {};
-  const required = new Set(schema.required ?? []);
+  const { fields, required } = formOf(pending);
 
   const [values, setValues] = useState(() => initialValues(fields));
   const containerRef = useRef<HTMLElement>(null);
@@ -108,10 +38,7 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
     setValues((current) => ({ ...current, [name]: value }));
   }
 
-  const missing = [...required].some((name) => {
-    const value = values[name];
-    return value === undefined || value === '' || (Array.isArray(value) && value.length === 0);
-  });
+  const missing = isIncomplete(required, values);
 
   /**
    * Keyboard handling for the single-choice case, which is what ask_user produces.
