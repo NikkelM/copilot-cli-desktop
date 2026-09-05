@@ -33,13 +33,13 @@ afterEach(() => {
 describe('readTranscript', () => {
   it('returns nothing when the session has no log', async () => {
     const { readTranscript } = await loadEventLog();
-    expect(await readTranscript('missing')).toEqual({ events: [], truncated: false });
+    expect(await readTranscript('missing')).toEqual({ events: [], truncated: false, nextBefore: null });
   });
 
   it('handles an empty log', async () => {
     writeLog('s', []);
     const { readTranscript } = await loadEventLog();
-    expect(await readTranscript('s')).toEqual({ events: [], truncated: false });
+    expect(await readTranscript('s')).toEqual({ events: [], truncated: false, nextBefore: null });
   });
 
   it('returns every event when the log is short, in order', async () => {
@@ -117,5 +117,84 @@ describe('readTranscript', () => {
 
     expect(result.events).toHaveLength(5);
     expect((result.events.at(-1)?.data as { content: string }).content).toBe('héllo wörld 399 🎉');
+  });
+});
+
+describe('paging back through history', () => {
+  const content = (event: { data: unknown }) => (event.data as { content: string }).content;
+
+  it('reports no cursor when the whole log fits', async () => {
+    writeLog('s', [line(1), line(2)]);
+    const { readTranscript } = await loadEventLog();
+
+    const result = await readTranscript('s', 10);
+    expect(result.nextBefore).toBeNull();
+    expect(result.truncated).toBe(false);
+  });
+
+  it('walks the entire log in pages without gaps or repeats', async () => {
+    writeLog(
+      's',
+      Array.from({ length: 25 }, (_, i) => line(i)),
+    );
+    const { readTranscript } = await loadEventLog();
+
+    const seen: string[] = [];
+    let cursor: number | undefined;
+
+    for (let page = 0; page < 10; page += 1) {
+      const result = await readTranscript('s', 10, cursor);
+      seen.unshift(...result.events.map(content));
+      if (result.nextBefore === null) break;
+      cursor = result.nextBefore;
+    }
+
+    expect(seen).toEqual(Array.from({ length: 25 }, (_, i) => `m${i}`));
+  });
+
+  // The cursor must point at the first event returned, not the window start: the window
+  // begins mid-line and further events are dropped when slicing to the limit.
+  it('resumes exactly where the previous page began', async () => {
+    writeLog(
+      's',
+      Array.from({ length: 20 }, (_, i) => line(i)),
+    );
+    const { readTranscript } = await loadEventLog();
+
+    const newest = await readTranscript('s', 5);
+    expect(newest.events.map(content)).toEqual(['m15', 'm16', 'm17', 'm18', 'm19']);
+
+    const older = await readTranscript('s', 5, newest.nextBefore ?? undefined);
+    expect(older.events.map(content)).toEqual(['m10', 'm11', 'm12', 'm13', 'm14']);
+  });
+
+  it('stops offering a cursor once the start of the log is reached', async () => {
+    writeLog(
+      's',
+      Array.from({ length: 8 }, (_, i) => line(i)),
+    );
+    const { readTranscript } = await loadEventLog();
+
+    const newest = await readTranscript('s', 5);
+    const older = await readTranscript('s', 5, newest.nextBefore ?? undefined);
+
+    expect(older.events.map(content)).toEqual(['m0', 'm1', 'm2']);
+    expect(older.nextBefore).toBeNull();
+    expect(older.truncated).toBe(false);
+  });
+
+  it('pages correctly when the window has to grow', async () => {
+    const padded = Array.from({ length: 700 }, (_, i) =>
+      JSON.stringify({ type: 'user.message', data: { content: `m${i}`, pad: 'x'.repeat(600) } }),
+    );
+    writeLog('s', padded);
+
+    const { readTranscript } = await loadEventLog();
+    const newest = await readTranscript('s', 500);
+    expect(content(newest.events[0]!)).toBe('m200');
+
+    const older = await readTranscript('s', 500, newest.nextBefore ?? undefined);
+    expect(older.events.map(content)).toEqual(Array.from({ length: 200 }, (_, i) => `m${i}`));
+    expect(older.nextBefore).toBeNull();
   });
 });

@@ -47,12 +47,19 @@ export interface GetTranscriptParams {
   sessionId: string;
   /** Cap on returned events; the newest are kept. Guards against multi-MB logs. */
   limit?: number;
+  /** Byte offset to read back from, taken from a previous result's `nextBefore`. */
+  before?: number;
 }
 
 export interface GetTranscriptResult {
   events: TranscriptEvent[];
-  /** True when older events were dropped to satisfy `limit`. */
+  /** True when older events exist before the ones returned. */
   truncated: boolean;
+  /**
+   * Cursor for fetching the page before this one, or null at the start of the log.
+   * A byte offset into events.jsonl, pointing at the first event returned here.
+   */
+  nextBefore: number | null;
 }
 
 export interface RuntimeStatus {
