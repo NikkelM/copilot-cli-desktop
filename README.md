@@ -96,12 +96,18 @@ Environment overrides, mostly for testing:
 
 ## Roadmap
 
+Work is tracked in [issues](https://github.com/NikkelM/copilot-cli-desktop/issues),
+grouped under epics:
+
 - [x] Zero-process session browser: sidebar and history replay from disk
-- [ ] Shared runtime: lazy `resumeSession()` on first send, LRU + idle eviction
-- [ ] Streaming output, tool calls and diffs
-- [ ] Permissions and allow-all, elicitation prompts, queued messages
-- [ ] Skills, agents and subagents, MCP servers, model and mode switching
-- [ ] Session search over the existing FTS5 index
+- [ ] [#1 Live session runtime](https://github.com/NikkelM/copilot-cli-desktop/issues/1) - lazy resume on first send, LRU and idle eviction
+- [ ] [#7 Rich transcript rendering](https://github.com/NikkelM/copilot-cli-desktop/issues/7) - markdown, tool calls, reasoning, usage meters
+- [ ] [#14 Session interaction and control](https://github.com/NikkelM/copilot-cli-desktop/issues/14) - permissions, elicitation, queued messages, slash commands, model and mode
+- [ ] [#21 Environment and configuration](https://github.com/NikkelM/copilot-cli-desktop/issues/21) - skills, agents, MCP servers, working directories
+- [ ] [#27 Session lifecycle management](https://github.com/NikkelM/copilot-cli-desktop/issues/27) - create, rename, fork, delete, search
+- [ ] [#31 Wiki browser](https://github.com/NikkelM/copilot-cli-desktop/issues/31) - browse the local `~/.copilot/wiki` with a markdown viewer
+- [ ] [#36 In-app file diffs](https://github.com/NikkelM/copilot-cli-desktop/issues/36) - show only the changes the current agent made
+- [ ] [#41 In-app git editor](https://github.com/NikkelM/copilot-cli-desktop/issues/41) - stage, commit and push
 
 ## Notes
 
