@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TranscriptEvent } from '../../shared/protocol';
-import { toEntries, type ToolEntry } from './Transcript';
+import { toEntries, type ToolEntry } from './transcriptEntries';
 
 const event = (type: string, data: Record<string, unknown> = {}): TranscriptEvent => ({ type, data });
 
