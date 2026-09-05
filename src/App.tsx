@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   PendingPermission,
@@ -25,10 +25,12 @@ import {
   onPermissionResolved,
   onSessionEvent,
   onSessionLoaded,
+  onSessionsChanged,
   resolvePermission,
   sendMessage,
   setApprovalPolicy,
 } from './lib/sidecar';
+import { orderSessions } from './lib/ordering';
 import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
@@ -41,6 +43,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PendingPermission[]>([]);
   const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
+  /** Session ids in activation order, most recent first. Fixes the active group's order. */
+  const [activeOrder, setActiveOrder] = useState<string[]>([]);
 
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
@@ -96,8 +100,23 @@ export default function App() {
       setSessions((current) =>
         current.map((session) => (session.sessionId === sessionId ? { ...session, loaded } : session)),
       );
+
+      // A session entering the active group goes to its top; leaving drops it entirely.
+      // Sessions already active keep their position, so the list does not shuffle when
+      // messages are sent.
+      setActiveOrder((current) =>
+        loaded
+          ? current.includes(sessionId)
+            ? current
+            : [sessionId, ...current]
+          : current.filter((id) => id !== sessionId),
+      );
     }),
   );
+
+  // The store changes on every turn of every running session, including ones started in
+  // a terminal, so this keeps the sidebar current without polling.
+  useTauriEvent(() => onSessionsChanged(() => refreshSessions()), [refreshSessions]);
 
   useTauriEvent(() =>
     onPermissionRequested((pending) => {
@@ -153,10 +172,11 @@ export default function App() {
 
   const selected = sessions.find((session) => session.sessionId === selectedId) ?? null;
   const sessionPermissions = permissions.filter((p) => p.sessionId === selectedId);
+  const ordered = useMemo(() => orderSessions(sessions, activeOrder), [sessions, activeOrder]);
 
   return (
     <div className="app">
-      <Sidebar sessions={sessions} selectedId={selectedId} onSelect={setSelectedId} />
+      <Sidebar sessions={ordered} selectedId={selectedId} onSelect={setSelectedId} />
 
       <main className="main">
         {selected ? (

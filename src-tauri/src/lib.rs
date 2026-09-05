@@ -52,6 +52,7 @@ impl Sidecar {
                         let event = match method {
                             "session.event" => "session-event",
                             "session.loaded" => "session-loaded",
+                            "sessions.changed" => "sessions-changed",
                             "permission.requested" => "permission-requested",
                             "permission.resolved" => "permission-resolved",
                             _ => continue,

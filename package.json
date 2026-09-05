@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && npm run typecheck --workspace sidecar",
+    "check": "node scripts/check-ordering.mjs",
     "build:sidecar": "npm run build --workspace sidecar",
     "tauri": "tauri",
     "app": "npm run build:sidecar && tauri dev"

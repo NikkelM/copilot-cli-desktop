@@ -69,6 +69,11 @@ export function onSessionLoaded(handler: (payload: SessionLoadedNotification) =>
   return listen<SessionLoadedNotification>('session-loaded', (e) => handler(e.payload));
 }
 
+/** The session store changed, so the sidebar should refetch. */
+export function onSessionsChanged(handler: () => void) {
+  return listen('sessions-changed', () => handler());
+}
+
 /** A tool call is waiting on the user before it can run. */
 export function onPermissionRequested(handler: (payload: PendingPermission) => void) {
   return listen<PendingPermission>('permission-requested', (e) => handler(e.payload));

@@ -13,11 +13,13 @@ import {
   NOTIFY_PERMISSION_RESOLVED,
   NOTIFY_SESSION_EVENT,
   NOTIFY_SESSION_LOADED,
+  NOTIFY_SESSIONS_CHANGED,
 } from '../../shared/protocol.js';
 import { type Channel, startDevChannel } from './devChannel.js';
 import { readTranscript } from './eventLog.js';
 import { type ApprovalPolicy, SessionRuntime } from './runtime.js';
 import { listSessions } from './sessionIndex.js';
+import { watchSessionStore } from './storeWatcher.js';
 
 /** Anything written to stdout is protocol, so diagnostics must go to stderr. */
 function log(message: string): void {
@@ -146,6 +148,11 @@ function main(): void {
   const { cliPath } = SessionRuntime.probeInstallation();
   log(cliPath ? `CLI: ${cliPath}` : 'CLI not found - set COPILOT_CLI_PATH');
 
+  // Keeps the sidebar current for sessions running anywhere, including terminals this
+  // app knows nothing about, without waking on a timer.
+  const watcher = watchSessionStore(() => notify(NOTIFY_SESSIONS_CHANGED, null));
+  log(watcher ? 'watching session store for changes' : 'session store watch unavailable');
+
   const rl = createInterface({ input: process.stdin });
 
   rl.on('line', (line) => {
@@ -156,6 +163,7 @@ function main(): void {
   // Drain outstanding work and release the CLI server before exiting, so a request
   // issued just before stdin closes still gets a response.
   rl.on('close', () => {
+    watcher?.close();
     void Promise.allSettled([...inFlight])
       .then(() => runtime.shutdown())
       .catch(() => undefined)
