@@ -29,8 +29,10 @@ export interface ToolEntry {
   summary: string;
   output: string | null;
   status: 'running' | 'ok' | 'failed' | 'cancelled';
-  /** Render the name as prose rather than as a tool identifier. */
-  prose?: boolean;
+  /** The subject is a question put to the user, so the answer completes it. */
+  question?: boolean;
+  /** What the user chose, shown beside the question rather than hidden in the output. */
+  answer?: string;
 }
 
 export type Entry = MessageEntry | ToolEntry;
@@ -134,12 +136,16 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         // path metadata rather than anything worth summarising.
         const args = data.arguments as Record<string, unknown> | undefined;
 
-        // A question is worth reading in place: the tool's name says nothing the row does
-        // not already convey, while the question itself is the whole point of the row.
-        const question = name === 'ask_user' && typeof args?.question === 'string' ? args.question : null;
+        // The question is the subject of the row, the way a command is for a shell call.
+        // The two ask_user variants disagree on the field: legacy sends "question",
+        // elicitation sends "message".
+        const question =
+          name === 'ask_user'
+            ? [args?.question, args?.message].find((v): v is string => typeof v === 'string' && v.trim() !== '')
+            : undefined;
 
         const entry: ToolEntry = question
-          ? { kind: 'tool', name: clipLine(question), summary: '', output: null, status: 'running', prose: true }
+          ? { kind: 'tool', name, summary: clipLine(question), output: null, status: 'running', question: true }
           : { kind: 'tool', name, summary: summarise(args, cwd), output: null, status: 'running' };
 
         const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
@@ -170,9 +176,10 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
           entry.output = output || null;
 
           // Answering a question is the outcome, so it belongs in the header rather than
-          // hidden behind an expander nobody would think to open.
-          const answer = entry.prose && succeeded ? answerOf(output) : null;
-          if (answer) entry.name = `${entry.name}: ${answer}`;
+          // hidden behind an expander nobody would think to open. It carries its own
+          // styling instead of punctuation, since questions already end in a question mark.
+          const answer = entry.question && succeeded ? answerOf(output) : null;
+          if (answer) entry.answer = answer;
         } else {
           // A completion without its start, for example when replaying a truncated log.
           entries.push({
@@ -240,8 +247,11 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         title={entry.status === 'cancelled' ? 'Interrupted before it finished' : undefined}
       >
         <span className="tool-status">{STATUS_GLYPH[entry.status]}</span>
-        <span className={entry.prose ? 'tool-question' : 'tool-name'}>{entry.name}</span>
-        <span className="tool-summary">{entry.summary}</span>
+        <span className="tool-name">{entry.name}</span>
+        <span className="tool-subject">
+          <span className="tool-summary">{entry.summary}</span>
+          {entry.answer && <span className="tool-answer">{entry.answer}</span>}
+        </span>
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
         {/* Doubles as the affordance that the row opens, and says how much is behind it.
             Right-aligned, so it reads as a separate column without needing punctuation. */}

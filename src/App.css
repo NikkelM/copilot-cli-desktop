@@ -534,22 +534,37 @@ body {
   font-size: 12px;
 }
 
-/* A question reads as prose, not as a tool identifier. */
-.tool-question {
+/* Takes the slack so the line count still sits at the right edge, while the subject
+   and any answer stay together on the left. */
+.tool-subject {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  color: var(--text);
+}
+
+.tool-summary {
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.tool-summary {
-  flex: 1;
-  min-width: 0;
-  color: var(--text-muted);
+/* The chosen reply, set apart from the question so the outcome reads at a glance.
+   Never shrinks, so a long question truncates before the answer does. */
+.tool-answer {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--success);
   font-family: ui-monospace, monospace;
   font-size: 12px;
+  max-width: 40%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
