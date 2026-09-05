@@ -181,13 +181,14 @@ export default function App() {
             {error && <p className="error">{error}</p>}
             {resuming && <p className="notice">Resuming into the shared runtime. This takes a few seconds.</p>}
 
-            <Transcript events={events} sessionId={selected.sessionId} />
+            <Transcript events={events} sessionId={selected.sessionId} cwd={selected.cwd} />
 
             <div className="footer">
               {sessionPermissions.map((pending) => (
                 <PermissionPrompt
                   key={pending.requestId}
                   pending={pending}
+                  cwd={selected.cwd}
                   onResolve={(choice) => handlePermission(pending, choice)}
                 />
               ))}

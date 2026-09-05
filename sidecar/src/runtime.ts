@@ -340,6 +340,9 @@ export class SessionRuntime {
 
   /** Stop the current turn without unloading the session. */
   async abort(sessionId: string): Promise<void> {
+    // Anything waiting on the user belongs to the turn being stopped, so settle it too;
+    // otherwise the promise the agent is blocked on would never resolve.
+    this.abandonPermissions(sessionId);
     await this.loaded.get(sessionId)?.session.abort();
   }
 

@@ -194,10 +194,37 @@ body {
 
 .permission-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 10px;
   margin-bottom: 8px;
   font-size: 13px;
+}
+
+.permission-intent {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.permission-subject {
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-line.added {
+  color: #7ee787;
+}
+
+.diff-line.removed {
+  color: #f85149;
+}
+
+.diff-line.hunk {
+  color: #a371f7;
 }
 
 .permission-kind {
