@@ -80,8 +80,12 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
     if (!name) return;
 
     const options = optionsOf(fields[name] as Field);
+    // A radio is an input too, so a plain instanceof check would treat a focused choice
+    // as a text field and swallow every key that is not an arrow.
+    const target = event.target;
     const inTextBox =
-      event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLInputElement && target.type !== 'radio' && target.type !== 'checkbox');
 
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -121,9 +125,9 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
 
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
-      // Typing is a fresh answer rather than a return to the box, so it replaces the
-      // draft instead of appending to it.
-      typeFreeform(name, event.key);
+      // Carries on from what was typed before rather than starting over, so glancing at
+      // the options mid-answer does not cost the words already written.
+      typeFreeform(name, `${drafts[name] ?? ''}${event.key}`);
       freeformRef.current?.focus();
     }
   }
@@ -179,6 +183,14 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
   );
 }
 
+/**
+ * Only two answers are possible: give one, or refuse to.
+ *
+ * The protocol also has a cancel action, meaning the question was dismissed without a
+ * decision. It is unreachable here - the agent is blocked until this is answered, so
+ * there is no dismissing it - and for the legacy ask_user variant the runtime sends the
+ * same empty answer for both, making it a second button that does nothing different.
+ */
 function Actions({
   onResolve,
   values,
@@ -190,9 +202,6 @@ function Actions({
 }) {
   return (
     <div className="elicitation-actions">
-      <button type="button" className="secondary" onClick={() => onResolve('cancel')}>
-        Cancel
-      </button>
       <button type="button" className="secondary" onClick={() => onResolve('decline')}>
         Decline
       </button>

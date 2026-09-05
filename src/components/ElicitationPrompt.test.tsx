@@ -141,6 +141,37 @@ describe('ElicitationPrompt keyboard use', () => {
     await user.click(screen.getByRole('button', { name: 'Decline' }));
     expect(onResolve).toHaveBeenCalledWith('decline');
   });
+
+  // Cancel meant the same as Decline for every question the CLI actually asks.
+  it('offers one way to refuse rather than two', () => {
+    ask();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+  });
+
+  // A radio is an HTMLInputElement, so treating any focused input as a text box left the
+  // list deaf to everything but the arrows after a choice was clicked.
+  it('still takes keys after a choice is clicked rather than arrowed to', async () => {
+    const { user } = ask();
+
+    await user.click(radios()[1] as HTMLInputElement);
+    expect(chosen()).toBe(1);
+
+    await user.keyboard('s');
+    expect(chosen()).toBe(2);
+
+    await user.keyboard('w');
+    expect(chosen()).toBe(1);
+  });
+
+  it('types from a clicked choice into the box', async () => {
+    const { user } = ask();
+
+    await user.click(radios()[0] as HTMLInputElement);
+    await user.keyboard('Maria');
+
+    expect(document.activeElement).toBe(freeform());
+    expect(freeform().value).toBe('Maria');
+  });
 });
 
 // Typing an answer and then looking back at the options should not cost the typing.
@@ -184,15 +215,18 @@ describe('ElicitationPrompt keeps typed text', () => {
     expect(onResolve).toHaveBeenCalledWith('accept', { answer: 'MariaDB' });
   });
 
-  // Typing is a new answer rather than a return to the box, so it starts over.
-  it('replaces the text when typing starts again from the list', async () => {
-    const { user } = ask();
+  // Typing carries on from what is already there, so checking the options mid-answer
+  // does not cost the words already written.
+  it('continues the text when typing starts again from the list', async () => {
+    const { onResolve, user } = ask();
 
     await user.keyboard('MariaDB');
     await user.keyboard('{ArrowDown}');
-    await user.keyboard('X');
+    await user.keyboard('Test');
 
-    expect(freeform().value).toBe('X');
+    expect(freeform().value).toBe('MariaDBTest');
+    await user.keyboard('{Enter}');
+    expect(onResolve).toHaveBeenCalledWith('accept', { answer: 'MariaDBTest' });
   });
 
   it('leaves the answer empty when nothing was ever typed', async () => {
