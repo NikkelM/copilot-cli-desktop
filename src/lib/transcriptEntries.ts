@@ -6,6 +6,8 @@ const MAX_OUTPUT = 4000;
 
 export interface MessageEntry {
   kind: 'message';
+  /** Identity of the source event, so rows survive history being prepended. */
+  key: string;
   variant: 'user' | 'assistant' | 'failed';
   body: string;
 }
@@ -16,6 +18,8 @@ export interface MessageEntry {
  */
 export interface ToolEntry {
   kind: 'tool';
+  /** Identity of the start event, so rows survive history being prepended. */
+  key: string;
   name: string;
   /** One line summarising what ran, shown while collapsed. */
   summary: string;
@@ -109,11 +113,14 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
 
   for (const event of events) {
     const data = (event.data ?? {}) as Record<string, unknown>;
+    // Position is not identity: loading older history prepends events and shifts every
+    // index, which would hand a row's local state to a different entry.
+    const key = event.id ?? `${event.type}:${entries.length}`;
 
     switch (event.type) {
       case 'user.message': {
         const content = text(data, 'content');
-        if (content) entries.push({ kind: 'message', variant: 'user', body: content });
+        if (content) entries.push({ kind: 'message', key, variant: 'user', body: content });
         break;
       }
 
@@ -121,7 +128,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         // An assistant message carrying only tool requests has empty content; the tool
         // itself is shown by its own entry.
         const content = text(data, 'content');
-        if (content) entries.push({ kind: 'message', variant: 'assistant', body: content });
+        if (content) entries.push({ kind: 'message', key, variant: 'assistant', body: content });
         break;
       }
 
@@ -142,6 +149,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         const entry: ToolEntry = question
           ? {
               kind: 'tool',
+              key,
               name,
               summary: clipLine(question),
               output: null,
@@ -151,7 +159,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
                 ? args.choices.filter((c): c is string => typeof c === 'string' && c.trim() !== '')
                 : undefined,
             }
-          : { kind: 'tool', name, summary: summarise(args, cwd), output: null, status: 'running' };
+          : { kind: 'tool', key, name, summary: summarise(args, cwd), output: null, status: 'running' };
 
         const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
         if (id) pending.set(id, entry);
@@ -189,6 +197,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
           // A completion without its start, for example when replaying a truncated log.
           entries.push({
             kind: 'tool',
+            key,
             name: 'tool',
             summary: '',
             output,
@@ -201,6 +210,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
       case 'session.error':
         entries.push({
           kind: 'message',
+          key,
           variant: 'failed',
           body: text(data, 'message') ?? 'Session error',
         });
