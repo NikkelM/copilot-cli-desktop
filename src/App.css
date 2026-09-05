@@ -282,18 +282,26 @@ body {
 }
 
 .entry {
-  display: grid;
-  grid-template-columns: 82px 1fr;
-  gap: 12px;
-  padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 0;
 }
 
-.entry-role {
-  color: var(--text-muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+/* The user's own turns are the anchors when scanning back, so they get a distinct block. */
+.entry.user {
+  margin: 4px 0;
+  padding: 10px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 6px 6px 0;
+  background: #161d29;
+}
+
+.entry-label {
+  color: #7ee787;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  text-transform: lowercase;
 }
 
 .entry-body {
@@ -301,19 +309,23 @@ body {
   overflow-wrap: anywhere;
 }
 
-.entry.assistant .entry-body {
-  color: var(--text);
-}
-
-.entry.tool .entry-body,
-.entry.other .entry-body {
+.entry-body.mono {
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
   font-size: 12px;
 }
 
+.entry.result .entry-body {
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+
 .entry.failed .entry-body {
   color: #f85149;
+}
+
+.entry.other .entry-label {
+  color: var(--text-muted);
 }
 
 .composer {
@@ -368,7 +380,10 @@ body {
 .placeholder {
   display: grid;
   place-items: center;
-  height: 100%;
+  /* .main defines four rows; without spanning them the placeholder lands in the first
+     auto row and collapses to the top instead of centring. */
+  grid-row: 1 / -1;
+  color: var(--text-muted);
 }
 
 .empty,
