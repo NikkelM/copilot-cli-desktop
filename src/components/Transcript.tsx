@@ -1,3 +1,5 @@
+import { useLayoutEffect, useRef } from 'react';
+
 import type { TranscriptEvent } from '../../shared/protocol';
 
 /** Events worth showing. The stream also carries many internal model.* bookkeeping events. */
@@ -14,16 +16,44 @@ export function isRendered(event: TranscriptEvent): boolean {
   return RENDERED.has(event.type);
 }
 
+/** Distance from the bottom still treated as "following along". */
+const PIN_THRESHOLD_PX = 80;
+
 interface TranscriptProps {
   events: TranscriptEvent[];
   showRaw: boolean;
+  /** Changing this jumps to the newest message rather than preserving scroll. */
+  sessionId: string;
 }
 
-export function Transcript({ events, showRaw }: TranscriptProps) {
+export function Transcript({ events, showRaw, sessionId }: TranscriptProps) {
   const visible = showRaw ? events : events.filter(isRendered);
+  const listRef = useRef<HTMLOListElement>(null);
+  const pinned = useRef(true);
+
+  // Selecting a session re-pins to the bottom. The transcript itself arrives a moment
+  // later, so the actual scroll happens in the effect below once content exists.
+  useLayoutEffect(() => {
+    pinned.current = true;
+  }, [sessionId]);
+
+  // Keep the newest entry in view while the user is following along, both for the
+  // initial load and for streamed events. useLayoutEffect runs before paint, so a long
+  // history never flashes at the top before jumping down.
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && pinned.current) list.scrollTop = list.scrollHeight;
+  }, [visible.length, sessionId]);
+
+  function onScroll() {
+    const list = listRef.current;
+    if (!list) return;
+    const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
+    pinned.current = distance <= PIN_THRESHOLD_PX;
+  }
 
   return (
-    <ol className="transcript">
+    <ol className="transcript" ref={listRef} onScroll={onScroll}>
       {visible.map((event, index) => (
         <li key={index} className={`entry ${entryClass(event.type)}`}>
           <span className="entry-role">{roleLabel(event.type)}</span>

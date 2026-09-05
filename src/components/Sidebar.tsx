@@ -1,3 +1,5 @@
+import { useMemo, useState } from 'react';
+
 import type { SessionSummary } from '../../shared/protocol';
 
 interface SidebarProps {
@@ -6,36 +8,66 @@ interface SidebarProps {
   onSelect: (sessionId: string) => void;
 }
 
-/** Sessions ordered by last use. Rendering this list never loads a session. */
+/** Sessions ordered by last use. Rendering and filtering this list never loads a session. */
 export function Sidebar({ sessions, selectedId, onSelect }: SidebarProps) {
+  const [query, setQuery] = useState('');
+
+  // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return sessions;
+
+    return sessions.filter((session) =>
+      [session.title, session.cwd, session.repository, session.branch].some((field) =>
+        field?.toLowerCase().includes(needle),
+      ),
+    );
+  }, [sessions, query]);
+
   return (
     <nav className="sidebar">
       <header className="sidebar-header">
         <span>Sessions</span>
-        <span className="badge">{sessions.length}</span>
+        <span className="badge">
+          {query ? `${matches.length}/${sessions.length}` : sessions.length}
+        </span>
       </header>
 
-      <ul className="session-list">
-        {sessions.map((session) => (
-          <li key={session.sessionId}>
-            <button
-              type="button"
-              className={`session${session.sessionId === selectedId ? ' selected' : ''}`}
-              onClick={() => onSelect(session.sessionId)}
-            >
-              <span className="session-title">
-                {session.title ?? 'Untitled session'}
-                {session.loaded && <span className="dot" title="Loaded in memory" />}
-              </span>
-              <span className="session-meta">
-                {formatRelative(session.updatedAt)}
-                {session.repository ? ` · ${session.repository}` : ''}
-              </span>
-              {session.preview && <span className="session-preview">{session.preview}</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div className="search">
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter by title or folder"
+          spellCheck={false}
+        />
+      </div>
+
+      {matches.length === 0 ? (
+        <p className="no-matches">No sessions match that filter.</p>
+      ) : (
+        <ul className="session-list">
+          {matches.map((session) => (
+            <li key={session.sessionId}>
+              <button
+                type="button"
+                className={`session${session.sessionId === selectedId ? ' selected' : ''}`}
+                onClick={() => onSelect(session.sessionId)}
+              >
+                <span className="session-title">
+                  {session.title ?? 'Untitled session'}
+                  {session.loaded && <span className="dot" title="Loaded in memory" />}
+                </span>
+                <span className="session-meta">
+                  {formatRelative(session.updatedAt)}
+                  {session.repository ? ` · ${session.repository}` : ''}
+                </span>
+                {session.preview && <span className="session-preview">{session.preview}</span>}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </nav>
   );
 }
