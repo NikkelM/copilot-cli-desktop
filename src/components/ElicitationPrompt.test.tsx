@@ -94,6 +94,35 @@ describe('ElicitationPrompt keyboard use', () => {
     expect(chosen()).toBe(-1);
   });
 
+  // Reaching the box makes it the answer wherever the focus came from, so the choice
+  // must clear on a click just as it does when arrowed into.
+  it('drops the selected choice when the box is clicked into', async () => {
+    const { user } = ask();
+
+    expect(chosen()).toBe(0);
+    await user.click(freeform());
+    expect(chosen()).toBe(-1);
+  });
+
+  it('will not submit a choice the cursor has already left', async () => {
+    const { onResolve, user } = ask();
+
+    await user.click(freeform());
+    await user.keyboard('{Enter}');
+
+    expect(onResolve).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Submit' })).toHaveProperty('disabled', true);
+  });
+
+  it('resumes from the box, not from the choice that was selected before it', async () => {
+    const { user } = ask();
+
+    await user.click(freeform());
+    // Down from the box is the first choice; without clearing it would have been the second.
+    await user.keyboard('{ArrowDown}');
+    expect(chosen()).toBe(0);
+  });
+
   it('still escapes the box with the arrows', async () => {
     const { user } = ask();
 
