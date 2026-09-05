@@ -1,115 +1,184 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 
-/** Longest tool output shown inline before truncation. */
-const MAX_OUTPUT = 600;
+/** Longest tool output kept for the expanded view. */
+const MAX_OUTPUT = 4000;
 
 /** Distance from the bottom still treated as "following along". */
 const PIN_THRESHOLD_PX = 80;
 
-interface Entry {
-  /** Inline label for tool activity. Messages carry none; they are styled instead. */
-  label: string | null;
-  variant: string;
+interface MessageEntry {
+  kind: 'message';
+  variant: 'user' | 'assistant' | 'failed';
   body: string;
-  mono: boolean;
 }
 
 /**
- * Turn a raw session event into a displayable entry, or null to hide it.
- *
- * Returning null matters as much as formatting: the stream carries bookkeeping
- * events, tool-request-only assistant messages, and permission requests that are
- * already represented elsewhere in the UI.
+ * One tool invocation, pairing its start with its completion.
+ * Kept as a single unit so the command, its status and its output collapse together.
  */
-function toEntry(event: TranscriptEvent): Entry | null {
-  const data = (event.data ?? {}) as Record<string, unknown>;
-  const str = (key: string): string | null => {
-    const value = data[key];
-    return typeof value === 'string' && value.trim() ? value : null;
-  };
-
-  switch (event.type) {
-    case 'user.message': {
-      const content = str('content');
-      return content ? { label: null, variant: 'user', body: content, mono: false } : null;
-    }
-
-    case 'assistant.message': {
-      // An assistant message carrying only tool requests has empty content; the tool
-      // itself is shown by its own execution events.
-      const content = str('content');
-      return content ? { label: null, variant: 'assistant', body: content, mono: false } : null;
-    }
-
-    case 'tool.execution_start': {
-      const name = str('toolName') ?? str('mcpToolName') ?? 'tool';
-      // The command and its human summary live in the tool arguments; shellToolInfo
-      // carries path metadata rather than the command itself.
-      const args = data.arguments as { command?: unknown; description?: unknown } | undefined;
-      const command = typeof args?.command === 'string' ? args.command : null;
-      const description = typeof args?.description === 'string' ? args.description : null;
-
-      // The description often just restates the command, so only show it when it adds something.
-      const redundant =
-        description !== null && command !== null && description.toLowerCase() === command.toLowerCase();
-
-      return {
-        label: description && !redundant ? `${name} · ${description}` : name,
-        variant: 'tool',
-        body: command ?? '',
-        mono: true,
-      };
-    }
-
-    case 'tool.execution_complete': {
-      if (data.success === true) {
-        const result = data.result as { content?: unknown } | undefined;
-        const content = typeof result?.content === 'string' ? result.content : '';
-        const body = clip(content);
-        // A silent success needs no row of its own; the command above already showed it ran.
-        return body ? { label: null, variant: 'result', body, mono: true } : null;
-      }
-      const error = data.error as { message?: unknown } | undefined;
-      const message = typeof error?.message === 'string' ? error.message : 'Tool failed';
-      return { label: null, variant: 'failed', body: message, mono: true };
-    }
-
-    case 'session.error':
-      return { label: 'Error', variant: 'failed', body: str('message') ?? 'Session error', mono: true };
-
-    // permission.requested is deliberately absent: the approval panel above the
-    // composer already shows it, and its payload is large and unreadable inline.
-    default:
-      return null;
-  }
+interface ToolEntry {
+  kind: 'tool';
+  name: string;
+  /** One line summarising what ran, shown while collapsed. */
+  summary: string;
+  output: string | null;
+  status: 'running' | 'ok' | 'failed';
 }
 
-function clip(text: string): string {
-  const trimmed = text.trim();
+type Entry = MessageEntry | ToolEntry;
+
+function text(data: Record<string, unknown>, key: string): string | null {
+  const value = data[key];
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function clip(value: string): string {
+  const trimmed = value.trim();
   return trimmed.length > MAX_OUTPUT ? `${trimmed.slice(0, MAX_OUTPUT)}…` : trimmed;
+}
+
+/**
+ * Build the displayable timeline from raw session events.
+ *
+ * Tool starts and completions arrive as separate events but describe one action, so
+ * they are paired by `toolCallId` into a single entry. Anything not handled here is
+ * invisible, so new event types need a case rather than a fallback.
+ */
+function toEntries(events: TranscriptEvent[]): Entry[] {
+  const entries: Entry[] = [];
+  /** In-flight tool calls, so a completion can fill in the entry it belongs to. */
+  const pending = new Map<string, ToolEntry>();
+
+  for (const event of events) {
+    const data = (event.data ?? {}) as Record<string, unknown>;
+
+    switch (event.type) {
+      case 'user.message': {
+        const content = text(data, 'content');
+        if (content) entries.push({ kind: 'message', variant: 'user', body: content });
+        break;
+      }
+
+      case 'assistant.message': {
+        // An assistant message carrying only tool requests has empty content; the tool
+        // itself is shown by its own entry.
+        const content = text(data, 'content');
+        if (content) entries.push({ kind: 'message', variant: 'assistant', body: content });
+        break;
+      }
+
+      case 'tool.execution_start': {
+        const name = text(data, 'toolName') ?? text(data, 'mcpToolName') ?? 'tool';
+        // The command and its human summary live in the tool arguments; shellToolInfo
+        // carries path metadata rather than the command itself.
+        const args = data.arguments as Record<string, unknown> | undefined;
+        const command = typeof args?.command === 'string' ? args.command : null;
+        const description = typeof args?.description === 'string' ? args.description : null;
+
+        const entry: ToolEntry = {
+          kind: 'tool',
+          name,
+          summary: command ?? description ?? '',
+          output: null,
+          status: 'running',
+        };
+
+        const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
+        if (id) pending.set(id, entry);
+        entries.push(entry);
+        break;
+      }
+
+      case 'tool.execution_complete': {
+        const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
+        const entry = id ? pending.get(id) : undefined;
+        if (id) pending.delete(id);
+
+        const succeeded = data.success === true;
+        const result = data.result as { content?: unknown } | undefined;
+        const error = data.error as { message?: unknown } | undefined;
+        const output = succeeded
+          ? typeof result?.content === 'string'
+            ? clip(result.content)
+            : ''
+          : typeof error?.message === 'string'
+            ? error.message
+            : 'Tool failed';
+
+        if (entry) {
+          // Updating the entry already in the list keeps the tool as one visual unit.
+          entry.status = succeeded ? 'ok' : 'failed';
+          entry.output = output || null;
+        } else {
+          // A completion without its start, for example when replaying a truncated log.
+          entries.push({
+            kind: 'tool',
+            name: 'tool',
+            summary: '',
+            output,
+            status: succeeded ? 'ok' : 'failed',
+          });
+        }
+        break;
+      }
+
+      case 'session.error':
+        entries.push({
+          kind: 'message',
+          variant: 'failed',
+          body: text(data, 'message') ?? 'Session error',
+        });
+        break;
+
+      // permission.requested is deliberately absent: the approval panel above the
+      // composer already shows it, and its payload is large and unreadable inline.
+      default:
+        break;
+    }
+  }
+
+  return entries;
+}
+
+const STATUS_GLYPH: Record<ToolEntry['status'], string> = {
+  running: '·',
+  ok: '✓',
+  failed: '✕',
+};
+
+/** A single tool call, collapsed to one line until expanded. */
+function ToolRow({ entry }: { entry: ToolEntry }) {
+  const [open, setOpen] = useState(false);
+  const expandable = Boolean(entry.output);
+
+  return (
+    <div className={`tool ${entry.status}${open ? ' open' : ''}`}>
+      <button
+        type="button"
+        className="tool-head"
+        onClick={() => setOpen((value) => !value)}
+        disabled={!expandable}
+      >
+        <span className="tool-status">{STATUS_GLYPH[entry.status]}</span>
+        <span className="tool-name">{entry.name}</span>
+        <span className="tool-summary">{entry.summary}</span>
+        {expandable && <span className="tool-chevron">{open ? '▾' : '▸'}</span>}
+      </button>
+      {open && entry.output && <pre className="tool-output">{entry.output}</pre>}
+    </div>
+  );
 }
 
 interface TranscriptProps {
   events: TranscriptEvent[];
-  showRaw: boolean;
   /** Changing this jumps to the newest message rather than preserving scroll. */
   sessionId: string;
 }
 
-export function Transcript({ events, showRaw, sessionId }: TranscriptProps) {
-  // Raw mode keeps the unfiltered stream available for debugging, including the
-  // events and fields the normal view deliberately drops.
-  const entries: Entry[] = showRaw
-    ? events.map((event) => ({
-        label: event.type,
-        variant: 'other',
-        body: JSON.stringify(event.data ?? {}),
-        mono: true,
-      }))
-    : events.map(toEntry).filter((entry): entry is Entry => entry !== null);
-
+export function Transcript({ events, sessionId }: TranscriptProps) {
+  const entries = toEntries(events);
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
 
@@ -137,9 +206,12 @@ export function Transcript({ events, showRaw, sessionId }: TranscriptProps) {
   return (
     <ol className="transcript" ref={listRef} onScroll={onScroll}>
       {entries.map((entry, index) => (
-        <li key={index} className={`entry ${entry.variant}`}>
-          {entry.label && <span className="entry-label">{entry.label}</span>}
-          {entry.body && <div className={`entry-body${entry.mono ? ' mono' : ''}`}>{entry.body}</div>}
+        <li key={index} className="entry">
+          {entry.kind === 'tool' ? (
+            <ToolRow entry={entry} />
+          ) : (
+            <div className={`message ${entry.variant}`}>{entry.body}</div>
+          )}
         </li>
       ))}
     </ol>

@@ -282,50 +282,102 @@ body {
 }
 
 .entry {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 10px 0;
+  padding: 6px 0;
+}
+
+.message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* The user's own turns are the anchors when scanning back, so they get a distinct block. */
-.entry.user {
-  margin: 4px 0;
+.message.user {
+  margin: 6px 0;
   padding: 10px 14px;
   border-left: 3px solid var(--accent);
   border-radius: 0 6px 6px 0;
   background: #161d29;
 }
 
-.entry-label {
-  color: #7ee787;
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-  text-transform: lowercase;
-}
-
-.entry-body {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.entry-body.mono {
-  color: var(--text-muted);
+.message.failed {
+  color: #f85149;
   font-family: ui-monospace, monospace;
   font-size: 12px;
 }
 
-.entry.result .entry-body {
-  padding-left: 10px;
-  border-left: 1px solid var(--border);
+/* Tool calls stay collapsed to one line; the detail is available but never in the way. */
+.tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.entry.failed .entry-body {
+.tool-head:disabled {
+  cursor: default;
+}
+
+.tool-status {
+  width: 12px;
+  flex-shrink: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.tool.ok .tool-status {
+  color: var(--success);
+}
+
+.tool.failed .tool-status {
   color: #f85149;
 }
 
-.entry.other .entry-label {
+.tool.running .tool-status {
   color: var(--text-muted);
+}
+
+.tool-name {
+  flex-shrink: 0;
+  color: #7ee787;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+
+.tool-summary {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.tool-output {
+  max-height: 320px;
+  margin: 4px 0 4px 20px;
+  padding: 8px 10px;
+  border-left: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
 }
 
 .composer {
