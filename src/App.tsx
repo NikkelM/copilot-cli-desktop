@@ -314,6 +314,9 @@ export default function App() {
               <Composer
                 disabled={!selectedId}
                 busy={busy}
+                // A question or a permission request blocks the agent until answered, so
+                // it keeps the keyboard; the composer takes it back once nothing is waiting.
+                focusOn={sessionElicitations.length + sessionPermissions.length > 0 ? null : selectedId}
                 onSend={(prompt) => void handleSend(prompt)}
                 onAbort={() => selectedId && void abortSession(selectedId)}
               />
