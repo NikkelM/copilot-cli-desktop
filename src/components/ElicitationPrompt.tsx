@@ -25,6 +25,11 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
   const { fields, required } = formOf(pending);
 
   const [values, setValues] = useState(() => initialValues(fields));
+  /**
+   * Text typed into a freeform box, held apart from the answer so that picking an option
+   * does not discard it. Returning to the box makes it the answer again.
+   */
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const containerRef = useRef<HTMLElement>(null);
   const freeformRef = useRef<HTMLInputElement>(null);
 
@@ -38,8 +43,15 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
     setValues((current) => ({ ...current, [name]: value }));
   }
 
+  /** Typing in the box makes it the answer, and keeps the text for coming back to. */
+  function typeFreeform(name: string, text: string) {
+    setDrafts((current) => ({ ...current, [name]: text }));
+    set(name, text);
+  }
+
   /**
-   * Reaching the freeform box makes it the answer, so any chosen option clears.
+   * Reaching the freeform box makes whatever it holds the answer, so any chosen option
+   * gives way to the draft, or to nothing when none was typed.
    *
    * Checked against the latest values rather than the ones this closure rendered with:
    * typing to jump into the box sets the first character before focus arrives, and a
@@ -47,7 +59,9 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
    */
   function enterFreeform(name: string, options: ReturnType<typeof optionsOf>) {
     setValues((current) =>
-      options.some((option) => option.value === current[name]) ? { ...current, [name]: '' } : current,
+      options.some((option) => option.value === current[name])
+        ? { ...current, [name]: drafts[name] ?? '' }
+        : current,
     );
   }
 
@@ -84,8 +98,9 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
     const moveTo = (index: number) => {
       event.preventDefault();
       if (index === options.length) {
-        // Entering the box clears the choice, since the answer becomes what is typed.
-        set(name, '');
+        // The box holds the answer while it has focus, restoring whatever was typed
+        // before rather than starting blank.
+        set(name, drafts[name] ?? '');
         freeformRef.current?.focus();
       } else {
         set(name, options[index]?.value ?? '');
@@ -106,7 +121,9 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
 
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
-      set(name, event.key);
+      // Typing is a fresh answer rather than a return to the box, so it replaces the
+      // draft instead of appending to it.
+      typeFreeform(name, event.key);
       freeformRef.current?.focus();
     }
   }
@@ -146,8 +163,12 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
               field={field}
               value={values[name]}
               onChange={(value) => set(name, value)}
-              freeformRef={freeformRef}
-              onFreeformFocus={() => enterFreeform(name, optionsOf(field))}
+              freeform={{
+                ref: freeformRef,
+                value: drafts[name] ?? '',
+                onChange: (text) => typeFreeform(name, text),
+                onFocus: () => enterFreeform(name, optionsOf(field)),
+              }}
             />
           </label>
         ))}
@@ -182,18 +203,24 @@ function Actions({
   );
 }
 
+/** The freeform box beside a list of choices, whose text outlives any option picked. */
+interface Freeform {
+  ref: RefObject<HTMLInputElement | null>;
+  value: string;
+  onChange: (text: string) => void;
+  onFocus: () => void;
+}
+
 function Control({
   field,
   value,
   onChange,
-  freeformRef,
-  onFreeformFocus,
+  freeform,
 }: {
   field: Field;
   value: ElicitationFieldValue | undefined;
   onChange: (value: ElicitationFieldValue) => void;
-  freeformRef?: RefObject<HTMLInputElement | null>;
-  onFreeformFocus?: () => void;
+  freeform?: Freeform;
 }) {
   const options = optionsOf(field);
 
@@ -246,13 +273,15 @@ function Control({
           ))}
         </div>
         <input
-          ref={freeformRef}
+          ref={freeform?.ref}
           type="text"
-          className="elicitation-input"
+          // Dimmed while an option is picked, so retained text reads as something kept
+          // for later rather than as the answer.
+          className={`elicitation-input${picked ? ' inactive' : ''}`}
           placeholder="or type your own"
-          value={picked || typeof value !== 'string' ? '' : value}
-          onFocus={onFreeformFocus}
-          onChange={(e) => onChange(e.target.value)}
+          value={freeform?.value ?? ''}
+          onFocus={freeform?.onFocus}
+          onChange={(e) => freeform?.onChange(e.target.value)}
         />
       </>
     );

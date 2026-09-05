@@ -273,6 +273,16 @@ body {
   border-color: var(--accent);
 }
 
+/* Text kept from before an option was picked: still there to come back to, but not the
+   answer while a choice is selected. */
+.elicitation-input.inactive {
+  color: var(--text-muted);
+}
+
+.elicitation-input.inactive:focus {
+  color: var(--text);
+}
+
 .elicitation-url {
   display: block;
   margin-bottom: 12px;

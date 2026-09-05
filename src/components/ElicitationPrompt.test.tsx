@@ -142,3 +142,64 @@ describe('ElicitationPrompt keyboard use', () => {
     expect(onResolve).toHaveBeenCalledWith('decline');
   });
 });
+
+// Typing an answer and then looking back at the options should not cost the typing.
+describe('ElicitationPrompt keeps typed text', () => {
+  it('holds the text while an option is picked, and answers with the option', async () => {
+    const { onResolve, user } = ask();
+
+    await user.keyboard('MariaDB');
+    await user.click(radios()[2] as HTMLInputElement);
+
+    expect(freeform().value).toBe('MariaDB');
+    await user.keyboard('{Enter}');
+    expect(onResolve).toHaveBeenCalledWith('accept', { answer: 'SQLite' });
+  });
+
+  it('gives the text back when the box is arrowed into again', async () => {
+    const { onResolve, user } = ask();
+
+    await user.keyboard('MariaDB');
+    // Out to a choice and straight back.
+    await user.keyboard('{ArrowDown}');
+    expect(chosen()).toBe(0);
+
+    await user.keyboard('{ArrowUp}');
+    expect(document.activeElement).toBe(freeform());
+    expect(freeform().value).toBe('MariaDB');
+
+    await user.keyboard('{Enter}');
+    expect(onResolve).toHaveBeenCalledWith('accept', { answer: 'MariaDB' });
+  });
+
+  it('gives the text back when the box is clicked into again', async () => {
+    const { onResolve, user } = ask();
+
+    await user.keyboard('MariaDB');
+    await user.click(radios()[1] as HTMLInputElement);
+    await user.click(freeform());
+
+    expect(chosen()).toBe(-1);
+    await user.keyboard('{Enter}');
+    expect(onResolve).toHaveBeenCalledWith('accept', { answer: 'MariaDB' });
+  });
+
+  // Typing is a new answer rather than a return to the box, so it starts over.
+  it('replaces the text when typing starts again from the list', async () => {
+    const { user } = ask();
+
+    await user.keyboard('MariaDB');
+    await user.keyboard('{ArrowDown}');
+    await user.keyboard('X');
+
+    expect(freeform().value).toBe('X');
+  });
+
+  it('leaves the answer empty when nothing was ever typed', async () => {
+    const { user } = ask();
+
+    await user.click(freeform());
+    expect(freeform().value).toBe('');
+    expect(screen.getByRole('button', { name: 'Submit' })).toHaveProperty('disabled', true);
+  });
+});
