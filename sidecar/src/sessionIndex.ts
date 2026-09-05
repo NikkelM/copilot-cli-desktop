@@ -68,10 +68,13 @@ export function listSessions(): SessionSummary[] {
   // readOnly still needs the -wal sidecar, so the CLI must not be mid-write; SQLite handles that.
   const db = new DatabaseSync(sessionStoreDb, { readOnly: true });
   try {
-    // The newest turn per session supplies the preview, preferring the assistant's reply.
+    // The newest turn supplies both the preview and the last-used time: sessions.updated_at
+    // is only written at creation or summary regeneration, so it can be hours stale while a
+    // session is actively in use, which would also put it in the wrong place in the list.
     const rows = db
       .prepare(
-        `SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at,
+        `SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at,
+                COALESCE(t.timestamp, s.updated_at) AS updated_at,
                 COALESCE(t.assistant_response, t.user_message) AS preview
          FROM sessions s
          LEFT JOIN turns t
@@ -79,7 +82,7 @@ export function listSessions(): SessionSummary[] {
           AND t.turn_index = (SELECT MAX(turn_index) FROM turns WHERE session_id = s.id)
          WHERE COALESCE(TRIM(s.summary), '') <> ''
             OR EXISTS (SELECT 1 FROM turns WHERE session_id = s.id)
-         ORDER BY s.updated_at DESC`,
+         ORDER BY COALESCE(t.timestamp, s.updated_at) DESC`,
       )
       .all() as unknown as SessionRow[];
 
