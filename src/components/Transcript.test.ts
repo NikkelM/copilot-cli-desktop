@@ -142,3 +142,67 @@ describe('toEntries', () => {
     expect(entries.map((e) => e.kind)).toEqual(['message', 'tool', 'message']);
   });
 });
+
+describe('ask_user rows', () => {
+  const question = 'Which database do you prefer?';
+
+  it('shows the question rather than the tool name', () => {
+    const entries = toEntries(
+      [event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question } })],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ kind: 'tool', name: question, prose: true });
+  });
+
+  it('appends the answer once given', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question } }),
+        event('tool.execution_complete', {
+          toolCallId: 'q1',
+          success: true,
+          result: { content: 'User responded: PostgreSQL' },
+        }),
+      ],
+      null,
+    );
+    expect((entries[0] as ToolEntry).name).toBe(`${question}: PostgreSQL`);
+  });
+
+  // Declining reports an empty answer rather than omitting the line, and appending a
+  // bare colon would read as though something had been chosen.
+  it('appends nothing when the question went unanswered', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question } }),
+        event('tool.execution_complete', {
+          toolCallId: 'q1',
+          success: true,
+          result: { content: 'User responded: ' },
+        }),
+      ],
+      null,
+    );
+    expect((entries[0] as ToolEntry).name).toBe(question);
+  });
+
+  it('clamps a long question', () => {
+    const long = 'W'.repeat(400);
+    const entries = toEntries(
+      [event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question: long } })],
+      null,
+    );
+    const name = (entries[0] as ToolEntry).name;
+    expect(name.length).toBeLessThan(200);
+    expect(name.endsWith('…')).toBe(true);
+  });
+
+  it('leaves other tools showing their name', () => {
+    const entries = toEntries(
+      [event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } })],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ name: 'powershell', summary: 'ls' });
+    expect((entries[0] as ToolEntry).prose).toBeUndefined();
+  });
+});

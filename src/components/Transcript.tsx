@@ -29,6 +29,8 @@ export interface ToolEntry {
   summary: string;
   output: string | null;
   status: 'running' | 'ok' | 'failed' | 'cancelled';
+  /** Render the name as prose rather than as a tool identifier. */
+  prose?: boolean;
 }
 
 export type Entry = MessageEntry | ToolEntry;
@@ -77,6 +79,25 @@ function clip(value: string): string {
   return trimmed.length > MAX_OUTPUT ? `${trimmed.slice(0, MAX_OUTPUT)}…` : trimmed;
 }
 
+/** Longest question shown in a row header before clamping. */
+const MAX_HEADER = 140;
+
+function clipLine(value: string): string {
+  const flat = value.replace(/\s+/g, ' ').trim();
+  return flat.length > MAX_HEADER ? `${flat.slice(0, MAX_HEADER - 1)}…` : flat;
+}
+
+/**
+ * The answer the user gave, pulled out of the tool's own result text.
+ * The CLI reports it as "User responded: <answer>", and an unanswered question leaves
+ * that empty rather than omitting the line.
+ */
+function answerOf(result: string): string | null {
+  const match = /^\s*User responded:\s*([\s\S]*)$/.exec(result);
+  const answer = match?.[1]?.trim();
+  return answer ? clipLine(answer) : null;
+}
+
 /**
  * Build the displayable timeline from raw session events.
  *
@@ -113,13 +134,13 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         // path metadata rather than anything worth summarising.
         const args = data.arguments as Record<string, unknown> | undefined;
 
-        const entry: ToolEntry = {
-          kind: 'tool',
-          name,
-          summary: summarise(args, cwd),
-          output: null,
-          status: 'running',
-        };
+        // A question is worth reading in place: the tool's name says nothing the row does
+        // not already convey, while the question itself is the whole point of the row.
+        const question = name === 'ask_user' && typeof args?.question === 'string' ? args.question : null;
+
+        const entry: ToolEntry = question
+          ? { kind: 'tool', name: clipLine(question), summary: '', output: null, status: 'running', prose: true }
+          : { kind: 'tool', name, summary: summarise(args, cwd), output: null, status: 'running' };
 
         const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
         if (id) pending.set(id, entry);
@@ -147,6 +168,11 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
           // Updating the entry already in the list keeps the tool as one visual unit.
           entry.status = succeeded ? 'ok' : 'failed';
           entry.output = output || null;
+
+          // Answering a question is the outcome, so it belongs in the header rather than
+          // hidden behind an expander nobody would think to open.
+          const answer = entry.prose && succeeded ? answerOf(output) : null;
+          if (answer) entry.name = `${entry.name}: ${answer}`;
         } else {
           // A completion without its start, for example when replaying a truncated log.
           entries.push({
@@ -214,7 +240,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         title={entry.status === 'cancelled' ? 'Interrupted before it finished' : undefined}
       >
         <span className="tool-status">{STATUS_GLYPH[entry.status]}</span>
-        <span className="tool-name">{entry.name}</span>
+        <span className={entry.prose ? 'tool-question' : 'tool-name'}>{entry.name}</span>
         <span className="tool-summary">{entry.summary}</span>
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
         {/* Doubles as the affordance that the row opens, and says how much is behind it.
