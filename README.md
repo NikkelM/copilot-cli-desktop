@@ -93,6 +93,33 @@ Environment overrides, mostly for testing:
 | `COPILOT_CLI_PATH` | Use a specific CLI executable |
 | `COPILOT_DESKTOP_NODE` | Node binary used to launch the sidecar |
 | `COPILOT_DESKTOP_SIDECAR` | Path to the built sidecar entrypoint |
+| `COPILOT_DESKTOP_DEV_PORT` | Enable the dev channel described below |
+
+### Driving the app during development
+
+The app owns its sidecar over stdio, so it cannot be scripted from outside by default:
+starting a second sidecar would start a second CLI server that the running app never
+sees. Setting `COPILOT_DESKTOP_DEV_PORT` makes the sidecar also accept the same
+JSON-RPC on loopback, so requests are handled by the app's own sidecar and its
+notifications drive the real UI.
+
+```bash
+COPILOT_DESKTOP_DEV_PORT=8791 npm run app
+
+node scripts/drive.mjs runtime.status
+node scripts/drive.mjs sessions.send '{"sessionId":"<id>","prompt":"hello"}' 30000
+```
+
+The channel binds to `127.0.0.1` only and never listens unless the variable is set.
+
+`scripts/Capture-Window.ps1` captures the window to a PNG for visual checks. It reads
+the window's own buffer with `PrintWindow`, so it never captures anything else on the
+desktop and does not need focus. It also marks itself DPI aware, without which a scaled
+display reports virtualised window coordinates and the capture comes out cropped.
+
+```powershell
+./scripts/Capture-Window.ps1 -Out shot.png
+```
 
 ## Roadmap
 

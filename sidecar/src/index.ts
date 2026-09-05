@@ -14,6 +14,7 @@ import {
   NOTIFY_SESSION_EVENT,
   NOTIFY_SESSION_LOADED,
 } from '../../shared/protocol.js';
+import { type Channel, startDevChannel } from './devChannel.js';
 import { readTranscript } from './eventLog.js';
 import { type ApprovalPolicy, SessionRuntime } from './runtime.js';
 import { listSessions } from './sessionIndex.js';
@@ -23,16 +24,21 @@ function log(message: string): void {
   process.stderr.write(`[sidecar] ${message}\n`);
 }
 
-function write(payload: unknown): void {
-  process.stdout.write(`${JSON.stringify(payload)}\n`);
-}
+/** The Tauri shell, which owns this process and reads its stdout. */
+const stdio: Channel = {
+  write: (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`),
+};
 
-function reply(response: JsonRpcResponse): void {
-  write(response);
-}
+const dev = startDevChannel({ onRequest: (raw, channel) => handle(raw, channel), log });
 
+/**
+ * Notifications go to the shell and to any dev client, so a prompt sent over the dev
+ * channel drives the real UI rather than a parallel copy of it.
+ */
 function notify(method: string, params: unknown): void {
-  write({ jsonrpc: '2.0', method, params });
+  const payload = { jsonrpc: '2.0', method, params };
+  stdio.write(payload);
+  dev.broadcast(payload);
 }
 
 const runtime = new SessionRuntime({
@@ -106,35 +112,45 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
   }
 }
 
+/** Requests still running, so shutdown can wait for them to settle. */
+const inFlight = new Set<Promise<void>>();
+
+/**
+ * Parse and execute one request line, replying on the channel it arrived from.
+ * Shared by stdio and the dev channel so both behave identically.
+ */
+function handle(line: string, channel: Channel): void {
+  let request: JsonRpcRequest;
+  try {
+    request = JSON.parse(line) as JsonRpcRequest;
+  } catch {
+    log(`dropped malformed request: ${line.slice(0, 120)}`);
+    return;
+  }
+
+  const reply = (response: JsonRpcResponse) => channel.write(response);
+
+  const task = dispatch(request)
+    .then((result) => reply({ jsonrpc: '2.0', id: request.id, result }))
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`${request.method} failed: ${message}`);
+      reply({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message } });
+    })
+    .finally(() => inFlight.delete(task));
+
+  inFlight.add(task);
+}
+
 function main(): void {
   const { cliPath } = SessionRuntime.probeInstallation();
   log(cliPath ? `CLI: ${cliPath}` : 'CLI not found - set COPILOT_CLI_PATH');
 
   const rl = createInterface({ input: process.stdin });
-  const inFlight = new Set<Promise<void>>();
 
   rl.on('line', (line) => {
     const trimmed = line.trim();
-    if (!trimmed) return;
-
-    let request: JsonRpcRequest;
-    try {
-      request = JSON.parse(trimmed) as JsonRpcRequest;
-    } catch {
-      log(`dropped malformed request: ${trimmed.slice(0, 120)}`);
-      return;
-    }
-
-    const task = dispatch(request)
-      .then((result) => reply({ jsonrpc: '2.0', id: request.id, result }))
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        log(`${request.method} failed: ${message}`);
-        reply({ jsonrpc: '2.0', id: request.id, error: { code: -32000, message } });
-      })
-      .finally(() => inFlight.delete(task));
-
-    inFlight.add(task);
+    if (trimmed) handle(trimmed, stdio);
   });
 
   // Drain outstanding work and release the CLI server before exiting, so a request
