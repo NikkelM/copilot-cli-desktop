@@ -10,8 +10,6 @@ export interface MessageEntry {
   key: string;
   variant: 'user' | 'assistant' | 'failed';
   body: string;
-  /** Still being written, so the row shows that more is coming. */
-  streaming?: boolean;
 }
 
 /**
@@ -145,15 +143,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
       // never reach the log, so replaying a session shows the finished message instead.
       case 'assistant.message_delta': {
         const content = text(data, 'deltaContent');
-        if (content) {
-          entries.push({
-            kind: 'message',
-            key: messageKey(data, key),
-            variant: 'assistant',
-            body: content,
-            streaming: true,
-          });
-        }
+        if (content) entries.push({ kind: 'message', key: messageKey(data, key), variant: 'assistant', body: content });
         break;
       }
 
@@ -276,7 +266,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
 
   if (a.kind === 'message') {
     const other = b as MessageEntry;
-    return a.variant === other.variant && a.body === other.body && a.streaming === other.streaming;
+    return a.variant === other.variant && a.body === other.body;
   }
 
   const other = b as ToolEntry;

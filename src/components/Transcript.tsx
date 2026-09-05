@@ -1,10 +1,16 @@
-import { memo, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ToolEntry } from '../lib/transcriptEntries';
 
-/** Distance from the bottom still treated as "following along". */
-const PIN_THRESHOLD_PX = 80;
+/**
+ * How far from the bottom still counts as being at it.
+ *
+ * Small on purpose: scrolling away at all means the reader is looking at something, and
+ * a reply arriving should not drag them off it. Not zero, because scroll metrics are
+ * fractional and an exact comparison would come loose at some zoom levels.
+ */
+const BOTTOM_TOLERANCE_PX = 4;
 
 /** How close to the top triggers loading the previous page. */
 const LOAD_OLDER_THRESHOLD_PX = 120;
@@ -130,12 +136,30 @@ export function Transcript({
     if (pinned.current) list.scrollTop = list.scrollHeight;
   }, [entries.length, sessionId]);
 
+  /**
+   * Keep up with a reply as it is written.
+   *
+   * A streamed reply grows one row rather than adding rows, so nothing about the entry
+   * list changes to react to. Watching the rendered text instead covers that, and covers
+   * a row being expanded while at the bottom, without either needing to be anticipated.
+   */
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+
+    const follow = new MutationObserver(() => {
+      if (pinned.current && restoreFrom.current === null) list.scrollTop = list.scrollHeight;
+    });
+    follow.observe(list, { childList: true, subtree: true, characterData: true });
+    return () => follow.disconnect();
+  }, []);
+
   function onScroll() {
     const list = listRef.current;
     if (!list) return;
 
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
-    pinned.current = distance <= PIN_THRESHOLD_PX;
+    pinned.current = distance <= BOTTOM_TOLERANCE_PX;
 
     if (list.scrollTop <= LOAD_OLDER_THRESHOLD_PX && hasOlder && !loadingOlder) {
       restoreFrom.current = list.scrollHeight;
@@ -170,10 +194,7 @@ const EntryRow = memo(
     return entry.kind === 'tool' ? (
       <ToolRow entry={entry} />
     ) : (
-      <div className={`message ${entry.variant}`}>
-        {entry.body}
-        {entry.streaming && <span className="caret" />}
-      </div>
+      <div className={`message ${entry.variant}`}>{entry.body}</div>
     );
   },
   (before, after) => sameEntry(before.entry, after.entry),
