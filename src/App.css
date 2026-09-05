@@ -370,6 +370,16 @@ body {
   color: var(--text-muted);
 }
 
+.tool.cancelled .tool-status {
+  color: #d29922;
+}
+
+.tool-note {
+  flex-shrink: 0;
+  color: #d29922;
+  font-size: 11px;
+}
+
 .tool-name {
   flex-shrink: 0;
   color: #7ee787;
