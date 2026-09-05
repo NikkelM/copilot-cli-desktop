@@ -23,6 +23,8 @@ public class WinCap {
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hWnd);
   [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr value);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowTextW(IntPtr hWnd, StringBuilder s, int n);
@@ -72,6 +74,16 @@ if (-not $win) { Write-Error "No titled window found for '$ProcessName'"; exit 1
 $r = New-Object WinCap+RECT
 [void][WinCap]::GetWindowRect($win.Handle, [ref]$r)
 $w = $r.Right - $r.Left; $h = $r.Bottom - $r.Top
+
+# A minimised window has no content to print, so restore it without activating.
+# SW_SHOWNOACTIVATE keeps whatever the user is working in as the foreground window.
+if ([WinCap]::IsIconic($win.Handle) -or $w -lt 100 -or $h -lt 100) {
+  [void][WinCap]::ShowWindow($win.Handle, 4)
+  Start-Sleep -Milliseconds 600
+  [void][WinCap]::GetWindowRect($win.Handle, [ref]$r)
+  $w = $r.Right - $r.Left; $h = $r.Bottom - $r.Top
+}
+
 if ($w -lt 100 -or $h -lt 100) { Write-Error "Window is only ${w}x${h}; it may be minimised"; exit 1 }
 
 $bmp = New-Object System.Drawing.Bitmap $w, $h

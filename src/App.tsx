@@ -38,7 +38,6 @@ export default function App() {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [resuming, setResuming] = useState(false);
-  const [showRaw, setShowRaw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PendingPermission[]>([]);
   const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
@@ -176,17 +175,13 @@ export default function App() {
                   />
                   Allow all
                 </label>
-                <label className="toggle">
-                  <input type="checkbox" checked={showRaw} onChange={(e) => setShowRaw(e.target.checked)} />
-                  Raw events
-                </label>
               </div>
             </header>
 
             {error && <p className="error">{error}</p>}
             {resuming && <p className="notice">Resuming into the shared runtime. This takes a few seconds.</p>}
 
-            <Transcript events={events} showRaw={showRaw} sessionId={selected.sessionId} />
+            <Transcript events={events} sessionId={selected.sessionId} />
 
             <div className="footer">
               {sessionPermissions.map((pending) => (
