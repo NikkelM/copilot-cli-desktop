@@ -345,13 +345,22 @@ body {
   align-items: baseline;
   gap: 8px;
   width: 100%;
-  padding: 3px 0;
+  padding: 3px 8px;
+  margin-left: -8px;
   border: none;
+  border-radius: 4px;
   background: none;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+/* Expandable rows announce themselves by lighting up rather than by a permanent
+   chevron, which keeps the row quiet until it is actually of interest. */
+.tool-head:not(:disabled):hover,
+.tool.open .tool-head {
+  background: #1c2333;
 }
 
 .tool-head:disabled {
@@ -387,6 +396,13 @@ body {
   font-size: 11px;
 }
 
+.tool-lines {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
 .tool-name {
   flex-shrink: 0;
   color: #7ee787;
@@ -403,12 +419,6 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.tool-chevron {
-  flex-shrink: 0;
-  color: var(--text-muted);
-  font-size: 10px;
 }
 
 .tool-output {

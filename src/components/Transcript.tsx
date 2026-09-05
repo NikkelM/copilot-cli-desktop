@@ -202,6 +202,7 @@ const STATUS_GLYPH: Record<ToolEntry['status'], string> = {
 function ToolRow({ entry }: { entry: ToolEntry }) {
   const [open, setOpen] = useState(false);
   const expandable = Boolean(entry.output);
+  const lines = entry.output ? entry.output.split('\n').length : 0;
 
   return (
     <div className={`tool ${entry.status}${open ? ' open' : ''}`}>
@@ -216,7 +217,11 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         <span className="tool-name">{entry.name}</span>
         <span className="tool-summary">{entry.summary}</span>
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
-        {expandable && <span className="tool-chevron">{open ? '▾' : '▸'}</span>}
+        {/* Doubles as the affordance that the row opens, and says how much is behind it.
+            Right-aligned, so it reads as a separate column without needing punctuation. */}
+        {expandable && !open && (
+          <span className="tool-lines">{`${lines} ${lines === 1 ? 'line' : 'lines'}`}</span>
+        )}
       </button>
       {open && entry.output && <pre className="tool-output">{entry.output}</pre>}
     </div>
