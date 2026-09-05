@@ -49,7 +49,9 @@ socket.on('data', (chunk) => {
     }
 
     if (message.id !== undefined) {
-      console.log('RESPONSE ' + JSON.stringify(message.result ?? message.error).slice(0, 600));
+      const payload = message.error ?? message.result;
+      // A void RPC replies with a null result, which JSON.stringify renders as undefined.
+      console.log('RESPONSE ' + (payload === undefined || payload === null ? 'ok' : JSON.stringify(payload).slice(0, 600)));
     } else if (message.method) {
       notifications.push(message);
       if (message.method === 'permission.requested') {

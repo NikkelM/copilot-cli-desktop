@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
+import { relativise } from '../lib/paths';
 
 /** Longest tool output kept for the expanded view. */
 const MAX_OUTPUT = 4000;
@@ -34,6 +35,40 @@ function text(data: Record<string, unknown>, key: string): string | null {
   return typeof value === 'string' && value.trim() ? value : null;
 }
 
+/**
+ * Argument keys worth showing as a tool's one-line summary, most specific first.
+ *
+ * Chosen from the tools that actually appear in real sessions: `command` for shells,
+ * `path` for file operations, `pattern` for searches, and so on. Without this a
+ * `create` call shows only the word "create" with no indication of what it wrote.
+ */
+const SUMMARY_KEYS = [
+  'command',
+  'path',
+  'pattern',
+  'query',
+  'url',
+  'name',
+  'menu_path',
+  'skill',
+  'intent',
+  'message',
+  'description',
+  'action',
+];
+
+function summarise(args: Record<string, unknown> | undefined, cwd: string | null): string {
+  if (!args) return '';
+
+  for (const key of SUMMARY_KEYS) {
+    const value = args[key];
+    if (typeof value === 'string' && value.trim()) {
+      return key === 'path' ? relativise(value, cwd) : value;
+    }
+  }
+  return '';
+}
+
 function clip(value: string): string {
   const trimmed = value.trim();
   return trimmed.length > MAX_OUTPUT ? `${trimmed.slice(0, MAX_OUTPUT)}…` : trimmed;
@@ -46,7 +81,7 @@ function clip(value: string): string {
  * they are paired by `toolCallId` into a single entry. Anything not handled here is
  * invisible, so new event types need a case rather than a fallback.
  */
-function toEntries(events: TranscriptEvent[]): Entry[] {
+function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[] {
   const entries: Entry[] = [];
   /** In-flight tool calls, so a completion can fill in the entry it belongs to. */
   const pending = new Map<string, ToolEntry>();
@@ -71,16 +106,14 @@ function toEntries(events: TranscriptEvent[]): Entry[] {
 
       case 'tool.execution_start': {
         const name = text(data, 'toolName') ?? text(data, 'mcpToolName') ?? 'tool';
-        // The command and its human summary live in the tool arguments; shellToolInfo
-        // carries path metadata rather than the command itself.
+        // The command, path or query lives in the tool arguments; shellToolInfo carries
+        // path metadata rather than anything worth summarising.
         const args = data.arguments as Record<string, unknown> | undefined;
-        const command = typeof args?.command === 'string' ? args.command : null;
-        const description = typeof args?.description === 'string' ? args.description : null;
 
         const entry: ToolEntry = {
           kind: 'tool',
           name,
-          summary: command ?? description ?? '',
+          summary: summarise(args, cwd),
           output: null,
           status: 'running',
         };
@@ -175,10 +208,12 @@ interface TranscriptProps {
   events: TranscriptEvent[];
   /** Changing this jumps to the newest message rather than preserving scroll. */
   sessionId: string;
+  /** Used to shorten file paths in tool summaries. */
+  cwd: string | null;
 }
 
-export function Transcript({ events, sessionId }: TranscriptProps) {
-  const entries = toEntries(events);
+export function Transcript({ events, sessionId, cwd }: TranscriptProps) {
+  const entries = toEntries(events, cwd);
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
 
