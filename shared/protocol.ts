@@ -107,6 +107,42 @@ export interface PendingPermission {
   request: Record<string, unknown>;
 }
 
+/** How the user answered a question from the agent. */
+export type ElicitationAction = 'accept' | 'decline' | 'cancel';
+
+/** A value a form field can hold, matching the SDK's ElicitationFieldValue. */
+export type ElicitationFieldValue = string | number | boolean | string[];
+
+/**
+ * A question from the agent awaiting an answer, the equivalent of the CLI's ask_user.
+ * `schema` is the SDK's ElicitationSchema: an object schema whose fields are single
+ * select, multi select, boolean, free text or numeric.
+ */
+export interface PendingElicitation {
+  sessionId: string;
+  requestId: string;
+  /**
+   * The CLI has two ask_user variants and uses whichever the session was created with.
+   * `input` is the legacy shape: a question with optional suggested choices, answered
+   * with a single string. `form` is elicitation, carrying a JSON Schema of fields. Both
+   * look the same to the user; the kind decides how the answer is sent back.
+   */
+  kind: 'input' | 'form';
+  message: string;
+  schema: Record<string, unknown> | null;
+  /** Suggested answers, for the legacy variant. */
+  choices: string[];
+  /** `url` asks the user to visit a link rather than fill in a form. */
+  mode: 'form' | 'url' | null;
+  url: string | null;
+}
+
+export interface ResolveElicitationParams {
+  requestId: string;
+  action: ElicitationAction;
+  content?: Record<string, ElicitationFieldValue>;
+}
+
 /** Requests the frontend may issue. */
 export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };
@@ -116,6 +152,7 @@ export interface SidecarRequests {
   'sessions.evict': { params: { sessionId: string }; result: void };
   'sessions.setApprovalPolicy': { params: SetApprovalPolicyParams; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
+  'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'runtime.status': { params: void; result: RuntimeStatus };
 }
 
@@ -138,6 +175,11 @@ export interface PermissionResolvedNotification {
   requestId: string;
 }
 
+/** Sent when a question is answered or abandoned, so the UI can clear it. */
+export interface ElicitationResolvedNotification {
+  requestId: string;
+}
+
 /** Sent when the session list may have changed, so the sidebar can refetch. */
 export const NOTIFY_SESSIONS_CHANGED = 'sessions.changed';
 
@@ -146,6 +188,8 @@ export const NOTIFY_SESSION_EVENT = 'session.event';
 export const NOTIFY_SESSION_LOADED = 'session.loaded';
 export const NOTIFY_PERMISSION_REQUESTED = 'permission.requested';
 export const NOTIFY_PERMISSION_RESOLVED = 'permission.resolved';
+export const NOTIFY_ELICITATION_REQUESTED = 'elicitation.requested';
+export const NOTIFY_ELICITATION_RESOLVED = 'elicitation.resolved';
 
 export interface JsonRpcRequest<M extends SidecarMethod = SidecarMethod> {
   jsonrpc: '2.0';
