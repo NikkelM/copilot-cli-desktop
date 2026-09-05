@@ -2,22 +2,94 @@ import { useLayoutEffect, useRef } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 
-/** Events worth showing. The stream also carries many internal model.* bookkeeping events. */
-const RENDERED = new Set([
-  'user.message',
-  'assistant.message',
-  'tool.execution_start',
-  'tool.execution_complete',
-  'session.error',
-  'permission.requested',
-]);
-
-export function isRendered(event: TranscriptEvent): boolean {
-  return RENDERED.has(event.type);
-}
+/** Longest tool output shown inline before truncation. */
+const MAX_OUTPUT = 600;
 
 /** Distance from the bottom still treated as "following along". */
 const PIN_THRESHOLD_PX = 80;
+
+interface Entry {
+  /** Inline label for tool activity. Messages carry none; they are styled instead. */
+  label: string | null;
+  variant: string;
+  body: string;
+  mono: boolean;
+}
+
+/**
+ * Turn a raw session event into a displayable entry, or null to hide it.
+ *
+ * Returning null matters as much as formatting: the stream carries bookkeeping
+ * events, tool-request-only assistant messages, and permission requests that are
+ * already represented elsewhere in the UI.
+ */
+function toEntry(event: TranscriptEvent): Entry | null {
+  const data = (event.data ?? {}) as Record<string, unknown>;
+  const str = (key: string): string | null => {
+    const value = data[key];
+    return typeof value === 'string' && value.trim() ? value : null;
+  };
+
+  switch (event.type) {
+    case 'user.message': {
+      const content = str('content');
+      return content ? { label: null, variant: 'user', body: content, mono: false } : null;
+    }
+
+    case 'assistant.message': {
+      // An assistant message carrying only tool requests has empty content; the tool
+      // itself is shown by its own execution events.
+      const content = str('content');
+      return content ? { label: null, variant: 'assistant', body: content, mono: false } : null;
+    }
+
+    case 'tool.execution_start': {
+      const name = str('toolName') ?? str('mcpToolName') ?? 'tool';
+      // The command and its human summary live in the tool arguments; shellToolInfo
+      // carries path metadata rather than the command itself.
+      const args = data.arguments as { command?: unknown; description?: unknown } | undefined;
+      const command = typeof args?.command === 'string' ? args.command : null;
+      const description = typeof args?.description === 'string' ? args.description : null;
+
+      // The description often just restates the command, so only show it when it adds something.
+      const redundant =
+        description !== null && command !== null && description.toLowerCase() === command.toLowerCase();
+
+      return {
+        label: description && !redundant ? `${name} · ${description}` : name,
+        variant: 'tool',
+        body: command ?? '',
+        mono: true,
+      };
+    }
+
+    case 'tool.execution_complete': {
+      if (data.success === true) {
+        const result = data.result as { content?: unknown } | undefined;
+        const content = typeof result?.content === 'string' ? result.content : '';
+        const body = clip(content);
+        // A silent success needs no row of its own; the command above already showed it ran.
+        return body ? { label: null, variant: 'result', body, mono: true } : null;
+      }
+      const error = data.error as { message?: unknown } | undefined;
+      const message = typeof error?.message === 'string' ? error.message : 'Tool failed';
+      return { label: null, variant: 'failed', body: message, mono: true };
+    }
+
+    case 'session.error':
+      return { label: 'Error', variant: 'failed', body: str('message') ?? 'Session error', mono: true };
+
+    // permission.requested is deliberately absent: the approval panel above the
+    // composer already shows it, and its payload is large and unreadable inline.
+    default:
+      return null;
+  }
+}
+
+function clip(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > MAX_OUTPUT ? `${trimmed.slice(0, MAX_OUTPUT)}…` : trimmed;
+}
 
 interface TranscriptProps {
   events: TranscriptEvent[];
@@ -27,7 +99,17 @@ interface TranscriptProps {
 }
 
 export function Transcript({ events, showRaw, sessionId }: TranscriptProps) {
-  const visible = showRaw ? events : events.filter(isRendered);
+  // Raw mode keeps the unfiltered stream available for debugging, including the
+  // events and fields the normal view deliberately drops.
+  const entries: Entry[] = showRaw
+    ? events.map((event) => ({
+        label: event.type,
+        variant: 'other',
+        body: JSON.stringify(event.data ?? {}),
+        mono: true,
+      }))
+    : events.map(toEntry).filter((entry): entry is Entry => entry !== null);
+
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
 
@@ -43,7 +125,7 @@ export function Transcript({ events, showRaw, sessionId }: TranscriptProps) {
   useLayoutEffect(() => {
     const list = listRef.current;
     if (list && pinned.current) list.scrollTop = list.scrollHeight;
-  }, [visible.length, sessionId]);
+  }, [entries.length, sessionId]);
 
   function onScroll() {
     const list = listRef.current;
@@ -54,56 +136,12 @@ export function Transcript({ events, showRaw, sessionId }: TranscriptProps) {
 
   return (
     <ol className="transcript" ref={listRef} onScroll={onScroll}>
-      {visible.map((event, index) => (
-        <li key={index} className={`entry ${entryClass(event.type)}`}>
-          <span className="entry-role">{roleLabel(event.type)}</span>
-          <div className="entry-body">{describe(event)}</div>
+      {entries.map((entry, index) => (
+        <li key={index} className={`entry ${entry.variant}`}>
+          {entry.label && <span className="entry-label">{entry.label}</span>}
+          {entry.body && <div className={`entry-body${entry.mono ? ' mono' : ''}`}>{entry.body}</div>}
         </li>
       ))}
     </ol>
   );
-}
-
-function entryClass(type: string): string {
-  if (type === 'user.message') return 'user';
-  if (type === 'assistant.message') return 'assistant';
-  if (type.startsWith('tool.')) return 'tool';
-  if (type === 'session.error') return 'failed';
-  return 'other';
-}
-
-function roleLabel(type: string): string {
-  switch (type) {
-    case 'user.message':
-      return 'You';
-    case 'assistant.message':
-      return 'Copilot';
-    case 'tool.execution_start':
-      return 'Tool';
-    case 'tool.execution_complete':
-      return 'Result';
-    case 'permission.requested':
-      return 'Permission';
-    case 'session.error':
-      return 'Error';
-    default:
-      return type;
-  }
-}
-
-/**
- * Extract displayable text without assuming a precise payload shape.
- * Event data varies by type and by CLI version, so this stays defensive; issue #8
- * replaces it with proper per-type rendering.
- */
-function describe(event: TranscriptEvent): string {
-  const data = event.data as Record<string, unknown> | null;
-  if (!data) return '';
-
-  for (const key of ['content', 'message', 'text', 'name', 'toolName']) {
-    const value = data[key];
-    if (typeof value === 'string' && value.trim()) return value;
-  }
-
-  return JSON.stringify(data).slice(0, 400);
 }
