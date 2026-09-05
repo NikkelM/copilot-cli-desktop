@@ -16,7 +16,9 @@ export default defineConfig(() => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // Bind IPv4 explicitly. Left to its default, Vite binds only ::1 while the webview
+    // may resolve localhost to 127.0.0.1, which is then refused and renders a blank window.
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

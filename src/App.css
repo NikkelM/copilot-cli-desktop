@@ -296,3 +296,13 @@ body {
   color: #f85149;
   font-family: ui-monospace, monospace;
 }
+
+.fatal {
+  margin: 0;
+  padding: 24px;
+  color: #f85149;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
