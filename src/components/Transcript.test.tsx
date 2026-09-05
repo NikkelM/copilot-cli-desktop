@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { TranscriptEvent } from '../../shared/protocol';
@@ -71,8 +71,7 @@ describe('Transcript', () => {
     expect(screen.queryByText('output of ancient')).toBeNull();
   });
 
-  it('shows a question with the answer that was chosen', () => {
-    show([
+  it('shows a question with the answer that was chosen', () => {    show([
       event(
         'tool.execution_start',
         { toolCallId: 'q1', toolName: 'ask_user', arguments: { question: 'Pick one?', choices: ['A', 'B'] } },
@@ -84,5 +83,101 @@ describe('Transcript', () => {
     expect(screen.getByText('ask_user')).toBeTruthy();
     expect(screen.getByText('Pick one?')).toBeTruthy();
     expect(screen.getByText('B')).toBeTruthy();
+  });
+});
+
+/**
+ * jsdom has no layout, so scrollHeight and clientHeight are always zero and the
+ * component can never tell where the reader is. They are defined here instead, which
+ * makes the arithmetic the component does testable even though nothing is laid out.
+ */
+describe('following a reply as it is written', () => {
+  const VIEWPORT = 300;
+
+  function transcript(events: TranscriptEvent[]) {
+    // The streaming row exists from the start, so growing it changes no entry count -
+    // which is the whole point. Adding a row instead would pass without following text.
+    const withDelta = (text: string): TranscriptEvent[] => [
+      ...events,
+      { type: 'assistant.message_delta', data: { messageId: 'm1', deltaContent: text } },
+    ];
+
+    const draw = (text: string) => (
+      <Transcript
+        events={withDelta(text)}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+      />
+    );
+
+    const view = render(draw('The'));
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+
+    let height = 1000;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+
+    const grow = async (by: number, text: string) => {
+      height += by;
+      view.rerender(draw(text));
+      // The observer that follows the text runs after the mutation, not during it.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+
+    const scrollTo = (top: number) => {
+      list.scrollTop = top;
+      fireEvent.scroll(list);
+    };
+
+    return { list, grow, scrollTo, get height() { return height; } };
+  }
+
+  const reply = (text: string, id: string): TranscriptEvent => ({
+    type: 'assistant.message',
+    data: { content: text },
+    id,
+  });
+
+  it('keeps the newest text in view while the reader is at the bottom', async () => {
+    const t = transcript([reply('one', 'e1')]);
+    t.scrollTo(1000 - VIEWPORT);
+
+    await t.grow(200, 'a longer reply arriving');
+
+    expect(t.list.scrollTop).toBe(t.height);
+  });
+
+  it('leaves the reader alone once they have scrolled away', async () => {
+    const t = transcript([reply('one', 'e1')]);
+    t.scrollTo(400);
+
+    await t.grow(200, 'a longer reply arriving');
+
+    expect(t.list.scrollTop).toBe(400);
+  });
+
+  // Scrolling away at all means the reader is looking at something.
+  it('counts a small scroll away as having scrolled away', async () => {
+    const t = transcript([reply('one', 'e1')]);
+    t.scrollTo(1000 - VIEWPORT - 40);
+
+    await t.grow(200, 'a longer reply arriving');
+
+    expect(t.list.scrollTop).toBe(1000 - VIEWPORT - 40);
+  });
+
+  it('picks the reply back up when the reader returns to the bottom', async () => {
+    const t = transcript([reply('one', 'e1')]);
+    t.scrollTo(400);
+    await t.grow(200, 'first growth');
+    expect(t.list.scrollTop).toBe(400);
+
+    t.scrollTo(t.height - VIEWPORT);
+    await t.grow(200, 'second growth');
+
+    expect(t.list.scrollTop).toBe(t.height);
   });
 });

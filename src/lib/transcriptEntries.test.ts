@@ -384,12 +384,12 @@ describe('sameEntry', () => {
 });
 
 describe('a reply arriving live', () => {
-  it('shows the partial text, marked as still being written', () => {
+  it('shows the partial text as it is written', () => {
     const entries = toEntries(
       [event('assistant.message_delta', { messageId: 'm1', deltaContent: 'The sea keeps' }, 'e1')],
       null,
     );
-    expect(entries[0]).toMatchObject({ kind: 'message', variant: 'assistant', body: 'The sea keeps', streaming: true });
+    expect(entries[0]).toMatchObject({ kind: 'message', variant: 'assistant', body: 'The sea keeps' });
   });
 
   // Same key, so the finished reply lands on the row its deltas were drawing rather than
@@ -400,16 +400,10 @@ describe('a reply arriving live', () => {
 
     expect(partial[0]!.key).toBe('m1');
     expect(done[0]!.key).toBe('m1');
-    expect((done[0] as MessageEntry).streaming).toBeUndefined();
   });
 
   it('falls back to the event when a message carries no id', () => {
     const entries = toEntries([event('assistant.message', { content: 'replayed' }, 'e1')], null);
     expect(entries[0]!.key).toBe('e1');
-  });
-
-  it('tells a partial reply from the finished one', () => {
-    const a: MessageEntry = { kind: 'message', key: 'm1', variant: 'assistant', body: 'same', streaming: true };
-    expect(sameEntry(a, { ...a, streaming: undefined })).toBe(false);
   });
 });
