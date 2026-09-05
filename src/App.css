@@ -534,6 +534,16 @@ body {
   font-size: 12px;
 }
 
+/* A question reads as prose, not as a tool identifier. */
+.tool-question {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tool-summary {
   flex: 1;
   min-width: 0;
