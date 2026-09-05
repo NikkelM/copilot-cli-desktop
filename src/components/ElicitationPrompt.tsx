@@ -38,6 +38,19 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
     setValues((current) => ({ ...current, [name]: value }));
   }
 
+  /**
+   * Reaching the freeform box makes it the answer, so any chosen option clears.
+   *
+   * Checked against the latest values rather than the ones this closure rendered with:
+   * typing to jump into the box sets the first character before focus arrives, and a
+   * stale read would treat that character as a leftover choice and wipe it.
+   */
+  function enterFreeform(name: string, options: ReturnType<typeof optionsOf>) {
+    setValues((current) =>
+      options.some((option) => option.value === current[name]) ? { ...current, [name]: '' } : current,
+    );
+  }
+
   const missing = isIncomplete(required, values);
 
   /**
@@ -134,6 +147,7 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
               value={values[name]}
               onChange={(value) => set(name, value)}
               freeformRef={freeformRef}
+              onFreeformFocus={() => enterFreeform(name, optionsOf(field))}
             />
           </label>
         ))}
@@ -173,11 +187,13 @@ function Control({
   value,
   onChange,
   freeformRef,
+  onFreeformFocus,
 }: {
   field: Field;
   value: ElicitationFieldValue | undefined;
   onChange: (value: ElicitationFieldValue) => void;
   freeformRef?: RefObject<HTMLInputElement | null>;
+  onFreeformFocus?: () => void;
 }) {
   const options = optionsOf(field);
 
@@ -214,6 +230,7 @@ function Control({
   if (options.length > 0) {
     // The schema offers suggestions, but a freeform answer is always allowed, so this is
     // a list plus a text box rather than a closed dropdown.
+    const picked = options.some((option) => option.value === value);
     return (
       <>
         <div className="elicitation-choices">
@@ -233,7 +250,8 @@ function Control({
           type="text"
           className="elicitation-input"
           placeholder="or type your own"
-          value={typeof value === 'string' && !options.some((o) => o.value === value) ? value : ''}
+          value={picked || typeof value !== 'string' ? '' : value}
+          onFocus={onFreeformFocus}
           onChange={(e) => onChange(e.target.value)}
         />
       </>
