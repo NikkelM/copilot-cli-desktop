@@ -25,7 +25,7 @@ interface ToolEntry {
   /** One line summarising what ran, shown while collapsed. */
   summary: string;
   output: string | null;
-  status: 'running' | 'ok' | 'failed';
+  status: 'running' | 'ok' | 'failed' | 'cancelled';
 }
 
 type Entry = MessageEntry | ToolEntry;
@@ -165,6 +165,19 @@ function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[] {
         });
         break;
 
+      // An interrupted turn never emits tool.execution_complete, so anything still
+      // pending when the session stops will never complete. Without this such a row
+      // stays "running" forever, including on every later replay.
+      //
+      // An abort emits `abort` then `assistant.turn_end`, with no `session.idle` at all,
+      // so all three signals are needed rather than idle alone.
+      case 'abort':
+      case 'session.idle':
+      case 'session.shutdown':
+        for (const entry of pending.values()) entry.status = 'cancelled';
+        pending.clear();
+        break;
+
       // permission.requested is deliberately absent: the approval panel above the
       // composer already shows it, and its payload is large and unreadable inline.
       default:
@@ -179,6 +192,7 @@ const STATUS_GLYPH: Record<ToolEntry['status'], string> = {
   running: '·',
   ok: '✓',
   failed: '✕',
+  cancelled: '⊘',
 };
 
 /** A single tool call, collapsed to one line until expanded. */
@@ -193,10 +207,12 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         className="tool-head"
         onClick={() => setOpen((value) => !value)}
         disabled={!expandable}
+        title={entry.status === 'cancelled' ? 'Interrupted before it finished' : undefined}
       >
         <span className="tool-status">{STATUS_GLYPH[entry.status]}</span>
         <span className="tool-name">{entry.name}</span>
         <span className="tool-summary">{entry.summary}</span>
+        {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
         {expandable && <span className="tool-chevron">{open ? '▾' : '▸'}</span>}
       </button>
       {open && entry.output && <pre className="tool-output">{entry.output}</pre>}
