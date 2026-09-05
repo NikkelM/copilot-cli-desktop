@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TranscriptEvent } from '../../shared/protocol';
-import { toEntries, type ToolEntry } from './transcriptEntries';
+import { sameEntry, toEntries, type MessageEntry, type ToolEntry } from './transcriptEntries';
 
 const event = (type: string, data: Record<string, unknown> = {}, id?: string): TranscriptEvent => ({
   type,
@@ -329,5 +329,56 @@ describe('entry identity', () => {
   it('still produces a key for an event without an id', () => {
     const entries = toEntries([event('user.message', { content: 'optimistic' })], null);
     expect(entries[0].key).toBeTruthy();
+  });
+});
+
+describe('sameEntry', () => {
+  // Everything a tool row can draw, so the sweep below covers every field.
+  const tool: ToolEntry = {
+    kind: 'tool',
+    key: 'k1',
+    name: 'ask_user',
+    summary: 'Pick one?',
+    output: 'User responded: B',
+    status: 'ok',
+    question: true,
+    answer: 'B',
+    choices: ['A', 'B'],
+  };
+
+  it('treats a rebuilt but identical entry as unchanged', () => {
+    expect(sameEntry(tool, { ...tool, choices: ['A', 'B'] })).toBe(true);
+  });
+
+  /**
+   * Rows are skipped on re-render when this returns true, so a field the row draws but
+   * this does not compare would leave that row showing something stale. Adding a field
+   * to ToolEntry means adding it above, and this fails until it is compared.
+   */
+  it('notices any drawn field changing', () => {
+    const changed: Record<string, unknown> = {
+      key: 'k2',
+      name: 'powershell',
+      summary: 'something else',
+      output: 'different',
+      status: 'failed',
+      answer: 'A',
+      choices: ['A'],
+    };
+
+    for (const [field, value] of Object.entries(changed)) {
+      expect(sameEntry(tool, { ...tool, [field]: value } as ToolEntry), `${field} was ignored`).toBe(false);
+    }
+
+    // question decides how the entry is built, and is never drawn.
+    const undrawn = Object.keys(tool).filter((k) => k !== 'kind' && k !== 'question' && !(k in changed));
+    expect(undrawn, 'new fields must be compared, or listed as never drawn').toEqual([]);
+  });
+
+  it('separates a message from a tool that shares its key', () => {
+    const message: MessageEntry = { kind: 'message', key: 'k1', variant: 'user', body: 'hi' };
+    expect(sameEntry(message, tool)).toBe(false);
+    expect(sameEntry(message, { ...message, body: 'bye' })).toBe(false);
+    expect(sameEntry(message, { ...message })).toBe(true);
   });
 });

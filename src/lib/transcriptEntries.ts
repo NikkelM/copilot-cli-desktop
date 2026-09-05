@@ -238,3 +238,35 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
 
   return entries;
 }
+
+/**
+ * Whether two entries describe the same row in the same state.
+ *
+ * Compared field by field because the list is rebuilt on every render, so equal rows are
+ * never the same object. Every field the row draws is included; anything left out would
+ * leave the row showing something stale.
+ */
+export function sameEntry(a: Entry, b: Entry): boolean {
+  if (a.kind !== b.kind || a.key !== b.key) return false;
+
+  if (a.kind === 'message') {
+    const other = b as MessageEntry;
+    return a.variant === other.variant && a.body === other.body;
+  }
+
+  const other = b as ToolEntry;
+  return (
+    a.name === other.name &&
+    a.summary === other.summary &&
+    a.output === other.output &&
+    a.status === other.status &&
+    a.answer === other.answer &&
+    sameChoices(a.choices, other.choices)
+  );
+}
+
+function sameChoices(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((choice, index) => choice === b[index]);
+}
