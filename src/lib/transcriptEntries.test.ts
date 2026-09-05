@@ -382,3 +382,34 @@ describe('sameEntry', () => {
     expect(sameEntry(message, { ...message })).toBe(true);
   });
 });
+
+describe('a reply arriving live', () => {
+  it('shows the partial text, marked as still being written', () => {
+    const entries = toEntries(
+      [event('assistant.message_delta', { messageId: 'm1', deltaContent: 'The sea keeps' }, 'e1')],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ kind: 'message', variant: 'assistant', body: 'The sea keeps', streaming: true });
+  });
+
+  // Same key, so the finished reply lands on the row its deltas were drawing rather than
+  // replacing it and losing anything the row was doing.
+  it('keys the partial and the finished reply as one row', () => {
+    const partial = toEntries([event('assistant.message_delta', { messageId: 'm1', deltaContent: 'part' }, 'e1')], null);
+    const done = toEntries([event('assistant.message', { messageId: 'm1', content: 'part and rest' }, 'e2')], null);
+
+    expect(partial[0]!.key).toBe('m1');
+    expect(done[0]!.key).toBe('m1');
+    expect((done[0] as MessageEntry).streaming).toBeUndefined();
+  });
+
+  it('falls back to the event when a message carries no id', () => {
+    const entries = toEntries([event('assistant.message', { content: 'replayed' }, 'e1')], null);
+    expect(entries[0]!.key).toBe('e1');
+  });
+
+  it('tells a partial reply from the finished one', () => {
+    const a: MessageEntry = { kind: 'message', key: 'm1', variant: 'assistant', body: 'same', streaming: true };
+    expect(sameEntry(a, { ...a, streaming: undefined })).toBe(false);
+  });
+});

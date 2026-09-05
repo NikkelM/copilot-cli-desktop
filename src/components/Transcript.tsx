@@ -170,7 +170,10 @@ const EntryRow = memo(
     return entry.kind === 'tool' ? (
       <ToolRow entry={entry} />
     ) : (
-      <div className={`message ${entry.variant}`}>{entry.body}</div>
+      <div className={`message ${entry.variant}`}>
+        {entry.body}
+        {entry.streaming && <span className="caret" />}
+      </div>
     );
   },
   (before, after) => sameEntry(before.entry, after.entry),
