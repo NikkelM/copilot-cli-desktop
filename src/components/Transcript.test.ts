@@ -146,15 +146,24 @@ describe('toEntries', () => {
 describe('ask_user rows', () => {
   const question = 'Which database do you prefer?';
 
-  it('shows the question rather than the tool name', () => {
+  it('keeps the tool name and shows the question as the subject', () => {
     const entries = toEntries(
       [event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question } })],
       null,
     );
-    expect(entries[0]).toMatchObject({ kind: 'tool', name: question, prose: true });
+    expect(entries[0]).toMatchObject({ kind: 'tool', name: 'ask_user', summary: question, question: true });
   });
 
-  it('appends the answer once given', () => {
+  // The elicitation variant names the field "message" where the legacy one says "question".
+  it('reads the question from the elicitation variant too', () => {
+    const entries = toEntries(
+      [event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { message: question } })],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ name: 'ask_user', summary: question, question: true });
+  });
+
+  it('carries the answer separately once given', () => {
     const entries = toEntries(
       [
         event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question } }),
@@ -166,12 +175,12 @@ describe('ask_user rows', () => {
       ],
       null,
     );
-    expect((entries[0] as ToolEntry).name).toBe(`${question}: PostgreSQL`);
+    // Kept out of the summary so it can be styled as the outcome, not as more question.
+    expect(entries[0]).toMatchObject({ name: 'ask_user', summary: question, answer: 'PostgreSQL' });
   });
 
-  // Declining reports an empty answer rather than omitting the line, and appending a
-  // bare colon would read as though something had been chosen.
-  it('appends nothing when the question went unanswered', () => {
+  // Declining reports an empty answer rather than omitting the line.
+  it('records no answer when the question went unanswered', () => {
     const entries = toEntries(
       [
         event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question } }),
@@ -183,7 +192,8 @@ describe('ask_user rows', () => {
       ],
       null,
     );
-    expect((entries[0] as ToolEntry).name).toBe(question);
+    expect((entries[0] as ToolEntry).summary).toBe(question);
+    expect((entries[0] as ToolEntry).answer).toBeUndefined();
   });
 
   it('clamps a long question', () => {
@@ -192,9 +202,9 @@ describe('ask_user rows', () => {
       [event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question: long } })],
       null,
     );
-    const name = (entries[0] as ToolEntry).name;
-    expect(name.length).toBeLessThan(200);
-    expect(name.endsWith('…')).toBe(true);
+    const summary = (entries[0] as ToolEntry).summary;
+    expect(summary.length).toBeLessThan(200);
+    expect(summary.endsWith('…')).toBe(true);
   });
 
   it('leaves other tools showing their name', () => {
@@ -203,6 +213,6 @@ describe('ask_user rows', () => {
       null,
     );
     expect(entries[0]).toMatchObject({ name: 'powershell', summary: 'ls' });
-    expect((entries[0] as ToolEntry).prose).toBeUndefined();
+    expect((entries[0] as ToolEntry).question).toBeUndefined();
   });
 });
