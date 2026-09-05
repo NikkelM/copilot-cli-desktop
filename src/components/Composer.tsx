@@ -1,8 +1,14 @@
-import { useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 interface ComposerProps {
   disabled: boolean;
   busy: boolean;
+  /**
+   * Takes focus whenever this changes to something other than null, so a session opens
+   * ready to type in. Null while the agent is waiting on a prompt of its own, which has
+   * a better claim on the keyboard.
+   */
+  focusOn: string | null;
   onSend: (prompt: string) => void;
   onAbort: () => void;
 }
@@ -11,8 +17,13 @@ interface ComposerProps {
  * Sending is the only action that costs memory: it resumes the session in the shared
  * CLI server. Everything above this component is a pure disk read.
  */
-export function Composer({ disabled, busy, onSend, onAbort }: ComposerProps) {
+export function Composer({ disabled, busy, focusOn, onSend, onAbort }: ComposerProps) {
   const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (focusOn) inputRef.current?.focus();
+  }, [focusOn]);
 
   function submit() {
     const prompt = value.trim();
@@ -31,6 +42,7 @@ export function Composer({ disabled, busy, onSend, onAbort }: ComposerProps) {
   return (
     <div className="composer">
       <textarea
+        ref={inputRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={onKeyDown}
