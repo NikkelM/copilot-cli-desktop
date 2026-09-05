@@ -25,8 +25,12 @@ export function listSessions(): Promise<ListSessionsResult> {
 }
 
 /** Replays a session transcript from events.jsonl without resuming it. */
-export function getTranscript(sessionId: string, limit?: number): Promise<GetTranscriptResult> {
-  return request<GetTranscriptResult>('sessions.transcript', { sessionId, limit });
+export function getTranscript(
+  sessionId: string,
+  limit?: number,
+  before?: number,
+): Promise<GetTranscriptResult> {
+  return request<GetTranscriptResult>('sessions.transcript', { sessionId, limit, before });
 }
 
 export function getRuntimeStatus(): Promise<RuntimeStatus> {

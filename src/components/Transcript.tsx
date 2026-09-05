@@ -9,6 +9,9 @@ const MAX_OUTPUT = 4000;
 /** Distance from the bottom still treated as "following along". */
 const PIN_THRESHOLD_PX = 80;
 
+/** How close to the top triggers loading the previous page. */
+const LOAD_OLDER_THRESHOLD_PX = 120;
+
 export interface MessageEntry {
   kind: 'message';
   variant: 'user' | 'assistant' | 'failed';
@@ -226,36 +229,69 @@ interface TranscriptProps {
   sessionId: string;
   /** Used to shorten file paths in tool summaries. */
   cwd: string | null;
+  /** Whether older history exists before the events supplied. */
+  hasOlder: boolean;
+  loadingOlder: boolean;
+  onLoadOlder: () => void;
 }
 
-export function Transcript({ events, sessionId, cwd }: TranscriptProps) {
+export function Transcript({
+  events,
+  sessionId,
+  cwd,
+  hasOlder,
+  loadingOlder,
+  onLoadOlder,
+}: TranscriptProps) {
   const entries = toEntries(events, cwd);
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
+  /** Scroll height before older events were prepended, so the view can be held still. */
+  const restoreFrom = useRef<number | null>(null);
 
   // Selecting a session re-pins to the bottom. The transcript itself arrives a moment
   // later, so the actual scroll happens in the effect below once content exists.
   useLayoutEffect(() => {
     pinned.current = true;
+    restoreFrom.current = null;
   }, [sessionId]);
 
-  // Keep the newest entry in view while the user is following along, both for the
-  // initial load and for streamed events. useLayoutEffect runs before paint, so a long
-  // history never flashes at the top before jumping down.
   useLayoutEffect(() => {
     const list = listRef.current;
-    if (list && pinned.current) list.scrollTop = list.scrollHeight;
+    if (!list) return;
+
+    // Older events were prepended: keep the reader where they were rather than letting
+    // the added height push their position away.
+    if (restoreFrom.current !== null) {
+      list.scrollTop += list.scrollHeight - restoreFrom.current;
+      restoreFrom.current = null;
+      return;
+    }
+
+    // Otherwise follow the newest entry while the user is at the bottom, for both the
+    // initial load and streamed events. useLayoutEffect runs before paint, so a long
+    // history never flashes at the top before jumping down.
+    if (pinned.current) list.scrollTop = list.scrollHeight;
   }, [entries.length, sessionId]);
 
   function onScroll() {
     const list = listRef.current;
     if (!list) return;
+
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
     pinned.current = distance <= PIN_THRESHOLD_PX;
+
+    if (list.scrollTop <= LOAD_OLDER_THRESHOLD_PX && hasOlder && !loadingOlder) {
+      restoreFrom.current = list.scrollHeight;
+      onLoadOlder();
+    }
   }
 
   return (
     <ol className="transcript" ref={listRef} onScroll={onScroll}>
+      <li className="history-edge">
+        {loadingOlder ? 'Loading earlier messages…' : hasOlder ? 'Scroll up for earlier messages' : 'Start of session'}
+      </li>
       {entries.map((entry, index) => (
         <li key={index} className="entry">
           {entry.kind === 'tool' ? (

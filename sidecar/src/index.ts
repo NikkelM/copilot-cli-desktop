@@ -63,8 +63,12 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
     }
 
     case 'sessions.transcript': {
-      const { sessionId, limit } = request.params as { sessionId: string; limit?: number };
-      return readTranscript(sessionId, limit);
+      const { sessionId, limit, before } = request.params as {
+        sessionId: string;
+        limit?: number;
+        before?: number;
+      };
+      return readTranscript(sessionId, limit, before);
     }
 
     case 'sessions.send': {

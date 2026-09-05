@@ -42,6 +42,9 @@ export default function App() {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [busy, setBusy] = useState(false);
   const [resuming, setResuming] = useState(false);
+  /** Cursor for the page of history before the events held, or null at the start. */
+  const [olderCursor, setOlderCursor] = useState<number | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PendingPermission[]>([]);
   const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
@@ -74,10 +77,28 @@ export default function App() {
     if (!selectedId) return;
     setEvents([]);
     setBusy(false);
+    setOlderCursor(null);
     getTranscript(selectedId)
-      .then((result) => setEvents(result.events))
+      .then((result) => {
+        setEvents(result.events);
+        setOlderCursor(result.nextBefore);
+      })
       .catch((e: unknown) => setError(String(e)));
   }, [selectedId]);
+
+  /** Fetch the page before the events already held and prepend it. */
+  const loadOlder = useCallback(() => {
+    if (!selectedId || olderCursor === null) return;
+
+    setLoadingOlder(true);
+    getTranscript(selectedId, undefined, olderCursor)
+      .then((result) => {
+        setEvents((current) => [...result.events, ...current]);
+        setOlderCursor(result.nextBefore);
+      })
+      .catch((e: unknown) => setError(String(e)))
+      .finally(() => setLoadingOlder(false));
+  }, [selectedId, olderCursor]);
 
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {
@@ -229,7 +250,14 @@ export default function App() {
             {error && <p className="error">{error}</p>}
             {resuming && <p className="notice">Resuming into the shared runtime. This takes a few seconds.</p>}
 
-            <Transcript events={events} sessionId={selected.sessionId} cwd={selected.cwd} />
+            <Transcript
+              events={events}
+              sessionId={selected.sessionId}
+              cwd={selected.cwd}
+              hasOlder={olderCursor !== null}
+              loadingOlder={loadingOlder}
+              onLoadOlder={loadOlder}
+            />
 
             <div className="footer">
               {sessionPermissions.map((pending) => (

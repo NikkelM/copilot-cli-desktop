@@ -308,6 +308,13 @@ body {
   list-style: none;
 }
 
+.history-edge {
+  padding: 10px 0 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
 .entry {
   padding: 6px 0;
 }
