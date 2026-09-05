@@ -118,37 +118,146 @@ body {
 }
 
 .main {
-  padding: 20px 24px;
-  overflow-y: auto;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  padding: 16px 24px 16px;
+  overflow: hidden;
 }
 
-.main-header h1 {
+.main-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.main-title h1 {
   margin: 0;
   font-size: 18px;
 }
 
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .cwd {
-  margin: 4px 0 16px;
+  margin: 4px 0 12px;
   color: var(--text-muted);
   font-size: 12px;
   font-family: ui-monospace, monospace;
+}
+
+.notice {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 13px;
 }
 
 .transcript {
   margin: 0;
-  padding: 0;
+  padding: 0 4px 0 0;
+  overflow-y: auto;
   list-style: none;
 }
 
-.event {
-  padding: 4px 0;
+.entry {
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 12px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--border);
 }
 
-.event-type {
+.entry-role {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.entry-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.entry.assistant .entry-body {
+  color: var(--text);
+}
+
+.entry.tool .entry-body,
+.entry.other .entry-body {
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
   font-size: 12px;
+}
+
+.entry.failed .entry-body {
+  color: #f85149;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.composer textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.composer textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.composer button {
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer button.secondary {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.composer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.placeholder {
+  display: grid;
+  place-items: center;
+  height: 100%;
 }
 
 .empty,

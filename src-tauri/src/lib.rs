@@ -7,7 +7,7 @@ use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 type Pending = Arc<Mutex<HashMap<u64, Sender<Result<Value, String>>>>>;
 
@@ -20,7 +20,7 @@ struct Sidecar {
 }
 
 impl Sidecar {
-    fn spawn(script: PathBuf) -> Result<Self, String> {
+    fn spawn(script: PathBuf, app: tauri::AppHandle) -> Result<Self, String> {
         let mut child = Command::new(node_executable())
             // node:sqlite is stable in behaviour but still flagged experimental; the
             // warning would otherwise be printed on every launch.
@@ -36,8 +36,9 @@ impl Sidecar {
         let stdout = child.stdout.take().ok_or("sidecar stdout unavailable")?;
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
 
-        // Reader thread resolves in-flight requests by id.
+        // Reader thread resolves in-flight requests by id and forwards notifications.
         let reader_pending = Arc::clone(&pending);
+        let reader_app = app.clone();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 let Ok(line) = line else { break };
@@ -46,7 +47,17 @@ impl Sidecar {
                 };
 
                 let Some(id) = message.get("id").and_then(Value::as_u64) else {
-                    continue; // Notifications are not routed yet; phase 2 forwards them as Tauri events.
+                    // Sidecar-initiated notification: re-emit for the frontend.
+                    if let Some(method) = message.get("method").and_then(Value::as_str) {
+                        let event = match method {
+                            "session.event" => "session-event",
+                            "session.loaded" => "session-loaded",
+                            _ => continue,
+                        };
+                        let payload = message.get("params").cloned().unwrap_or(Value::Null);
+                        let _ = reader_app.emit(event, payload);
+                    }
+                    continue;
                 };
 
                 if let Some(tx) = reader_pending.lock().unwrap().remove(&id) {
@@ -131,7 +142,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            app.manage(Sidecar::spawn(sidecar_script())?);
+            app.manage(Sidecar::spawn(sidecar_script(), app.handle().clone())?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![sidecar_request])
