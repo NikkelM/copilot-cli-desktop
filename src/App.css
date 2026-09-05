@@ -192,6 +192,12 @@ body {
   background: #10203a;
 }
 
+/* The container takes focus to capture keys; its border already marks it out. */
+.elicitation:focus,
+.elicitation:focus-visible {
+  outline: none;
+}
+
 .elicitation-header {
   display: flex;
   align-items: baseline;
