@@ -115,15 +115,19 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
 
   /**
    * Keyboard handling for the single-choice case, which is what ask_user produces.
-   * Arrows move between choices, Enter confirms, and typing jumps straight to the
-   * freeform box so an unlisted answer needs no extra click.
+   *
+   * The choices and the freeform box form one list, so moving past either end lands in
+   * the box rather than wrapping straight back round. `w` and `s` mirror the arrows,
+   * and any other character jumps into the box carrying that character, so an unlisted
+   * answer needs no extra keystroke.
    */
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
     const [name] = Object.keys(fields);
     if (!name) return;
 
     const options = optionsOf(fields[name] as Field);
-    const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+    const inTextBox =
+      event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
 
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
@@ -131,19 +135,35 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
       return;
     }
 
-    // Inside a text box the arrows belong to the caret, and characters to the field.
-    if (typing || options.length === 0) return;
+    if (options.length === 0) return;
 
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    // The freeform box sits after the last choice, so its index is options.length.
+    const current = options.findIndex((option) => option.value === values[name]);
+    const active = current === -1 ? options.length : current;
+
+    const moveTo = (index: number) => {
       event.preventDefault();
-      const current = options.findIndex((option) => option.value === values[name]);
-      const step = event.key === 'ArrowDown' ? 1 : -1;
-      const next = (current + step + options.length) % options.length;
-      set(name, options[next]?.value ?? '');
-      return;
-    }
+      if (index === options.length) {
+        // Entering the box clears the choice, since the answer becomes what is typed.
+        set(name, '');
+        freeformRef.current?.focus();
+      } else {
+        set(name, options[index]?.value ?? '');
+        containerRef.current?.focus();
+      }
+    };
 
-    // A single printable character means the user wants to write their own answer.
+    const down = event.key === 'ArrowDown' || (!inTextBox && event.key === 's');
+    const up = event.key === 'ArrowUp' || (!inTextBox && event.key === 'w');
+
+    // Wrapping across the box in both directions keeps the list circular without ever
+    // skipping the one entry that cannot be reached any other way.
+    if (down) return moveTo((active + 1) % (options.length + 1));
+    if (up) return moveTo((active - 1 + options.length + 1) % (options.length + 1));
+
+    // Inside the box every other key belongs to the field.
+    if (inTextBox) return;
+
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
       set(name, event.key);
