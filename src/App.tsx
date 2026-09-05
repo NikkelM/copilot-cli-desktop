@@ -33,20 +33,18 @@ import {
 } from './lib/sidecar';
 import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
+import { appendLive, contentOf, timelineOf, type TimelineEvent } from './lib/timeline';
 import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
-
-/**
- * A transcript entry, possibly one shown optimistically before the runtime echoes it.
- * Sending is slow on a cold session, so the prompt appears immediately and is then
- * replaced by the authoritative event rather than duplicated.
- */
-type TimelineEvent = TranscriptEvent & { local?: boolean };
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
+  /** History replayed from the log. Replaced wholesale by a fetch, so nothing live lives here. */
+  const [history, setHistory] = useState<TimelineEvent[]>([]);
+  /** Everything since the session was selected, which no replay may overwrite. */
+  const [live, setLive] = useState<TimelineEvent[]>([]);
+  const events = useMemo(() => timelineOf(history, live), [history, live]);
   const [busy, setBusy] = useState(false);
   const [resuming, setResuming] = useState(false);
   /** Cursor for the page of history before the events held, or null at the start. */
@@ -83,15 +81,25 @@ export default function App() {
   // user sends a message, which is what keeps idle sessions free.
   useEffect(() => {
     if (!selectedId) return;
-    setEvents([]);
+    setHistory([]);
+    setLive([]);
     setBusy(false);
     setOlderCursor(null);
+
+    // Selecting elsewhere, or React running this effect twice, leaves a reply in flight
+    // that describes a transcript no longer on screen.
+    let current = true;
     getTranscript(selectedId)
       .then((result) => {
-        setEvents(result.events);
+        if (!current) return;
+        setHistory(result.events);
         setOlderCursor(result.nextBefore);
       })
-      .catch((e: unknown) => setError(String(e)));
+      .catch((e: unknown) => current && setError(String(e)));
+
+    return () => {
+      current = false;
+    };
   }, [selectedId]);
 
   /** Fetch the page before the events already held and prepend it. */
@@ -101,7 +109,9 @@ export default function App() {
     setLoadingOlder(true);
     getTranscript(selectedId, undefined, olderCursor)
       .then((result) => {
-        setEvents((current) => [...result.events, ...current]);
+        // A page fetched for one session must not be spliced into another's transcript.
+        if (selectedRef.current !== selectedId) return;
+        setHistory((current) => [...result.events, ...current]);
         setOlderCursor(result.nextBefore);
       })
       .catch((e: unknown) => setError(String(e)))
@@ -130,21 +140,7 @@ export default function App() {
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') setBusy(false);
       if (event.type === 'session.error') setError(describeError(event));
 
-      setEvents((current) => {
-        // Replace the optimistic prompt with the runtime's own echo, rather than
-        // showing the same message twice.
-        if (event.type === 'user.message') {
-          const index = current.findIndex(
-            (entry) => entry.local && entry.type === 'user.message' && contentOf(entry) === contentOf(event),
-          );
-          if (index !== -1) {
-            const next = [...current];
-            next[index] = event;
-            return next;
-          }
-        }
-        return [...current, event];
-      });
+      setLive((current) => appendLive(current, event));
     }),
   );
 
@@ -237,7 +233,7 @@ export default function App() {
 
     // Show the prompt straight away; resuming a cold session takes seconds, and the
     // runtime's own echo replaces this entry when it arrives.
-    setEvents((current) => [
+    setLive((current) => [
       ...current,
       { type: 'user.message', data: { content: prompt }, id: crypto.randomUUID(), local: true },
     ]);
@@ -340,9 +336,4 @@ export default function App() {
 function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? data.message : 'Session error';
-}
-
-function contentOf(event: TranscriptEvent): string | null {
-  const data = event.data as { content?: unknown } | null;
-  return typeof data?.content === 'string' ? data.content : null;
 }
