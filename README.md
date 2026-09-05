@@ -81,6 +81,7 @@ Other useful scripts:
 
 ```bash
 npm run typecheck      # frontend and sidecar
+npm run check          # ordering rules for the session list
 npm run build:sidecar  # compile the sidecar only
 npm run tauri build    # production bundle
 ```

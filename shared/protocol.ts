@@ -131,6 +131,9 @@ export interface PermissionResolvedNotification {
   requestId: string;
 }
 
+/** Sent when the session list may have changed, so the sidebar can refetch. */
+export const NOTIFY_SESSIONS_CHANGED = 'sessions.changed';
+
 /** Method names used by sidecar-initiated notifications. */
 export const NOTIFY_SESSION_EVENT = 'session.event';
 export const NOTIFY_SESSION_LOADED = 'session.loaded';
