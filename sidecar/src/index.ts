@@ -8,20 +8,32 @@
 import { createInterface } from 'node:readline';
 
 import type { JsonRpcRequest, JsonRpcResponse } from '../../shared/protocol.js';
+import { NOTIFY_SESSION_EVENT, NOTIFY_SESSION_LOADED } from '../../shared/protocol.js';
 import { readTranscript } from './eventLog.js';
-import { SessionRuntime } from './runtime.js';
+import { type ApprovalPolicy, SessionRuntime } from './runtime.js';
 import { listSessions } from './sessionIndex.js';
-
-const runtime = new SessionRuntime();
 
 /** Anything written to stdout is protocol, so diagnostics must go to stderr. */
 function log(message: string): void {
   process.stderr.write(`[sidecar] ${message}\n`);
 }
 
-function reply(response: JsonRpcResponse): void {
-  process.stdout.write(`${JSON.stringify(response)}\n`);
+function write(payload: unknown): void {
+  process.stdout.write(`${JSON.stringify(payload)}\n`);
 }
+
+function reply(response: JsonRpcResponse): void {
+  write(response);
+}
+
+function notify(method: string, params: unknown): void {
+  write({ jsonrpc: '2.0', method, params });
+}
+
+const runtime = new SessionRuntime({
+  onEvent: (sessionId, event) => notify(NOTIFY_SESSION_EVENT, { sessionId, event }),
+  onLoadedChange: (sessionId, loaded) => notify(NOTIFY_SESSION_LOADED, { sessionId, loaded }),
+});
 
 async function dispatch(request: JsonRpcRequest): Promise<unknown> {
   switch (request.method) {
@@ -34,8 +46,38 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
     }
 
     case 'sessions.transcript': {
-      const params = request.params as { sessionId: string; limit?: number };
-      return readTranscript(params.sessionId, params.limit);
+      const { sessionId, limit } = request.params as { sessionId: string; limit?: number };
+      return readTranscript(sessionId, limit);
+    }
+
+    case 'sessions.send': {
+      const { sessionId, prompt, mode } = request.params as {
+        sessionId: string;
+        prompt: string;
+        mode?: 'enqueue' | 'immediate';
+      };
+      return { messageId: await runtime.send(sessionId, prompt, mode) };
+    }
+
+    case 'sessions.abort': {
+      const { sessionId } = request.params as { sessionId: string };
+      await runtime.abort(sessionId);
+      return null;
+    }
+
+    case 'sessions.evict': {
+      const { sessionId } = request.params as { sessionId: string };
+      await runtime.evict(sessionId);
+      return null;
+    }
+
+    case 'sessions.setApprovalPolicy': {
+      const { sessionId, policy } = request.params as {
+        sessionId: string;
+        policy: ApprovalPolicy;
+      };
+      runtime.setApprovalPolicy(sessionId, policy);
+      return null;
     }
 
     case 'runtime.status':
@@ -47,9 +89,8 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
 }
 
 function main(): void {
-  const { cliPath, sdkPath } = SessionRuntime.probeInstallation();
+  const { cliPath } = SessionRuntime.probeInstallation();
   log(cliPath ? `CLI: ${cliPath}` : 'CLI not found - set COPILOT_CLI_PATH');
-  log(sdkPath ? `SDK: ${sdkPath}` : 'bundled SDK not found');
 
   const rl = createInterface({ input: process.stdin });
   const inFlight = new Set<Promise<void>>();
@@ -78,10 +119,13 @@ function main(): void {
     inFlight.add(task);
   });
 
-  // Drain outstanding work before exiting, so a request issued just before stdin
-  // closes still gets a response.
+  // Drain outstanding work and release the CLI server before exiting, so a request
+  // issued just before stdin closes still gets a response.
   rl.on('close', () => {
-    void Promise.allSettled([...inFlight]).then(() => process.exit(0));
+    void Promise.allSettled([...inFlight])
+      .then(() => runtime.shutdown())
+      .catch(() => undefined)
+      .then(() => process.exit(0));
   });
 
   log('ready');
