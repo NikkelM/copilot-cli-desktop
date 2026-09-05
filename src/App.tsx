@@ -45,6 +45,12 @@ export default function App() {
   /** Everything since the session was selected, which no replay may overwrite. */
   const [live, setLive] = useState<TimelineEvent[]>([]);
   const events = useMemo(() => timelineOf(history, live), [history, live]);
+  /**
+   * Unsent text, per session. An unsent message belongs to the session it was written
+   * for: kept in the composer it would follow the user to whichever session they opened
+   * next, and be sent there instead.
+   */
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [resuming, setResuming] = useState(false);
   /** Cursor for the page of history before the events held, or null at the start. */
@@ -230,6 +236,7 @@ export default function App() {
   async function handleSend(prompt: string) {
     if (!selectedId) return;
     setError(null);
+    setDrafts((current) => ({ ...current, [selectedId]: '' }));
 
     // Show the prompt straight away; resuming a cold session takes seconds, and the
     // runtime's own echo replaces this entry when it arrives.
@@ -317,6 +324,8 @@ export default function App() {
                 // A question or a permission request blocks the agent until answered, so
                 // it keeps the keyboard; the composer takes it back once nothing is waiting.
                 focusOn={sessionElicitations.length + sessionPermissions.length > 0 ? null : selectedId}
+                value={drafts[selected.sessionId] ?? ''}
+                onChange={(text) => setDrafts((current) => ({ ...current, [selected.sessionId]: text }))}
                 onSend={(prompt) => void handleSend(prompt)}
                 onAbort={() => selectedId && void abortSession(selectedId)}
               />
