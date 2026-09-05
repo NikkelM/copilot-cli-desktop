@@ -8,12 +8,27 @@ export function contentOf(event: TranscriptEvent): string | null {
   return typeof data?.content === 'string' ? data.content : null;
 }
 
+function messageIdOf(event: TranscriptEvent): string | null {
+  const data = event.data as { messageId?: unknown } | null;
+  return typeof data?.messageId === 'string' ? data.messageId : null;
+}
+
+function deltaOf(event: TranscriptEvent): string {
+  const data = event.data as { deltaContent?: unknown } | null;
+  return typeof data?.deltaContent === 'string' ? data.deltaContent : '';
+}
+
 /**
  * Add an event arriving from a live session to the events seen since it was selected.
  *
  * A prompt is shown optimistically so it appears the moment it is sent, and the runtime
  * echoes the same message back a beat later. The echo replaces the optimistic entry
  * rather than following it, which would show the prompt twice.
+ *
+ * A reply arrives as a run of deltas and then once more in full. Each is folded into the
+ * one before it, so a long answer is a single growing event rather than hundreds that
+ * every later render would have to walk, and the full message replaces the run it
+ * completes rather than repeating it.
  */
 export function appendLive(current: TimelineEvent[], event: TimelineEvent): TimelineEvent[] {
   if (event.type === 'user.message') {
@@ -26,6 +41,22 @@ export function appendLive(current: TimelineEvent[], event: TimelineEvent): Time
       return next;
     }
   }
+
+  const messageId = messageIdOf(event);
+  if (messageId && (event.type === 'assistant.message_delta' || event.type === 'assistant.message')) {
+    const index = current.findIndex(
+      (entry) => entry.type === 'assistant.message_delta' && messageIdOf(entry) === messageId,
+    );
+    if (index !== -1) {
+      const next = [...current];
+      next[index] =
+        event.type === 'assistant.message'
+          ? event
+          : { ...event, data: { messageId, deltaContent: deltaOf(next[index]!) + deltaOf(event) } };
+      return next;
+    }
+  }
+
   return [...current, event];
 }
 

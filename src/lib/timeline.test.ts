@@ -76,3 +76,49 @@ describe('timelineOf', () => {
     ]);
   });
 });
+
+// Deltas are ephemeral: they never reach the log, so they only ever appear live.
+describe('streaming a reply', () => {
+  const delta = (messageId: string, deltaContent: string): TimelineEvent => ({
+    type: 'assistant.message_delta',
+    data: { messageId, deltaContent },
+  });
+  const whole = (messageId: string, content: string): TimelineEvent => ({
+    type: 'assistant.message',
+    data: { messageId, content },
+  });
+
+  it('grows one event rather than collecting hundreds', () => {
+    let live: TimelineEvent[] = [];
+    for (const chunk of ['The', ' sea', ' keeps', ' its own time']) live = appendLive(live, delta('m1', chunk));
+
+    expect(live).toHaveLength(1);
+    expect(live[0]!.data).toEqual({ messageId: 'm1', deltaContent: 'The sea keeps its own time' });
+  });
+
+  it('replaces the run with the finished message instead of repeating it', () => {
+    let live = appendLive([], delta('m1', 'partial'));
+    live = appendLive(live, whole('m1', 'partial and then some'));
+
+    expect(live).toHaveLength(1);
+    expect(live[0]!.type).toBe('assistant.message');
+  });
+
+  it('keeps replies apart when one message follows another', () => {
+    let live = appendLive([], delta('m1', 'first'));
+    live = appendLive(live, whole('m1', 'first'));
+    live = appendLive(live, delta('m2', 'second'));
+
+    expect(live.map((e) => e.type)).toEqual(['assistant.message', 'assistant.message_delta']);
+  });
+
+  it('leaves anything arriving between a reply and its deltas alone', () => {
+    let live = appendLive([], delta('m1', 'thinking'));
+    live = appendLive(live, { type: 'tool.execution_start', data: { toolCallId: 't1', toolName: 'grep' } });
+    live = appendLive(live, delta('m1', ' more'));
+
+    expect(live).toHaveLength(2);
+    expect(live[0]!.data).toMatchObject({ deltaContent: 'thinking more' });
+    expect(live[1]!.type).toBe('tool.execution_start');
+  });
+});

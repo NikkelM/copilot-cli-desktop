@@ -10,6 +10,8 @@ export interface MessageEntry {
   key: string;
   variant: 'user' | 'assistant' | 'failed';
   body: string;
+  /** Still being written, so the row shows that more is coming. */
+  streaming?: boolean;
 }
 
 /**
@@ -38,6 +40,11 @@ export type Entry = MessageEntry | ToolEntry;
 function text(data: Record<string, unknown>, key: string): string | null {
   const value = data[key];
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/** The message an event belongs to, so its deltas and its finished form share a row. */
+function messageKey(data: Record<string, unknown>, fallback: string): string {
+  return typeof data.messageId === 'string' ? data.messageId : fallback;
 }
 
 /**
@@ -128,7 +135,25 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         // An assistant message carrying only tool requests has empty content; the tool
         // itself is shown by its own entry.
         const content = text(data, 'content');
-        if (content) entries.push({ kind: 'message', key, variant: 'assistant', body: content });
+        // Keyed by the message rather than the event, so the finished reply lands on the
+        // row its own deltas were already drawing instead of replacing it.
+        if (content) entries.push({ kind: 'message', key: messageKey(data, key), variant: 'assistant', body: content });
+        break;
+      }
+
+      // A reply as it is being written. Only ever seen live: these are ephemeral and
+      // never reach the log, so replaying a session shows the finished message instead.
+      case 'assistant.message_delta': {
+        const content = text(data, 'deltaContent');
+        if (content) {
+          entries.push({
+            kind: 'message',
+            key: messageKey(data, key),
+            variant: 'assistant',
+            body: content,
+            streaming: true,
+          });
+        }
         break;
       }
 
@@ -251,7 +276,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
 
   if (a.kind === 'message') {
     const other = b as MessageEntry;
-    return a.variant === other.variant && a.body === other.body;
+    return a.variant === other.variant && a.body === other.body && a.streaming === other.streaming;
   }
 
   const other = b as ToolEntry;
