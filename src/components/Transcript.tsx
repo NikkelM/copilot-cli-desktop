@@ -148,8 +148,8 @@ export function Transcript({
       <li className="history-edge">
         {loadingOlder ? 'Loading earlier messages…' : hasOlder ? 'Scroll up for earlier messages' : 'Start of session'}
       </li>
-      {entries.map((entry, index) => (
-        <li key={index} className="entry">
+      {entries.map((entry) => (
+        <li key={entry.key} className="entry">
           {entry.kind === 'tool' ? (
             <ToolRow entry={entry} />
           ) : (

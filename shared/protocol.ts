@@ -35,6 +35,11 @@ export type SessionRuntimeState =
 export interface TranscriptEvent {
   type: string;
   data: unknown;
+  /**
+   * The session's own identifier for the event, stable across replays and pages.
+   * Absent only on events the app itself invents, such as an optimistic prompt.
+   */
+  id?: string;
   /** Present on replayed events only; live events are timestamped on arrival. */
   timestamp?: string;
 }

@@ -237,7 +237,10 @@ export default function App() {
 
     // Show the prompt straight away; resuming a cold session takes seconds, and the
     // runtime's own echo replaces this entry when it arrives.
-    setEvents((current) => [...current, { type: 'user.message', data: { content: prompt }, local: true }]);
+    setEvents((current) => [
+      ...current,
+      { type: 'user.message', data: { content: prompt }, id: crypto.randomUUID(), local: true },
+    ]);
 
     const wasCold = !sessions.find((s) => s.sessionId === selectedId)?.loaded;
     setResuming(wasCold);

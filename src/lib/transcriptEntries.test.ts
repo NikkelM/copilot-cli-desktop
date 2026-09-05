@@ -3,19 +3,23 @@ import { describe, expect, it } from 'vitest';
 import type { TranscriptEvent } from '../../shared/protocol';
 import { toEntries, type ToolEntry } from './transcriptEntries';
 
-const event = (type: string, data: Record<string, unknown> = {}): TranscriptEvent => ({ type, data });
+const event = (type: string, data: Record<string, unknown> = {}, id?: string): TranscriptEvent => ({
+  type,
+  data,
+  id,
+});
 
 const CWD = 'C:\\work\\repo';
 
 describe('toEntries', () => {
   it('renders user and assistant messages', () => {
     const entries = toEntries(
-      [event('user.message', { content: 'hello' }), event('assistant.message', { content: 'hi' })],
+      [event('user.message', { content: 'hello' }, 'e1'), event('assistant.message', { content: 'hi' }, 'e2')],
       null,
     );
     expect(entries).toEqual([
-      { kind: 'message', variant: 'user', body: 'hello' },
-      { kind: 'message', variant: 'assistant', body: 'hi' },
+      { kind: 'message', key: 'e1', variant: 'user', body: 'hello' },
+      { kind: 'message', key: 'e2', variant: 'assistant', body: 'hi' },
     ]);
   });
 
@@ -280,5 +284,50 @@ describe('ask_user rows', () => {
     );
     expect(entries[0]).toMatchObject({ name: 'powershell', summary: 'ls' });
     expect((entries[0] as ToolEntry).question).toBeUndefined();
+  });
+});
+
+// React keys rows by this, and ToolRow holds its expanded state locally. If a key moves
+// to a different entry the expansion moves with it, which is what loading older history
+// used to do to every row on screen.
+describe('entry identity', () => {
+  const recent = [
+    event('user.message', { content: 'latest' }, 'r1'),
+    event('tool.execution_start', { toolCallId: 't9', toolName: 'powershell', arguments: { command: 'ls' } }, 'r2'),
+  ];
+  const older = [
+    event('user.message', { content: 'ancient' }, 'o1'),
+    event('assistant.message', { content: 'older reply' }, 'o2'),
+  ];
+
+  it('keeps keys unchanged when older history is prepended', () => {
+    const before = toEntries(recent, null).map((e) => e.key);
+    const after = toEntries([...older, ...recent], null).map((e) => e.key);
+
+    expect(before).toEqual(['r1', 'r2']);
+    expect(after.slice(-before.length)).toEqual(before);
+  });
+
+  it('gives every entry a distinct key', () => {
+    const keys = toEntries([...older, ...recent], null).map((e) => e.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it('keys a tool by its start event, so completing it does not move the row', () => {
+    const start = event(
+      'tool.execution_start',
+      { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } },
+      's1',
+    );
+    const done = event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'ok' } }, 's2');
+
+    expect(toEntries([start], null)[0].key).toBe('s1');
+    expect(toEntries([start, done], null)[0].key).toBe('s1');
+  });
+
+  // Only the app's own optimistic prompt lacks an id, and it always sits at the end.
+  it('still produces a key for an event without an id', () => {
+    const entries = toEntries([event('user.message', { content: 'optimistic' })], null);
+    expect(entries[0].key).toBeTruthy();
   });
 });
