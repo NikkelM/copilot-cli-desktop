@@ -1,0 +1,12 @@
+{
+  "name": "@copilot-cli-desktop/sidecar",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/sidecar/src/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node --no-warnings=ExperimentalWarning dist/sidecar/src/index.js"
+  }
+}
