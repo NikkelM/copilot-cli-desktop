@@ -33,6 +33,8 @@ export interface ToolEntry {
   question?: boolean;
   /** What the user chose, shown beside the question rather than hidden in the output. */
   answer?: string;
+  /** The options offered, so expanding shows what was on the table, not just the pick. */
+  choices?: string[];
 }
 
 export type Entry = MessageEntry | ToolEntry;
@@ -92,12 +94,13 @@ function clipLine(value: string): string {
 /**
  * The answer the user gave, pulled out of the tool's own result text.
  * The CLI reports it as "User responded: <answer>", and an unanswered question leaves
- * that empty rather than omitting the line.
+ * that empty rather than omitting the line. Kept whole so it can be matched against the
+ * offered choices; the header relies on CSS to truncate it.
  */
 function answerOf(result: string): string | null {
   const match = /^\s*User responded:\s*([\s\S]*)$/.exec(result);
-  const answer = match?.[1]?.trim();
-  return answer ? clipLine(answer) : null;
+  const answer = match?.[1]?.replace(/\s+/g, ' ').trim();
+  return answer ? answer : null;
 }
 
 /**
@@ -145,7 +148,17 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
             : undefined;
 
         const entry: ToolEntry = question
-          ? { kind: 'tool', name, summary: clipLine(question), output: null, status: 'running', question: true }
+          ? {
+              kind: 'tool',
+              name,
+              summary: clipLine(question),
+              output: null,
+              status: 'running',
+              question: true,
+              choices: Array.isArray(args?.choices)
+                ? args.choices.filter((c): c is string => typeof c === 'string' && c.trim() !== '')
+                : undefined,
+            }
           : { kind: 'tool', name, summary: summarise(args, cwd), output: null, status: 'running' };
 
         const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
@@ -234,8 +247,18 @@ const STATUS_GLYPH: Record<ToolEntry['status'], string> = {
 /** A single tool call, collapsed to one line until expanded. */
 function ToolRow({ entry }: { entry: ToolEntry }) {
   const [open, setOpen] = useState(false);
-  const expandable = Boolean(entry.output);
+
+  // The offered options say more than the tool's own "User responded: x", which only
+  // repeats what the header already shows. They are worth seeing even unanswered.
+  const choices = entry.choices?.length ? entry.choices : null;
+  // A typed reply is not among the options, so it needs its own line to appear at all.
+  const freeform = choices && entry.answer && !choices.includes(entry.answer) ? entry.answer : null;
+
+  const expandable = Boolean(entry.output) || Boolean(choices);
   const lines = entry.output ? entry.output.split('\n').length : 0;
+  const count = choices
+    ? `${choices.length} ${choices.length === 1 ? 'option' : 'options'}`
+    : `${lines} ${lines === 1 ? 'line' : 'lines'}`;
 
   return (
     <div className={`tool ${entry.status}${open ? ' open' : ''}`}>
@@ -255,11 +278,31 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
         {/* Doubles as the affordance that the row opens, and says how much is behind it.
             Right-aligned, so it reads as a separate column without needing punctuation. */}
-        {expandable && !open && (
-          <span className="tool-lines">{`${lines} ${lines === 1 ? 'line' : 'lines'}`}</span>
-        )}
+        {expandable && !open && <span className="tool-lines">{count}</span>}
       </button>
-      {open && entry.output && <pre className="tool-output">{entry.output}</pre>}
+      {open &&
+        (choices ? (
+          <ul className="tool-choices">
+            {choices.map((choice) => {
+              const chosen = choice === entry.answer;
+              return (
+                <li key={choice} className={chosen ? 'chosen' : undefined}>
+                  <span className="choice-mark">{chosen ? '●' : '○'}</span>
+                  <span className="choice-label">{choice}</span>
+                </li>
+              );
+            })}
+            {freeform && (
+              <li className="chosen">
+                <span className="choice-mark">●</span>
+                <span className="choice-label">{freeform}</span>
+                <span className="choice-note">typed</span>
+              </li>
+            )}
+          </ul>
+        ) : (
+          entry.output && <pre className="tool-output">{entry.output}</pre>
+        ))}
     </div>
   );
 }

@@ -207,6 +207,72 @@ describe('ask_user rows', () => {
     expect(summary.endsWith('…')).toBe(true);
   });
 
+  it('keeps the offered choices so the row can show what was on the table', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 'q1',
+          toolName: 'ask_user',
+          arguments: { question, choices: ['PostgreSQL', 'MySQL', 'SQLite'] },
+        }),
+        event('tool.execution_complete', {
+          toolCallId: 'q1',
+          success: true,
+          result: { content: 'User responded: MySQL' },
+        }),
+      ],
+      null,
+    );
+    expect(entries[0]).toMatchObject({
+      choices: ['PostgreSQL', 'MySQL', 'SQLite'],
+      answer: 'MySQL',
+    });
+  });
+
+  it('keeps the choices on a question that was never answered', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 'q1',
+          toolName: 'ask_user',
+          arguments: { question, choices: ['Yes', 'No'] },
+        }),
+      ],
+      null,
+    );
+    expect((entries[0] as ToolEntry).choices).toEqual(['Yes', 'No']);
+  });
+
+  // A typed reply has to survive intact, otherwise it cannot be told apart from the
+  // offered options when the row is expanded.
+  it('keeps a freeform answer whole rather than clamping it', () => {
+    const long = `MariaDB ${'x'.repeat(300)}`;
+    const entries = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 'q1',
+          toolName: 'ask_user',
+          arguments: { question, choices: ['PostgreSQL'] },
+        }),
+        event('tool.execution_complete', {
+          toolCallId: 'q1',
+          success: true,
+          result: { content: `User responded: ${long}` },
+        }),
+      ],
+      null,
+    );
+    expect((entries[0] as ToolEntry).answer).toBe(long);
+  });
+
+  it('ignores choices on tools that are not questions', () => {
+    const entries = toEntries(
+      [event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } })],
+      null,
+    );
+    expect((entries[0] as ToolEntry).choices).toBeUndefined();
+  });
+
   it('leaves other tools showing their name', () => {
     const entries = toEntries(
       [event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } })],
