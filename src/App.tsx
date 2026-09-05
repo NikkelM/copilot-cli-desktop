@@ -32,6 +32,7 @@ import {
   setApprovalPolicy,
 } from './lib/sidecar';
 import { orderSessions } from './lib/ordering';
+import { mergeLivePreviews } from './lib/livePreviews';
 import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
@@ -46,6 +47,12 @@ export default function App() {
   const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
   /** Session ids in activation order, most recent first. Fixes the active group's order. */
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
+  /**
+   * Previews derived from live events, which are ahead of the database.
+   * A ref rather than state: refetches read it, but it never needs to trigger a render
+   * on its own, since the render always follows a setSessions in the same handler.
+   */
+  const livePreviews = useRef(new Map<string, string | null>());
 
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
@@ -53,7 +60,9 @@ export default function App() {
 
   const refreshSessions = useCallback(() => {
     listSessions()
-      .then((result) => setSessions(result.sessions))
+      // The fetched previews come from the lagging turns table, so anything already
+      // learned from live events wins until the database catches up.
+      .then((result) => setSessions(mergeLivePreviews(result.sessions, livePreviews.current)))
       .catch((e: unknown) => setError(String(e)));
   }, []);
 
@@ -78,12 +87,11 @@ export default function App() {
       // every loaded session, not just the one on screen.
       const spoken = event.type === 'assistant.message' ? contentOf(event) : null;
       if (spoken) {
+        const preview = toPreview(spoken);
+        livePreviews.current.set(sessionId, preview);
+
         setSessions((current) =>
-          current.map((session) =>
-            session.sessionId === sessionId
-              ? { ...session, preview: toPreview(spoken), updatedAt: new Date().toISOString() }
-              : session,
-          ),
+          current.map((session) => (session.sessionId === sessionId ? { ...session, preview } : session)),
         );
       }
 
@@ -127,6 +135,10 @@ export default function App() {
             : [sessionId, ...current]
           : current.filter((id) => id !== sessionId),
       );
+
+      // Once unloaded the app no longer sees this session's events, so its own preview
+      // must stop overriding whatever the database reports.
+      if (!loaded) livePreviews.current.delete(sessionId);
     }),
   );
 
