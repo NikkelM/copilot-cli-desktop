@@ -308,14 +308,14 @@ describe('ModelPicker', () => {
       });
 
       // Marking a level the model does not have would promise something it cannot do, so
-      // the row falls back to a level it does have rather than to nothing.
-      it('falls back when the model does not offer the level in use', async () => {
+      // the row takes the nearest level it does have.
+      it('takes the nearest level when the model lacks the one in use', async () => {
         const { onChoose } = picker({ current: { model: 'auto', reasoningEffort: 'max' } });
         await openMenu();
 
         await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
 
-        expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'low' }));
+        expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'high' }));
       });
 
       it('falls back to the standard size when the model has no larger one', async () => {
