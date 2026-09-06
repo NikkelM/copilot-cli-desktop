@@ -8,7 +8,7 @@ export interface MessageEntry {
   kind: 'message';
   /** Identity of the source event, so rows survive history being prepended. */
   key: string;
-  variant: 'user' | 'assistant' | 'failed';
+  variant: 'user' | 'assistant' | 'failed' | 'stopped';
   body: string;
 }
 
@@ -76,6 +76,26 @@ export type Entry = MessageEntry | ReasoningEntry | ToolEntry;
 function text(data: Record<string, unknown>, key: string): string | null {
   const value = data[key];
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/**
+ * Why a turn stopped, in the reader's terms.
+ *
+ * Stopping is usually the reader's own doing and needs no explanation, but the other
+ * reasons are things that happened to them: which one it was is the whole content of the
+ * row.
+ */
+function stopReason(data: Record<string, unknown>): string {
+  switch (data.reason) {
+    case 'remote_command':
+      return 'Stopped by a remote command';
+    case 'user_abort':
+      return 'Stopped by a connected server';
+    case 'autopilot_credit_limit':
+      return 'Stopped: this run reached its credit limit';
+    default:
+      return 'Stopped';
+  }
 }
 
 /** The message an event belongs to, so its deltas and its finished form share a row. */
@@ -360,6 +380,13 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
       // An abort emits `abort` then `assistant.turn_end`, with no `session.idle` at all,
       // so all three signals are needed rather than idle alone.
       case 'abort':
+        // A reply that simply stops mid-sentence reads as the app losing the thread. The
+        // event is written to the log, so this says so on every later replay too.
+        entries.push({ kind: 'message', key, variant: 'stopped', body: stopReason(data) });
+        for (const entry of pending.values()) entry.status = 'cancelled';
+        pending.clear();
+        break;
+
       case 'session.idle':
       case 'session.shutdown':
         for (const entry of pending.values()) entry.status = 'cancelled';
