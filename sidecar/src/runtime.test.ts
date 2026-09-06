@@ -24,7 +24,7 @@ function makeSession(id: string) {
     emit(event: unknown) {
       for (const handler of [...handlers]) handler(event);
     },
-    send: vi.fn(async () => `msg-${id}`),
+    send: vi.fn(async (_options: { prompt: string; mode?: string }) => `msg-${id}`),
     abort: vi.fn(async function (this: { aborted: boolean }) {
       this.aborted = true;
     }),

@@ -13,6 +13,7 @@ import type {
 import { toPreview } from '../shared/preview';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
+import { ModelPicker } from './components/ModelPicker';
 import { PermissionPrompt } from './components/PermissionPrompt';
 import { Queue } from './components/Queue';
 import { SessionPath } from './components/SessionPath';
@@ -40,6 +41,7 @@ import {
 import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
 import { contentOf } from './lib/timeline';
+import { useModel } from './lib/useModel';
 import { useQueue } from './lib/useQueue';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
@@ -71,6 +73,7 @@ export default function App() {
   const transcript = useTranscript(selectedId, setError);
   const tree = useTreeState(selected?.cwd ?? null);
   const queue = useQueue();
+  const model = useModel(selectedId, setError);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
    * has been said, so it says it is working rather than appearing to have done nothing.
@@ -154,6 +157,9 @@ export default function App() {
       // The agent working is what changes the working tree, so this is the moment the
       // branch line is worth asking about again.
       if (event.type === 'assistant.turn_end') tree.refresh();
+      // Every resume reports the model as well as every switch, including one made from a
+      // terminal, so the header follows rather than trusting what it read from the log.
+      model.observe(event);
 
       transcript.push(event);
     }),
@@ -334,6 +340,7 @@ export default function App() {
                 <SessionPath cwd={selected.cwd} state={tree.state} />
               </div>
               <div className="header-controls">
+                <ModelPicker current={model.current} onOpen={model.models} onChoose={model.choose} />
                 <label className="toggle" title="Approve every tool call in this session without asking">
                   <input
                     type="checkbox"

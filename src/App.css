@@ -174,6 +174,117 @@ body {
   gap: 14px;
 }
 
+/* The model a session runs on: a fact to check far more often than a decision to make. */
+.model {
+  position: relative;
+}
+
+.model-current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.model-current:hover {
+  color: var(--text);
+}
+
+.model-tag {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: rgba(110, 118, 129, 0.25);
+}
+
+/* Anchored to the control and above the transcript, which scrolls underneath it. */
+.model-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  width: 340px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.6);
+}
+
+.model-loading,
+.model-menu .error {
+  margin: 0;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.model-row {
+  padding: 2px 0;
+  border-radius: 6px;
+}
+
+.model-row.chosen {
+  background: rgba(56, 139, 253, 0.1);
+}
+
+.model-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-name:hover {
+  color: var(--accent);
+}
+
+.model-note {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.model-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 8px 4px;
+}
+
+.model-option {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.model-option:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.model-option.chosen {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .toggle {
   display: flex;
   align-items: center;

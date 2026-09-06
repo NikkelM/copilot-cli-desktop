@@ -2,19 +2,23 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import type {
+  ContextTier,
   ElicitationAction,
   ElicitationFieldValue,
   ElicitationResolvedNotification,
   GetTranscriptResult,
   ListSessionsResult,
+  ModelChoice,
   PendingElicitation,
   PendingPermission,
   PermissionChoice,
   PermissionResolvedNotification,
+  ReasoningEffort,
   SendParams,
   SendResult,
   SessionEventNotification,
   SessionLoadedNotification,
+  SessionModel,
   TreeState,
 } from '../../shared/protocol';
 
@@ -26,6 +30,28 @@ async function request<T>(method: string, params?: unknown): Promise<T> {
 /** Reads the sidebar model from session-store.db. Spawns no Copilot process. */
 export function listSessions(): Promise<ListSessionsResult> {
   return request<ListSessionsResult>('sessions.list');
+}
+
+/** The models this account may use. Starts the shared server, so it is asked for lazily. */
+export async function listModels(): Promise<ModelChoice[]> {
+  const { models } = await request<{ models: ModelChoice[] }>('models.list');
+  return models;
+}
+
+/** What a session runs on, read from its log. Costs no Copilot process. */
+export async function sessionModel(sessionId: string): Promise<SessionModel | null> {
+  const { current } = await request<{ current: SessionModel | null }>('sessions.model', { sessionId });
+  return current;
+}
+
+/** Change the model a session uses from its next message on. Resumes it if it is cold. */
+export function setSessionModel(
+  sessionId: string,
+  model: string,
+  reasoningEffort?: ReasoningEffort,
+  contextTier?: ContextTier,
+): Promise<void> {
+  return request<void>('sessions.setModel', { sessionId, model, reasoningEffort, contextTier });
 }
 
 /** What git says about a directory now. Null when it is not in a repository. */

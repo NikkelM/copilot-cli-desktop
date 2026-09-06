@@ -9,7 +9,14 @@ import {
   type SessionEvent,
 } from '@github/copilot-sdk';
 
-import type { ElicitationAction, ElicitationFieldValue, PermissionChoice } from '../../shared/protocol.js';
+import type {
+  ElicitationAction,
+  ContextTier,
+  ElicitationFieldValue,
+  ModelChoice,
+  PermissionChoice,
+  ReasoningEffort,
+} from '../../shared/protocol.js';
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -742,6 +749,53 @@ export class SessionRuntime {
       messageId: await session.send({ prompt, mode: queued ? 'enqueue' : 'immediate' }),
       queued,
     };
+  }
+
+  /**
+   * The models this account may use.
+   *
+   * Listing them needs the shared server, so this is the one read that costs a process.
+   * Asked for when a reader opens the picker rather than at startup, and answered from the
+   * server's own cache after that.
+   *
+   * Trimmed here rather than in the UI: what the runtime reports carries context limits and
+   * token pricing tables that nothing shows, and the protocol is better off narrow.
+   */
+  async models(): Promise<ModelChoice[]> {
+    const client = await this.ensureClient();
+
+    return (await client.listModels()).map((model) => ({
+      id: model.id,
+      name: model.name,
+      reasoningEfforts: (model.supportedReasoningEfforts ?? []) as ReasoningEffort[],
+      // A model that can be pinned to the larger window is priced for it, which is the only
+      // place the catalogue says so.
+      longContext: Boolean(model.billing?.tokenPrices?.longContext),
+      // Listed but unusable until its terms are accepted, which happens outside this app.
+      needsAgreement: model.policy?.state === 'unconfigured',
+    }));
+  }
+
+  /**
+   * Change the model a session uses, from its next message onwards.
+   *
+   * The session has to be loaded for this, since the choice belongs to the running session
+   * rather than to anything on disk. That makes choosing a model for a cold session cost a
+   * resume, which is the same price as sending to it.
+   */
+  async setModel(
+    sessionId: string,
+    model: string,
+    reasoningEffort?: ReasoningEffort,
+    contextTier?: ContextTier,
+  ): Promise<void> {
+    const session = await this.ensureSession(sessionId);
+    await session.setModel(model, {
+      // Cast because the SDK's own union omits "none", which several models nonetheless
+      // report as a level they accept.
+      ...(reasoningEffort ? { reasoningEffort: reasoningEffort as never } : {}),
+      ...(contextTier ? { contextTier } : {}),
+    });
   }
 
   /** Stop the current turn without unloading the session. */

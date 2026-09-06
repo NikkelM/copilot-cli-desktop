@@ -158,6 +158,21 @@ grouped under epics:
 - [ ] [#36 In-app file diffs](https://github.com/NikkelM/copilot-cli-desktop/issues/36) - show only the changes the current agent made
 - [ ] [#41 In-app git editor](https://github.com/NikkelM/copilot-cli-desktop/issues/41) - stage, commit and push
 
+## Design constraints
+
+Two rules that outrank any single feature:
+
+**Idle sessions cost nothing.** Browsing, searching and reading history are disk reads.
+Only sending a message, or changing something that belongs to a running session, resumes
+one.
+
+**Everything is reachable from the keyboard.** This replaces a terminal, and anyone coming
+from one should not have to reach for the mouse. Buttons and menus are welcome, but no
+capability may exist only as a click target: whatever a widget does must also be invocable
+by keyboard, and in time by slash command
+([#72](https://github.com/NikkelM/copilot-cli-desktop/issues/72),
+[#19](https://github.com/NikkelM/copilot-cli-desktop/issues/19)).
+
 ## Notes
 
 Reads the CLI's own state directory, so existing instructions, agents, skills and
