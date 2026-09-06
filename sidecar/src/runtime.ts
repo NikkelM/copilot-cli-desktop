@@ -495,10 +495,12 @@ export class SessionRuntime {
 
   /** Keep what a completed tool said it changed, if it is one that says. */
   private recordToolChanges(entry: LoadedSession, event: SessionEvent): void {
-    const data = event as unknown as { toolName?: string; result?: { detailedContent?: unknown } };
-    if (!reportsChanges(data.toolName)) return;
+    // The payload is under data, as it is for every other event; reading it off the event
+    // itself found nothing and recorded nothing, silently.
+    const data = (event as unknown as { data?: { toolName?: string; result?: { detailedContent?: unknown } } }).data;
+    if (!reportsChanges(data?.toolName)) return;
 
-    const detail = data.result?.detailedContent;
+    const detail = data?.result?.detailedContent;
     if (typeof detail !== 'string') return;
 
     entry.patches = recordPatches(entry.patches, splitPatches(detail));
