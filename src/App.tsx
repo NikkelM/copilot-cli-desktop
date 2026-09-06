@@ -26,6 +26,7 @@ import {
   onSessionEvent,
   onSessionLoaded,
   onSessionsChanged,
+  onSidecarRestarted,
   onSidecarStopped,
   resolveElicitation,
   resolvePermission,
@@ -190,6 +191,21 @@ export default function App() {
       setPermissions([]);
       setElicitations([]);
     }),
+  );
+
+  // A replacement is up. Nothing it was told survives, so anything that was waiting on
+  // the old one is dropped and the session list is read again.
+  useTauriEvent(
+    () =>
+      onSidecarRestarted(() => {
+        setError(null);
+        setBusy(false);
+        setResuming(false);
+        setPermissions([]);
+        setElicitations([]);
+        refreshSessions();
+      }),
+    [refreshSessions],
   );
 
   useTauriEvent(() =>
