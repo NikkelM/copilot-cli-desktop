@@ -296,6 +296,9 @@ const EntryRow = memo(
   function EntryRow({ entry }: { entry: Entry }) {
     if (entry.kind === 'tool') return <ToolRow entry={entry} />;
     if (entry.kind === 'reasoning') return <ReasoningRow entry={entry} />;
+    // Not markdown: the app wrote this line, and it belongs to the transcript rather than
+    // to anyone in the conversation.
+    if (entry.variant === 'stopped') return <p className="message stopped">{entry.body}</p>;
 
     return (
       <div className={`message ${entry.variant}`}>

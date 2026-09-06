@@ -20,6 +20,9 @@ beforeEach(() => {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'test');
+  // Signing is the reader's own setting, and inheriting it makes these tests wait on a
+  // GPG agent that has nothing to do with what they are testing.
+  git('config', 'commit.gpgsign', 'false');
   write('tracked.txt', 'original\n');
   git('add', '-A');
   git('commit', '-qm', 'base');

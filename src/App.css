@@ -723,6 +723,27 @@ body {
   font-size: 12px;
 }
 
+/*
+ * A stopped turn is a fact about the transcript rather than something anyone said, so it
+ * reads as a rule across it rather than as another message.
+ */
+.message.stopped {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.message.stopped::before,
+.message.stopped::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}
+
 /* Tool calls stay collapsed to one line; the detail is available but never in the way. */
 .tool-head {
   display: flex;

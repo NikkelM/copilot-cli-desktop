@@ -654,3 +654,53 @@ describe('a change made by a tool', () => {
     expect(sameEntry(a, { ...a, patch: `${patch}\n+more` })).toBe(false);
   });
 });
+
+/**
+ * A turn the reader stopped is not a turn that finished, and a reply that simply ends
+ * mid-sentence reads as the app having lost the thread.
+ */
+describe('a stopped turn', () => {
+  it('marks the transcript where the turn was stopped', () => {
+    const entries = toEntries(
+      [event('user.message', { content: 'go' }), event('abort', { reason: 'user_initiated' })],
+      null,
+    );
+
+    expect(entries[1]).toMatchObject({ kind: 'message', variant: 'stopped', body: 'Stopped' });
+  });
+
+  // The reader knows why they stopped it; the other reasons are things that happened to
+  // them, and which one it was is the whole content of the row.
+  it.each([
+    ['remote_command', 'Stopped by a remote command'],
+    ['user_abort', 'Stopped by a connected server'],
+    ['autopilot_credit_limit', 'Stopped: this run reached its credit limit'],
+  ])('says what stopped it when it was not the reader (%s)', (reason, expected) => {
+    const entries = toEntries([event('abort', { reason })], null);
+    expect(entries[0]).toMatchObject({ body: expected });
+  });
+
+  it('falls back to saying it stopped when the reason is one it does not know', () => {
+    const entries = toEntries([event('abort', { reason: 'something_new' })], null);
+    expect(entries[0]).toMatchObject({ variant: 'stopped', body: 'Stopped' });
+  });
+
+  // Both happen at once, and the tool row losing its status was the bug that came first.
+  it('cancels a running tool and marks the stop in one pass', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', { toolCallId: 't1', toolName: 'bash', arguments: {} }),
+        event('abort', { reason: 'user_initiated' }),
+      ],
+      null,
+    );
+
+    expect((entries[0] as ToolEntry).status).toBe('cancelled');
+    expect(entries[1]).toMatchObject({ variant: 'stopped' });
+  });
+
+  // Idling is how every turn ends, so marking it would put a rule under every reply.
+  it.each(['session.idle', 'session.shutdown'])('says nothing when a turn merely ends (%s)', (type) => {
+    expect(toEntries([event(type)], null)).toEqual([]);
+  });
+});

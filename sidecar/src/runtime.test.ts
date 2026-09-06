@@ -332,6 +332,9 @@ describe('SessionRuntime tracking what a turn changes', () => {
     execFileSync('git', ['-C', repo, 'init', '-q']);
     execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
     execFileSync('git', ['-C', repo, 'config', 'user.name', 'test']);
+    // Signing is the reader's own setting, and inheriting it makes these tests wait on a
+    // GPG agent that has nothing to do with what they are testing.
+    execFileSync('git', ['-C', repo, 'config', 'commit.gpgsign', 'false']);
     writeFileSync(join(repo, 'tracked.txt'), 'original\n');
     execFileSync('git', ['-C', repo, 'add', '-A']);
     execFileSync('git', ['-C', repo, 'commit', '-qm', 'base']);
@@ -458,6 +461,9 @@ describe('SessionRuntime letting go of old points', () => {
     execFileSync('git', ['-C', repo, 'init', '-q']);
     execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
     execFileSync('git', ['-C', repo, 'config', 'user.name', 'test']);
+    // Signing is the reader's own setting, and inheriting it makes these tests wait on a
+    // GPG agent that has nothing to do with what they are testing.
+    execFileSync('git', ['-C', repo, 'config', 'commit.gpgsign', 'false']);
     writeFileSync(join(repo, 'tracked.txt'), 'original\n');
     execFileSync('git', ['-C', repo, 'add', '-A']);
     execFileSync('git', ['-C', repo, 'commit', '-qm', 'base']);

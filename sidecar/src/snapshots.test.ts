@@ -22,6 +22,9 @@ beforeEach(() => {
   git('init', '-q');
   git('config', 'user.email', 'test@example.com');
   git('config', 'user.name', 'test');
+  // Signing is the reader's own setting, and inheriting it makes these tests wait on a
+  // GPG agent that has nothing to do with what they are testing.
+  git('config', 'commit.gpgsign', 'false');
   // Line endings are git's business, not this module's; converting them here would make
   // the tests about the machine they run on.
   git('config', 'core.autocrlf', 'false');

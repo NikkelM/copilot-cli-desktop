@@ -363,7 +363,9 @@ export default function App() {
                 value={drafts[selected.sessionId] ?? ''}
                 onChange={(text) => setDrafts((current) => ({ ...current, [selected.sessionId]: text }))}
                 onSend={(prompt) => void handleSend(prompt)}
-                onAbort={() => selectedId && void abortSession(selectedId)}
+                // A stop that fails leaves the agent working with nothing to show for the
+                // press, which reads as the button doing nothing.
+                onAbort={() => selectedId && abortSession(selectedId).catch((e: unknown) => setError(String(e)))}
               />
             </div>
           </>
