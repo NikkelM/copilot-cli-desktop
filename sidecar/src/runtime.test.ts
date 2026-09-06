@@ -524,3 +524,70 @@ describe('SessionRuntime outside any repository', () => {
     expect(await runtime.diff('a', join(loose, 'notes.txt'))).toBeNull();
   });
 });
+
+/**
+ * Typing while the agent works should not be refused, and the runtime is the only place
+ * that knows a turn is running: a caller deciding for itself would be guessing from an
+ * older answer.
+ */
+describe('SessionRuntime queueing behind a running turn', () => {
+  const busy = (session: FakeSession) => session.emit({ type: 'assistant.turn_start', data: {} });
+  const done = (session: FakeSession) => session.emit({ type: 'assistant.turn_end', data: {} });
+  const modeOf = (session: FakeSession, call = 0) =>
+    (session.send.mock.calls[call]?.[0] as { mode?: string } | undefined)?.mode;
+
+  it('sends immediately when nothing is running', async () => {
+    const { runtime, sessions } = makeRuntime();
+    const result = await runtime.send('a', 'hello');
+
+    expect(result.queued).toBe(false);
+    expect(modeOf(sessions.get('a')!)).toBe('immediate');
+  });
+
+  it('queues behind a turn that is still running', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'first');
+    busy(sessions.get('a')!);
+
+    const result = await runtime.send('a', 'second');
+
+    expect(result.queued).toBe(true);
+    expect(modeOf(sessions.get('a')!, 1)).toBe('enqueue');
+  });
+
+  it('stops queueing once the turn has ended', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'first');
+    busy(sessions.get('a')!);
+    done(sessions.get('a')!);
+
+    expect((await runtime.send('a', 'second')).queued).toBe(false);
+  });
+
+  // Another session being mid-turn says nothing about this one.
+  it('judges each session on its own', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'x');
+    await runtime.send('b', 'x');
+    busy(sessions.get('a')!);
+
+    expect((await runtime.send('b', 'y')).queued).toBe(false);
+  });
+
+  // A caller that has a reason to insist still can.
+  it.each([
+    ['enqueue', true],
+    ['immediate', false],
+  ] as const)('lets a caller ask for %s outright', async (mode, queued) => {
+    const { runtime, sessions } = makeRuntime();
+    const result = await runtime.send('a', 'hello', mode);
+
+    expect(result.queued).toBe(queued);
+    expect(modeOf(sessions.get('a')!)).toBe(mode);
+  });
+
+  it('hands back the id the session gave the message', async () => {
+    const { runtime } = makeRuntime();
+    expect((await runtime.send('a', 'hello')).messageId).toBe('msg-a');
+  });
+});

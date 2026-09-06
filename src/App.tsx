@@ -14,6 +14,7 @@ import { toPreview } from '../shared/preview';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { PermissionPrompt } from './components/PermissionPrompt';
+import { Queue } from './components/Queue';
 import { SessionPath } from './components/SessionPath';
 import { Sidebar } from './components/Sidebar';
 import { Transcript } from './components/Transcript';
@@ -39,6 +40,7 @@ import {
 import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
 import { contentOf } from './lib/timeline';
+import { useQueue } from './lib/useQueue';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
 import { useTauriEvent } from './lib/useTauriEvent';
@@ -68,6 +70,7 @@ export default function App() {
 
   const transcript = useTranscript(selectedId, setError);
   const tree = useTreeState(selected?.cwd ?? null);
+  const queue = useQueue();
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
    * has been said, so it says it is working rather than appearing to have done nothing.
@@ -133,6 +136,16 @@ export default function App() {
         );
       }
 
+      // Like the preview above, the queue belongs to whichever session owns it rather than
+      // to the one on screen: a session left running keeps its queue while the reader is
+      // elsewhere, and it must be right when they come back.
+      if (event.type === 'user.message') {
+        const messageId = (event.data as { messageId?: string } | undefined)?.messageId;
+        if (messageId) queue.taken(sessionId, messageId);
+      }
+      // Stopping a turn discards everything behind it, so what was waiting will never run.
+      if (event.type === 'abort') queue.clear(sessionId);
+
       if (sessionId !== selectedRef.current) return;
 
       if (event.type === 'assistant.turn_start') setBusy(true);
@@ -165,7 +178,11 @@ export default function App() {
 
       // Once unloaded the app no longer sees this session's events, so its own preview
       // must stop overriding whatever the database reports.
-      if (!loaded) livePreviews.current.delete(sessionId);
+      if (!loaded) {
+        livePreviews.current.delete(sessionId);
+        // The queue lives in the session that was let go, so nothing is waiting any more.
+        queue.clear(sessionId);
+      }
     }),
   );
 
@@ -261,16 +278,24 @@ export default function App() {
     setError(null);
     setDrafts((current) => ({ ...current, [selectedId]: '' }));
 
-    // Show the prompt straight away; resuming a cold session takes seconds, and the
-    // runtime's own echo replaces this entry when it arrives.
-    transcript.showSent(prompt);
-
     const wasCold = !sessions.find((s) => s.sessionId === selectedId)?.loaded;
     setResuming(wasCold);
+
+    // Show the prompt straight away when nothing is running; resuming a cold session takes
+    // seconds, and a prompt that appears only afterwards looks like it was not sent. While
+    // a turn is running the message will queue, and showing it in the conversation would
+    // claim the agent had already been given it.
+    const expectQueued = busy;
+    if (!expectQueued) transcript.showSent(prompt);
     setBusy(true);
 
     try {
-      await sendMessage({ sessionId: selectedId, prompt });
+      const { messageId, queued } = await sendMessage({ sessionId: selectedId, prompt });
+
+      // The runtime decides, and a turn can end while the message is on its way, so the
+      // guess above is reconciled with what actually happened.
+      if (queued) queue.add(selectedId, { id: messageId, prompt });
+      else if (expectQueued) transcript.showSent(prompt);
     } catch (e: unknown) {
       setError(String(e));
       setBusy(false);
@@ -337,6 +362,8 @@ export default function App() {
             />
 
             <div className="footer">
+              <Queue messages={queue.queues[selected.sessionId] ?? []} />
+
               {sessionElicitations.map((pending) => (
                 <ElicitationPrompt
                   key={pending.requestId}

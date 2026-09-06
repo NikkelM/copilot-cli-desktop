@@ -79,12 +79,24 @@ export interface RuntimeStatus {
 export interface SendParams {
   sessionId: string;
   prompt: string;
-  /** `enqueue` queues behind an in-flight turn instead of starting a new one. */
+  /**
+   * `enqueue` queues behind an in-flight turn instead of starting a new one.
+   *
+   * Left unset the runtime decides, which is what a caller usually wants: it is the one
+   * that knows whether a turn is running, and it cannot race itself.
+   */
   mode?: 'enqueue' | 'immediate';
 }
 
 export interface SendResult {
   messageId: string;
+  /**
+   * The message went behind a turn already running rather than starting one.
+   *
+   * The caller cannot work this out for itself without repeating the runtime's own
+   * bookkeeping, and it decides whether the message belongs in the transcript yet.
+   */
+  queued: boolean;
 }
 
 export interface SetApprovalPolicyParams {

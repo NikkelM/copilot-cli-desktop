@@ -722,10 +722,26 @@ export class SessionRuntime {
     }
   }
 
-  /** Resume the session if needed, then send. Returns the resulting message id. */
-  async send(sessionId: string, prompt: string, mode?: 'enqueue' | 'immediate'): Promise<string> {
+  /**
+   * Resume the session if needed, then send.
+   *
+   * A message written while a turn is running is queued rather than refused, which is what
+   * the CLI does and what typing ahead is for. The decision is made here rather than by the
+   * caller because this is where a turn is known to be running, and the answer comes back
+   * so the caller knows whether the message is in the conversation yet or still waiting.
+   */
+  async send(
+    sessionId: string,
+    prompt: string,
+    mode?: 'enqueue' | 'immediate',
+  ): Promise<{ messageId: string; queued: boolean }> {
     const session = await this.ensureSession(sessionId);
-    return session.send({ prompt, ...(mode ? { mode } : {}) });
+    const queued = mode ? mode === 'enqueue' : (this.loaded.get(sessionId)?.busy ?? false);
+
+    return {
+      messageId: await session.send({ prompt, mode: queued ? 'enqueue' : 'immediate' }),
+      queued,
+    };
   }
 
   /** Stop the current turn without unloading the session. */
