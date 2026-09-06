@@ -42,6 +42,17 @@ function makeStore() {
         fields.created_at ?? '2026-01-01 00:00:00',
         fields.updated_at ?? '2026-01-01 00:00:00',
       );
+
+      // A real session is a row and a directory. Seeding only the row would describe one
+      // that has been deleted, which is a case worth testing deliberately rather than by
+      // accident in every other test.
+      const dir = join(home, 'session-state', id);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'events.jsonl'), '{}\n');
+    },
+    /** Take away a session's log, as deleting it outside the app would. */
+    removeState(sessionId: string) {
+      rmSync(join(home, 'session-state', sessionId), { recursive: true, force: true });
     },
     addTurn(sessionId: string, index: number, user: string | null, assistant: string | null, timestamp: string) {
       db.prepare(
@@ -56,11 +67,11 @@ function makeStore() {
       if (name !== undefined) {
         writeFileSync(join(dir, 'workspace.yaml'), `id: ${sessionId}\nname: ${name}\nuser_named: true\n`);
       }
-      if (logMtime) {
-        const log = join(dir, 'events.jsonl');
-        writeFileSync(log, '{}\n');
-        utimesSync(log, logMtime, logMtime);
-      }
+      // Every real session has one, and its absence is what marks a session as no longer
+      // openable, so writing it is part of existing rather than an option.
+      const log = join(dir, 'events.jsonl');
+      writeFileSync(log, '{}\n');
+      if (logMtime) utimesSync(log, logMtime, logMtime);
     },
     close() {
       db.close();
@@ -89,6 +100,23 @@ afterEach(() => {
 });
 
 describe('listSessions', () => {
+
+  /**
+   * The database and the logs are separate things. Deleting a session's directory, or
+   * restoring a machine without it, leaves a row that still has a summary and turns - so
+   * it looks like a session until it is opened, at which point the transcript is empty and
+   * resuming it fails.
+   */
+  it('hides a session whose log has gone', async () => {
+    store.addSession('kept', { summary: 'Still here' });
+    store.addTurn('kept', 0, 'hello', 'hi', '2026-01-02 10:00:00');
+    store.addSession('deleted', { summary: 'Was here' });
+    store.addTurn('deleted', 0, 'hello', 'hi', '2026-01-02 11:00:00');
+    store.removeState('deleted');
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions().map((s) => s.sessionId)).toEqual(['kept']);
+  });
   it('hides sessions with neither a title nor any turns', async () => {
     store.addSession('empty');
     store.addSession('titled', { summary: 'Has a name' });

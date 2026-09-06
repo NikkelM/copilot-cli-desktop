@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, afterEach } from 'vitest';
+import { afterEach } from 'vitest';
 
 /**
  * Point the tests at a copilot home of their own, before anything reads the real one.
@@ -14,7 +14,22 @@ import { afterAll, afterEach } from 'vitest';
 const home = mkdtempSync(join(tmpdir(), 'ccd-test-home-'));
 process.env.COPILOT_HOME = home;
 
-afterAll(() => rmSync(home, { recursive: true, force: true }));
+/**
+ * Removed when the worker ends rather than after each file.
+ *
+ * A setup file's afterAll runs after every file the worker handles, so cleaning up there
+ * deletes the home out from under the files that follow: the suite passed one file at a
+ * time and failed twenty-three tests when run together.
+ */
+process.on('exit', () => rmSync(home, { recursive: true, force: true }));
+
+// Sidecar tests run without a DOM, where there is nothing to unmount and loading the
+// React testing library would only cost startup time.
+afterEach(async () => {
+  if (typeof document === 'undefined') return;
+  const { cleanup } = await import('@testing-library/react');
+  cleanup();
+});
 
 // Sidecar tests run without a DOM, where there is nothing to unmount and loading the
 // React testing library would only cost startup time.
