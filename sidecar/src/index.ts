@@ -67,7 +67,9 @@ const runtime = new SessionRuntime({
 async function dispatch(request: JsonRpcRequest): Promise<unknown> {
   switch (request.method) {
     case 'sessions.list': {
-      const sessions = listSessions().map((session) => ({
+      // The sessions the runtime holds are listed even when the database would hide them:
+      // one just started has no title and no turns yet.
+      const sessions = listSessions(runtime.status().activeSessionIds).map((session) => ({
         ...session,
         loaded: runtime.isActive(session.sessionId),
       }));

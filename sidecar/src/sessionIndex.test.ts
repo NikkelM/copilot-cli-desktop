@@ -50,6 +50,10 @@ function makeStore() {
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'events.jsonl'), '{}\n');
     },
+    /** Take away only the log, as a session that has not had a turn yet. */
+    removeLog(sessionId: string) {
+      rmSync(join(home, 'session-state', sessionId, 'events.jsonl'), { force: true });
+    },
     /** Take away a session's log, as deleting it outside the app would. */
     removeState(sessionId: string) {
       rmSync(join(home, 'session-state', sessionId), { recursive: true, force: true });
@@ -107,6 +111,40 @@ describe('listSessions', () => {
    * it looks like a session until it is opened, at which point the transcript is empty and
    * resuming it fails.
    */
+
+  /**
+   * A session that has only just been started has no title and no turns, which is exactly
+   * how the database describes a crashed start. Judging it on that alone made a new
+   * session vanish the moment it was made, with the button appearing to do nothing.
+   */
+  it('keeps a session the runtime is holding, however empty it looks', async () => {
+    store.addSession('fresh');
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions().map((s) => s.sessionId)).toEqual([]);
+    expect(listSessions(['fresh']).map((s) => s.sessionId)).toEqual(['fresh']);
+  });
+
+  it('does not list a held session twice', async () => {
+    store.addSession('used', { summary: 'Has a name' });
+    store.addTurn('used', 0, 'hi', 'hello', '2026-09-05 10:00:00');
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions(['used']).map((s) => s.sessionId)).toEqual(['used']);
+  });
+
+  /**
+   * A session's log is written on its first turn, so one just started has none. Judging it
+   * missing rather than not-yet-written hid every new session behind a second filter.
+   */
+  it('keeps a held session that has not written its log yet', async () => {
+    store.addSession('fresh');
+    store.removeLog('fresh');
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions().map((s) => s.sessionId)).toEqual([]);
+    expect(listSessions(['fresh']).map((s) => s.sessionId)).toEqual(['fresh']);
+  });
   it('hides a session whose log has gone', async () => {
     store.addSession('kept', { summary: 'Still here' });
     store.addTurn('kept', 0, 'hello', 'hi', '2026-01-02 10:00:00');
