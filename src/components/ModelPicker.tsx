@@ -14,8 +14,8 @@ export interface ModelChoiceMade {
 }
 
 interface ModelPickerProps {
-  /** What the session runs on now, or null while that is still unknown. */
-  current: SessionModel | null;
+  /** What the session runs on: null when its log never said, undefined until it is read. */
+  current: SessionModel | null | undefined;
   /** Asked for only when the picker is opened: listing models costs a running server. */
   onOpen: () => Promise<ModelChoice[]>;
   onChoose: (choice: ModelChoiceMade) => void;
@@ -81,8 +81,10 @@ export function ModelPicker({ current, onOpen, onChoose }: ModelPickerProps) {
         title="Change the model, how hard it thinks, and how much room it has"
       >
         {/* Named even before the catalogue is known: this comes from the session's own log,
-            so a session says what it runs on without being started. */}
-        <span className="model-id">{current?.model ?? 'No model recorded'}</span>
+            so a session says what it runs on without being started. Blank rather than
+            "nothing recorded" until that read comes back, so switching sessions does not
+            flash a claim that turns out to be false. */}
+        <span className="model-id">{current === undefined ? '' : (current?.model ?? 'No model recorded')}</span>
         {effort && <span className="model-tag">{effort}</span>}
         {long && <span className="model-tag">long context</span>}
       </button>
@@ -116,7 +118,7 @@ function ModelRow({
   onDone,
 }: {
   model: ModelChoice;
-  current: SessionModel | null;
+  current: SessionModel | null | undefined;
   onChoose: (choice: ModelChoiceMade) => void;
   onDone: () => void;
 }) {

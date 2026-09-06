@@ -106,42 +106,68 @@ export async function lastModel(sessionId: string): Promise<SessionModel | null>
     if (size === 0) return null;
 
     let window = Math.min(INITIAL_WINDOW, size);
+    let found: SessionModel | null = null;
 
     for (;;) {
       const start = Math.max(0, size - window);
       const reachedStart = start === 0;
 
-      const named = latestModelIn(await eventsIn(file, start, size, reachedStart));
-      if (named) return named;
+      found = latestModelIn(await eventsIn(file, start, size, reachedStart));
+      if (found) break;
 
       if (reachedStart || window >= MAX_WINDOW) break;
       window = Math.min(window * GROWTH_FACTOR, size, MAX_WINDOW);
     }
 
-    // Nothing recent to go on, so fall back to what the run opened with. session.start is
-    // the first line of the file, which is why this reads a window rather than the lot.
-    return latestModelIn(await eventsIn(file, 0, Math.min(INITIAL_WINDOW, size), true));
+    // The opening of the run is worth reading in two cases: when the tail said nothing at
+    // all, and when it named a model without saying how it was set up. Neither is unusual -
+    // a change event often carries the model and the effort but not the context.
+    if (!found || !found.reasoningEffort || !found.contextTier) {
+      const opening = latestModelIn(await eventsIn(file, 0, Math.min(INITIAL_WINDOW, size), true));
+
+      if (!found) found = opening;
+      else if (opening) {
+        found.reasoningEffort ??= opening.reasoningEffort;
+        found.contextTier ??= opening.contextTier;
+      }
+    }
+
+    return found;
   } finally {
     await file.close();
   }
 }
 
 /**
- * The last event in a slice that actually names a model.
+ * What a slice of the log says a session runs on, the newest mention of each part winning.
  *
- * Searched from the end because later is more recent, and skipping rather than stopping at
- * one that names nothing: an older CLI wrote `session.start` without the model on it, and
- * stopping there would miss the change on the very next line.
+ * Assembled part by part rather than taken from one event, because no single event reliably
+ * carries all three: a change often names the model and the effort but not the context, and
+ * the line a run opens with sometimes carries the context and no model at all. Reading only
+ * the newest event that names a model loses whatever that event left out, which is what put
+ * an effort and a context the session really had out of the header.
  */
 function latestModelIn(events: TranscriptEvent[]): SessionModel | null {
+  let model: string | undefined;
+  let reasoningEffort: string | undefined;
+  let contextTier: string | undefined;
+
   for (let index = events.length - 1; index >= 0; index--) {
     if (!NAMES_A_MODEL.has(events[index].type)) continue;
+    const data = (events[index].data ?? {}) as Record<string, unknown>;
 
-    const named = modelOf(events[index]);
-    if (named) return named;
+    model ??= textOf(data.newModel) ?? textOf(data.selectedModel);
+    reasoningEffort ??= textOf(data.reasoningEffort);
+    contextTier ??= textOf(data.contextTier);
+
+    if (model && reasoningEffort && contextTier) break;
   }
-  return null;
+
+  return model ? { model, reasoningEffort, contextTier } : null;
 }
+
+/** Null is what the runtime writes for a setting nobody chose, which is not a value. */
+const textOf = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
 
 /** The events in one slice of the log, skipping the partial line a mid-file start leaves. */
 async function eventsIn(
@@ -164,18 +190,6 @@ async function eventsIn(
  * them at all, so the second is not a fallback worth skipping.
  */
 const NAMES_A_MODEL = new Set(['session.model_change', 'session.start', 'session.resume']);
-
-function modelOf(event: TranscriptEvent): SessionModel | null {
-  const data = (event.data ?? {}) as Record<string, unknown>;
-  const model = data.newModel ?? data.selectedModel;
-  if (typeof model !== 'string') return null;
-
-  return {
-    model,
-    reasoningEffort: typeof data.reasoningEffort === 'string' ? data.reasoningEffort : undefined,
-    contextTier: typeof data.contextTier === 'string' ? data.contextTier : undefined,
-  };
-}
 
 /**
  * Parse the lines in a window, recording where each event began.

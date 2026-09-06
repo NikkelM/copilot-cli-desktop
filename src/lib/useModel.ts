@@ -20,7 +20,8 @@ let catalogue: Promise<ModelChoice[]> | null = null;
  * because the choice belongs to the running session; that is the same price as sending.
  */
 export function useModel(sessionId: string | null, onError: (message: string) => void) {
-  const [current, setCurrent] = useState<SessionModel | null>(null);
+  /** Undefined until the log has been read: not yet known is not the same as none. */
+  const [current, setCurrent] = useState<SessionModel | null | undefined>(undefined);
 
   const showing = useRef(sessionId);
   showing.current = sessionId;
@@ -28,12 +29,12 @@ export function useModel(sessionId: string | null, onError: (message: string) =>
   report.current = onError;
 
   useEffect(() => {
-    setCurrent(null);
+    setCurrent(undefined);
     if (!sessionId) return;
 
     sessionModel(sessionId)
       .then((found) => showing.current === sessionId && setCurrent(found))
-      .catch(() => undefined);
+      .catch(() => showing.current === sessionId && setCurrent(null));
   }, [sessionId]);
 
   /**
