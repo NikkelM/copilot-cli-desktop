@@ -169,6 +169,30 @@ describe('useShortcuts', () => {
       expect(event.defaultPrevented).toBe(false);
     });
 
+    // The field is only where the text is shown; the app is where it is kept, and a
+    // shortcut that has to ask the DOM is guessing.
+    it('asks the caller what has been written rather than the field', () => {
+      renderHook(() => useShortcuts(on, () => ''));
+      const box = document.createElement('textarea');
+      box.value = 'the field disagrees';
+      document.body.append(box);
+
+      const event = press('?', {}, box);
+
+      expect(on).toHaveBeenCalledExactlyOnceWith('help');
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('leaves the mark alone when the caller says something is written', () => {
+      renderHook(() => useShortcuts(on, () => 'why does'));
+      const box = document.createElement('textarea');
+      document.body.append(box);
+
+      const event = press('?', {}, box);
+
+      expect(on).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    });
     // A menu has no text to be the first character of, so it is left alone.
     it('stays out of the way inside a select', () => {
       renderHook(() => useShortcuts(on));

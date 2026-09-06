@@ -42,14 +42,19 @@ function typing(target: EventTarget | null): boolean {
 }
 
 /**
- * Whether a field is empty, so a key pressed into it is the first thing typed.
+ * Whether nothing has been written yet, so a key pressed now is the first character.
  *
  * The composer holds the keyboard whenever a session is open, so a shortcut that refuses to
  * fire while a field has focus would be unreachable almost all of the time. A question mark
  * as the first character is a question nobody asks, which is what makes it safe to claim -
  * the same reasoning the CLI applies to its own leading keys.
+ *
+ * The caller is asked before the field itself, because the caller holds the text and the
+ * field is only where it is being shown.
  */
-function empty(target: EventTarget | null): boolean {
+function nothingWritten(target: EventTarget | null, writing?: () => string): boolean {
+  if (writing) return writing().length === 0;
+
   const field = target as HTMLInputElement | HTMLTextAreaElement | null;
   // A menu has a value but nothing is being typed into it, so it is never "the first
   // character" of anything.
@@ -65,12 +70,17 @@ function empty(target: EventTarget | null): boolean {
  * the mouse to stop a turn is the moment they notice they have left the terminal behind.
  * Bound on the window rather than on a component, so they work wherever the focus happens
  * to be - including inside the composer for the ones that make sense there.
+ *
+ * @param writing what has been typed but not sent, since the app knows that better than the
+ *   field does: a shortcut that has to sniff the DOM for it is guessing.
  */
-export function useShortcuts(on: (shortcut: Shortcut) => void) {
+export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => string) {
   // Held in refs so a caller passing a fresh function does not re-register the listener,
   // and so the double-press window survives a render.
   const handler = useRef(on);
   handler.current = on;
+  const written = useRef(writing);
+  written.current = writing;
   const lastEscape = useRef(0);
 
   useEffect(() => {
@@ -104,7 +114,7 @@ export function useShortcuts(on: (shortcut: Shortcut) => void) {
       // while a field has focus would put this out of reach almost all of the time. A
       // question mark as the first character of a message is one nobody types, so it is
       // claimed - and swallowed, rather than left in the box behind the list.
-      if (event.key === '?' && (!typing(event.target) || empty(event.target))) {
+      if (event.key === '?' && (!typing(event.target) || nothingWritten(event.target, written.current))) {
         event.preventDefault();
         handler.current('help');
       }
