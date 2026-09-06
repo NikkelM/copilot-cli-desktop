@@ -461,13 +461,16 @@ describe('SessionRuntime tracking changes outside any repository', () => {
       '+after',
     ].join('\n');
 
-  // Shaped as the runtime really receives it: the payload is under data, which the code
-  // under test once ignored - and this helper once agreed with it, so both were wrong
-  // together and the tests passed against a feature that recorded nothing.
-  const completed = (toolName: string, detailedContent: string) => ({
-    type: 'tool.execution_complete',
-    data: { toolName, result: { detailedContent } },
-  });
+  /**
+   * Shaped as the runtime really sends it, which took two attempts to get right. The
+   * completion names only the call: the tool's name is on the start event, so recording a
+   * change needs both halves. Building a one-event fake agreed with the code and let a
+   * feature that recorded nothing pass its tests.
+   */
+  const wrote = (toolName: string, detailedContent: string, callId = 'call-1') => [
+    { type: 'tool.execution_start', data: { toolCallId: callId, toolName } },
+    { type: 'tool.execution_complete', data: { toolCallId: callId, result: { detailedContent } } },
+  ];
 
   it('reports a file the agent edited with no repository in sight', async () => {
     const file = join(loose, 'notes.txt');
@@ -475,7 +478,7 @@ describe('SessionRuntime tracking changes outside any repository', () => {
     await runtime.send('a', 'go');
 
     sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    sessions.get('a')!.emit(completed('edit', editReport(file)));
+    for (const e of wrote('edit', editReport(file))) sessions.get('a')!.emit(e);
 
     const changed = await runtime.changes('a');
     expect(changed?.changes).toEqual([{ path: file, status: 'modified' }]);
@@ -488,7 +491,7 @@ describe('SessionRuntime tracking changes outside any repository', () => {
     await runtime.send('a', 'go');
 
     sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    sessions.get('a')!.emit(completed('edit', editReport(file)));
+    for (const e of wrote('edit', editReport(file))) sessions.get('a')!.emit(e);
 
     expect(await runtime.diff('a', file)).toContain('+after');
   });
@@ -500,7 +503,7 @@ describe('SessionRuntime tracking changes outside any repository', () => {
     await runtime.send('a', 'go');
 
     sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    sessions.get('a')!.emit(completed('powershell', 'C:\\somewhere\\out.txt\n<shellId: 0 completed>'));
+    for (const e of wrote('powershell', 'C:\\somewhere\\out.txt')) sessions.get('a')!.emit(e);
 
     expect(await runtime.changes('a')).toBeNull();
   });
