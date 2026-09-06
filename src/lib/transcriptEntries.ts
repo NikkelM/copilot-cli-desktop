@@ -36,6 +36,8 @@ export interface ToolEntry {
    * truncates, so without this the command itself has nowhere to be read.
    */
   command?: string;
+  /** A search, whose result is counted in matches rather than lines. */
+  search?: boolean;
 }
 
 export type Entry = MessageEntry | ToolEntry;
@@ -199,6 +201,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         const args = data.arguments as Record<string, unknown> | undefined;
         const label = displayName(name, data);
         const command = typeof args?.command === 'string' && args.command.trim() ? args.command : undefined;
+        const search = typeof args?.pattern === 'string' && args.pattern.trim() !== '';
 
         // The question is the subject of the row, the way a command is for a shell call.
         // The two ask_user variants disagree on the field: legacy sends "question",
@@ -229,6 +232,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
               output: null,
               status: 'running',
               command,
+              search: search || undefined,
             };
 
         const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
@@ -332,6 +336,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
     a.status === other.status &&
     a.answer === other.answer &&
     a.command === other.command &&
+    a.search === other.search &&
     sameChoices(a.choices, other.choices)
   );
 }

@@ -399,6 +399,7 @@ describe('sameEntry', () => {
     answer: 'B',
     choices: ['A', 'B'],
     command: 'echo hi',
+    search: true,
   };
 
   it('treats a rebuilt but identical entry as unchanged', () => {
@@ -420,6 +421,7 @@ describe('sameEntry', () => {
       answer: 'A',
       choices: ['A'],
       command: 'echo bye',
+      search: undefined,
     };
 
     for (const [field, value] of Object.entries(changed)) {
@@ -429,6 +431,46 @@ describe('sameEntry', () => {
     // question decides how the entry is built, and is never drawn.
     const undrawn = Object.keys(tool).filter((k) => k !== 'kind' && k !== 'question' && !(k in changed));
     expect(undrawn, 'new fields must be compared, or listed as never drawn').toEqual([]);
+  });
+
+  /**
+   * The sweep above only sees fields the sample happens to carry, and twice now a field
+   * has been added without one. This asks the builder itself what it produces, so a new
+   * field fails here as soon as anything sets it.
+   */
+  it('compares every field toEntries can produce', () => {
+    const built = [
+      ...toEntries(
+        [
+          event('tool.execution_start', {
+            toolCallId: 't1',
+            toolName: 'powershell',
+            arguments: { command: 'ls', description: 'List' },
+          }),
+          event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'out' } }),
+        ],
+        null,
+      ),
+      ...toEntries(
+        [event('tool.execution_start', { toolCallId: 't2', toolName: 'grep', arguments: { pattern: 'x' } })],
+        null,
+      ),
+      ...toEntries(
+        [
+          event('tool.execution_start', {
+            toolCallId: 'q1',
+            toolName: 'ask_user',
+            arguments: { question: 'Which?', choices: ['A'] },
+          }),
+          event('tool.execution_complete', { toolCallId: 'q1', success: true, result: { content: 'User responded: A' } }),
+        ],
+        null,
+      ),
+    ];
+
+    const produced = new Set(built.flatMap((entry) => Object.keys(entry)));
+    const accounted = new Set([...Object.keys(tool), 'kind']);
+    expect([...produced].filter((field) => !accounted.has(field)), 'add it to the entry above').toEqual([]);
   });
 
   it('separates a message from a tool that shares its key', () => {

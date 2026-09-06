@@ -214,3 +214,46 @@ describe('following a reply as it is written', () => {
     expect(t.list.scrollTop).toBe(t.height);
   });
 });
+
+// The CLI reports how a search went; a search that found nothing is the one case with
+// no output at all, so saying nothing leaves it indistinguishable from one still running.
+describe('how a search went', () => {
+  const searched = (id: string, output: string) => [
+    event('tool.execution_start', { toolCallId: id, toolName: 'grep', arguments: { pattern: 'needle' } }, `${id}s`),
+    event('tool.execution_complete', { toolCallId: id, success: true, result: { content: output } }, `${id}c`),
+  ];
+
+  it('counts what a search found', () => {
+    show(searched('t1', 'one\ntwo\nthree'));
+    expect(screen.getByText('3 matches')).toBeTruthy();
+  });
+
+  it('says so when a search found nothing', () => {
+    show(searched('t1', ''));
+    expect(screen.getByText('no matches')).toBeTruthy();
+  });
+
+  it('counts a single match as one', () => {
+    show(searched('t1', 'only this'));
+    expect(screen.getByText('1 match')).toBeTruthy();
+  });
+
+  it('says nothing about matches while the search is still running', () => {
+    show([event('tool.execution_start', { toolCallId: 't1', toolName: 'grep', arguments: { pattern: 'x' } }, 'e1')]);
+    expect(screen.queryByText('no matches')).toBeNull();
+  });
+
+  // A failed search reports an error, and counting its lines would read as matches.
+  it('does not count the lines of a failed search', () => {
+    show([
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'grep', arguments: { pattern: 'x' } }, 'e1'),
+      event('tool.execution_complete', { toolCallId: 't1', success: false, error: { message: 'bad regex' } }, 'e2'),
+    ]);
+    expect(screen.queryByText(/match/)).toBeNull();
+  });
+
+  it('still counts lines for anything that is not a search', () => {
+    show(shell('e1', 'ls', 't1'));
+    expect(screen.getByText('1 line')).toBeTruthy();
+  });
+});
