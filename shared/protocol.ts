@@ -158,6 +158,8 @@ export interface SidecarRequests {
   'sessions.setApprovalPolicy': { params: SetApprovalPolicyParams; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
+  'sessions.changes': { params: { sessionId: string }; result: SessionChangesResult };
+  'sessions.diff': { params: { sessionId: string; path: string }; result: { patch: string } };
   'runtime.status': { params: void; result: RuntimeStatus };
 }
 
@@ -215,4 +217,16 @@ export interface JsonRpcNotification {
   jsonrpc: '2.0';
   method: string;
   params?: unknown;
+}
+
+/** A file the agent changed during the current turn. */
+export interface SessionChange {
+  path: string;
+  status: 'added' | 'modified' | 'deleted' | 'renamed';
+}
+
+export interface SessionChangesResult {
+  /** Null when the session is not in a git repository, or has no snapshot yet. */
+  root: string | null;
+  changes: SessionChange[];
 }

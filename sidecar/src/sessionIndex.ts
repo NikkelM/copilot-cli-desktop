@@ -125,8 +125,22 @@ export function lastActivity(sessionId: string, fromTurns: string | null): strin
 }
 
 /** SQLite writes `YYYY-MM-DD HH:MM:SS` in UTC without a zone marker, so make it explicit. */
-export function toTime(value: string): number {
-  const normalised = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
+export function toTime(value: string): number {  const normalised = value.includes('T') ? value : `${value.replace(' ', 'T')}Z`;
   const parsed = new Date(normalised).getTime();
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** The directory a session runs in, read on its own so a snapshot can be taken there. */
+export function sessionCwd(sessionId: string): string | null {
+  if (!existsSync(sessionStoreDb)) return null;
+
+  const db = new DatabaseSync(sessionStoreDb, { readOnly: true });
+  try {
+    const row = db.prepare('SELECT cwd FROM sessions WHERE id = ?').get(sessionId) as { cwd?: string } | undefined;
+    return row?.cwd ?? null;
+  } catch {
+    return null;
+  } finally {
+    db.close();
+  }
 }
