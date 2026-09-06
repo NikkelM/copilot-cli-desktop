@@ -11,6 +11,7 @@ import {
 
 import type { ElicitationAction, ElicitationFieldValue, PermissionChoice } from '../../shared/protocol.js';
 import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { resolveCliPath, sessionStateDir } from './paths.js';
@@ -248,20 +249,24 @@ export class SessionRuntime {
   }
 
   /**
-   * Start a session in a directory of the reader's choosing.
+   * Start a session, in a directory only if one is wanted.
+   *
+   * Not every session is about a project. Wanting to ask something quickly should not
+   * begin with choosing a folder, so this defaults to the home directory the way running
+   * the CLI without arguments does, and takes one when it matters.
    *
    * Costs a Copilot process, unlike everything else the sidebar does, so it happens on
    * asking rather than in anticipation. The session is left loaded because someone who
    * has just made one is about to write in it.
    */
-  async create(workingDirectory: string): Promise<{ sessionId: string }> {
+  async create(workingDirectory?: string): Promise<{ sessionId: string }> {
     const client = await this.ensureClient();
 
     // The handlers need the session's id, which does not exist until it does, so they
     // read it when called rather than closing over a value that is not there yet.
     let id = '';
     const session = await client.createSession({
-      workingDirectory,
+      workingDirectory: workingDirectory ?? homedir(),
       onPermissionRequest: (request) => this.decidePermission(id, request),
       onUserInputRequest: (request) => this.askUserInput(id, request),
       onElicitationRequest: (context) => this.askElicitation(id, context),

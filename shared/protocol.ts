@@ -158,7 +158,7 @@ export interface SidecarRequests {
   'sessions.setApprovalPolicy': { params: SetApprovalPolicyParams; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
-  'sessions.create': { params: { workingDirectory: string }; result: { sessionId: string } };
+  'sessions.create': { params: { workingDirectory?: string }; result: { sessionId: string } };
   'sessions.changes': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
   'sessions.diff': { params: { sessionId: string; path: string; scope?: SnapshotScope }; result: { patch: string } };
   'sessions.rewind': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
