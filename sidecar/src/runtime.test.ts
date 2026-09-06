@@ -341,24 +341,22 @@ describe('SessionRuntime tracking what a turn changes', () => {
 
   const inRepo = () => ({ lookupCwd: () => repo });
 
-  /** The snapshot is taken in the background as the turn starts; git is not instant. */
-  async function snapshotted(runtime: { changes: (id: string) => Promise<unknown> }) {
-    for (let i = 0; i < 100; i += 1) {
-      const found = await runtime.changes('a');
-      if (found) return found as { changes: unknown[] };
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    throw new Error('no snapshot was taken');
-  }
+  /**
+   * Waits for the picture the turn just asked for, using the fact that asking what changed
+   * waits for it. Sleeping instead let this suite pass against the very bug it was written
+   * for, because the second snapshot had not landed yet when it was checked.
+   */
+  const captured = async (runtime: { changes: (id: string) => Promise<unknown> }) => {
+    await runtime.changes('a');
+  };
 
   it('reports what the agent changed once a turn has begun', async () => {
     const { runtime, sessions } = makeRuntime(inRepo());
     await runtime.send('a', 'go');
 
     sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    await new Promise((r) => setTimeout(r, 50));
+    await captured(runtime);
 
-    await snapshotted(runtime);
     writeFileSync(join(repo, 'tracked.txt'), 'the agent wrote this\n');
 
     const changed = await runtime.changes('a');
@@ -373,9 +371,8 @@ describe('SessionRuntime tracking what a turn changes', () => {
     const { runtime, sessions } = makeRuntime(inRepo());
     await runtime.send('a', 'go');
     sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    await new Promise((r) => setTimeout(r, 50));
 
-    expect((await snapshotted(runtime)).changes).toEqual([]);
+    expect((await runtime.changes('a'))?.changes).toEqual([]);
   });
 
   it('has nothing to report before a turn has begun', async () => {
@@ -392,9 +389,51 @@ describe('SessionRuntime tracking what a turn changes', () => {
     await runtime.send('a', 'go');
 
     sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    await new Promise((r) => setTimeout(r, 50));
 
     expect(await runtime.changes('a')).toBeNull();
     rmSync(loose, { recursive: true, force: true });
+  });
+
+  /**
+   * The bug this was written for. Every turn used to replace the snapshot, so turn one's
+   * work was inside the picture taken for turn two and vanished: only the most recent
+   * edit was ever reported, which for a session doing several things is most of the work
+   * silently missing.
+   */
+  it('keeps reporting what an earlier turn changed after a later one starts', async () => {
+    const { runtime, sessions } = makeRuntime(inRepo());
+    await runtime.send('a', 'go');
+    const session = sessions.get('a')!;
+
+    session.emit({ type: 'assistant.turn_start' });
+    await captured(runtime);
+    writeFileSync(join(repo, 'tracked.txt'), 'changed in the first turn\n');
+    session.emit({ type: 'assistant.turn_end' });
+
+    // A second turn begins, which is where the first turn's work used to disappear.
+    session.emit({ type: 'assistant.turn_start' });
+    await captured(runtime);
+    writeFileSync(join(repo, 'second.txt'), 'changed in the second turn\n');
+
+    const both = await runtime.changes('a');
+    expect(both?.changes.map((c) => c.path).sort()).toEqual(['second.txt', 'tracked.txt']);
+  });
+
+  it('can still show one turn on its own', async () => {
+    const { runtime, sessions } = makeRuntime(inRepo());
+    await runtime.send('a', 'go');
+    const session = sessions.get('a')!;
+
+    session.emit({ type: 'assistant.turn_start' });
+    await captured(runtime);
+    writeFileSync(join(repo, 'tracked.txt'), 'first turn\n');
+    session.emit({ type: 'assistant.turn_end' });
+
+    session.emit({ type: 'assistant.turn_start' });
+    await captured(runtime);
+    writeFileSync(join(repo, 'second.txt'), 'second turn\n');
+
+    const turn = await runtime.changes('a', 'turn');
+    expect(turn?.changes.map((c) => c.path)).toEqual(['second.txt']);
   });
 });
