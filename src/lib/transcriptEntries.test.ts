@@ -666,7 +666,7 @@ describe('a stopped turn', () => {
       null,
     );
 
-    expect(entries[1]).toMatchObject({ kind: 'message', variant: 'stopped', body: 'Stopped by you' });
+    expect(entries[1]).toMatchObject({ kind: 'message', variant: 'stopped', body: 'Cancelled by user' });
   });
 
   // Once the reply has ended, a turn the reader stopped and a turn something else stopped

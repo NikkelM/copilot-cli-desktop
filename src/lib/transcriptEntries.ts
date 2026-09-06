@@ -88,7 +88,7 @@ function text(data: Record<string, unknown>, key: string): string | null {
 function stopReason(data: Record<string, unknown>): string {
   switch (data.reason) {
     case 'user_initiated':
-      return 'Stopped by you';
+      return 'Cancelled by user';
     case 'remote_command':
       return 'Stopped by a remote command';
     case 'user_abort':
