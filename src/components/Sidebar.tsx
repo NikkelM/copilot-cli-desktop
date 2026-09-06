@@ -39,7 +39,7 @@ export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating }: 
           className="new-session"
           onClick={onCreate}
           disabled={creating}
-          title="Start a session in a folder you choose"
+          title="Start a new session"
         >
           {creating ? 'Starting…' : 'New'}
         </button>

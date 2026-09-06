@@ -9,7 +9,6 @@ import type {
   SessionSummary,
   TranscriptEvent,
 } from '../shared/protocol';
-import { open } from '@tauri-apps/plugin-dialog';
 
 import { toPreview } from '../shared/preview';
 import { Composer } from './components/Composer';
@@ -72,14 +71,11 @@ export default function App() {
 
   async function handleCreate() {
     setError(null);
-    // Asked for rather than guessed: a session's directory decides what it can see, and
-    // there is no sensible default for that.
-    const chosen = await open({ directory: true, title: 'Start a session in' }).catch(() => null);
-    if (typeof chosen !== 'string') return;
-
     setCreating(true);
     try {
-      const { sessionId } = await createSession(chosen);
+      // No folder asked for: not every session is about a project, and wanting to ask
+      // something quickly should not begin with choosing a directory.
+      const { sessionId } = await createSession();
       refreshSessions();
       setSelectedId(sessionId);
     } catch (e: unknown) {

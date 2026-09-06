@@ -53,7 +53,7 @@ export function getDiff(sessionId: string, path: string): Promise<{ patch: strin
 }
 
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */
-export function createSession(workingDirectory: string): Promise<{ sessionId: string }> {
+export function createSession(workingDirectory?: string): Promise<{ sessionId: string }> {
   return request<{ sessionId: string }>('sessions.create', { workingDirectory });
 }
 
