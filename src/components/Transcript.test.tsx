@@ -41,7 +41,7 @@ describe('Transcript', () => {
 
   it('does not offer to expand a row with nothing behind it', () => {
     show([event('tool.execution_start', { toolCallId: 't1', toolName: 'grep', arguments: { pattern: 'x' } }, 'e1')]);
-    expect(screen.getByRole('button', { name: /grep/ })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: /Search/ })).toHaveProperty('disabled', true);
   });
 
   // Reading what is running is exactly when it matters, and output only exists after.
@@ -113,7 +113,7 @@ describe('Transcript', () => {
       event('tool.execution_complete', { toolCallId: 'q1', success: true, result: { content: 'User responded: B' } }, 'e2'),
     ]);
 
-    expect(screen.getByText('ask_user')).toBeTruthy();
+    expect(screen.getByText('Asking user')).toBeTruthy();
     expect(screen.getByText('Pick one?')).toBeTruthy();
     expect(screen.getByText('B')).toBeTruthy();
   });
