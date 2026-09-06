@@ -439,11 +439,67 @@ describe('SessionRuntime tracking what a turn changes', () => {
 });
 
 /**
- * Auditing an agent should not depend on where it chose to work. A text file in a
- * downloads folder is no less changed for being outside a checkout, and the file tools
- * account for their own work wherever it happened.
+ * The runtime answers for the repository, and only for it. What a file tool changed
+ * anywhere on disk is kept in the log and shown on the row that made it, which is where
+ * that half is tested - a session outside a repository has nothing to snapshot and
+ * nothing to rewind to, and saying so plainly beats half an answer.
  */
-describe('SessionRuntime tracking changes outside any repository', () => {
+
+/**
+ * Each point holds a git ref, and a ref stops git collecting the tree behind it. A long
+ * session left running would pin a copy of the working tree per turn indefinitely, in the
+ * reader's own repository.
+ */
+describe('SessionRuntime letting go of old points', () => {
+  let repo: string;
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'ccd-runtime-keep-'));
+    execFileSync('git', ['-C', repo, 'init', '-q']);
+    execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
+    execFileSync('git', ['-C', repo, 'config', 'user.name', 'test']);
+    writeFileSync(join(repo, 'tracked.txt'), 'original\n');
+    execFileSync('git', ['-C', repo, 'add', '-A']);
+    execFileSync('git', ['-C', repo, 'commit', '-qm', 'base']);
+  });
+
+  afterEach(() => rmSync(repo, { recursive: true, force: true }));
+
+  const refs = () =>
+    execFileSync('git', ['-C', repo, 'for-each-ref', '--format=%(refname:short)', 'refs/copilot-desktop'], {
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter(Boolean);
+
+  it('keeps a bounded history however many turns a session takes', async () => {
+    const { runtime, sessions } = makeRuntime({ lookupCwd: () => repo, maxSnapshotPoints: 5 });
+    await runtime.send('a', 'go');
+    const session = sessions.get('a')!;
+
+    for (let i = 0; i < 9; i += 1) {
+      session.emit({ type: 'assistant.turn_start' });
+      await runtime.changes('a');
+    }
+
+    expect(refs().length).toBe(5);
+  }, 30_000);
+
+  // What a session's whole work is measured against; losing it loses the session's diff.
+  it('never lets go of the baseline', async () => {
+    const { runtime, sessions } = makeRuntime({ lookupCwd: () => repo, maxSnapshotPoints: 5 });
+    await runtime.send('a', 'go');
+    const session = sessions.get('a')!;
+
+    for (let i = 0; i < 9; i += 1) {
+      session.emit({ type: 'assistant.turn_start' });
+      await runtime.changes('a');
+    }
+
+    expect(refs().some((ref) => ref.endsWith('/baseline'))).toBe(true);
+  }, 30_000);
+});
+describe('SessionRuntime outside any repository', () => {
   let loose: string;
 
   beforeEach(() => {
@@ -452,59 +508,13 @@ describe('SessionRuntime tracking changes outside any repository', () => {
 
   afterEach(() => rmSync(loose, { recursive: true, force: true }));
 
-  const editReport = (path: string) =>
-    [
-      `diff --git a/${path.replace(/\\/g, '/')} b/${path.replace(/\\/g, '/')}`,
-      'index 0000000..0000000 100644',
-      '@@ -1 +1 @@',
-      '-before',
-      '+after',
-    ].join('\n');
-
-  /**
-   * Shaped as the runtime really sends it, which took two attempts to get right. The
-   * completion names only the call: the tool's name is on the start event, so recording a
-   * change needs both halves. Building a one-event fake agreed with the code and let a
-   * feature that recorded nothing pass its tests.
-   */
-  const wrote = (toolName: string, detailedContent: string, callId = 'call-1') => [
-    { type: 'tool.execution_start', data: { toolCallId: callId, toolName } },
-    { type: 'tool.execution_complete', data: { toolCallId: callId, result: { detailedContent } } },
-  ];
-
-  it('reports a file the agent edited with no repository in sight', async () => {
-    const file = join(loose, 'notes.txt');
+  it('has nothing to report where there is nothing to compare against', async () => {
     const { runtime, sessions } = makeRuntime({ lookupCwd: () => loose });
     await runtime.send('a', 'go');
 
     sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    for (const e of wrote('edit', editReport(file))) sessions.get('a')!.emit(e);
-
-    const changed = await runtime.changes('a');
-    expect(changed?.changes).toEqual([{ path: file, status: 'modified' }]);
-    expect(changed?.root).toBeNull();
-  });
-
-  it('gives back the patch for such a file', async () => {
-    const file = join(loose, 'notes.txt');
-    const { runtime, sessions } = makeRuntime({ lookupCwd: () => loose });
-    await runtime.send('a', 'go');
-
-    sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    for (const e of wrote('edit', editReport(file))) sessions.get('a')!.emit(e);
-
-    expect(await runtime.diff('a', file)).toContain('+after');
-  });
-
-  // A shell command says nothing about what it wrote, and outside a repository there is
-  // no tree to compare either, so this is the honest limit of what can be known.
-  it('has nothing to say about a shell command outside a repository', async () => {
-    const { runtime, sessions } = makeRuntime({ lookupCwd: () => loose });
-    await runtime.send('a', 'go');
-
-    sessions.get('a')!.emit({ type: 'assistant.turn_start' });
-    for (const e of wrote('powershell', 'C:\\somewhere\\out.txt')) sessions.get('a')!.emit(e);
 
     expect(await runtime.changes('a')).toBeNull();
+    expect(await runtime.diff('a', join(loose, 'notes.txt'))).toBeNull();
   });
 });

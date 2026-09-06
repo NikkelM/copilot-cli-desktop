@@ -68,6 +68,20 @@ function refFor(name: string): string {
   return `refs/copilot-desktop/${name.replace(/[^A-Za-z0-9._/-]/g, '-')}`;
 }
 
+/**
+ * Forget the snapshots a session no longer needs.
+ *
+ * Every point holds a ref, and a ref stops git collecting the tree behind it, so a long
+ * session left to itself pins a copy of the working tree per turn forever. Keeping the
+ * baseline and a run of recent turns is enough for the two things points are for -
+ * measuring a session's work, and going back a few steps.
+ */
+export async function dropSnapshots(workspace: Workspace, names: readonly string[]): Promise<void> {
+  for (const name of names) {
+    await git(workspace.root, ['update-ref', '-d', refFor(name)]).catch(() => undefined);
+  }
+}
+
 export async function takeSnapshot(
   workspace: Workspace,
   indexFile: string,
@@ -177,7 +191,3 @@ export async function restoreTo(
   return changes;
 }
 
-/** Forget a snapshot's ref, so git may collect the objects it was holding. */
-export async function dropSnapshot(workspace: Workspace, keepAs: string): Promise<void> {
-  await git(workspace.root, ['update-ref', '-d', refFor(keepAs)]).catch(() => undefined);
-}
