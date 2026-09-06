@@ -146,8 +146,9 @@ function ModelRow({
         {model.needsAgreement && <span className="model-note">terms not accepted</span>}
       </button>
 
-      {(model.reasoningEfforts.length > 0 || model.longContext) && (
-        <div className="model-options">
+      {model.reasoningEfforts.length > 0 && (
+        <div className="model-line">
+          <span className="model-line-label">Effort</span>
           {model.reasoningEfforts.map((level) => (
             <button
               type="button"
@@ -160,20 +161,24 @@ function ModelRow({
               {level}
             </button>
           ))}
+        </div>
+      )}
 
-          {model.longContext &&
-            TIERS.map(([value, label]) => (
-              <button
-                type="button"
-                key={value}
-                className={tier === value ? 'model-option chosen' : 'model-option'}
-                aria-pressed={tier === value}
-                onClick={() => setTier(value)}
-                aria-label={`${model.name} with ${label}`}
-              >
-                {label}
-              </button>
-            ))}
+      {model.longContext && (
+        <div className="model-line">
+          <span className="model-line-label">Context</span>
+          {TIERS.map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={tier === value ? 'model-option chosen' : 'model-option'}
+              aria-pressed={tier === value}
+              onClick={() => setTier(value)}
+              aria-label={`${model.name} with ${label}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       )}
     </div>

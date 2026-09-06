@@ -220,6 +220,27 @@ describe('ModelPicker', () => {
     });
   });
 
+  // Levels and context sizes read as one another when they share a line, especially since
+  // both are small chips.
+  it('gives the model, its effort and its context a line each', async () => {
+    picker();
+    await openMenu();
+
+    const row = screen.getByRole('option', { name: /Claude Opus 5/ }).closest('.model-row')!;
+    const lines = [...row.querySelectorAll('.model-line')].map((line) => line.textContent);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('Effort');
+    expect(lines[1]).toContain('Context');
+  });
+
+  it('leaves out the lines a model has no choices for', async () => {
+    picker();
+    await openMenu();
+
+    const row = screen.getByRole('option', { name: /Auto/ }).closest('.model-row')!;
+    expect(row.querySelectorAll('.model-line')).toHaveLength(0);
+  });
   it('closes when Escape is pressed', async () => {
     picker();
     await openMenu();
