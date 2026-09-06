@@ -247,9 +247,35 @@ export class SessionRuntime {
     }
   }
 
+  /**
+   * Start a session in a directory of the reader's choosing.
+   *
+   * Costs a Copilot process, unlike everything else the sidebar does, so it happens on
+   * asking rather than in anticipation. The session is left loaded because someone who
+   * has just made one is about to write in it.
+   */
+  async create(workingDirectory: string): Promise<{ sessionId: string }> {
+    const client = await this.ensureClient();
+
+    // The handlers need the session's id, which does not exist until it does, so they
+    // read it when called rather than closing over a value that is not there yet.
+    let id = '';
+    const session = await client.createSession({
+      workingDirectory,
+      onPermissionRequest: (request) => this.decidePermission(id, request),
+      onUserInputRequest: (request) => this.askUserInput(id, request),
+      onElicitationRequest: (context) => this.askElicitation(id, context),
+      streaming: true,
+    });
+
+    id = session.sessionId;
+    this.adopt(id, session);
+    await this.enforceCap();
+    return { sessionId: id };
+  }
+
   /** Resume a session if it is not already loaded, evicting another if needed. */
-  private async ensureSession(sessionId: string): Promise<CopilotSession> {
-    const existing = this.loaded.get(sessionId);
+  private async ensureSession(sessionId: string): Promise<CopilotSession> {    const existing = this.loaded.get(sessionId);
     if (existing) {
       this.touch(sessionId);
       return existing.session;
@@ -275,6 +301,19 @@ export class SessionRuntime {
       streaming: true,
     });
 
+    this.adopt(sessionId, session);
+    await this.enforceCap();
+    return session;
+  }
+
+  /**
+   * Take charge of a session, however it came to exist.
+   *
+   * Resuming an old one and starting a new one differ only in how the session is obtained;
+   * everything after - listening to it, counting it against the cap, telling the sidebar -
+   * is the same, and was worth sharing rather than writing twice and letting them drift.
+   */
+  private adopt(sessionId: string, session: CopilotSession): void {
     const unsubscribe = session.on((event: SessionEvent) => this.handleEvent(sessionId, event));
 
     this.loaded.set(sessionId, {
@@ -289,9 +328,6 @@ export class SessionRuntime {
     });
     this.touch(sessionId);
     this.onLoadedChange?.(sessionId, true);
-
-    await this.enforceCap();
-    return session;
   }
 
   /**

@@ -995,3 +995,26 @@ body {
   color: var(--text-muted);
   font-size: 13px;
 }
+
+/* Starting a session is the one thing in the sidebar that costs a process, so it is
+   present but quiet rather than the loudest thing there. */
+.new-session {
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.new-session:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.new-session:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
