@@ -76,6 +76,36 @@ export interface RuntimeStatus {
   maxLoadedSessions: number;
 }
 
+/** How hard a model is asked to think, for those that offer the choice. */
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
+/** How much room a session has to work in, for models that offer more than one size. */
+export type ContextTier = 'default' | 'long_context';
+
+/**
+ * A model a session can be switched to.
+ *
+ * Trimmed from what the runtime reports, which carries token limits and pricing tables that
+ * no part of this app shows.
+ */
+export interface ModelChoice {
+  id: string;
+  name: string;
+  /** The levels this model offers, empty when it does not take direction on thinking. */
+  reasoningEfforts: ReasoningEffort[];
+  /** Whether it can be pinned to the larger context window; most models cannot. */
+  longContext: boolean;
+  /** Offered but not usable: a policy has to be accepted before it will answer. */
+  needsAgreement: boolean;
+}
+
+/** What a session runs on, as of the last thing its log has to say about it. */
+export interface SessionModel {
+  model: string;
+  reasoningEffort?: string;
+  contextTier?: string;
+}
+
 export interface SendParams {
   sessionId: string;
   prompt: string;
@@ -175,6 +205,12 @@ export interface SidecarRequests {
   'sessions.diff': { params: { sessionId: string; path: string; scope?: SnapshotScope }; result: { patch: string } };
   'sessions.rewind': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
   'git.state': { params: { cwd: string }; result: { state: TreeState | null } };
+  'models.list': { params: void; result: { models: ModelChoice[] } };
+  'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };
+  'sessions.setModel': {
+    params: { sessionId: string; model: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier };
+    result: void;
+  };
   'runtime.status': { params: void; result: RuntimeStatus };
 }
 

@@ -10,7 +10,9 @@ import { createInterface } from 'node:readline';
 import type {
   ElicitationAction,
   ElicitationFieldValue,
+  ContextTier,
   JsonRpcRequest,
+  ReasoningEffort,
   SnapshotScope,
   JsonRpcResponse,
   PermissionChoice,
@@ -25,7 +27,7 @@ import {
   NOTIFY_SESSIONS_CHANGED,
 } from '../../shared/protocol.js';
 import { type Channel, startDevChannel } from './devChannel.js';
-import { readTranscript } from './eventLog.js';
+import { lastModel, readTranscript } from './eventLog.js';
 import { treeStateOf } from './git.js';
 import { type ApprovalPolicy, SessionRuntime } from './runtime.js';
 import { listSessions } from './sessionIndex.js';
@@ -157,8 +159,26 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
       return undone ?? { root: null, changes: [], points: [] };
     }
 
-    case 'git.state': {
-      const { cwd } = request.params as { cwd: string };
+    case 'models.list':
+      return { models: await runtime.models() };
+
+    case 'sessions.model': {
+      const { sessionId } = request.params as { sessionId: string };
+      return { current: await lastModel(sessionId) };
+    }
+
+    case 'sessions.setModel': {
+      const { sessionId, model, reasoningEffort, contextTier } = request.params as {
+        sessionId: string;
+        model: string;
+        reasoningEffort?: ReasoningEffort;
+        contextTier?: ContextTier;
+      };
+      await runtime.setModel(sessionId, model, reasoningEffort, contextTier);
+      return null;
+    }
+
+    case 'git.state': {      const { cwd } = request.params as { cwd: string };
       return { state: await treeStateOf(cwd) };
     }
 

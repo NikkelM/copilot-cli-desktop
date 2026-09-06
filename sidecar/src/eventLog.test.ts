@@ -198,3 +198,94 @@ describe('paging back through history', () => {
     expect(older.nextBefore).toBeNull();
   });
 });
+
+/**
+ * What a session runs on, without starting anything to ask.
+ *
+ * The model is only ever mentioned in the log, and where in the log varies: a change lands
+ * wherever it happened, while the run's opening line always names one.
+ */
+describe('lastModel', () => {
+  const start = (model: string, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ type: 'session.start', data: { selectedModel: model, ...extra } });
+  const change = (model: string, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ type: 'session.model_change', data: { newModel: model, ...extra } });
+
+  it('says nothing for a session with no log', async () => {
+    const { lastModel } = await loadEventLog();
+    expect(await lastModel('never-run')).toBeNull();
+  });
+
+  it('reads the model the run opened with', async () => {
+    writeLog('s1', [start('claude-opus-5', { reasoningEffort: 'max', contextTier: 'long_context' }), line(1)]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toEqual({
+      model: 'claude-opus-5',
+      reasoningEffort: 'max',
+      contextTier: 'long_context',
+    });
+  });
+
+  it('prefers a later change to the model it opened with', async () => {
+    writeLog('s1', [start('gpt-5.4'), line(1), change('claude-opus-5', { reasoningEffort: 'high' }), line(2)]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toMatchObject({ model: 'claude-opus-5', reasoningEffort: 'high' });
+  });
+
+  it('takes the last of several changes', async () => {
+    writeLog('s1', [start('gpt-5.4'), change('grok-4.6'), change('claude-opus-5'), line(1)]);
+    const { lastModel } = await loadEventLog();
+
+    expect((await lastModel('s1'))?.model).toBe('claude-opus-5');
+  });
+
+  // An older CLI wrote the opening line without naming a model, and stopping at it would
+  // miss the change on the very next line.
+  it('looks past an opening line that names nothing', async () => {
+    writeLog('s1', [JSON.stringify({ type: 'session.start', data: {} }), change('claude-opus-4.8'), line(1)]);
+    const { lastModel } = await loadEventLog();
+
+    expect((await lastModel('s1'))?.model).toBe('claude-opus-4.8');
+  });
+
+  it('says nothing when the log never names a model', async () => {
+    writeLog('s1', [line(1), line(2)]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toBeNull();
+  });
+
+  /**
+   * The case the tail scan alone got wrong: one real log here is 300 MB with no mention of
+   * its model in the last 32 MB, because nothing about it changed for the whole run. Read
+   * only from the end, such a session says nothing at all about what it runs on.
+   */
+  it('falls back to the opening line when the tail is only conversation', async () => {
+    const filler = Array.from({ length: 4000 }, (_, index) => line(index));
+    writeLog('s1', [start('claude-opus-5', { contextTier: 'long_context' }), ...filler]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toMatchObject({ model: 'claude-opus-5', contextTier: 'long_context' });
+  });
+
+  it('still prefers a change buried in a long tail', async () => {
+    const filler = Array.from({ length: 4000 }, (_, index) => line(index));
+    writeLog('s1', [start('gpt-5.4'), ...filler, change('claude-opus-5'), ...filler]);
+    const { lastModel } = await loadEventLog();
+
+    expect((await lastModel('s1'))?.model).toBe('claude-opus-5');
+  });
+
+  it('reads a resume the same way as a start', async () => {
+    writeLog('s1', [
+      start('gpt-5.4'),
+      JSON.stringify({ type: 'session.resume', data: { selectedModel: 'claude-opus-5' } }),
+      line(1),
+    ]);
+    const { lastModel } = await loadEventLog();
+
+    expect((await lastModel('s1'))?.model).toBe('claude-opus-5');
+  });
+});
