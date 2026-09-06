@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "build:sidecar": "npm run build --workspace sidecar",
     "tauri": "tauri",
-    "app": "npm run build:sidecar && tauri dev"
+    "app": "tauri dev"
   },
   "workspaces": [
     "sidecar"
