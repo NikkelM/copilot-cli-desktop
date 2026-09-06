@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-
 import type { ContextTier, ModelChoice, ReasoningEffort, SessionModel } from '../../shared/protocol';
 
 /** What to call each context tier, since the runtime's own names are not for reading. */
@@ -105,9 +104,10 @@ export function ModelPicker({ current, onOpen, onChoose }: ModelPickerProps) {
 /**
  * One model, with what can be asked of it beside it.
  *
- * The levels and the context sizes sit on the row rather than behind a second menu: picking
- * one of them means picking this model too, so a reader who wants a different effort on the
- * model they already use does it in one click rather than three.
+ * Choosing is deliberately two steps: the levels and the context sizes only set themselves,
+ * and the model name commits. A reader wanting a different effort usually wants to say
+ * something about the context too, and committing on the first of those would send them
+ * back into the menu to say the second.
  */
 function ModelRow({
   model,
@@ -121,15 +121,14 @@ function ModelRow({
   onDone: () => void;
 }) {
   const chosen = current?.model === model.id;
-  // Carried over when only part of the setting is being changed, so picking a longer
-  // context does not quietly drop the effort that was already asked for.
-  const effort = (chosen ? (current?.reasoningEffort as ReasoningEffort | undefined) : undefined) ?? undefined;
-  const tier = (chosen ? (current?.contextTier as ContextTier | undefined) : undefined) ?? 'default';
 
-  const pick = (choice: ModelChoiceMade) => {
-    onChoose(choice);
-    onDone();
-  };
+  // Starts from what this model is already running with, so opening the menu and clicking
+  // the name changes nothing. Held per row, and forgotten when the menu closes, because a
+  // half-made choice on a model that was not committed to means nothing later.
+  const [effort, setEffort] = useState<ReasoningEffort | undefined>(
+    chosen ? (current?.reasoningEffort as ReasoningEffort | undefined) : undefined,
+  );
+  const [tier, setTier] = useState<ContextTier>(chosen ? ((current?.contextTier as ContextTier) ?? 'default') : 'default');
 
   return (
     <div className={chosen ? 'model-row chosen' : 'model-row'}>
@@ -138,7 +137,10 @@ function ModelRow({
         className="model-name"
         role="option"
         aria-selected={chosen}
-        onClick={() => pick({ model: model.id, reasoningEffort: effort, contextTier: tier })}
+        onClick={() => {
+          onChoose({ model: model.id, reasoningEffort: effort, contextTier: tier });
+          onDone();
+        }}
       >
         {model.name}
         {model.needsAgreement && <span className="model-note">terms not accepted</span>}
@@ -150,8 +152,9 @@ function ModelRow({
             <button
               type="button"
               key={level}
-              className={chosen && effort === level ? 'model-option chosen' : 'model-option'}
-              onClick={() => pick({ model: model.id, reasoningEffort: level, contextTier: tier })}
+              className={effort === level ? 'model-option chosen' : 'model-option'}
+              aria-pressed={effort === level}
+              onClick={() => setEffort(level)}
               aria-label={`${model.name} thinking ${level}`}
             >
               {level}
@@ -163,8 +166,9 @@ function ModelRow({
               <button
                 type="button"
                 key={value}
-                className={chosen && tier === value ? 'model-option chosen' : 'model-option'}
-                onClick={() => pick({ model: model.id, reasoningEffort: effort, contextTier: value })}
+                className={tier === value ? 'model-option chosen' : 'model-option'}
+                aria-pressed={tier === value}
+                onClick={() => setTier(value)}
                 aria-label={`${model.name} with ${label}`}
               >
                 {label}
