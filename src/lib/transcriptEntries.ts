@@ -96,6 +96,15 @@ const SUMMARY_KEYS = [
 function summarise(args: Record<string, unknown> | undefined, cwd: string | null): string {
   if (!args) return '';
 
+  // A search is two things: what was looked for and where. Showing only the pattern gives
+  // the same row for the same search over different trees, and quoting marks out where a
+  // pattern with spaces in it starts and ends.
+  const pattern = typeof args.pattern === 'string' && args.pattern.trim() ? args.pattern : null;
+  if (pattern) {
+    const where = pathList(args.paths, cwd);
+    return where ? `"${pattern}" (${where})` : `"${pattern}"`;
+  }
+
   for (const key of SUMMARY_KEYS) {
     const value = args[key];
     if (typeof value === 'string' && value.trim()) {
@@ -103,6 +112,16 @@ function summarise(args: Record<string, unknown> | undefined, cwd: string | null
     }
   }
   return '';
+}
+
+/** Where a search looked, relative to the session's directory. Accepts one path or many. */
+function pathList(value: unknown, cwd: string | null): string | null {
+  const given = Array.isArray(value) ? value : [value];
+  const paths = given
+    .filter((path): path is string => typeof path === 'string' && path.trim() !== '')
+    .map((path) => relativise(path, cwd));
+
+  return paths.length > 0 ? paths.join(', ') : null;
 }
 
 function clip(value: string): string {
