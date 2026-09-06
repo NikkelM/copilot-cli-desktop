@@ -79,7 +79,9 @@ export default function App() {
       // No folder asked for: not every session is about a project, and wanting to ask
       // something quickly should not begin with choosing a directory.
       const { sessionId } = await createSession();
-      refreshSessions();
+      // Selected only once the list holds it, or the pane has nothing to show and the
+      // button looks as though it did nothing.
+      await refreshSessions();
       setSelectedId(sessionId);
     } catch (e: unknown) {
       setError(String(e));
@@ -103,14 +105,15 @@ export default function App() {
   selectedRef.current = selectedId;
 
   const refreshSessions = useCallback(() => {
-    listSessions()
+    // Returned so a caller that needs the list to contain something can wait for it.
+    return listSessions()
       // The fetched previews come from the lagging turns table, so anything already
       // learned from live events wins until the database catches up.
       .then((result) => setSessions(mergeLivePreviews(result.sessions, livePreviews.current)))
       .catch((e: unknown) => setError(String(e)));
   }, []);
 
-  useEffect(() => refreshSessions(), [refreshSessions]);
+  useEffect(() => void refreshSessions(), [refreshSessions]);
 
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {

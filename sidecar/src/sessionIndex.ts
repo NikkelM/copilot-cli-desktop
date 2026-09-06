@@ -59,13 +59,19 @@ interface SessionRow {
  * or crashed starts and hold nothing to return to; on a real store they were 95 of 167
  * entries. A session that was deliberately named is kept even with no turns, since
  * naming it was an intentional act.
+ *
+ * `keep` names sessions the runtime is holding open. One just started has no title and no
+ * turns and is indistinguishable from a crashed start by the database alone, so without
+ * this a new session disappears the moment it is made.
  */
-export function listSessions(): SessionSummary[] {
+export function listSessions(keep: readonly string[] = []): SessionSummary[] {
   if (!existsSync(sessionStoreDb)) return [];
 
   // readOnly still needs the -wal sidecar, so the CLI must not be mid-write; SQLite handles that.
   const db = new DatabaseSync(sessionStoreDb, { readOnly: true });
   try {
+    const alsoHeld = keep.length > 0 ? `OR s.id IN (${keep.map(() => '?').join(',')})` : '';
+
     // The newest turn supplies both the preview and the last-used time: sessions.updated_at
     // is only written at creation or summary regeneration, so it can be hours stale while a
     // session is actively in use, which would also put it in the wrong place in the list.
@@ -80,15 +86,20 @@ export function listSessions(): SessionSummary[] {
           AND t.turn_index = (SELECT MAX(turn_index) FROM turns WHERE session_id = s.id)
          WHERE COALESCE(TRIM(s.summary), '') <> ''
             OR EXISTS (SELECT 1 FROM turns WHERE session_id = s.id)
+            ${alsoHeld}
          ORDER BY COALESCE(t.timestamp, s.updated_at) DESC`,
       )
-      .all() as unknown as SessionRow[];
+      .all(...keep) as unknown as SessionRow[];
 
+    const held = new Set(keep);
     const sessions = rows
       // The database and the logs are separate: deleting a session's directory, or
       // restoring a machine without it, leaves a row describing a session that cannot be
       // opened. Listing it promises something the transcript then cannot deliver.
-      .filter((row) => existsSync(sessionEventLog(row.id)))
+      //
+      // A session the runtime is holding is exempt: its log is written on the first turn,
+      // so one just started has none yet and would otherwise be hidden as though deleted.
+      .filter((row) => held.has(row.id) || existsSync(sessionEventLog(row.id)))
       .map((row) => ({
         sessionId: row.id,
         title: readSessionName(row.id) ?? row.summary,
