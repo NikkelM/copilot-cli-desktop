@@ -6,10 +6,13 @@ interface SidebarProps {
   sessions: SessionSummary[];
   selectedId: string | null;
   onSelect: (sessionId: string) => void;
+  /** Starting a session needs a directory to start it in, which only the reader knows. */
+  onCreate: () => void;
+  creating: boolean;
 }
 
 /** Sessions ordered by last use. Rendering and filtering this list never loads a session. */
-export function Sidebar({ sessions, selectedId, onSelect }: SidebarProps) {
+export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating }: SidebarProps) {
   const [query, setQuery] = useState('');
 
   // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
@@ -31,6 +34,15 @@ export function Sidebar({ sessions, selectedId, onSelect }: SidebarProps) {
         <span className="badge">
           {query ? `${matches.length}/${sessions.length}` : sessions.length}
         </span>
+        <button
+          type="button"
+          className="new-session"
+          onClick={onCreate}
+          disabled={creating}
+          title="Start a session in a folder you choose"
+        >
+          {creating ? 'Starting…' : 'New'}
+        </button>
       </header>
 
       <div className="search">

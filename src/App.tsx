@@ -9,6 +9,8 @@ import type {
   SessionSummary,
   TranscriptEvent,
 } from '../shared/protocol';
+import { open } from '@tauri-apps/plugin-dialog';
+
 import { toPreview } from '../shared/preview';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
@@ -17,6 +19,7 @@ import { Sidebar } from './components/Sidebar';
 import { Transcript } from './components/Transcript';
 import {
   abortSession,
+  createSession,
 
   listSessions,
   onElicitationRequested,
@@ -61,6 +64,31 @@ export default function App() {
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
 
   const transcript = useTranscript(selectedId, setError);
+  /**
+   * Starting a session is the one action here that costs a Copilot process before anything
+   * has been said, so it says it is working rather than appearing to have done nothing.
+   */
+  const [creating, setCreating] = useState(false);
+
+  async function handleCreate() {
+    setError(null);
+    // Asked for rather than guessed: a session's directory decides what it can see, and
+    // there is no sensible default for that.
+    const chosen = await open({ directory: true, title: 'Start a session in' }).catch(() => null);
+    if (typeof chosen !== 'string') return;
+
+    setCreating(true);
+    try {
+      const { sessionId } = await createSession(chosen);
+      refreshSessions();
+      setSelectedId(sessionId);
+    } catch (e: unknown) {
+      setError(String(e));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   // Selecting a session cannot leave the composer disabled by a turn that was running in
   // whichever session was open before.
   useEffect(() => setBusy(false), [selectedId]);
@@ -251,7 +279,13 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar sessions={ordered} selectedId={selectedId} onSelect={setSelectedId} />
+      <Sidebar
+        sessions={ordered}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        onCreate={() => void handleCreate()}
+        creating={creating}
+      />
 
       <main className="main">
         {/* Nothing here works once the sidecar is gone, so it says so instead of showing

@@ -52,6 +52,11 @@ export function getDiff(sessionId: string, path: string): Promise<{ patch: strin
   return request<{ patch: string }>('sessions.diff', { sessionId, path });
 }
 
+/** Starts a session in a directory. Costs a Copilot process, like sending does. */
+export function createSession(workingDirectory: string): Promise<{ sessionId: string }> {
+  return request<{ sessionId: string }>('sessions.create', { workingDirectory });
+}
+
 /** Resumes the session if it is cold, then sends. This is the only call that costs memory. */
 export function sendMessage(params: SendParams): Promise<SendResult> {
   return request<SendResult>('sessions.send', params);

@@ -132,6 +132,11 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
       return null;
     }
 
+    case 'sessions.create': {
+      const { workingDirectory } = request.params as { workingDirectory: string };
+      return runtime.create(workingDirectory);
+    }
+
     case 'sessions.changes': {
       const { sessionId, scope } = request.params as { sessionId: string; scope?: SnapshotScope };
       const found = await runtime.changes(sessionId, scope);
