@@ -258,8 +258,10 @@ body {
   font-size: 10px;
 }
 
-/* What the model in use costs, above the list rather than repeated on every row. */
+/* What the model being looked at costs, above the list rather than repeated on every row. */
 .model-prices {
+  /* Fixed height so following the pointer down the list does not move the list itself. */
+  min-height: 74px;
   margin: 2px 4px 6px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
@@ -271,6 +273,10 @@ body {
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.model-prices-of {
+  color: var(--text);
 }
 
 .model-price {

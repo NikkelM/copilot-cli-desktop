@@ -29,6 +29,8 @@ interface ModelPickerProps {
  */
 export function ModelPicker({ current, models, failed, onOpen, onChoose }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
+  /** The row under the pointer, so its price can be read without committing to it. */
+  const [hovered, setHovered] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -55,14 +57,17 @@ export function ModelPicker({ current, models, failed, onOpen, onChoose }: Model
     }
 
     setOpen(true);
+    setHovered(null);
     // Asking costs a server process, so it waits for someone to actually want the list.
     onOpen();
   }
 
   const effort = current?.reasoningEffort && current.reasoningEffort !== 'none' ? current.reasoningEffort : null;
-  const active = models?.find((model) => model.id === current?.model);
+  const inUse = models?.find((model) => model.id === current?.model);
   // Named by size rather than by tier, since the size is the whole difference between them.
-  const room = active?.contexts.find((context) => context.tier === (current?.contextTier ?? 'default'));
+  const room = inUse?.contexts.find((context) => context.tier === (current?.contextTier ?? 'default'));
+  // Whichever model the reader is looking at, which is the one they want the price of.
+  const described = (hovered && models?.find((model) => model.id === hovered)) || inUse;
 
   return (
     <div className="model" ref={box}>
@@ -83,14 +88,21 @@ export function ModelPicker({ current, models, failed, onOpen, onChoose }: Model
       </button>
 
       {open && (
-        <div className="model-menu" role="listbox">
+        <div className="model-menu" role="listbox" onMouseLeave={() => setHovered(null)}>
           {failed && <p className="error">{failed}</p>}
           {!models && !failed && <p className="model-loading">Starting the runtime to ask what is available.</p>}
 
-          {active?.prices && <Prices prices={active.prices} />}
+          {described && <Prices model={described} />}
 
           {models?.map((model) => (
-            <ModelRow key={model.id} model={model} current={current} onChoose={onChoose} onDone={() => setOpen(false)} />
+            <ModelRow
+              key={model.id}
+              model={model}
+              current={current}
+              onChoose={onChoose}
+              onDone={() => setOpen(false)}
+              onLookAt={() => setHovered(model.id)}
+            />
           ))}
         </div>
       )}
@@ -99,23 +111,29 @@ export function ModelPicker({ current, models, failed, onOpen, onChoose }: Model
 }
 
 /**
- * What a million tokens costs on the model in use.
+ * What a million tokens costs on the model being looked at.
  *
- * Shown for that model alone rather than on every row: it is the one a reader is spending
- * on, and twenty-one price tables would bury the list they came for.
+ * One model at a time rather than a price beside every row, which would bury the list the
+ * reader came for. It follows the pointer, so comparing two models is a matter of moving
+ * between them, and falls back to the model in use when the pointer is elsewhere.
  */
-function Prices({ prices }: { prices: NonNullable<ModelChoice['prices']> }) {
+function Prices({ model }: { model: ModelChoice }) {
   const rows: ReadonlyArray<[string, number | undefined]> = [
-    ['Input', prices.input],
-    ['Cached input', prices.cachedInput],
-    ['Output', prices.output],
+    ['Input', model.prices?.input],
+    ['Cached input', model.prices?.cachedInput],
+    ['Output', model.prices?.output],
   ];
   const known = rows.filter(([, amount]) => amount !== undefined);
-  if (known.length === 0) return null;
 
   return (
     <div className="model-prices">
-      <p className="model-prices-head">Cost per 1M tokens</p>
+      <p className="model-prices-head">
+        Cost per 1M tokens<span className="model-prices-of"> · {model.name}</span>
+      </p>
+
+      {/* Auto has no price of its own: what it costs depends on where it routes. */}
+      {known.length === 0 && <p className="model-price">Not priced on its own</p>}
+
       {known.map(([label, amount]) => (
         <p className="model-price" key={label}>
           <span className="model-price-label">{label}</span>
@@ -139,11 +157,13 @@ function ModelRow({
   current,
   onChoose,
   onDone,
+  onLookAt,
 }: {
   model: ModelChoice;
   current: SessionModel | null | undefined;
   onChoose: (choice: ModelChoiceMade) => void;
   onDone: () => void;
+  onLookAt: () => void;
 }) {
   const chosen = current?.model === model.id;
 
@@ -156,7 +176,12 @@ function ModelRow({
   const [tier, setTier] = useState<ContextTier>(chosen ? ((current?.contextTier as ContextTier) ?? 'default') : 'default');
 
   return (
-    <div className={chosen ? 'model-row chosen' : 'model-row'}>
+    // Focus does what the pointer does, so the price follows a reader using the keyboard.
+    <div
+      className={chosen ? 'model-row chosen' : 'model-row'}
+      onMouseEnter={onLookAt}
+      onFocus={onLookAt}
+    >
       <button
         type="button"
         className="model-name"
