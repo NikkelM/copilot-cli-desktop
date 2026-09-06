@@ -227,8 +227,17 @@ body {
 }
 
 .model-row {
-  padding: 2px 0;
+  padding: 6px 0;
   border-radius: 6px;
+}
+
+/*
+ * A line between models. Each row is three lines of its own once effort and context are on
+ * it, so without a divider the list reads as one long column of chips.
+ */
+.model-row + .model-row {
+  border-top: 1px solid var(--border);
+  border-radius: 0;
 }
 
 .model-row.chosen {
