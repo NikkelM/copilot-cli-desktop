@@ -92,6 +92,28 @@ describe('useModel', () => {
       expect(JSON.parse(localStorage.getItem('copilot-desktop.models')!)).toEqual(catalogue);
     });
 
+    // What is stored outlives the code that stored it: an entry written before the
+    // catalogue carried context sizes crashed the header when it was read back.
+    it('ignores a remembered entry from an older shape', async () => {
+      localStorage.setItem(
+        'copilot-desktop.models',
+        JSON.stringify([{ id: 'claude-opus-5', name: 'Claude Opus 5', reasoningEfforts: [], longContext: true }]),
+      );
+      const useModel = await loadUseModel();
+
+      const { result } = renderHook(() => useModel('s1', () => {}));
+
+      expect(result.current.models).toBeNull();
+    });
+
+    it('ignores a remembered list with one unusable entry among good ones', async () => {
+      localStorage.setItem('copilot-desktop.models', JSON.stringify([...catalogue, { id: 'broken' }]));
+      const useModel = await loadUseModel();
+
+      const { result } = renderHook(() => useModel('s1', () => {}));
+
+      expect(result.current.models).toBeNull();
+    });
     it('ignores a remembered entry it cannot read', async () => {
       localStorage.setItem('copilot-desktop.models', 'not json');
       const useModel = await loadUseModel();
