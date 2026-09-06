@@ -118,6 +118,8 @@ export default function App() {
   /** Read by a shortcut handler registered once, which would otherwise hold the first render's answer. */
   const busyRef = useRef(false);
   busyRef.current = busy;
+  const draftsRef = useRef<Record<string, string>>({});
+  draftsRef.current = drafts;
 
   const refreshSessions = useCallback(() => {
     // Returned so a caller that needs the list to contain something can wait for it.
@@ -285,6 +287,9 @@ export default function App() {
       },
       [interrupt],
     ),
+    // The composer's own text, rather than what a key event can be asked about the field it
+    // landed in: this is where it is actually kept.
+    useCallback(() => draftsRef.current[selectedRef.current ?? ''] ?? '', []),
   );
 
   function handleElicitation(
