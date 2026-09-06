@@ -360,7 +360,7 @@ describe('SessionRuntime tracking what a turn changes', () => {
     writeFileSync(join(repo, 'tracked.txt'), 'the agent wrote this\n');
 
     const changed = await runtime.changes('a');
-    expect(changed?.changes).toEqual([{ path: 'tracked.txt', status: 'modified' }]);
+    expect(changed?.changes).toEqual([{ path: join(repo, 'tracked.txt'), status: 'modified' }]);
   });
 
   // The reason for snapshotting at all: a session's diff is the agent's work, not whatever
@@ -416,7 +416,7 @@ describe('SessionRuntime tracking what a turn changes', () => {
     writeFileSync(join(repo, 'second.txt'), 'changed in the second turn\n');
 
     const both = await runtime.changes('a');
-    expect(both?.changes.map((c) => c.path).sort()).toEqual(['second.txt', 'tracked.txt']);
+    expect(both?.changes.map((c) => c.path).sort()).toEqual([join(repo, 'second.txt'), join(repo, 'tracked.txt')].sort());
   });
 
   it('can still show one turn on its own', async () => {
@@ -434,6 +434,72 @@ describe('SessionRuntime tracking what a turn changes', () => {
     writeFileSync(join(repo, 'second.txt'), 'second turn\n');
 
     const turn = await runtime.changes('a', 'turn');
-    expect(turn?.changes.map((c) => c.path)).toEqual(['second.txt']);
+    expect(turn?.changes.map((c) => c.path)).toEqual([join(repo, 'second.txt')]);
+  });
+});
+
+/**
+ * Auditing an agent should not depend on where it chose to work. A text file in a
+ * downloads folder is no less changed for being outside a checkout, and the file tools
+ * account for their own work wherever it happened.
+ */
+describe('SessionRuntime tracking changes outside any repository', () => {
+  let loose: string;
+
+  beforeEach(() => {
+    loose = mkdtempSync(join(tmpdir(), 'ccd-runtime-loose-'));
+  });
+
+  afterEach(() => rmSync(loose, { recursive: true, force: true }));
+
+  const editReport = (path: string) =>
+    [
+      `diff --git a/${path.replace(/\\/g, '/')} b/${path.replace(/\\/g, '/')}`,
+      'index 0000000..0000000 100644',
+      '@@ -1 +1 @@',
+      '-before',
+      '+after',
+    ].join('\n');
+
+  const completed = (toolName: string, detailedContent: string) => ({
+    type: 'tool.execution_complete',
+    toolName,
+    result: { detailedContent },
+  });
+
+  it('reports a file the agent edited with no repository in sight', async () => {
+    const file = join(loose, 'notes.txt');
+    const { runtime, sessions } = makeRuntime({ lookupCwd: () => loose });
+    await runtime.send('a', 'go');
+
+    sessions.get('a')!.emit({ type: 'assistant.turn_start' });
+    sessions.get('a')!.emit(completed('edit', editReport(file)));
+
+    const changed = await runtime.changes('a');
+    expect(changed?.changes).toEqual([{ path: file, status: 'modified' }]);
+    expect(changed?.root).toBeNull();
+  });
+
+  it('gives back the patch for such a file', async () => {
+    const file = join(loose, 'notes.txt');
+    const { runtime, sessions } = makeRuntime({ lookupCwd: () => loose });
+    await runtime.send('a', 'go');
+
+    sessions.get('a')!.emit({ type: 'assistant.turn_start' });
+    sessions.get('a')!.emit(completed('edit', editReport(file)));
+
+    expect(await runtime.diff('a', file)).toContain('+after');
+  });
+
+  // A shell command says nothing about what it wrote, and outside a repository there is
+  // no tree to compare either, so this is the honest limit of what can be known.
+  it('has nothing to say about a shell command outside a repository', async () => {
+    const { runtime, sessions } = makeRuntime({ lookupCwd: () => loose });
+    await runtime.send('a', 'go');
+
+    sessions.get('a')!.emit({ type: 'assistant.turn_start' });
+    sessions.get('a')!.emit(completed('powershell', 'C:\\somewhere\\out.txt\n<shellId: 0 completed>'));
+
+    expect(await runtime.changes('a')).toBeNull();
   });
 });

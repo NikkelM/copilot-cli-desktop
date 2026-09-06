@@ -16,11 +16,13 @@ import { dirname, join } from 'node:path';
 import { resolveCliPath, sessionStateDir } from './paths.js';
 import { sessionCwd } from './sessionIndex.js';
 import { appendSnapshot, readSnapshots, type SnapshotRecord } from './snapshotStore.js';
+import { recordPatches, reportsChanges, splitPatches, touchedFiles, type FilePatch } from './toolDiffs.js';
 import { changesSince, diffOf, restoreTo, takeSnapshot, workspaceOf, type Change, type Workspace } from './snapshots.js';
 
 /** What the agent changed, and the repository the paths are relative to. */
 export interface SessionChanges {
-  root: string;
+  /** Null when nothing was in a repository: the changes are still real and still listed. */
+  root: string | null;
   changes: Change[];
   /** Every point this session can be measured from or returned to, oldest first. */
   points: { id: string; at: string; prompt?: string }[];
@@ -77,6 +79,8 @@ interface LoadedSession {
   workspace?: Workspace | null;
   /** Every point recorded for this session, oldest first. The first is the baseline. */
   points: SnapshotRecord[];
+  /** What the file tools said they changed, in the order they said it. */
+  patches: FilePatch[];
   /** A private git index, kept warm so capturing the tree stays fast. */
   index: string;
   /** In flight while the tree is being photographed, so a question can wait for it. */
@@ -278,6 +282,7 @@ export class SessionRuntime {
       unsubscribe,
       busy: false,
       points: [],
+      patches: [],
       index: join(sessionStateDir(sessionId), 'desktop-index'),
       policy: 'prompt',
       idleTimer: null,
@@ -437,10 +442,25 @@ export class SessionRuntime {
       }
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') entry.busy = false;
 
+      // The file tools account for their own work, wherever on disk it happened, which is
+      // the only record there is for anything outside a repository.
+      if (event.type === 'tool.execution_complete') this.recordToolChanges(entry, event);
+
       this.touch(sessionId);
     }
 
     this.onEvent?.(sessionId, event);
+  }
+
+  /** Keep what a completed tool said it changed, if it is one that says. */
+  private recordToolChanges(entry: LoadedSession, event: SessionEvent): void {
+    const data = event as unknown as { toolName?: string; result?: { detailedContent?: unknown } };
+    if (!reportsChanges(data.toolName)) return;
+
+    const detail = data.result?.detailedContent;
+    if (typeof detail !== 'string') return;
+
+    entry.patches = recordPatches(entry.patches, splitPatches(detail));
   }
 
   /**
@@ -503,13 +523,28 @@ export class SessionRuntime {
     // A turn that has just begun is still being photographed; answering now would compare
     // against the previous turn and report its work as this one's.
     await entry?.snapshotting;
+    if (!entry) return null;
 
+    // What the tools reported, which covers anywhere on disk, merged with what the
+    // repository shows, which covers writes no tool accounted for. A file in both is the
+    // repository's to describe, since it compares against the tree rather than one edit.
+    const reported = touchedFiles(entry.patches);
     const from = this.from(entry, scope);
-    if (!entry?.workspace || !from) return null;
+    const tracked =
+      entry.workspace && from ? await changesSince(entry.workspace, from, entry.index) : [];
+
+    const root = entry.workspace?.root ?? null;
+    const absolute = new Set(tracked.map((change) => join(root ?? '', change.path)));
+    const merged = [
+      ...tracked.map((change) => ({ ...change, path: root ? join(root, change.path) : change.path })),
+      ...reported.filter((change) => !absolute.has(change.path)),
+    ].sort((a, b) => a.path.localeCompare(b.path));
+
+    if (merged.length === 0 && !from && reported.length === 0) return null;
 
     return {
-      root: entry.workspace.root,
-      changes: await changesSince(entry.workspace, from, entry.index),
+      root,
+      changes: merged,
       points: entry.points.map(({ id, at, prompt }) => ({ id, at, prompt })),
     };
   }
@@ -518,11 +553,24 @@ export class SessionRuntime {
   async diff(sessionId: string, path: string, scope: SnapshotScope = 'session'): Promise<string | null> {
     const entry = this.loaded.get(sessionId);
     await entry?.snapshotting;
+    if (!entry) return null;
 
     const from = this.from(entry, scope);
-    if (!entry?.workspace || !from) return null;
+    if (entry.workspace && from) {
+      // Relative to the repository, since that is how git names what it reports.
+      const inside = path.startsWith(entry.workspace.root)
+        ? path.slice(entry.workspace.root.length).replace(/^[\\/]+/, '')
+        : null;
+      if (inside) {
+        const patch = await diffOf(entry.workspace, from, inside, entry.index);
+        if (patch.trim()) return patch;
+      }
+    }
 
-    return diffOf(entry.workspace, from, path, entry.index);
+    // Outside the repository, or a file the tree comparison had nothing to say about:
+    // what the tools reported is the whole record. Newest last, as they happened.
+    const reported = entry.patches.filter((patch) => patch.path === path);
+    return reported.length > 0 ? reported.map((patch) => patch.patch).join('\n') : null;
   }
 
   /**

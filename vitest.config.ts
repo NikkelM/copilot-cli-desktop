@@ -10,6 +10,6 @@ export default defineConfig({
     // Node by default, since the sidecar has no DOM. Component tests opt in with a
     // `@vitest-environment jsdom` docblock.
     environment: 'node',
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: ['./test/setup.ts'],
   },
 });
