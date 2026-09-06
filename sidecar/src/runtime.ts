@@ -232,19 +232,6 @@ export class SessionRuntime {
       onUserInputRequest: (request) => this.askUserInput(sessionId, request),
       onElicitationRequest: (context) => this.askElicitation(sessionId, context),
       streaming: true,
-      /**
-       * Keep the file backups that make a turn reversible and its changes readable.
-       *
-       * The CLI does this for its own sessions, so without it a session worked on here
-       * ends up with less history than the same session worked on in a terminal. It
-       * cannot be applied after the fact - a turn that ran untracked can never be
-       * rewound or diffed - which makes the choice asymmetric: snapshots taken can be
-       * deleted, snapshots not taken are gone.
-       *
-       * They are not free. A long session's snapshots ran to 82 MB of file backups on
-       * disk, which is the same cost the CLI already pays for the same sessions.
-       */
-      enableFileChangeTracking: true,
     });
 
     const unsubscribe = session.on((event: SessionEvent) => this.handleEvent(sessionId, event));
