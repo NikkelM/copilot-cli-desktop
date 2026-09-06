@@ -131,6 +131,17 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
       return null;
     }
 
+    case 'sessions.changes': {
+      const { sessionId } = request.params as { sessionId: string };
+      const found = await runtime.changes(sessionId);
+      return found ? { root: found.root, changes: found.changes } : { root: null, changes: [] };
+    }
+
+    case 'sessions.diff': {
+      const { sessionId, path } = request.params as { sessionId: string; path: string };
+      return { patch: (await runtime.diff(sessionId, path)) ?? '' };
+    }
+
     case 'runtime.status':
       return runtime.status();
 

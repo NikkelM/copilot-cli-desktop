@@ -11,6 +11,8 @@ import {
 
 import type { ElicitationAction, ElicitationFieldValue, PermissionChoice } from '../../shared/protocol.js';
 import { resolveCliPath } from './paths.js';
+import { sessionCwd } from './sessionIndex.js';
+import { changesSince, diffOf, takeSnapshot, workspaceOf, type Change, type Snapshot, type Workspace } from './snapshots.js';
 import { PendingRequests } from './pending.js';
 
 /**
@@ -59,6 +61,10 @@ interface LoadedSession {
   /** True between a turn starting and the session going idle. Busy sessions are never evicted. */
   busy: boolean;
   policy: ApprovalPolicy;
+  /** The repository the session works in, looked up once. Null when it is not in one. */
+  workspace?: Workspace | null;
+  /** What the tree held when the current turn began. */
+  snapshot?: Snapshot | null;
   idleTimer: NodeJS.Timeout | null;
 }
 
@@ -79,6 +85,11 @@ export interface RuntimeOptions {
   onPermissionResolved?: (sessionId: string, requestId: string) => void;
   /** Asks the UI to put a question from the agent to the user. */
   onElicitationRequest?: (sessionId: string, requestId: string, context: AskContext) => void;
+  /**
+   * Where a session runs, so its repository can be found. Injected so a test can point
+   * at a repository it made rather than at the session store.
+   */
+  lookupCwd?: (sessionId: string) => string | null;
   /** Tells the UI a question is no longer awaiting an answer. */
   onElicitationResolved?: (requestId: string) => void;
   /**
@@ -129,6 +140,7 @@ export class SessionRuntime {
     context: AskContext,
   ) => void;
   private readonly onElicitationResolved?: (requestId: string) => void;
+  private readonly lookupCwd: (sessionId: string) => string | null;
   private readonly createClient: () => Promise<CopilotClient>;
 
   /** Tool calls waiting on an approve or deny decision. */
@@ -148,6 +160,7 @@ export class SessionRuntime {
     this.onElicitationRequest = options.onElicitationRequest;
     this.onElicitationResolved = options.onElicitationResolved;
     this.createClient = options.createClient ?? defaultClientFactory;
+    this.lookupCwd = options.lookupCwd ?? sessionCwd;
 
     const timeout = options.permissionTimeoutMs ?? 5 * 60_000;
     this.permissions = new PendingRequests<PermissionRequestResult>('perm', timeout, () => ({
@@ -387,13 +400,56 @@ export class SessionRuntime {
 
     if (entry) {
       // Track turn boundaries so a session mid-turn is never evicted underneath itself.
-      if (event.type === 'assistant.turn_start') entry.busy = true;
+      if (event.type === 'assistant.turn_start') {
+        entry.busy = true;
+        // Record the working tree before the agent touches it, so what it changes can be
+        // told apart from whatever was already in progress.
+        void this.snapshot(sessionId, entry);
+      }
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') entry.busy = false;
 
       this.touch(sessionId);
     }
 
     this.onEvent?.(sessionId, event);
+  }
+
+  /**
+   * Take the before picture for a turn.
+   *
+   * Failing is normal rather than exceptional: a session outside a repository, or in one
+   * without commits, has nothing to compare against. That is not worth reporting, and
+   * certainly not worth interrupting a turn for, so it leaves the session without a
+   * snapshot and the diff simply unavailable.
+   */
+  private async snapshot(sessionId: string, entry: LoadedSession): Promise<void> {
+    try {
+      if (!entry.workspace) {
+        const cwd = this.lookupCwd(sessionId);
+        entry.workspace = cwd ? await workspaceOf(cwd) : null;
+      }
+      if (!entry.workspace) return;
+
+      entry.snapshot = await takeSnapshot(entry.workspace, sessionId);
+    } catch {
+      // Nothing here is worth failing a turn over.
+    }
+  }
+
+  /** What the agent has changed in this session since its current turn began. */
+  async changes(sessionId: string): Promise<{ root: string; changes: Change[] } | null> {
+    const entry = this.loaded.get(sessionId);
+    if (!entry?.workspace || !entry.snapshot) return null;
+
+    return { root: entry.workspace.root, changes: await changesSince(entry.workspace, entry.snapshot) };
+  }
+
+  /** The patch for one changed file, as git would show it. */
+  async diff(sessionId: string, path: string): Promise<string | null> {
+    const entry = this.loaded.get(sessionId);
+    if (!entry?.workspace || !entry.snapshot) return null;
+
+    return diffOf(entry.workspace, entry.snapshot, path);
   }
 
   /** Mark a session most recently used and restart its idle countdown. */

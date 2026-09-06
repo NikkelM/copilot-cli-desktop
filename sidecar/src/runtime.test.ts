@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { SessionRuntime, type RuntimeOptions } from './runtime.js';
 
@@ -313,4 +317,84 @@ describe('questions from the agent', () => {
     await expect(answered).resolves.toEqual({ answer: '', wasFreeform: true });
   });
 
+});
+
+/**
+ * The snapshot is taken as a turn begins, which is the only moment "before the agent
+ * touched anything" is still true. These use a real repository, because what is being
+ * checked is that the runtime reaches git at the right time.
+ */
+describe('SessionRuntime tracking what a turn changes', () => {
+  let repo: string;
+
+  beforeEach(() => {
+    repo = mkdtempSync(join(tmpdir(), 'ccd-runtime-git-'));
+    execFileSync('git', ['-C', repo, 'init', '-q']);
+    execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
+    execFileSync('git', ['-C', repo, 'config', 'user.name', 'test']);
+    writeFileSync(join(repo, 'tracked.txt'), 'original\n');
+    execFileSync('git', ['-C', repo, 'add', '-A']);
+    execFileSync('git', ['-C', repo, 'commit', '-qm', 'base']);
+  });
+
+  afterEach(() => rmSync(repo, { recursive: true, force: true }));
+
+  const inRepo = () => ({ lookupCwd: () => repo });
+
+  /** The snapshot is taken in the background as the turn starts; git is not instant. */
+  async function snapshotted(runtime: { changes: (id: string) => Promise<unknown> }) {
+    for (let i = 0; i < 100; i += 1) {
+      const found = await runtime.changes('a');
+      if (found) return found as { changes: unknown[] };
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    throw new Error('no snapshot was taken');
+  }
+
+  it('reports what the agent changed once a turn has begun', async () => {
+    const { runtime, sessions } = makeRuntime(inRepo());
+    await runtime.send('a', 'go');
+
+    sessions.get('a')!.emit({ type: 'assistant.turn_start' });
+    await new Promise((r) => setTimeout(r, 50));
+
+    await snapshotted(runtime);
+    writeFileSync(join(repo, 'tracked.txt'), 'the agent wrote this\n');
+
+    const changed = await runtime.changes('a');
+    expect(changed?.changes).toEqual([{ path: 'tracked.txt', status: 'modified' }]);
+  });
+
+  // The reason for snapshotting at all: a session's diff is the agent's work, not whatever
+  // was already open when it started.
+  it('leaves out what was already changed before the turn', async () => {
+    writeFileSync(join(repo, 'tracked.txt'), 'the reader was here\n');
+
+    const { runtime, sessions } = makeRuntime(inRepo());
+    await runtime.send('a', 'go');
+    sessions.get('a')!.emit({ type: 'assistant.turn_start' });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect((await snapshotted(runtime)).changes).toEqual([]);
+  });
+
+  it('has nothing to report before a turn has begun', async () => {
+    const { runtime } = makeRuntime(inRepo());
+    await runtime.send('a', 'go');
+
+    expect(await runtime.changes('a')).toBeNull();
+  });
+
+  // Plenty of sessions run somewhere that is not a repository, and that is not a failure.
+  it('says nothing rather than failing outside a repository', async () => {
+    const loose = mkdtempSync(join(tmpdir(), 'ccd-runtime-loose-'));
+    const { runtime, sessions } = makeRuntime({ lookupCwd: () => loose });
+    await runtime.send('a', 'go');
+
+    sessions.get('a')!.emit({ type: 'assistant.turn_start' });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(await runtime.changes('a')).toBeNull();
+    rmSync(loose, { recursive: true, force: true });
+  });
 });
