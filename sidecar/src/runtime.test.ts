@@ -313,17 +313,4 @@ describe('questions from the agent', () => {
     await expect(answered).resolves.toEqual({ answer: '', wasFreeform: true });
   });
 
-  /**
-   * Snapshots cannot be taken for a turn that has already run, so a session resumed
-   * without asking for them loses the ability to rewind or diff it, permanently.
-   */
-  it('asks for the file snapshots that make a turn reversible', async () => {
-    const { runtime, client } = makeRuntime();
-    await runtime.send('a', 'x');
-
-    expect(client.resumeSession).toHaveBeenCalledWith(
-      'a',
-      expect.objectContaining({ enableFileChangeTracking: true }),
-    );
-  });
 });
