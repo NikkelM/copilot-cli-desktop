@@ -17,7 +17,7 @@ import { Sidebar } from './components/Sidebar';
 import { Transcript } from './components/Transcript';
 import {
   abortSession,
-  getTranscript,
+
   listSessions,
   onElicitationRequested,
   onElicitationResolved,
@@ -35,18 +35,14 @@ import {
 } from './lib/sidecar';
 import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
-import { appendLive, contentOf, timelineOf, type TimelineEvent } from './lib/timeline';
+import { contentOf } from './lib/timeline';
+import { useTranscript } from './lib/useTranscript';
 import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
 export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  /** History replayed from the log. Replaced wholesale by a fetch, so nothing live lives here. */
-  const [history, setHistory] = useState<TimelineEvent[]>([]);
-  /** Everything since the session was selected, which no replay may overwrite. */
-  const [live, setLive] = useState<TimelineEvent[]>([]);
-  const events = useMemo(() => timelineOf(history, live), [history, live]);
   /**
    * Unsent text, per session. An unsent message belongs to the session it was written
    * for: kept in the composer it would follow the user to whichever session they opened
@@ -55,9 +51,6 @@ export default function App() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [resuming, setResuming] = useState(false);
-  /** Cursor for the page of history before the events held, or null at the start. */
-  const [olderCursor, setOlderCursor] = useState<number | null>(null);
-  const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Set when the sidecar exits: nothing works afterwards, so it outranks any other message. */
   const [stopped, setStopped] = useState<string | null>(null);
@@ -66,6 +59,11 @@ export default function App() {
   const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
   /** Session ids in activation order, most recent first. Fixes the active group's order. */
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
+
+  const transcript = useTranscript(selectedId, setError);
+  // Selecting a session cannot leave the composer disabled by a turn that was running in
+  // whichever session was open before.
+  useEffect(() => setBusy(false), [selectedId]);
   /**
    * Previews derived from live events, which are ahead of the database.
    * A ref rather than state: refetches read it, but it never needs to trigger a render
@@ -86,47 +84,6 @@ export default function App() {
   }, []);
 
   useEffect(() => refreshSessions(), [refreshSessions]);
-
-  // Selecting a session only replays its log from disk; nothing is resumed until the
-  // user sends a message, which is what keeps idle sessions free.
-  useEffect(() => {
-    if (!selectedId) return;
-    setHistory([]);
-    setLive([]);
-    setBusy(false);
-    setOlderCursor(null);
-
-    // Selecting elsewhere, or React running this effect twice, leaves a reply in flight
-    // that describes a transcript no longer on screen.
-    let current = true;
-    getTranscript(selectedId)
-      .then((result) => {
-        if (!current) return;
-        setHistory(result.events);
-        setOlderCursor(result.nextBefore);
-      })
-      .catch((e: unknown) => current && setError(String(e)));
-
-    return () => {
-      current = false;
-    };
-  }, [selectedId]);
-
-  /** Fetch the page before the events already held and prepend it. */
-  const loadOlder = useCallback(() => {
-    if (!selectedId || olderCursor === null) return;
-
-    setLoadingOlder(true);
-    getTranscript(selectedId, undefined, olderCursor)
-      .then((result) => {
-        // A page fetched for one session must not be spliced into another's transcript.
-        if (selectedRef.current !== selectedId) return;
-        setHistory((current) => [...result.events, ...current]);
-        setOlderCursor(result.nextBefore);
-      })
-      .catch((e: unknown) => setError(String(e)))
-      .finally(() => setLoadingOlder(false));
-  }, [selectedId, olderCursor]);
 
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {
@@ -150,7 +107,7 @@ export default function App() {
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') setBusy(false);
       if (event.type === 'session.error') setError(describeError(event));
 
-      setLive((current) => appendLive(current, event));
+      transcript.push(event);
     }),
   );
 
@@ -271,10 +228,7 @@ export default function App() {
 
     // Show the prompt straight away; resuming a cold session takes seconds, and the
     // runtime's own echo replaces this entry when it arrives.
-    setLive((current) => [
-      ...current,
-      { type: 'user.message', data: { content: prompt }, id: crypto.randomUUID(), local: true },
-    ]);
+    transcript.showSent(prompt);
 
     const wasCold = !sessions.find((s) => s.sessionId === selectedId)?.loaded;
     setResuming(wasCold);
@@ -334,12 +288,12 @@ export default function App() {
             </div>
 
             <Transcript
-              events={events}
+              events={transcript.events}
               sessionId={selected.sessionId}
               cwd={selected.cwd}
-              hasOlder={olderCursor !== null}
-              loadingOlder={loadingOlder}
-              onLoadOlder={loadOlder}
+              hasOlder={transcript.hasOlder}
+              loadingOlder={transcript.loadingOlder}
+              onLoadOlder={transcript.loadOlder}
             />
 
             <div className="footer">
