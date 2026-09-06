@@ -51,16 +51,24 @@ function messageKey(data: Record<string, unknown>, fallback: string): string {
 }
 
 /**
- * What the CLI calls a tool, where its own name is an implementation detail.
+ * What to call a tool, where its own name is an implementation detail.
  *
- * Deliberately sparse. `toolTitle` is on the event and would cover more of these, but it
- * renames ask_user to "Asking user", and a question row reads better labelled with the
- * tool that produced it.
+ * The CLI names a few itself, on the event, and those are used as they come. The rest
+ * arrive blank and are named here. ask_user is listed even though the CLI does name it,
+ * so the row reads the same whether or not the event carried a title - the alternative
+ * is a tool that changes name depending on which path found it.
  */
 const DISPLAY_NAMES: Record<string, string> = {
+  ask_user: 'Asking user',
   powershell: 'Shell',
   bash: 'Shell',
+  grep: 'Search',
+  rg: 'Search',
 };
+
+function displayName(name: string, data: Record<string, unknown>): string {
+  return text(data, 'toolTitle') ?? DISPLAY_NAMES[name] ?? name;
+}
 
 /**
  * Argument keys worth showing as a tool's one-line summary, most specific first.
@@ -170,7 +178,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         // The command, path or query lives in the tool arguments; shellToolInfo carries
         // path metadata rather than anything worth summarising.
         const args = data.arguments as Record<string, unknown> | undefined;
-        const label = DISPLAY_NAMES[name] ?? name;
+        const label = displayName(name, data);
         const command = typeof args?.command === 'string' && args.command.trim() ? args.command : undefined;
 
         // The question is the subject of the row, the way a command is for a shell call.
@@ -185,7 +193,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
           ? {
               kind: 'tool',
               key,
-              name,
+              name: label,
               summary: clipLine(question),
               output: null,
               status: 'running',

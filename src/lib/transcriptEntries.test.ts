@@ -162,7 +162,7 @@ describe('ask_user rows', () => {
       [event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { question } })],
       null,
     );
-    expect(entries[0]).toMatchObject({ kind: 'tool', name: 'ask_user', summary: question, question: true });
+    expect(entries[0]).toMatchObject({ kind: 'tool', name: 'Asking user', summary: question, question: true });
   });
 
   // The elicitation variant names the field "message" where the legacy one says "question".
@@ -171,7 +171,7 @@ describe('ask_user rows', () => {
       [event('tool.execution_start', { toolCallId: 'q1', toolName: 'ask_user', arguments: { message: question } })],
       null,
     );
-    expect(entries[0]).toMatchObject({ name: 'ask_user', summary: question, question: true });
+    expect(entries[0]).toMatchObject({ name: 'Asking user', summary: question, question: true });
   });
 
   it('carries the answer separately once given', () => {
@@ -187,7 +187,7 @@ describe('ask_user rows', () => {
       null,
     );
     // Kept out of the summary so it can be styled as the outcome, not as more question.
-    expect(entries[0]).toMatchObject({ name: 'ask_user', summary: question, answer: 'PostgreSQL' });
+    expect(entries[0]).toMatchObject({ name: 'Asking user', summary: question, answer: 'PostgreSQL' });
   });
 
   // Declining reports an empty answer rather than omitting the line.
@@ -284,13 +284,28 @@ describe('ask_user rows', () => {
     expect((entries[0] as ToolEntry).choices).toBeUndefined();
   });
 
-  it('leaves other tools showing their name', () => {
+  it('leaves a tool with no friendlier name showing its own', () => {
     const entries = toEntries(
-      [event('tool.execution_start', { toolCallId: 't1', toolName: 'grep', arguments: { pattern: 'needle' } })],
+      [event('tool.execution_start', { toolCallId: 't1', toolName: 'glob', arguments: { pattern: '**/*.ts' } })],
       null,
     );
-    expect(entries[0]).toMatchObject({ name: 'grep', summary: 'needle' });
+    expect(entries[0]).toMatchObject({ name: 'glob', summary: '**/*.ts' });
     expect((entries[0] as ToolEntry).question).toBeUndefined();
+  });
+
+  it('prefers the name the CLI puts on the event', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 't1',
+          toolName: 'web_fetch',
+          toolTitle: 'Fetching web content',
+          arguments: { url: 'https://example.com' },
+        }),
+      ],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ name: 'Fetching web content' });
   });
 });
 
@@ -344,7 +359,7 @@ describe('sameEntry', () => {
   const tool: ToolEntry = {
     kind: 'tool',
     key: 'k1',
-    name: 'ask_user',
+    name: 'Asking user',
     summary: 'Pick one?',
     output: 'User responded: B',
     status: 'ok',
