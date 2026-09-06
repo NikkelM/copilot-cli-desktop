@@ -1018,3 +1018,169 @@ body {
   color: var(--text-muted);
   cursor: default;
 }
+
+/* What the agent changed on disk. Above the composer, since it is the outcome of the
+   conversation rather than part of it. */
+.changes {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+
+.changes-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.changes-caret {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.changes-list {
+  max-height: 320px;
+  margin: 0;
+  padding: 0 6px 6px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.change-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.change-head:hover {
+  background: var(--bg);
+}
+
+/* One character carrying the kind of change, so the row does not spell it out. */
+.change-mark {
+  flex-shrink: 0;
+  width: 12px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  text-align: center;
+}
+
+.change.added .change-mark {
+  color: var(--success);
+}
+
+.change.deleted .change-mark {
+  color: #f85149;
+}
+
+.change.modified .change-mark,
+.change.renamed .change-mark {
+  color: #d29922;
+}
+
+.change-path {
+  min-width: 0;
+  flex: 1;
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  /* The end of a path says which file; the start says which folder, and repeats. */
+  direction: rtl;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.change-counts {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.change-counts .added {
+  color: var(--success);
+}
+
+.change-counts .removed {
+  color: #f85149;
+}
+
+.change-diff {
+  max-height: 360px;
+  margin: 2px 0 6px 18px;
+  border-left: 1px solid var(--border);
+  overflow: auto;
+}
+
+.change-diff table {
+  border-collapse: collapse;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  width: 100%;
+}
+
+/* Line numbers are why a patch beats two blobs of text: they say where to look. */
+.change-diff .gutter {
+  width: 1%;
+  padding: 0 8px;
+  color: var(--text-muted);
+  text-align: right;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.change-diff .code {
+  padding: 0 8px;
+  white-space: pre;
+}
+
+.change-diff tr.added {
+  background: rgba(63, 185, 80, 0.12);
+}
+
+.change-diff tr.added .code {
+  color: #7ee787;
+}
+
+.change-diff tr.removed {
+  background: rgba(248, 81, 73, 0.12);
+}
+
+.change-diff tr.removed .code {
+  color: #ffa198;
+}
+
+.change-diff tr.hunk .code {
+  color: var(--text-muted);
+}
+
+.change-note {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
