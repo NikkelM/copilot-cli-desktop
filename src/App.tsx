@@ -11,7 +11,6 @@ import type {
 } from '../shared/protocol';
 
 import { toPreview } from '../shared/preview';
-import { Changes } from './components/Changes';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { PermissionPrompt } from './components/PermissionPrompt';
@@ -69,8 +68,6 @@ export default function App() {
    * has been said, so it says it is working rather than appearing to have done nothing.
    */
   const [creating, setCreating] = useState(false);
-  /** Counts finished turns, so the list of changes refreshes when there is new work. */
-  const [turns, setTurns] = useState(0);
 
   async function handleCreate() {
     setError(null);
@@ -136,10 +133,6 @@ export default function App() {
       if (event.type === 'assistant.turn_start') setBusy(true);
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') setBusy(false);
       if (event.type === 'session.error') setError(describeError(event));
-
-      // A turn ending is when what the agent changed is worth reading again. Counting
-      // them rather than watching a timer means the list follows the work exactly.
-      if (event.type === 'assistant.turn_end') setTurns((n) => n + 1);
 
       transcript.push(event);
     }),
@@ -337,7 +330,6 @@ export default function App() {
             />
 
             <div className="footer">
-              <Changes sessionId={selected.sessionId} revision={turns} cwd={selected.cwd} />
               {sessionElicitations.map((pending) => (
                 <ElicitationPrompt
                   key={pending.requestId}

@@ -59,6 +59,14 @@ export interface ToolEntry {
    * truncates, so without this the command itself has nowhere to be read.
    */
   command?: string;
+  /**
+   * The change a file tool made, as it reported it.
+   *
+   * Read from the log rather than computed, so a session opened weeks later shows the
+   * same change it showed when it happened, wherever the file was and whether or not it
+   * is still there.
+   */
+  patch?: string;
   /** A search, whose result is counted in matches rather than lines. */
   search?: boolean;
 }
@@ -295,7 +303,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         if (id) pending.delete(id);
 
         const succeeded = data.success === true;
-        const result = data.result as { content?: unknown } | undefined;
+        const result = data.result as { content?: unknown; detailedContent?: unknown } | undefined;
         const error = data.error as { message?: unknown } | undefined;
         const output = succeeded
           ? typeof result?.content === 'string'
@@ -305,10 +313,16 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
             ? error.message
             : 'Tool failed';
 
+        // A file tool reports the change it made as a unified diff, which is worth far
+        // more than the sentence saying it succeeded.
+        const detail = result?.detailedContent;
+        const patch = typeof detail === 'string' && detail.includes('diff --git') ? detail : undefined;
+
         if (entry) {
           // Updating the entry already in the list keeps the tool as one visual unit.
           entry.status = succeeded ? 'ok' : 'failed';
           entry.output = output || null;
+          entry.patch = patch;
 
           // Answering a question is the outcome, so it belongs in the header rather than
           // hidden behind an expander nobody would think to open. It carries its own
@@ -324,6 +338,7 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
             summary: '',
             output,
             status: succeeded ? 'ok' : 'failed',
+            patch,
           });
         }
         break;
@@ -389,6 +404,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
     a.status === other.status &&
     a.answer === other.answer &&
     a.command === other.command &&
+    a.patch === other.patch &&
     a.search === other.search &&
     sameChoices(a.choices, other.choices)
   );

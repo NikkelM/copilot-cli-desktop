@@ -1019,101 +1019,95 @@ body {
   cursor: default;
 }
 
-/* What the agent changed on disk. Above the composer, since it is the outcome of the
-   conversation rather than part of it. */
-.changes {
-  min-width: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-raised);
+/* A change shown where the tool that made it is, rather than in a panel of its own. */
+.tool-diff {
+  max-height: 420px;
+  margin: 4px 0 4px 20px;
+  border-left: 1px solid var(--border);
+  overflow: auto;
 }
 
-.changes-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.tool-diff table {
   width: 100%;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 8px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.changes-caret {
-  flex-shrink: 0;
-  font-size: 10px;
-  color: var(--text-muted);
-}
-
-.changes-list {
-  max-height: 320px;
-  margin: 0;
-  padding: 0 6px 6px;
-  list-style: none;
-  overflow-y: auto;
-}
-
-.change-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  width: 100%;
-  padding: 3px 6px;
-  border: none;
-  border-radius: 4px;
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.change-head:hover {
-  background: var(--bg);
-}
-
-/* One character carrying the kind of change, so the row does not spell it out. */
-.change-mark {
-  flex-shrink: 0;
-  width: 12px;
+  border-collapse: collapse;
   font-family: ui-monospace, monospace;
   font-size: 12px;
+}
+
+/* Line numbers are why a patch beats two blobs of text: they say where to look. */
+.tool-diff .gutter {
+  width: 1%;
+  padding: 0 6px;
+  color: var(--text-muted);
+  text-align: right;
+  user-select: none;
+  white-space: nowrap;
+}
+
+/* Repeats the kind of the line for anyone who cannot rely on the colour. */
+.tool-diff .mark {
+  width: 1%;
+  padding: 0 4px;
+  user-select: none;
   text-align: center;
 }
 
-.change.added .change-mark {
+.tool-diff .code {
+  padding: 0 8px;
+  white-space: pre;
+}
+
+/* Two tones: the line changed, and within it, this part did. A single tone across the
+   whole line only says that something happened somewhere in it. */
+.tool-diff tr.added {
+  background: rgba(63, 185, 80, 0.1);
+}
+
+.tool-diff tr.added .gutter,
+.tool-diff tr.added .mark {
   color: var(--success);
 }
 
-.change.deleted .change-mark {
+.tool-diff tr.added .code {
+  color: #aff5b4;
+}
+
+.tool-diff tr.added mark {
+  background: rgba(63, 185, 80, 0.35);
+  color: #dafbe1;
+}
+
+.tool-diff tr.removed {
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.tool-diff tr.removed .gutter,
+.tool-diff tr.removed .mark {
   color: #f85149;
 }
 
-.change.modified .change-mark,
-.change.renamed .change-mark {
-  color: #d29922;
+.tool-diff tr.removed .code {
+  color: #ffcecb;
 }
 
-.change-path {
-  min-width: 0;
-  flex: 1;
-  color: var(--text);
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  /* The end of a path says which file; the start says which folder, and repeats. */
-  direction: rtl;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.tool-diff tr.removed mark {
+  background: rgba(248, 81, 73, 0.35);
+  color: #ffdcd7;
 }
 
-.change-counts {
+/* Where the diff steps over ground it has nothing to say about. */
+.tool-diff tr.skip .gutter {
+  padding: 2px 8px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* How much the change came to, beside the row rather than inside it. */
+.tool-counts {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
@@ -1121,66 +1115,10 @@ body {
   font-size: 11px;
 }
 
-.change-counts .added {
+.tool-counts .added {
   color: var(--success);
 }
 
-.change-counts .removed {
+.tool-counts .removed {
   color: #f85149;
-}
-
-.change-diff {
-  max-height: 360px;
-  margin: 2px 0 6px 18px;
-  border-left: 1px solid var(--border);
-  overflow: auto;
-}
-
-.change-diff table {
-  border-collapse: collapse;
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  width: 100%;
-}
-
-/* Line numbers are why a patch beats two blobs of text: they say where to look. */
-.change-diff .gutter {
-  width: 1%;
-  padding: 0 8px;
-  color: var(--text-muted);
-  text-align: right;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.change-diff .code {
-  padding: 0 8px;
-  white-space: pre;
-}
-
-.change-diff tr.added {
-  background: rgba(63, 185, 80, 0.12);
-}
-
-.change-diff tr.added .code {
-  color: #7ee787;
-}
-
-.change-diff tr.removed {
-  background: rgba(248, 81, 73, 0.12);
-}
-
-.change-diff tr.removed .code {
-  color: #ffa198;
-}
-
-.change-diff tr.hunk .code {
-  color: var(--text-muted);
-}
-
-.change-note {
-  margin: 0;
-  padding: 8px 12px;
-  color: var(--text-muted);
-  font-size: 12px;
 }

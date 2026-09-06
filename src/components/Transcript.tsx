@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
+import { countChanges, parsePatch, type PatchLine } from '../lib/patch';
 import { Markdown } from './Markdown';
 
 /**
@@ -61,7 +62,11 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   // A typed reply is not among the options, so it needs its own line to appear at all.
   const freeform = choices && entry.answer && !choices.includes(entry.answer) ? entry.answer : null;
 
-  const expandable = Boolean(entry.output) || Boolean(choices) || Boolean(entry.command);
+  // What a file tool changed, which is the reason to open its row at all.
+  const patch = entry.patch ? parsePatch(entry.patch) : null;
+  const changed = patch ? countChanges(patch) : null;
+
+  const expandable = Boolean(entry.output) || Boolean(choices) || Boolean(entry.command) || Boolean(patch);
   const lines = entry.output ? entry.output.split('\n').length : 0;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 'es'}`;
 
@@ -69,13 +74,15 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   // count, so a search says how it went rather than how much came back.
   const count = choices
     ? `${choices.length} ${choices.length === 1 ? 'option' : 'options'}`
-    : entry.search && entry.status === 'ok'
-      ? lines > 0
-        ? plural(lines, 'match')
-        : 'no matches'
-      : lines > 0
-        ? `${lines} ${lines === 1 ? 'line' : 'lines'}`
-        : null;
+    : changed
+      ? null
+      : entry.search && entry.status === 'ok'
+        ? lines > 0
+          ? plural(lines, 'match')
+          : 'no matches'
+        : lines > 0
+          ? `${lines} ${lines === 1 ? 'line' : 'lines'}`
+          : null;
 
   return (
     <div className={`tool ${entry.status}${open ? ' open' : ''}`}>
@@ -93,6 +100,13 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
           {entry.answer && <span className="tool-answer">{entry.answer}</span>}
         </span>
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
+        {/* What the change came to, in the shape a diff is always summarised. */}
+        {changed && !open && (changed.added > 0 || changed.removed > 0) && (
+          <span className="tool-counts">
+            {changed.added > 0 && <span className="added">+{changed.added}</span>}
+            {changed.removed > 0 && <span className="removed">−{changed.removed}</span>}
+          </span>
+        )}
         {/* Doubles as the affordance that the row opens, and says how much is behind it.
             Right-aligned, so it reads as a separate column without needing punctuation. */}
         {!open && count && <span className="tool-lines">{count}</span>}
@@ -117,6 +131,8 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
               </li>
             )}
           </ul>
+        ) : patch ? (
+          <Diff lines={patch} />
         ) : (
           <>
             {entry.output && <pre className="tool-output">{entry.output}</pre>}
@@ -125,6 +141,47 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
             {entry.command && <pre className="tool-command">{entry.command}</pre>}
           </>
         ))}
+    </div>
+  );
+}
+
+/** A change, with the line numbers that say where in the file to look. */
+function Diff({ lines }: { lines: PatchLine[] }) {
+  return (
+    <div className="tool-diff">
+      <table>
+        <tbody>
+          {lines.map((line, index) =>
+            line.kind === 'skip' ? (
+              <tr key={index} className="skip">
+                <td className="gutter" colSpan={3}>
+                  {line.hidden ? `${line.hidden} unchanged lines` : ''}
+                </td>
+              </tr>
+            ) : (
+              <tr key={index} className={line.kind}>
+                <td className="gutter">{line.before ?? ''}</td>
+                <td className="gutter">{line.after ?? ''}</td>
+                <td className="mark">{line.kind === 'added' ? '+' : line.kind === 'removed' ? '−' : ''}</td>
+                <td className="code">
+                  {/* Marked in two tones: the line is changed, and within it this is the
+                      part that changed. Colouring the whole line only says something
+                      happened somewhere in it. */}
+                  {line.segments
+                    ? line.segments.map((segment, at) =>
+                        segment.changed ? (
+                          <mark key={at}>{segment.text}</mark>
+                        ) : (
+                          <span key={at}>{segment.text}</span>
+                        ),
+                      )
+                    : line.text}
+                </td>
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }

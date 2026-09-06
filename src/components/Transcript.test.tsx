@@ -257,3 +257,92 @@ describe('how a search went', () => {
     expect(screen.getByText('1 line')).toBeTruthy();
   });
 });
+
+describe('a change shown on the tool that made it', () => {
+  const patch = ['diff --git a/notes.txt b/notes.txt', '@@ -1,2 +1,2 @@', ' kept', '-was', '+now'].join('\n');
+
+  const edited = () => [
+    event('tool.execution_start', { toolCallId: 't1', toolName: 'edit', arguments: { path: 'notes.txt' } }, 'e1'),
+    event(
+      'tool.execution_complete',
+      { toolCallId: 't1', success: true, result: { content: 'File updated', detailedContent: patch } },
+      'e2',
+    ),
+  ];
+
+  it('shows the change rather than the sentence saying it worked', async () => {
+    const { container } = show(edited());
+
+    await userEvent.click(screen.getByRole('button', { name: /notes\.txt/ }));
+
+    expect(container.querySelector('tr.added .code')?.textContent).toBe('now');
+    expect(container.querySelector('tr.removed .code')?.textContent).toBe('was');
+    expect(screen.queryByText('File updated')).toBeNull();
+  });
+
+  it('says what the change came to before it is opened', () => {
+    show(edited());
+    expect(screen.getByText('+1')).toBeTruthy();
+    expect(screen.getByText('−1')).toBeTruthy();
+  });
+
+  it('numbers the lines on the side they exist', async () => {
+    const { container } = show(edited());
+    await userEvent.click(screen.getByRole('button', { name: /notes\.txt/ }));
+
+    const removed = container.querySelectorAll('tr.removed .gutter');
+    expect(removed[0]?.textContent).toBe('2');
+    expect(removed[1]?.textContent).toBe('');
+  });
+
+  // A tool that returns prose still shows it; only a change replaces the output.
+  it('still shows plain output for a tool that reported no change', async () => {
+    show([
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } }, 'e1'),
+      event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'a.txt' } }, 'e2'),
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /ls/ }));
+    expect(screen.getByText('a.txt')).toBeTruthy();
+  });
+});
+
+describe('how a change is drawn', () => {
+  const patched = (patch: string) => [
+    event('tool.execution_start', { toolCallId: 't1', toolName: 'edit', arguments: { path: 'notes.txt' } }, 'e1'),
+    event('tool.execution_complete', { toolCallId: 't1', success: true, result: { detailedContent: patch } }, 'e2'),
+  ];
+
+  const open = async () => userEvent.click(screen.getByRole('button', { name: /notes\.txt/ }));
+
+  it('marks each line with what happened to it', async () => {
+    const { container } = show(
+      patched('diff --git a/n b/n\n@@ -1,2 +1,2 @@\n const kept = 1;\n-const x = 1;\n+const x = 2;'),
+    );
+    await open();
+
+    expect(container.querySelector('tr.added .mark')?.textContent).toBe('+');
+    expect(container.querySelector('tr.removed .mark')?.textContent).toBe('−');
+    expect(container.querySelector('tr.context .mark')?.textContent).toBe('');
+  });
+
+  // The line changed, and within it this part did. One tone says only the former.
+  it('marks the part of the line that changed', async () => {
+    const { container } = show(
+      patched('diff --git a/n b/n\n@@ -1,1 +1,1 @@\n-const total = count(a);\n+const total = count(b);'),
+    );
+    await open();
+
+    const marked = [...container.querySelectorAll('tr.added mark')].map((n) => n.textContent);
+    expect(marked).toEqual(['b']);
+    expect(container.querySelector('tr.added .code')?.textContent).toBe('const total = count(b);');
+  });
+
+  it('steps over ground it has nothing to say about', async () => {
+    const many = Array.from({ length: 30 }, (_, i) => ` line ${i}`).join('\n');
+    const { container } = show(patched(`diff --git a/n b/n\n@@ -1,32 +1,32 @@\n-was\n${many}\n+now`));
+    await open();
+
+    expect(container.querySelector('tr.skip')?.textContent).toContain('unchanged lines');
+  });
+});

@@ -400,6 +400,7 @@ describe('sameEntry', () => {
     choices: ['A', 'B'],
     command: 'echo hi',
     search: true,
+    patch: 'diff --git a/x b/x',
   };
 
   it('treats a rebuilt but identical entry as unchanged', () => {
@@ -422,6 +423,7 @@ describe('sameEntry', () => {
       choices: ['A'],
       command: 'echo bye',
       search: undefined,
+      patch: undefined,
     };
 
     for (const [field, value] of Object.entries(changed)) {
@@ -609,5 +611,46 @@ describe('thinking as it is written', () => {
       null,
     );
     expect(entries.map((e) => e.key)).toEqual(['r1', 'r2']);
+  });
+});
+
+/**
+ * The change a file tool made, shown where the tool is. Read from the log rather than
+ * computed, so a session opened later shows what happened at the time.
+ */
+describe('a change made by a tool', () => {
+  const patch = [
+    'diff --git a/notes.txt b/notes.txt',
+    'index 000..111 100644',
+    '@@ -1,2 +1,2 @@',
+    ' kept',
+    '-was',
+    '+now',
+  ].join('\n');
+
+  const edited = (detailedContent: string) => [
+    event('tool.execution_start', { toolCallId: 't1', toolName: 'edit', arguments: { path: 'notes.txt' } }, 'e1'),
+    event(
+      'tool.execution_complete',
+      { toolCallId: 't1', success: true, result: { content: 'File updated', detailedContent } },
+      'e2',
+    ),
+  ];
+
+  it('keeps the change the tool reported', () => {
+    const entries = toEntries(edited(patch), null);
+    expect((entries[0] as ToolEntry).patch).toBe(patch);
+  });
+
+  // Most tools return prose, which is not a change however it is described.
+  it('keeps nothing when the detail is not a change', () => {
+    const entries = toEntries(edited('Created the file with 63 characters'), null);
+    expect((entries[0] as ToolEntry).patch).toBeUndefined();
+  });
+
+  it('notices a change differing, so a row is not left showing the old one', () => {
+    const a = toEntries(edited(patch), null)[0] as ToolEntry;
+    expect(sameEntry(a, { ...a })).toBe(true);
+    expect(sameEntry(a, { ...a, patch: `${patch}\n+more` })).toBe(false);
   });
 });
