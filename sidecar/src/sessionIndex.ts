@@ -84,17 +84,22 @@ export function listSessions(): SessionSummary[] {
       )
       .all() as unknown as SessionRow[];
 
-    const sessions = rows.map((row) => ({
-      sessionId: row.id,
-      title: readSessionName(row.id) ?? row.summary,
-      cwd: row.cwd,
-      repository: row.repository,
-      branch: row.branch,
-      createdAt: row.created_at,
-      updatedAt: lastActivity(row.id, row.updated_at) ?? row.updated_at,
-      preview: toPreview(row.preview),
-      loaded: false,
-    }));
+    const sessions = rows
+      // The database and the logs are separate: deleting a session's directory, or
+      // restoring a machine without it, leaves a row describing a session that cannot be
+      // opened. Listing it promises something the transcript then cannot deliver.
+      .filter((row) => existsSync(sessionEventLog(row.id)))
+      .map((row) => ({
+        sessionId: row.id,
+        title: readSessionName(row.id) ?? row.summary,
+        cwd: row.cwd,
+        repository: row.repository,
+        branch: row.branch,
+        createdAt: row.created_at,
+        updatedAt: lastActivity(row.id, row.updated_at) ?? row.updated_at,
+        preview: toPreview(row.preview),
+        loaded: false,
+      }));
 
     // The SQL ordering used the turn timestamp, which lastActivity may have superseded.
     return sessions.sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
