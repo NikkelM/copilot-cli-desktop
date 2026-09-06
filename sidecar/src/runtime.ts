@@ -13,6 +13,12 @@ import type { ElicitationAction, ElicitationFieldValue, PermissionChoice } from 
 import { resolveCliPath } from './paths.js';
 import { sessionCwd } from './sessionIndex.js';
 import { changesSince, diffOf, takeSnapshot, workspaceOf, type Change, type Snapshot, type Workspace } from './snapshots.js';
+
+/** What the agent changed, and the repository the paths are relative to. */
+export interface SessionChanges {
+  root: string;
+  changes: Change[];
+}
 import { PendingRequests } from './pending.js';
 
 /**
@@ -63,8 +69,12 @@ interface LoadedSession {
   policy: ApprovalPolicy;
   /** The repository the session works in, looked up once. Null when it is not in one. */
   workspace?: Workspace | null;
-  /** What the tree held when the current turn began. */
-  snapshot?: Snapshot | null;
+  /** What the tree held when this session was picked up. Never replaced while loaded. */
+  baseline?: Snapshot | null;
+  /** In flight while the tree is being photographed, so a question can wait for it. */
+  snapshotting?: Promise<void> | null;
+  /** What it held when the newest turn began, so one turn can be shown on its own. */
+  turn?: Snapshot | null;
   idleTimer: NodeJS.Timeout | null;
 }
 
@@ -403,8 +413,11 @@ export class SessionRuntime {
       if (event.type === 'assistant.turn_start') {
         entry.busy = true;
         // Record the working tree before the agent touches it, so what it changes can be
-        // told apart from whatever was already in progress.
-        void this.snapshot(sessionId, entry);
+        // told apart from whatever was already in progress. Held so that a question asked
+        // mid-capture waits for it rather than being answered from the previous turn.
+        entry.snapshotting = this.snapshot(sessionId, entry).finally(() => {
+          entry.snapshotting = null;
+        });
       }
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') entry.busy = false;
 
@@ -415,41 +428,63 @@ export class SessionRuntime {
   }
 
   /**
-   * Take the before picture for a turn.
+   * Record the working tree before the agent touches it.
+   *
+   * The first one of a working period is kept as the baseline and never replaced, which
+   * is what "what has this session changed" is asked against. Replacing it each turn made
+   * every turn swallow the last: the changes of turn one were inside the snapshot taken
+   * for turn two, so nothing was ever reported but the most recent edit.
    *
    * Failing is normal rather than exceptional: a session outside a repository, or in one
    * without commits, has nothing to compare against. That is not worth reporting, and
-   * certainly not worth interrupting a turn for, so it leaves the session without a
-   * snapshot and the diff simply unavailable.
+   * certainly not worth interrupting a turn for.
    */
   private async snapshot(sessionId: string, entry: LoadedSession): Promise<void> {
     try {
-      if (!entry.workspace) {
+      if (entry.workspace === undefined) {
         const cwd = this.lookupCwd(sessionId);
         entry.workspace = cwd ? await workspaceOf(cwd) : null;
       }
       if (!entry.workspace) return;
 
-      entry.snapshot = await takeSnapshot(entry.workspace, sessionId);
+      // Each turn gets its own, so a single turn's work can be shown on its own row, but
+      // the baseline stays where the session was found.
+      const taken = await takeSnapshot(entry.workspace, `${sessionId}-turn`);
+      if (taken) entry.turn = taken;
+
+      entry.baseline ??= await takeSnapshot(entry.workspace, sessionId);
     } catch {
       // Nothing here is worth failing a turn over.
     }
   }
 
-  /** What the agent has changed in this session since its current turn began. */
-  async changes(sessionId: string): Promise<{ root: string; changes: Change[] } | null> {
+  /**
+   * What the agent has changed, since the session was picked up or since its last turn.
+   *
+   * Since the session by default: a reader asking what changed means the work, not the
+   * last thing that happened to be written.
+   */
+  async changes(sessionId: string, scope: 'session' | 'turn' = 'session'): Promise<SessionChanges | null> {
     const entry = this.loaded.get(sessionId);
-    if (!entry?.workspace || !entry.snapshot) return null;
+    // A turn that has just begun is still being photographed; answering now would compare
+    // against the previous turn and report its work as this one's.
+    await entry?.snapshotting;
 
-    return { root: entry.workspace.root, changes: await changesSince(entry.workspace, entry.snapshot) };
+    const from = scope === 'turn' ? entry?.turn : entry?.baseline;
+    if (!entry?.workspace || !from) return null;
+
+    return { root: entry.workspace.root, changes: await changesSince(entry.workspace, from) };
   }
 
   /** The patch for one changed file, as git would show it. */
-  async diff(sessionId: string, path: string): Promise<string | null> {
+  async diff(sessionId: string, path: string, scope: 'session' | 'turn' = 'session'): Promise<string | null> {
     const entry = this.loaded.get(sessionId);
-    if (!entry?.workspace || !entry.snapshot) return null;
+    await entry?.snapshotting;
 
-    return diffOf(entry.workspace, entry.snapshot, path);
+    const from = scope === 'turn' ? entry?.turn : entry?.baseline;
+    if (!entry?.workspace || !from) return null;
+
+    return diffOf(entry.workspace, from, path);
   }
 
   /** Mark a session most recently used and restart its idle countdown. */

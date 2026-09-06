@@ -1,3 +1,5 @@
+<!-- hello -->
+
 # Copilot CLI Desktop
 
 A low-footprint desktop shell for the [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli).

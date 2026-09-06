@@ -14,6 +14,7 @@ import type {
   RuntimeStatus,
   SendParams,
   SendResult,
+  SessionChangesResult,
   SessionEventNotification,
   SessionLoadedNotification,
 } from '../../shared/protocol';
@@ -39,6 +40,16 @@ export function getTranscript(
 
 export function getRuntimeStatus(): Promise<RuntimeStatus> {
   return request<RuntimeStatus>('runtime.status');
+}
+
+/** What the agent has changed since the current turn began. Costs a couple of git calls. */
+export function getChanges(sessionId: string): Promise<SessionChangesResult> {
+  return request<SessionChangesResult>('sessions.changes', { sessionId });
+}
+
+/** The patch for one changed file. Fetched only when a file is opened. */
+export function getDiff(sessionId: string, path: string): Promise<{ patch: string }> {
+  return request<{ patch: string }>('sessions.diff', { sessionId, path });
 }
 
 /** Resumes the session if it is cold, then sends. This is the only call that costs memory. */
