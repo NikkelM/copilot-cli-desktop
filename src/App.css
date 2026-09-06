@@ -714,3 +714,18 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* What actually ran, below what it returned. Wrapped rather than clipped: a long command
+   is exactly the case the header could not show. */
+.tool-command {
+  max-height: 240px;
+  margin: 4px 0 4px 20px;
+  padding: 8px 10px;
+  border-left: 1px solid var(--border);
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}

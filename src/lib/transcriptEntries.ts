@@ -31,6 +31,11 @@ export interface ToolEntry {
   answer?: string;
   /** The options offered, so expanding shows what was on the table, not just the pick. */
   choices?: string[];
+  /**
+   * What actually ran, in full. The header shows the agent's description of it and
+   * truncates, so without this the command itself has nowhere to be read.
+   */
+  command?: string;
 }
 
 export type Entry = MessageEntry | ToolEntry;
@@ -46,13 +51,27 @@ function messageKey(data: Record<string, unknown>, fallback: string): string {
 }
 
 /**
+ * What the CLI calls a tool, where its own name is an implementation detail.
+ *
+ * Deliberately sparse. `toolTitle` is on the event and would cover more of these, but it
+ * renames ask_user to "Asking user", and a question row reads better labelled with the
+ * tool that produced it.
+ */
+const DISPLAY_NAMES: Record<string, string> = {
+  powershell: 'Shell',
+  bash: 'Shell',
+};
+
+/**
  * Argument keys worth showing as a tool's one-line summary, most specific first.
  *
- * Chosen from the tools that actually appear in real sessions: `command` for shells,
- * `path` for file operations, `pattern` for searches, and so on. Without this a
- * `create` call shows only the word "create" with no indication of what it wrote.
+ * `description` leads: it is the agent's own account of what it is doing, which reads
+ * better than the command implementing it and is what the CLI shows. The rest are chosen
+ * from the tools that appear in real sessions - `path` for file operations, `pattern` for
+ * searches - since without them a `create` call shows only the word "create".
  */
 const SUMMARY_KEYS = [
+  'description',
   'command',
   'path',
   'pattern',
@@ -63,7 +82,6 @@ const SUMMARY_KEYS = [
   'skill',
   'intent',
   'message',
-  'description',
   'action',
 ];
 
@@ -152,6 +170,8 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         // The command, path or query lives in the tool arguments; shellToolInfo carries
         // path metadata rather than anything worth summarising.
         const args = data.arguments as Record<string, unknown> | undefined;
+        const label = DISPLAY_NAMES[name] ?? name;
+        const command = typeof args?.command === 'string' && args.command.trim() ? args.command : undefined;
 
         // The question is the subject of the row, the way a command is for a shell call.
         // The two ask_user variants disagree on the field: legacy sends "question",
@@ -174,7 +194,15 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
                 ? args.choices.filter((c): c is string => typeof c === 'string' && c.trim() !== '')
                 : undefined,
             }
-          : { kind: 'tool', key, name, summary: summarise(args, cwd), output: null, status: 'running' };
+          : {
+              kind: 'tool',
+              key,
+              name: label,
+              summary: clipLine(summarise(args, cwd)),
+              output: null,
+              status: 'running',
+              command,
+            };
 
         const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
         if (id) pending.set(id, entry);
@@ -276,6 +304,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
     a.output === other.output &&
     a.status === other.status &&
     a.answer === other.answer &&
+    a.command === other.command &&
     sameChoices(a.choices, other.choices)
   );
 }

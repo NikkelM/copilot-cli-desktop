@@ -52,7 +52,14 @@ describe('toEntries', () => {
     );
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({ kind: 'tool', name: 'powershell', summary: 'echo hi', status: 'ok', output: 'hi' });
+    expect(entries[0]).toMatchObject({
+      kind: 'tool',
+      name: 'Shell',
+      summary: 'echo hi',
+      status: 'ok',
+      output: 'hi',
+      command: 'echo hi',
+    });
   });
 
   it('reports a failed tool with its error message', () => {
@@ -279,10 +286,10 @@ describe('ask_user rows', () => {
 
   it('leaves other tools showing their name', () => {
     const entries = toEntries(
-      [event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } })],
+      [event('tool.execution_start', { toolCallId: 't1', toolName: 'grep', arguments: { pattern: 'needle' } })],
       null,
     );
-    expect(entries[0]).toMatchObject({ name: 'powershell', summary: 'ls' });
+    expect(entries[0]).toMatchObject({ name: 'grep', summary: 'needle' });
     expect((entries[0] as ToolEntry).question).toBeUndefined();
   });
 });
@@ -344,6 +351,7 @@ describe('sameEntry', () => {
     question: true,
     answer: 'B',
     choices: ['A', 'B'],
+    command: 'echo hi',
   };
 
   it('treats a rebuilt but identical entry as unchanged', () => {
@@ -364,6 +372,7 @@ describe('sameEntry', () => {
       status: 'failed',
       answer: 'A',
       choices: ['A'],
+      command: 'echo bye',
     };
 
     for (const [field, value] of Object.entries(changed)) {

@@ -40,8 +40,41 @@ describe('Transcript', () => {
   });
 
   it('does not offer to expand a row with nothing behind it', () => {
-    show([event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } }, 'e1')]);
-    expect(screen.getByRole('button', { name: /ls/ })).toHaveProperty('disabled', true);
+    show([event('tool.execution_start', { toolCallId: 't1', toolName: 'grep', arguments: { pattern: 'x' } }, 'e1')]);
+    expect(screen.getByRole('button', { name: /grep/ })).toHaveProperty('disabled', true);
+  });
+
+  // Reading what is running is exactly when it matters, and output only exists after.
+  it('opens a command that is still running', async () => {
+    show([
+      event(
+        'tool.execution_start',
+        { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'sleep 30', description: 'Wait a while' } },
+        'e1',
+      ),
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /Wait a while/ }));
+    expect(screen.getByText('sleep 30')).toBeTruthy();
+  });
+
+  it('shows the whole command however long the header had to clip it', async () => {
+    const command = `Get-ChildItem ${'-Filter "*.tsv" '.repeat(30)}`.trim();
+    const { container } = show([
+      ...shell('e1', 'ls', 't1'),
+      event(
+        'tool.execution_start',
+        { toolCallId: 't2', toolName: 'powershell', arguments: { command, description: 'Find the dump' } },
+        'e2',
+      ),
+      event('tool.execution_complete', { toolCallId: 't2', success: true, result: { content: 'found it' } }, 'e3'),
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /Find the dump/ }));
+
+    expect(screen.getByText('found it')).toBeTruthy();
+    // The header clips; this is the only place the command can be read in full.
+    expect(container.querySelector('.tool-command')?.textContent).toBe(command);
   });
 
   // The regression behind #80: rows were keyed by index, so prepending a page of history
