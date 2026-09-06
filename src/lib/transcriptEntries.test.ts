@@ -120,16 +120,48 @@ describe('toEntries', () => {
     expect((entries[0] as ToolEntry).summary).toBe('C:\\elsewhere\\note.txt');
   });
 
-  it('summarises searches by pattern and shells by command', () => {
+  it('summarises searches by what was looked for and where', () => {
     const entries = toEntries(
       [
-        event('tool.execution_start', { toolCallId: 'a', toolName: 'grep', arguments: { pattern: 'TODO', paths: [] } }),
+        event('tool.execution_start', {
+          toolCallId: 'a',
+          toolName: 'grep',
+          arguments: { pattern: 'export function isIncomplete', paths: `${CWD}\\src\\lib\\elicitationForm.ts` },
+        }),
         event('tool.execution_start', { toolCallId: 'b', toolName: 'powershell', arguments: { command: 'ls' } }),
+      ],
+      CWD,
+    );
+    expect((entries[0] as ToolEntry).summary).toBe('"export function isIncomplete" (src/lib/elicitationForm.ts)');
+    expect((entries[1] as ToolEntry).summary).toBe('ls');
+  });
+
+  it('quotes a pattern searched with no path given', () => {
+    const entries = toEntries(
+      [event('tool.execution_start', { toolCallId: 'a', toolName: 'grep', arguments: { pattern: 'TODO', paths: [] } })],
+      null,
+    );
+    expect((entries[0] as ToolEntry).summary).toBe('"TODO"');
+  });
+
+  // The tool takes either, and both turn up in real sessions.
+  it('takes the search path as a string or as a list', () => {
+    const one = toEntries(
+      [event('tool.execution_start', { toolCallId: 'a', toolName: 'grep', arguments: { pattern: 'x', paths: 'src' } })],
+      null,
+    );
+    const many = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 'a',
+          toolName: 'grep',
+          arguments: { pattern: 'x', paths: ['src', 'sidecar'] },
+        }),
       ],
       null,
     );
-    expect((entries[0] as ToolEntry).summary).toBe('TODO');
-    expect((entries[1] as ToolEntry).summary).toBe('ls');
+    expect((one[0] as ToolEntry).summary).toBe('"x" (src)');
+    expect((many[0] as ToolEntry).summary).toBe('"x" (src, sidecar)');
   });
 
   it('survives a completion whose start was never seen', () => {
@@ -289,7 +321,7 @@ describe('ask_user rows', () => {
       [event('tool.execution_start', { toolCallId: 't1', toolName: 'glob', arguments: { pattern: '**/*.ts' } })],
       null,
     );
-    expect(entries[0]).toMatchObject({ name: 'glob', summary: '**/*.ts' });
+    expect(entries[0]).toMatchObject({ name: 'glob', summary: '"**/*.ts"' });
     expect((entries[0] as ToolEntry).question).toBeUndefined();
   });
 
