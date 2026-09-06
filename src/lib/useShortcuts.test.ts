@@ -143,23 +143,36 @@ describe('useShortcuts', () => {
       expect(on).toHaveBeenCalledExactlyOnceWith('help');
     });
 
-    // The composer holds the keyboard whenever a session is open, so the bare key alone
-    // would be unreachable almost all of the time.
-    it('opens on F1 even while typing', () => {
+    // The composer holds the keyboard whenever a session is open, so refusing while a field
+    // has focus would put the list out of reach almost all of the time.
+    it('opens from an empty composer, and does not leave the mark behind', () => {
       renderHook(() => useShortcuts(on));
       const box = document.createElement('textarea');
       document.body.append(box);
 
-      const event = press('F1', {}, box);
+      const event = press('?', {}, box);
 
       expect(on).toHaveBeenCalledExactlyOnceWith('help');
       expect(event.defaultPrevented).toBe(true);
     });
 
-    // Where a question mark is just a question mark.
-    it.each(['textarea', 'input', 'select'])('stays out of the way inside a %s', (tag) => {
+    // Once there is a message being written, a question mark is part of it.
+    it.each(['textarea', 'input'])('stays out of the way once something is typed in a %s', (tag) => {
       renderHook(() => useShortcuts(on));
-      const field = document.createElement(tag);
+      const field = document.createElement(tag) as HTMLTextAreaElement;
+      field.value = 'why does';
+      document.body.append(field);
+
+      const event = press('?', {}, field);
+
+      expect(on).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    // A menu has no text to be the first character of, so it is left alone.
+    it('stays out of the way inside a select', () => {
+      renderHook(() => useShortcuts(on));
+      const field = document.createElement('select');
       document.body.append(field);
 
       press('?', {}, field);

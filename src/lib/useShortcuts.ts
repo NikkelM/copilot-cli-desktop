@@ -22,7 +22,7 @@ export interface Binding {
 export const BINDINGS: readonly Binding[] = [
   { id: 'escape-twice', keys: 'Esc Esc', what: 'Stop the turn, or clear what is written' },
   { id: 'interrupt', keys: 'Ctrl+C', what: 'Stop the turn' },
-  { id: 'help', keys: 'F1 or ?', what: 'Show these shortcuts' },
+  { id: 'help', keys: '?', what: 'Show these shortcuts' },
 ];
 
 /** Whether a key press belongs to whatever is being typed into. */
@@ -39,6 +39,23 @@ function typing(target: EventTarget | null): boolean {
     element.tagName === 'TEXTAREA' ||
     element.tagName === 'SELECT'
   );
+}
+
+/**
+ * Whether a field is empty, so a key pressed into it is the first thing typed.
+ *
+ * The composer holds the keyboard whenever a session is open, so a shortcut that refuses to
+ * fire while a field has focus would be unreachable almost all of the time. A question mark
+ * as the first character is a question nobody asks, which is what makes it safe to claim -
+ * the same reasoning the CLI applies to its own leading keys.
+ */
+function empty(target: EventTarget | null): boolean {
+  const field = target as HTMLInputElement | HTMLTextAreaElement | null;
+  // A menu has a value but nothing is being typed into it, so it is never "the first
+  // character" of anything.
+  if (field?.tagName !== 'INPUT' && field?.tagName !== 'TEXTAREA') return false;
+
+  return field.value.length === 0;
 }
 
 /**
@@ -83,11 +100,11 @@ export function useShortcuts(on: (shortcut: Shortcut) => void) {
         return;
       }
 
-      // The composer holds the keyboard whenever a session is open, so a plain question
-      // mark is usually just a question mark. F1 works wherever the focus is and on any
-      // layout - Ctrl+/ would be Ctrl+Shift+7 on a German keyboard - and the bare key is
-      // there for when nothing is being typed into.
-      if (event.key === 'F1' || (event.key === '?' && !typing(event.target))) {
+      // The composer holds the keyboard whenever a session is open, so refusing to fire
+      // while a field has focus would put this out of reach almost all of the time. A
+      // question mark as the first character of a message is one nobody types, so it is
+      // claimed - and swallowed, rather than left in the box behind the list.
+      if (event.key === '?' && (!typing(event.target) || empty(event.target))) {
         event.preventDefault();
         handler.current('help');
       }
