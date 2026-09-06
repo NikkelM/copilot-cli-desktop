@@ -81,12 +81,14 @@ function text(data: Record<string, unknown>, key: string): string | null {
 /**
  * Why a turn stopped, in the reader's terms.
  *
- * Stopping is usually the reader's own doing and needs no explanation, but the other
- * reasons are things that happened to them: which one it was is the whole content of the
- * row.
+ * Said plainly rather than in the passive: a turn the reader stopped and a turn something
+ * else stopped look identical once the reply has ended, and which it was is the whole
+ * content of the row.
  */
 function stopReason(data: Record<string, unknown>): string {
   switch (data.reason) {
+    case 'user_initiated':
+      return 'Stopped by you';
     case 'remote_command':
       return 'Stopped by a remote command';
     case 'user_abort':

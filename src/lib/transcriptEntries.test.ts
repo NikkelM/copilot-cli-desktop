@@ -666,11 +666,11 @@ describe('a stopped turn', () => {
       null,
     );
 
-    expect(entries[1]).toMatchObject({ kind: 'message', variant: 'stopped', body: 'Stopped' });
+    expect(entries[1]).toMatchObject({ kind: 'message', variant: 'stopped', body: 'Stopped by you' });
   });
 
-  // The reader knows why they stopped it; the other reasons are things that happened to
-  // them, and which one it was is the whole content of the row.
+  // Once the reply has ended, a turn the reader stopped and a turn something else stopped
+  // look identical, so each says which it was.
   it.each([
     ['remote_command', 'Stopped by a remote command'],
     ['user_abort', 'Stopped by a connected server'],
