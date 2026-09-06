@@ -162,6 +162,7 @@ export interface SidecarRequests {
   'sessions.changes': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
   'sessions.diff': { params: { sessionId: string; path: string; scope?: SnapshotScope }; result: { patch: string } };
   'sessions.rewind': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
+  'git.state': { params: { cwd: string }; result: { state: TreeState | null } };
   'runtime.status': { params: void; result: RuntimeStatus };
 }
 
@@ -242,4 +243,21 @@ export interface SessionChangesResult {
   root: string | null;
   changes: SessionChange[];
   points: SnapshotPoint[];
+}
+
+/**
+ * Which branch a working directory is on, and whether its tree is clean.
+ *
+ * The markers follow the convention a shell prompt uses, so anyone who reads one already
+ * knows what they mean.
+ */
+export interface TreeState {
+  /** The branch name, or the short commit when there is no branch to name. */
+  branch: string;
+  detached: boolean;
+  /** Tracked files differ from the index. */
+  modified: boolean;
+  untracked: boolean;
+  /** Something is staged for the next commit. */
+  staged: boolean;
 }

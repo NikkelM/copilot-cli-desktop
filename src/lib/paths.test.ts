@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { relativise } from './paths';
+import { relativise, shortenHome } from './paths';
 
 describe('relativise', () => {
   it('strips the working directory prefix', () => {
@@ -30,5 +30,37 @@ describe('relativise', () => {
 
   it('handles posix paths', () => {
     expect(relativise('/home/u/repo/src/a.ts', '/home/u/repo')).toBe('src/a.ts');
+  });
+});
+
+describe('shortenHome', () => {
+  it('writes the home directory as a tilde', () => {
+    expect(shortenHome('C:\\Users\\test\\Projects\\thing', 'C:\\Users\\test')).toBe('~\\Projects\\thing');
+  });
+
+  it('keeps the separator the path was written with', () => {
+    expect(shortenHome('/home/test/projects/thing', '/home/test')).toBe('~/projects/thing');
+  });
+
+  it('writes home itself as a tilde alone', () => {
+    expect(shortenHome('C:\\Users\\test', 'C:\\Users\\test')).toBe('~');
+  });
+
+  it('ignores case, since Windows paths are case-insensitive', () => {
+    expect(shortenHome('c:\\users\\Test\\work', 'C:\\Users\\test')).toBe('~\\work');
+  });
+
+  // A sibling directory whose name starts the same way is not inside home.
+  it('leaves a path that only looks like home alone', () => {
+    expect(shortenHome('C:\\Users\\test2\\work', 'C:\\Users\\test')).toBe('C:\\Users\\test2\\work');
+  });
+
+  it('leaves a path outside home alone', () => {
+    expect(shortenHome('D:\\work\\repo', 'C:\\Users\\test')).toBe('D:\\work\\repo');
+  });
+
+  // The home directory is asked of the system, so there is a moment before it is known.
+  it('leaves paths alone until home is known', () => {
+    expect(shortenHome('C:\\Users\\test\\work', '')).toBe('C:\\Users\\test\\work');
   });
 });

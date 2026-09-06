@@ -15,3 +15,24 @@ export function relativise(path: string, cwd: string | null): string {
   }
   return path;
 }
+
+/**
+ * Write the home directory as `~`, the way a shell does.
+ *
+ * The prefix every path shares is the least interesting part of it, and a working directory
+ * shown in full pushes the part that identifies it off the end of the line.
+ */
+export function shortenHome(path: string, home: string): string {
+  if (!home) return path;
+
+  const normalise = (value: string) => value.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+  const target = normalise(path);
+  const base = normalise(home);
+  if (!base) return path;
+
+  if (target === base) return '~';
+  // The separator is kept from the original path rather than imposed, so a Windows path
+  // still reads as one.
+  if (target.startsWith(`${base}/`)) return `~${path.slice(base.length)}`;
+  return path;
+}

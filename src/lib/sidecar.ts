@@ -15,6 +15,7 @@ import type {
   SendResult,
   SessionEventNotification,
   SessionLoadedNotification,
+  TreeState,
 } from '../../shared/protocol';
 
 /** Single entry point for every sidecar call, so transport details stay in one place. */
@@ -25,6 +26,12 @@ async function request<T>(method: string, params?: unknown): Promise<T> {
 /** Reads the sidebar model from session-store.db. Spawns no Copilot process. */
 export function listSessions(): Promise<ListSessionsResult> {
   return request<ListSessionsResult>('sessions.list');
+}
+
+/** What git says about a directory now. Null when it is not in a repository. */
+export async function gitState(cwd: string): Promise<TreeState | null> {
+  const { state } = await request<{ state: TreeState | null }>('git.state', { cwd });
+  return state;
 }
 
 /** Replays a session transcript from events.jsonl without resuming it. */
