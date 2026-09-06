@@ -203,7 +203,9 @@ describe('ModelPicker', () => {
     });
   });
   describe('choosing', () => {
-    it('reports the model on its own', async () => {
+    // Committing sends whatever the row holds, so a row that holds nothing would leave the
+    // effort to the runtime rather than to the reader.
+    it('always reports an effort, even when nothing was picked', async () => {
       const { onChoose } = picker();
       await openMenu();
 
@@ -211,7 +213,7 @@ describe('ModelPicker', () => {
 
       expect(onChoose).toHaveBeenCalledWith({
         model: 'claude-opus-5',
-        reasoningEffort: undefined,
+        reasoningEffort: 'low',
         contextTier: 'default',
       });
     });
@@ -305,15 +307,15 @@ describe('ModelPicker', () => {
         );
       });
 
-      // There is nothing to carry when the model does not offer it, and marking a level it
-      // does not have would promise something it cannot do.
-      it('leaves the effort unset when the model does not offer it', async () => {
+      // Marking a level the model does not have would promise something it cannot do, so
+      // the row falls back to a level it does have rather than to nothing.
+      it('falls back when the model does not offer the level in use', async () => {
         const { onChoose } = picker({ current: { model: 'auto', reasoningEffort: 'max' } });
         await openMenu();
 
         await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
 
-        expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: undefined }));
+        expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'low' }));
       });
 
       it('falls back to the standard size when the model has no larger one', async () => {
@@ -345,7 +347,7 @@ describe('ModelPicker', () => {
       await openMenu();
       await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
 
-      expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: undefined }));
+      expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'low' }));
     });
   });
 

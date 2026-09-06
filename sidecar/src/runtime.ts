@@ -775,6 +775,7 @@ export class SessionRuntime {
         id: model.id,
         name: model.name,
         reasoningEfforts: (model.supportedReasoningEfforts ?? []) as ReasoningEffort[],
+        defaultReasoningEffort: model.defaultReasoningEffort as ReasoningEffort | undefined,
         // The sizes a model runs at are described by what each is priced for, which is also
         // the only place the larger one is mentioned. Some models are priced without saying
         // how much they take, and for those the model's own prompt limit is the answer.
