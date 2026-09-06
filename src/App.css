@@ -146,6 +146,8 @@ body {
 
 .main {
   display: grid;
+  /* Header, notices, transcript, footer. Rows are assigned by position, so every one of
+     those must always render: a conditional child shifts the rest up a row. */
   grid-template-rows: auto auto 1fr auto;
   padding: 16px 24px 16px;
   overflow: hidden;
@@ -438,6 +440,9 @@ body {
 .transcript {
   margin: 0;
   padding: 0 4px 0 0;
+  /* A grid item will not shrink below its content without this, which would push the
+     footer off the bottom instead of scrolling. */
+  min-height: 0;
   overflow-y: auto;
   list-style: none;
 }
