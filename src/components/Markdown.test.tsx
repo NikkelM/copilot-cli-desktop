@@ -94,3 +94,60 @@ describe('Markdown', () => {
     expect(container.textContent).toBe('just a sentence');
   });
 });
+
+/**
+ * A reply refers to its own sections, and those links are places in this window rather
+ * than documents for the operating system to puzzle over. Handing every href to the opener
+ * sent anchors and relative paths to it, which was the bug this fixes.
+ */
+describe('links within a reply', () => {
+  it('gives headings anchors to reach', () => {
+    const { container } = render(<Markdown body={'## Findings\n\ntext'} anchor="m1" />);
+    expect(container.querySelector('h2')?.id).toBe('m1-findings');
+  });
+
+  // Replies reuse the same headings constantly; without scoping, a link would jump to
+  // whichever reply came first in the transcript.
+  it('keeps one reply\u2019s anchors out of another\u2019s', () => {
+    const first = render(<Markdown body="## Findings" anchor="m1" />);
+    const second = render(<Markdown body="## Findings" anchor="m2" />);
+
+    expect(first.container.querySelector('h2')?.id).not.toBe(second.container.querySelector('h2')?.id);
+  });
+
+  it('points a link at the heading in its own reply', () => {
+    const { container } = render(<Markdown body={'## Findings\n\n[see](#findings)'} anchor="m1" />);
+    expect(container.querySelector('a')?.getAttribute('href')).toBe('#m1-findings');
+  });
+
+  it('scrolls to a heading rather than asking the system to open it', async () => {
+    openUrl.mockClear();
+    const { container } = render(<Markdown body={'## Findings\n\n[see](#findings)'} anchor="m1" />);
+    const heading = container.querySelector('h2')!;
+    const scrolled = vi.fn();
+    heading.scrollIntoView = scrolled;
+    document.body.append(container);
+
+    await userEvent.click(screen.getByRole('link', { name: 'see' }));
+
+    expect(scrolled).toHaveBeenCalled();
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  // A path relative to the working directory names a file, which is a different feature.
+  it('does not hand a relative path to the system', async () => {
+    openUrl.mockClear();
+    render(<Markdown body="[notes](./notes.md)" anchor="m1" />);
+
+    await userEvent.click(screen.getByRole('link', { name: 'notes' }));
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it('still opens a real address outside the app', async () => {
+    openUrl.mockClear();
+    render(<Markdown body="[docs](https://example.com/docs)" anchor="m1" />);
+
+    await userEvent.click(screen.getByRole('link', { name: 'docs' }));
+    expect(openUrl).toHaveBeenCalledWith('https://example.com/docs');
+  });
+});
