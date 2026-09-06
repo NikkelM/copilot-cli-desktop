@@ -340,7 +340,13 @@ export default function App() {
                 <SessionPath cwd={selected.cwd} state={tree.state} />
               </div>
               <div className="header-controls">
-                <ModelPicker current={model.current} onOpen={model.models} onChoose={model.choose} />
+                <ModelPicker
+                  current={model.current}
+                  models={model.models}
+                  failed={model.failed}
+                  onOpen={model.refresh}
+                  onChoose={model.choose}
+                />
                 <label className="toggle" title="Approve every tool call in this session without asking">
                   <input
                     type="checkbox"

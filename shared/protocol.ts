@@ -82,19 +82,39 @@ export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'ma
 /** How much room a session has to work in, for models that offer more than one size. */
 export type ContextTier = 'default' | 'long_context';
 
+/** One of the sizes a model can be run at, named by what it will actually take. */
+export interface ModelContext {
+  tier: ContextTier;
+  /** Prompt tokens this tier allows, which is what distinguishes it from the other. */
+  maxPromptTokens: number;
+}
+
+/**
+ * What a million tokens costs, in credits.
+ *
+ * The runtime quotes a price per billing batch, which is not the same thing for every
+ * model, so it is converted here rather than left for the UI to get wrong.
+ */
+export interface ModelPrices {
+  input?: number;
+  cachedInput?: number;
+  output?: number;
+}
+
 /**
  * A model a session can be switched to.
  *
- * Trimmed from what the runtime reports, which carries token limits and pricing tables that
- * no part of this app shows.
+ * Trimmed from what the runtime reports, which carries pricing tables and vision limits
+ * that no part of this app shows.
  */
 export interface ModelChoice {
   id: string;
   name: string;
   /** The levels this model offers, empty when it does not take direction on thinking. */
   reasoningEfforts: ReasoningEffort[];
-  /** Whether it can be pinned to the larger context window; most models cannot. */
-  longContext: boolean;
+  /** The sizes it can run at. One means there is nothing to choose. */
+  contexts: ModelContext[];
+  prices?: ModelPrices;
   /** Offered but not usable: a policy has to be accepted before it will answer. */
   needsAgreement: boolean;
 }

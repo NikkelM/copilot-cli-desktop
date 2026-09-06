@@ -764,16 +764,42 @@ export class SessionRuntime {
   async models(): Promise<ModelChoice[]> {
     const client = await this.ensureClient();
 
-    return (await client.listModels()).map((model) => ({
-      id: model.id,
-      name: model.name,
-      reasoningEfforts: (model.supportedReasoningEfforts ?? []) as ReasoningEffort[],
-      // A model that can be pinned to the larger window is priced for it, which is the only
-      // place the catalogue says so.
-      longContext: Boolean(model.billing?.tokenPrices?.longContext),
-      // Listed but unusable until its terms are accepted, which happens outside this app.
-      needsAgreement: model.policy?.state === 'unconfigured',
-    }));
+    return (await client.listModels()).map((model) => {
+      const prices = model.billing?.tokenPrices;
+      // Prices are quoted per billing batch, and a batch is not a million tokens for every
+      // model, so they are converted here rather than left for the UI to get wrong.
+      const perMillion = (value?: number) =>
+        value === undefined ? undefined : value * (1_000_000 / (prices?.batchSize || 1_000_000));
+
+      return {
+        id: model.id,
+        name: model.name,
+        reasoningEfforts: (model.supportedReasoningEfforts ?? []) as ReasoningEffort[],
+        // The sizes a model runs at are described by what each is priced for, which is also
+        // the only place the larger one is mentioned. Some models are priced without saying
+        // how much they take, and for those the model's own prompt limit is the answer.
+        contexts: [
+          ...(prices?.maxPromptTokens || model.capabilities?.limits?.max_prompt_tokens
+            ? [
+                {
+                  tier: 'default' as const,
+                  maxPromptTokens: prices?.maxPromptTokens ?? model.capabilities.limits.max_prompt_tokens!,
+                },
+              ]
+            : []),
+          ...(prices?.longContext?.maxPromptTokens
+            ? [{ tier: 'long_context' as const, maxPromptTokens: prices.longContext.maxPromptTokens }]
+            : []),
+        ],
+        prices: prices && {
+          input: perMillion(prices.inputPrice),
+          cachedInput: perMillion(prices.cacheReadPrice ?? prices.cachePrice),
+          output: perMillion(prices.outputPrice),
+        },
+        // Listed but unusable until its terms are accepted, which happens outside this app.
+        needsAgreement: model.policy?.state === 'unconfigured',
+      };
+    });
   }
 
   /**
