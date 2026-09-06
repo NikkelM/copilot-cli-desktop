@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TranscriptEvent } from '../../shared/protocol';
-import { sameEntry, toEntries, type MessageEntry, type ToolEntry } from './transcriptEntries';
+import { sameEntry, toEntries, type MessageEntry, type ReasoningEntry, type ToolEntry } from './transcriptEntries';
 
 const event = (type: string, data: Record<string, unknown> = {}, id?: string): TranscriptEvent => ({
   type,
@@ -503,5 +503,111 @@ describe('a reply arriving live', () => {
   it('falls back to the event when a message carries no id', () => {
     const entries = toEntries([event('assistant.message', { content: 'replayed' }, 'e1')], null);
     expect(entries[0]!.key).toBe('e1');
+  });
+});
+
+describe('the model\u2019s thinking', () => {
+  /**
+   * Persisted on the assistant message rather than arriving as its own event, which is
+   * why a session resumed weeks later still has it.
+   */
+  it('shows the reasoning kept with a reply', () => {
+    const entries = toEntries(
+      [
+        event(
+          'assistant.message',
+          { messageId: 'm1', content: 'Using GraphQL variables instead', reasoningText: 'Quote escaping broke it' },
+          'e1',
+        ),
+      ],
+      null,
+    );
+
+    expect(entries.map((e) => e.kind)).toEqual(['reasoning', 'message']);
+    expect(entries[0]).toMatchObject({ kind: 'reasoning', body: 'Quote escaping broke it' });
+  });
+
+  it('puts the thinking before the answer it produced', () => {
+    const entries = toEntries(
+      [event('assistant.message', { messageId: 'm1', content: 'the answer', reasoningText: 'the thinking' }, 'e1')],
+      null,
+    );
+    expect(entries.map((e) => (e as { body: string }).body)).toEqual(['the thinking', 'the answer']);
+  });
+
+  it('says nothing when a reply came with none', () => {
+    const entries = toEntries([event('assistant.message', { messageId: 'm1', content: 'just the answer' }, 'e1')], null);
+    expect(entries.map((e) => e.kind)).toEqual(['message']);
+  });
+
+  // A message that only asked for a tool has no reply, but may still have reasoning.
+  it('shows thinking that led only to a tool call', () => {
+    const entries = toEntries(
+      [event('assistant.message', { messageId: 'm1', content: '', reasoningText: 'I should look first' }, 'e1')],
+      null,
+    );
+    expect(entries.map((e) => e.kind)).toEqual(['reasoning']);
+  });
+
+  it('keys thinking apart from the reply it belongs to', () => {
+    const entries = toEntries(
+      [event('assistant.message', { messageId: 'm1', content: 'answer', reasoningText: 'thinking' }, 'e1')],
+      null,
+    );
+    expect(entries[0]!.key).not.toBe(entries[1]!.key);
+  });
+
+  it('notices thinking changing, so a row is not left stale', () => {
+    const a: ReasoningEntry = { kind: 'reasoning', key: 'm1-why', body: 'first' };
+    expect(sameEntry(a, { ...a })).toBe(true);
+    expect(sameEntry(a, { ...a, body: 'second' })).toBe(false);
+  });
+});
+
+describe('thinking as it is written', () => {
+  it('shows a chunk as it arrives, open rather than folded away', () => {
+    const entries = toEntries(
+      [event('assistant.reasoning_delta', { reasoningId: 'r1', deltaContent: 'I should look first' }, 'e1')],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ kind: 'reasoning', body: 'I should look first', streaming: true });
+  });
+
+  /**
+   * The message repeats at the end of a turn what the deltas already said. Showing both
+   * would put the same thinking on screen twice, once open and once closed.
+   */
+  it('does not repeat thinking that already arrived as it was written', () => {
+    const entries = toEntries(
+      [
+        event('assistant.reasoning_delta', { reasoningId: 'r1', deltaContent: 'the thinking' }, 'e1'),
+        event('assistant.message', { messageId: 'm1', content: 'the answer', reasoningText: 'the thinking' }, 'e2'),
+      ],
+      null,
+    );
+
+    expect(entries.map((e) => e.kind)).toEqual(['reasoning', 'message']);
+    expect(entries[0]).toMatchObject({ streaming: true });
+  });
+
+  // A replayed session never saw the deltas, so the message is the only record of it.
+  it('shows thinking from the log folded away', () => {
+    const entries = toEntries(
+      [event('assistant.message', { messageId: 'm1', content: 'answer', reasoningText: 'the thinking' }, 'e1')],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ kind: 'reasoning', body: 'the thinking' });
+    expect((entries[0] as ReasoningEntry).streaming).toBeFalsy();
+  });
+
+  it('keeps thinking from different blocks apart', () => {
+    const entries = toEntries(
+      [
+        event('assistant.reasoning_delta', { reasoningId: 'r1', deltaContent: 'first' }, 'e1'),
+        event('assistant.reasoning_delta', { reasoningId: 'r2', deltaContent: 'second' }, 'e2'),
+      ],
+      null,
+    );
+    expect(entries.map((e) => e.key)).toEqual(['r1', 'r2']);
   });
 });

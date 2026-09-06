@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
-import { sameEntry, toEntries, type Entry, type ToolEntry } from '../lib/transcriptEntries';
+import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
 import { Markdown } from './Markdown';
 
 /**
@@ -22,6 +22,34 @@ const STATUS_GLYPH: Record<ToolEntry['status'], string> = {
   failed: '✕',
   cancelled: '⊘',
 };
+
+/**
+ * The model's thinking, folded away until asked for.
+ *
+ * Open while it is being written, because the wait before a reply is the longest the
+ * window is ever silent and this is the only thing that fills it. Closed once read back
+ * from a log: it is usually longer than the answer it produced, and a transcript where
+ * every reply is preceded by paragraphs of reasoning is one nobody can scan.
+ */
+function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
+  const [open, setOpen] = useState(Boolean(entry.streaming));
+  const words = entry.body.trim().split(/\s+/).length;
+
+  return (
+    <div className={`reasoning${open ? ' open' : ''}`}>
+      <button type="button" className="reasoning-head" onClick={() => setOpen((was) => !was)}>
+        <span className="reasoning-caret">{open ? '▾' : '▸'}</span>
+        <span className="reasoning-label">Thinking</span>
+        {!open && <span className="reasoning-count">{words} words</span>}
+      </button>
+      {open && (
+        <div className="reasoning-body">
+          <Markdown body={entry.body} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** A single tool call, collapsed to one line until expanded. */
 function ToolRow({ entry }: { entry: ToolEntry }) {
@@ -207,9 +235,10 @@ export function Transcript({
  */
 const EntryRow = memo(
   function EntryRow({ entry }: { entry: Entry }) {
-    return entry.kind === 'tool' ? (
-      <ToolRow entry={entry} />
-    ) : (
+    if (entry.kind === 'tool') return <ToolRow entry={entry} />;
+    if (entry.kind === 'reasoning') return <ReasoningRow entry={entry} />;
+
+    return (
       <div className={`message ${entry.variant}`}>
         <Markdown body={entry.body} />
       </div>

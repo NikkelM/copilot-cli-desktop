@@ -13,6 +13,29 @@ export interface MessageEntry {
 }
 
 /**
+ * The model's own account of how it got to an answer.
+ *
+ * Kept apart from the reply rather than shown above it, because it is usually longer than
+ * the answer and is not what most readers came for. It rides on the assistant message
+ * rather than arriving as its own event, which is why it survives into the log and can be
+ * read again weeks later.
+ */
+export interface ReasoningEntry {
+  kind: 'reasoning';
+  key: string;
+  body: string;
+  /**
+   * Arriving now rather than read back from the log.
+   *
+   * Shown open while it happens, because the wait before a reply is the longest the window
+   * is ever silent and this is the only thing that fills it. A session opened later shows
+   * its thinking closed instead: the reader came for the work, not to re-read the thinking
+   * behind every reply in it.
+   */
+  streaming?: boolean;
+}
+
+/**
  * One tool invocation, pairing its start with its completion.
  * Kept as a single unit so the command, its status and its output collapse together.
  */
@@ -40,7 +63,7 @@ export interface ToolEntry {
   search?: boolean;
 }
 
-export type Entry = MessageEntry | ToolEntry;
+export type Entry = MessageEntry | ReasoningEntry | ToolEntry;
 
 function text(data: Record<string, unknown>, key: string): string | null {
   const value = data[key];
@@ -160,6 +183,8 @@ function answerOf(result: string): string | null {
  */
 export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[] {
   const entries: Entry[] = [];
+  /** Thinking already shown as it was written, so the message repeating it is skipped. */
+  const streamed = new Set<string>();
   /** In-flight tool calls, so a completion can fill in the entry it belongs to. */
   const pending = new Map<string, ToolEntry>();
 
@@ -180,9 +205,32 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
         // An assistant message carrying only tool requests has empty content; the tool
         // itself is shown by its own entry.
         const content = text(data, 'content');
+        // Thinking comes before the answer it produced, as it happened. Skipped when it
+        // already arrived as it was written: the message repeats it at the end of a turn,
+        // and showing it twice would be worse than not showing it at all.
+        const reasoning = text(data, 'reasoningText');
+        if (reasoning && !streamed.has(reasoning.trim())) {
+          entries.push({ kind: 'reasoning', key: `${messageKey(data, key)}-why`, body: reasoning });
+        }
         // Keyed by the message rather than the event, so the finished reply lands on the
         // row its own deltas were already drawing instead of replacing it.
         if (content) entries.push({ kind: 'message', key: messageKey(data, key), variant: 'assistant', body: content });
+        break;
+      }
+
+      /**
+       * Thinking as it is written. Only ever seen live - these are ephemeral and never
+       * reach the log, which is why a replayed session gets its thinking from the message
+       * instead.
+       */
+      case 'assistant.reasoning':
+      case 'assistant.reasoning_delta': {
+        const content = text(data, 'deltaContent') ?? text(data, 'content');
+        if (!content) break;
+
+        const id = typeof data.reasoningId === 'string' ? data.reasoningId : key;
+        streamed.add(content.trim());
+        entries.push({ kind: 'reasoning', key: id, body: content, streaming: true });
         break;
       }
 
@@ -322,6 +370,11 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
  */
 export function sameEntry(a: Entry, b: Entry): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
+
+  if (a.kind === 'reasoning') {
+    const other = b as ReasoningEntry;
+    return a.body === other.body && a.streaming === other.streaming;
+  }
 
   if (a.kind === 'message') {
     const other = b as MessageEntry;
