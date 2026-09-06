@@ -6,7 +6,10 @@ import remarkGemoji from 'remark-gemoji';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
+import rehypeSlug from 'rehype-slug';
 import { openUrl } from '@tauri-apps/plugin-opener';
+
+import { scopeAnchors } from '../lib/scopeAnchors';
 import 'katex/dist/katex.min.css';
 
 /**
@@ -32,23 +35,43 @@ const schema = {
  * Replies are written to be read as markdown, so showing the source leaves headings,
  * emphasis and lists as punctuation to read past.
  */
-export const Markdown = memo(function Markdown({ body }: { body: string }) {
+export const Markdown = memo(function Markdown({ body, anchor }: { body: string; anchor?: string }) {
   return (
     <div className="markdown">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath, remarkGemoji]}
         // Order matters: raw HTML is parsed, then sanitised, and only then is maths turned
         // into markup - the other way round and its output would be stripped again.
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, schema], rehypeKatex]}
+        rehypePlugins={[
+          rehypeRaw,
+          [rehypeSanitize, schema],
+          rehypeKatex,
+          ...(anchor ? ([rehypeSlug, scopeAnchors(anchor)] as const) : []),
+        ]}
         components={{
-          // A link would otherwise navigate the webview away from the app, with no way
-          // back: this is a window onto sessions, not a browser.
           a: ({ href, children }) => (
             <a
               href={href}
               onClick={(event) => {
+                // A link within the reply is a place in this window, not a document for
+                // the operating system to make sense of.
+                if (href?.startsWith('#')) {
+                  event.preventDefault();
+                  document.getElementById(href.slice(1))?.scrollIntoView({ block: 'center' });
+                  return;
+                }
+
+                // Only an address the system can actually act on is handed to it. A path
+                // relative to the working directory means a file, which is #78's to open.
+                if (href && /^[a-z][a-z0-9+.-]*:/i.test(href)) {
+                  event.preventDefault();
+                  void openUrl(href);
+                  return;
+                }
+
+                // Anything else would navigate the webview away from the only window there
+                // is, with no way back.
                 event.preventDefault();
-                if (href) void openUrl(href);
               }}
             >
               {children}

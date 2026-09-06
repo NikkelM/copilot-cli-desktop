@@ -46,7 +46,7 @@ function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
       </button>
       {open && (
         <div className="reasoning-body">
-          <Markdown body={entry.body} />
+          <Markdown body={entry.body} anchor={entry.key} />
         </div>
       )}
     </div>
@@ -299,7 +299,7 @@ const EntryRow = memo(
 
     return (
       <div className={`message ${entry.variant}`}>
-        <Markdown body={entry.body} />
+        <Markdown body={entry.body} anchor={entry.key} />
       </div>
     );
   },
