@@ -14,6 +14,7 @@ import { toPreview } from '../shared/preview';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { PermissionPrompt } from './components/PermissionPrompt';
+import { SessionPath } from './components/SessionPath';
 import { Sidebar } from './components/Sidebar';
 import { Transcript } from './components/Transcript';
 import {
@@ -39,6 +40,7 @@ import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
 import { contentOf } from './lib/timeline';
 import { useTranscript } from './lib/useTranscript';
+import { useTreeState } from './lib/useTreeState';
 import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
@@ -62,7 +64,10 @@ export default function App() {
   /** Session ids in activation order, most recent first. Fixes the active group's order. */
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
 
+  const selected = sessions.find((session) => session.sessionId === selectedId) ?? null;
+
   const transcript = useTranscript(selectedId, setError);
+  const tree = useTreeState(selected?.cwd ?? null);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
    * has been said, so it says it is working rather than appearing to have done nothing.
@@ -133,6 +138,9 @@ export default function App() {
       if (event.type === 'assistant.turn_start') setBusy(true);
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') setBusy(false);
       if (event.type === 'session.error') setError(describeError(event));
+      // The agent working is what changes the working tree, so this is the moment the
+      // branch line is worth asking about again.
+      if (event.type === 'assistant.turn_end') tree.refresh();
 
       transcript.push(event);
     }),
@@ -271,7 +279,6 @@ export default function App() {
     }
   }
 
-  const selected = sessions.find((session) => session.sessionId === selectedId) ?? null;
   const sessionPermissions = permissions.filter((p) => p.sessionId === selectedId);
   const sessionElicitations = elicitations.filter((e) => e.sessionId === selectedId);
   const ordered = useMemo(() => orderSessions(sessions, activeOrder), [sessions, activeOrder]);
@@ -299,7 +306,7 @@ export default function App() {
             <header className="main-header">
               <div className="main-title">
                 <h1>{selected.title ?? 'Untitled session'}</h1>
-                <p className="cwd">{selected.cwd}</p>
+                <SessionPath cwd={selected.cwd} state={tree.state} />
               </div>
               <div className="header-controls">
                 <label className="toggle" title="Approve every tool call in this session without asking">

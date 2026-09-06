@@ -1,9 +1,7 @@
-import { execFile } from 'node:child_process';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 
-const run = promisify(execFile);
+import { git } from './git.js';
 
 /**
  * Where a session's work happens, if git can tell us anything about it.
@@ -26,16 +24,6 @@ export interface Workspace {
 export interface Snapshot {
   commit: string;
   at: string;
-}
-
-async function git(root: string, args: string[], indexFile?: string): Promise<string> {
-  const { stdout } = await run('git', ['-C', root, ...args], {
-    maxBuffer: 64 * 1024 * 1024,
-    // A private index leaves the repository's own staging area alone: the reader may have
-    // staged something, and taking a snapshot must not disturb it.
-    env: indexFile ? { ...process.env, GIT_INDEX_FILE: indexFile } : process.env,
-  });
-  return stdout;
 }
 
 /** The repository a directory belongs to, or null if it is not in one, or has no commits. */

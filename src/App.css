@@ -437,6 +437,16 @@ body {
   font-family: ui-monospace, monospace;
 }
 
+/* The branch reads as an aside to the path rather than part of it. */
+.branch {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
 .notice {
   margin: 0 0 12px;
   padding: 8px 12px;

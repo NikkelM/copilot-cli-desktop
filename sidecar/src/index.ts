@@ -26,6 +26,7 @@ import {
 } from '../../shared/protocol.js';
 import { type Channel, startDevChannel } from './devChannel.js';
 import { readTranscript } from './eventLog.js';
+import { treeStateOf } from './git.js';
 import { type ApprovalPolicy, SessionRuntime } from './runtime.js';
 import { listSessions } from './sessionIndex.js';
 import { watchSessionStore } from './storeWatcher.js';
@@ -154,6 +155,11 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
       const { sessionId, scope } = request.params as { sessionId: string; scope?: SnapshotScope };
       const undone = await runtime.rewind(sessionId, scope);
       return undone ?? { root: null, changes: [], points: [] };
+    }
+
+    case 'git.state': {
+      const { cwd } = request.params as { cwd: string };
+      return { state: await treeStateOf(cwd) };
     }
 
     case 'runtime.status':
