@@ -288,8 +288,12 @@ export default function App() {
               </div>
             </header>
 
-            {error && <p className="error">{error}</p>}
-            {resuming && <p className="notice">Resuming into the shared runtime. This takes a few seconds.</p>}
+            {/* Always rendered, even when empty: .main assigns rows by position, so a
+                child that comes and goes moves the transcript into another row. */}
+            <div className="notices">
+              {error && <p className="error">{error}</p>}
+              {resuming && <p className="notice">Resuming into the shared runtime. This takes a few seconds.</p>}
+            </div>
 
             <Transcript
               events={events}
