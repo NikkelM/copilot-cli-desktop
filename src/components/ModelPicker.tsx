@@ -1,11 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ContextTier, ModelChoice, ReasoningEffort, SessionModel } from '../../shared/protocol';
 
-/** What to call each context tier, since the runtime's own names are not for reading. */
-const TIERS: ReadonlyArray<[ContextTier, string]> = [
-  ['default', 'standard context'],
-  ['long_context', 'long context'],
-];
+import { credits, tokens } from '../lib/units';
+import type { ContextTier, ModelChoice, ReasoningEffort, SessionModel } from '../../shared/protocol';
 
 export interface ModelChoiceMade {
   model: string;
@@ -16,8 +12,12 @@ export interface ModelChoiceMade {
 interface ModelPickerProps {
   /** What the session runs on: null when its log never said, undefined until it is read. */
   current: SessionModel | null | undefined;
-  /** Asked for only when the picker is opened: listing models costs a running server. */
-  onOpen: () => Promise<ModelChoice[]>;
+  /** What is available. Remembered between runs, so it is usually known before opening. */
+  models: ModelChoice[] | null;
+  /** Why the catalogue could not be fetched, if it could not. */
+  failed: string | null;
+  /** Refresh the catalogue. Costs a running server, so it waits for the picker to open. */
+  onOpen: () => void;
   onChoose: (choice: ModelChoiceMade) => void;
 }
 
@@ -25,14 +25,10 @@ interface ModelPickerProps {
  * Which model a session runs on, how hard it is asked to think, and how much room it has.
  *
  * All three read as one setting, so the closed control shows all three and the menu offers
- * all three: changing the effort should not mean finding the model again. The catalogue
- * behind it is only fetched when the list is opened, since asking the runtime for it starts
- * the shared server, and the whole point of this app is that looking at a session is free.
+ * all three: changing the effort should not mean finding the model again.
  */
-export function ModelPicker({ current, onOpen, onChoose }: ModelPickerProps) {
+export function ModelPicker({ current, models, failed, onOpen, onChoose }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
-  const [models, setModels] = useState<ModelChoice[] | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,18 +55,14 @@ export function ModelPicker({ current, onOpen, onChoose }: ModelPickerProps) {
     }
 
     setOpen(true);
-    // Fetched once and kept: the catalogue does not change while the app is open, and the
-    // wait is the server starting rather than the list being long.
-    if (!models) {
-      setFailed(null);
-      onOpen()
-        .then(setModels)
-        .catch((e: unknown) => setFailed(String(e)));
-    }
+    // Asking costs a server process, so it waits for someone to actually want the list.
+    onOpen();
   }
 
   const effort = current?.reasoningEffort && current.reasoningEffort !== 'none' ? current.reasoningEffort : null;
-  const long = current?.contextTier === 'long_context';
+  const active = models?.find((model) => model.id === current?.model);
+  // Named by size rather than by tier, since the size is the whole difference between them.
+  const room = active?.contexts.find((context) => context.tier === (current?.contextTier ?? 'default'));
 
   return (
     <div className="model" ref={box}>
@@ -86,7 +78,8 @@ export function ModelPicker({ current, onOpen, onChoose }: ModelPickerProps) {
             flash a claim that turns out to be false. */}
         <span className="model-id">{current === undefined ? '' : (current?.model ?? 'No model recorded')}</span>
         {effort && <span className="model-tag">{effort}</span>}
-        {long && <span className="model-tag">long context</span>}
+        {/* Only once the catalogue is known, since the size is not in the session's log. */}
+        {room && <span className="model-tag">{tokens(room.maxPromptTokens)}</span>}
       </button>
 
       {open && (
@@ -94,11 +87,41 @@ export function ModelPicker({ current, onOpen, onChoose }: ModelPickerProps) {
           {failed && <p className="error">{failed}</p>}
           {!models && !failed && <p className="model-loading">Starting the runtime to ask what is available.</p>}
 
+          {active?.prices && <Prices prices={active.prices} />}
+
           {models?.map((model) => (
             <ModelRow key={model.id} model={model} current={current} onChoose={onChoose} onDone={() => setOpen(false)} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * What a million tokens costs on the model in use.
+ *
+ * Shown for that model alone rather than on every row: it is the one a reader is spending
+ * on, and twenty-one price tables would bury the list they came for.
+ */
+function Prices({ prices }: { prices: NonNullable<ModelChoice['prices']> }) {
+  const rows: ReadonlyArray<[string, number | undefined]> = [
+    ['Input', prices.input],
+    ['Cached input', prices.cachedInput],
+    ['Output', prices.output],
+  ];
+  const known = rows.filter(([, amount]) => amount !== undefined);
+  if (known.length === 0) return null;
+
+  return (
+    <div className="model-prices">
+      <p className="model-prices-head">Cost per 1M tokens</p>
+      {known.map(([label, amount]) => (
+        <p className="model-price" key={label}>
+          <span className="model-price-label">{label}</span>
+          <span className="model-price-value">{credits(amount!)} credits</span>
+        </p>
+      ))}
     </div>
   );
 }
@@ -166,19 +189,19 @@ function ModelRow({
         </div>
       )}
 
-      {model.longContext && (
+      {model.contexts.length > 1 && (
         <div className="model-line">
           <span className="model-line-label">Context</span>
-          {TIERS.map(([value, label]) => (
+          {model.contexts.map((context) => (
             <button
               type="button"
-              key={value}
-              className={tier === value ? 'model-option chosen' : 'model-option'}
-              aria-pressed={tier === value}
-              onClick={() => setTier(value)}
-              aria-label={`${model.name} with ${label}`}
+              key={context.tier}
+              className={tier === context.tier ? 'model-option chosen' : 'model-option'}
+              aria-pressed={tier === context.tier}
+              onClick={() => setTier(context.tier)}
+              aria-label={`${model.name} with ${tokens(context.maxPromptTokens)} of context`}
             >
-              {label}
+              {tokens(context.maxPromptTokens)}
             </button>
           ))}
         </div>

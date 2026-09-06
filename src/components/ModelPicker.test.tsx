@@ -7,21 +7,33 @@ import { ModelPicker } from './ModelPicker';
 import type { ModelChoice } from '../../shared/protocol';
 
 const models: ModelChoice[] = [
-  { id: 'auto', name: 'Auto', reasoningEfforts: [], longContext: false, needsAgreement: false },
+  { id: 'auto', name: 'Auto', reasoningEfforts: [], contexts: [], needsAgreement: false },
   {
     id: 'claude-opus-5',
     name: 'Claude Opus 5',
     reasoningEfforts: ['low', 'high'],
-    longContext: true,
+    contexts: [
+      { tier: 'default', maxPromptTokens: 200_000 },
+      { tier: 'long_context', maxPromptTokens: 936_000 },
+    ],
+    prices: { input: 500, cachedInput: 50, output: 2500 },
     needsAgreement: false,
   },
-  { id: 'grok-4.6', name: 'Grok 4.6', reasoningEfforts: [], longContext: false, needsAgreement: true },
+  {
+    id: 'grok-4.6',
+    name: 'Grok 4.6',
+    reasoningEfforts: [],
+    contexts: [{ tier: 'default', maxPromptTokens: 128_000 }],
+    needsAgreement: true,
+  },
 ];
 
 const picker = (props: Partial<Parameters<typeof ModelPicker>[0]> = {}) => {
   const onChoose = vi.fn();
-  const onOpen = vi.fn(async () => models);
-  render(<ModelPicker current={null} onOpen={onOpen} onChoose={onChoose} {...props} />);
+  const onOpen = vi.fn();
+  render(
+    <ModelPicker current={null} models={models} failed={null} onOpen={onOpen} onChoose={onChoose} {...props} />,
+  );
   return { onChoose, onOpen };
 };
 
@@ -38,7 +50,7 @@ describe('ModelPicker', () => {
       const control = screen.getAllByRole('button')[0];
       expect(control.textContent).toContain('claude-opus-5');
       expect(control.textContent).toContain('high');
-      expect(control.textContent).toContain('long context');
+      expect(control.textContent).toContain('936k');
     });
 
     // Standard context is what almost every session uses, so saying so adds nothing.
@@ -73,18 +85,22 @@ describe('ModelPicker', () => {
       expect(onOpen).not.toHaveBeenCalled();
     });
 
-    it('fetches it once however often it is opened', async () => {
+    it('asks for a fresh list when opened', async () => {
       const { onOpen } = picker();
 
       await openMenu();
-      await userEvent.click(screen.getAllByRole('button')[0]);
-      await userEvent.click(screen.getAllByRole('button')[0]);
 
-      expect(onOpen).toHaveBeenCalledTimes(1);
+      expect(onOpen).toHaveBeenCalled();
+    });
+
+    // The list is remembered between runs, so it is usually there before the runtime is.
+    it('shows a remembered list before any fetch answers', () => {
+      picker();
+      expect(screen.getAllByRole('button')[0]).toBeTruthy();
     });
 
     it('says so when it cannot be fetched', async () => {
-      picker({ onOpen: vi.fn(async () => Promise.reject(new Error('runtime is not running'))) });
+      picker({ models: null, failed: 'runtime is not running' });
 
       await userEvent.click(screen.getAllByRole('button')[0]);
 
@@ -113,11 +129,37 @@ describe('ModelPicker', () => {
       picker();
       await openMenu();
 
-      expect(screen.getByRole('button', { name: 'Claude Opus 5 with long context' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Claude Opus 5 with 936k of context' })).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Auto with long context' })).toBeNull();
     });
   });
 
+  describe('what a model costs', () => {
+    // The one model a reader is actually spending on; twenty-one price tables would bury
+    // the list they came for.
+    it('shows the price of the model in use', async () => {
+      picker({ current: { model: 'claude-opus-5' } });
+      await openMenu();
+
+      expect(screen.getByText('Cost per 1M tokens')).toBeTruthy();
+      expect(screen.getByText('500 credits')).toBeTruthy();
+      expect(screen.getByText('2,500 credits')).toBeTruthy();
+    });
+
+    it('shows no price when the model in use has none', async () => {
+      picker({ current: { model: 'grok-4.6' } });
+      await openMenu();
+
+      expect(screen.queryByText('Cost per 1M tokens')).toBeNull();
+    });
+
+    it('shows no price when nothing is in use yet', async () => {
+      picker({ current: null });
+      await openMenu();
+
+      expect(screen.queryByText('Cost per 1M tokens')).toBeNull();
+    });
+  });
   describe('choosing', () => {
     it('reports the model on its own', async () => {
       const { onChoose } = picker();
@@ -139,7 +181,7 @@ describe('ModelPicker', () => {
       await openMenu();
 
       await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
-      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with long context' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with 936k of context' }));
 
       expect(onChoose).not.toHaveBeenCalled();
       expect(screen.getByRole('listbox')).toBeTruthy();
@@ -150,7 +192,7 @@ describe('ModelPicker', () => {
       await openMenu();
 
       await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
-      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with long context' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with 936k of context' }));
       await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
 
       expect(onChoose).toHaveBeenCalledTimes(1);

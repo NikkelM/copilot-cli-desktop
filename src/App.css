@@ -258,6 +258,37 @@ body {
   font-size: 10px;
 }
 
+/* What the model in use costs, above the list rather than repeated on every row. */
+.model-prices {
+  margin: 2px 4px 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.model-prices-head {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.model-price {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  font-size: 11px;
+}
+
+.model-price-label {
+  color: var(--text-muted);
+}
+
+.model-price-value {
+  font-family: ui-monospace, monospace;
+}
+
 /* Effort and context each get their own line, so neither is read as part of the other. */
 .model-line {
   display: flex;
