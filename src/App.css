@@ -258,11 +258,21 @@ body {
   font-size: 10px;
 }
 
-.model-options {
+/* Effort and context each get their own line, so neither is read as part of the other. */
+.model-line {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   padding: 0 8px 4px;
+}
+
+.model-line-label {
+  min-width: 46px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .model-option {
