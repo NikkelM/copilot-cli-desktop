@@ -158,8 +158,9 @@ export interface SidecarRequests {
   'sessions.setApprovalPolicy': { params: SetApprovalPolicyParams; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
-  'sessions.changes': { params: { sessionId: string }; result: SessionChangesResult };
-  'sessions.diff': { params: { sessionId: string; path: string }; result: { patch: string } };
+  'sessions.changes': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
+  'sessions.diff': { params: { sessionId: string; path: string; scope?: SnapshotScope }; result: { patch: string } };
+  'sessions.rewind': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
   'runtime.status': { params: void; result: RuntimeStatus };
 }
 
@@ -225,8 +226,19 @@ export interface SessionChange {
   status: 'added' | 'modified' | 'deleted' | 'renamed';
 }
 
+/** Which recorded point to measure from, or to put the files back to. */
+export type SnapshotScope = 'session' | 'turn' | { id: string };
+
+/** A point a session can be compared against, or returned to. */
+export interface SnapshotPoint {
+  id: string;
+  at: string;
+  prompt?: string;
+}
+
 export interface SessionChangesResult {
   /** Null when the session is not in a git repository, or has no snapshot yet. */
   root: string | null;
   changes: SessionChange[];
+  points: SnapshotPoint[];
 }

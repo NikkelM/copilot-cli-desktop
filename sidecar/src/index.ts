@@ -11,6 +11,7 @@ import type {
   ElicitationAction,
   ElicitationFieldValue,
   JsonRpcRequest,
+  SnapshotScope,
   JsonRpcResponse,
   PermissionChoice,
 } from '../../shared/protocol.js';
@@ -132,14 +133,20 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
     }
 
     case 'sessions.changes': {
-      const { sessionId } = request.params as { sessionId: string };
-      const found = await runtime.changes(sessionId);
-      return found ? { root: found.root, changes: found.changes } : { root: null, changes: [] };
+      const { sessionId, scope } = request.params as { sessionId: string; scope?: SnapshotScope };
+      const found = await runtime.changes(sessionId, scope);
+      return found ?? { root: null, changes: [], points: [] };
     }
 
     case 'sessions.diff': {
-      const { sessionId, path } = request.params as { sessionId: string; path: string };
-      return { patch: (await runtime.diff(sessionId, path)) ?? '' };
+      const { sessionId, path, scope } = request.params as { sessionId: string; path: string; scope?: SnapshotScope };
+      return { patch: (await runtime.diff(sessionId, path, scope)) ?? '' };
+    }
+
+    case 'sessions.rewind': {
+      const { sessionId, scope } = request.params as { sessionId: string; scope?: SnapshotScope };
+      const undone = await runtime.rewind(sessionId, scope);
+      return undone ?? { root: null, changes: [], points: [] };
     }
 
     case 'runtime.status':

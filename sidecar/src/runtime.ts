@@ -10,14 +10,20 @@ import {
 } from '@github/copilot-sdk';
 
 import type { ElicitationAction, ElicitationFieldValue, PermissionChoice } from '../../shared/protocol.js';
-import { resolveCliPath } from './paths.js';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+import { resolveCliPath, sessionStateDir } from './paths.js';
 import { sessionCwd } from './sessionIndex.js';
-import { changesSince, diffOf, takeSnapshot, workspaceOf, type Change, type Snapshot, type Workspace } from './snapshots.js';
+import { appendSnapshot, readSnapshots, type SnapshotRecord } from './snapshotStore.js';
+import { changesSince, diffOf, restoreTo, takeSnapshot, workspaceOf, type Change, type Workspace } from './snapshots.js';
 
 /** What the agent changed, and the repository the paths are relative to. */
 export interface SessionChanges {
   root: string;
   changes: Change[];
+  /** Every point this session can be measured from or returned to, oldest first. */
+  points: { id: string; at: string; prompt?: string }[];
 }
 import { PendingRequests } from './pending.js';
 
@@ -69,14 +75,22 @@ interface LoadedSession {
   policy: ApprovalPolicy;
   /** The repository the session works in, looked up once. Null when it is not in one. */
   workspace?: Workspace | null;
-  /** What the tree held when this session was picked up. Never replaced while loaded. */
-  baseline?: Snapshot | null;
+  /** Every point recorded for this session, oldest first. The first is the baseline. */
+  points: SnapshotRecord[];
+  /** A private git index, kept warm so capturing the tree stays fast. */
+  index: string;
   /** In flight while the tree is being photographed, so a question can wait for it. */
   snapshotting?: Promise<void> | null;
-  /** What it held when the newest turn began, so one turn can be shown on its own. */
-  turn?: Snapshot | null;
   idleTimer: NodeJS.Timeout | null;
 }
+
+/**
+ * Which recorded point to measure from.
+ *
+ * `session` is where the work began, `turn` is the newest, and naming one reaches any of
+ * them - which is what makes a history of points worth keeping rather than just two.
+ */
+export type SnapshotScope = 'session' | 'turn' | { id: string };
 
 export interface RuntimeOptions {
   /** Sessions kept resumed at once before the least recently used is disconnected. */
@@ -263,6 +277,8 @@ export class SessionRuntime {
       session,
       unsubscribe,
       busy: false,
+      points: [],
+      index: join(sessionStateDir(sessionId), 'desktop-index'),
       policy: 'prompt',
       idleTimer: null,
     });
@@ -430,10 +446,11 @@ export class SessionRuntime {
   /**
    * Record the working tree before the agent touches it.
    *
-   * The first one of a working period is kept as the baseline and never replaced, which
-   * is what "what has this session changed" is asked against. Replacing it each turn made
-   * every turn swallow the last: the changes of turn one were inside the snapshot taken
-   * for turn two, so nothing was ever reported but the most recent edit.
+   * Every point is kept, and written to disk as it is taken. The first is the baseline a
+   * session's work is measured against, and each turn adds another so any of them can be
+   * looked at or returned to. Replacing a single snapshot each turn, as this first did,
+   * made every turn swallow the last: turn one's changes were inside the picture taken for
+   * turn two, so nothing was reported but the most recent edit.
    *
    * Failing is normal rather than exceptional: a session outside a repository, or in one
    * without commits, has nothing to compare against. That is not worth reporting, and
@@ -444,18 +461,35 @@ export class SessionRuntime {
       if (entry.workspace === undefined) {
         const cwd = this.lookupCwd(sessionId);
         entry.workspace = cwd ? await workspaceOf(cwd) : null;
+        // Points recorded before this session was last put down, so a diff survives both
+        // eviction and a restart of the app.
+        if (entry.workspace) {
+          const stored = readSnapshots(sessionId);
+          entry.points = stored?.root === entry.workspace.root ? stored.snapshots : [];
+        }
       }
       if (!entry.workspace) return;
 
-      // Each turn gets its own, so a single turn's work can be shown on its own row, but
-      // the baseline stays where the session was found.
-      const taken = await takeSnapshot(entry.workspace, `${sessionId}-turn`);
-      if (taken) entry.turn = taken;
+      // The index sits beside the session's own state, which may not exist yet for a
+      // session that has never been written to.
+      mkdirSync(dirname(entry.index), { recursive: true });
 
-      entry.baseline ??= await takeSnapshot(entry.workspace, sessionId);
+      const id = entry.points.length === 0 ? 'baseline' : `turn-${entry.points.length}`;
+      const taken = await takeSnapshot(entry.workspace, entry.index, `${sessionId}/${id}`);
+      if (!taken) return;
+
+      const record: SnapshotRecord = { ...taken, id };
+      entry.points = appendSnapshot(sessionId, entry.workspace.root, record).snapshots;
     } catch {
       // Nothing here is worth failing a turn over.
     }
+  }
+
+  /** The point a scope is measured from: where the session was found, or the newest turn. */
+  private from(entry: LoadedSession | undefined, scope: SnapshotScope): SnapshotRecord | null {
+    if (!entry?.points.length) return null;
+    if (typeof scope === 'object') return entry.points.find((p) => p.id === scope.id) ?? null;
+    return scope === 'turn' ? entry.points[entry.points.length - 1]! : entry.points[0]!;
   }
 
   /**
@@ -464,27 +498,56 @@ export class SessionRuntime {
    * Since the session by default: a reader asking what changed means the work, not the
    * last thing that happened to be written.
    */
-  async changes(sessionId: string, scope: 'session' | 'turn' = 'session'): Promise<SessionChanges | null> {
+  async changes(sessionId: string, scope: SnapshotScope = 'session'): Promise<SessionChanges | null> {
     const entry = this.loaded.get(sessionId);
     // A turn that has just begun is still being photographed; answering now would compare
     // against the previous turn and report its work as this one's.
     await entry?.snapshotting;
 
-    const from = scope === 'turn' ? entry?.turn : entry?.baseline;
+    const from = this.from(entry, scope);
     if (!entry?.workspace || !from) return null;
 
-    return { root: entry.workspace.root, changes: await changesSince(entry.workspace, from) };
+    return {
+      root: entry.workspace.root,
+      changes: await changesSince(entry.workspace, from, entry.index),
+      points: entry.points.map(({ id, at, prompt }) => ({ id, at, prompt })),
+    };
   }
 
   /** The patch for one changed file, as git would show it. */
-  async diff(sessionId: string, path: string, scope: 'session' | 'turn' = 'session'): Promise<string | null> {
+  async diff(sessionId: string, path: string, scope: SnapshotScope = 'session'): Promise<string | null> {
     const entry = this.loaded.get(sessionId);
     await entry?.snapshotting;
 
-    const from = scope === 'turn' ? entry?.turn : entry?.baseline;
+    const from = this.from(entry, scope);
     if (!entry?.workspace || !from) return null;
 
-    return diffOf(entry.workspace, from, path);
+    return diffOf(entry.workspace, from, path, entry.index);
+  }
+
+  /**
+   * Put the working tree back to a recorded point.
+   *
+   * The conversation is left alone: this undoes what was written to disk, not what was
+   * said, and the two are worth separating - a reader may want the files back without
+   * losing the reasoning that produced them.
+   *
+   * Refused rather than guessed at while a turn is running, since the agent is still
+   * writing and the result would be neither state.
+   */
+  async rewind(sessionId: string, scope: SnapshotScope = 'session'): Promise<SessionChanges | null> {
+    const entry = this.loaded.get(sessionId);
+    await entry?.snapshotting;
+
+    const from = this.from(entry, scope);
+    if (!entry?.workspace || !from || entry.busy) return null;
+
+    const undone = await restoreTo(entry.workspace, from, entry.index);
+    return {
+      root: entry.workspace.root,
+      changes: undone,
+      points: entry.points.map(({ id, at, prompt }) => ({ id, at, prompt })),
+    };
   }
 
   /** Mark a session most recently used and restart its idle countdown. */

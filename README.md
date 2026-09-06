@@ -1,3 +1,4 @@
+<!-- Copilot CLI Desktop - see docs/ for architecture notes -->
 <!-- hello -->
 
 # Copilot CLI Desktop
