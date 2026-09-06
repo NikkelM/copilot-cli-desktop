@@ -126,50 +126,59 @@ describe('ModelPicker', () => {
       });
     });
 
-    // Effort and context are settings of a model, so picking one picks its model too.
-    it('reports the model when an effort is picked', async () => {
+    // The whole point of two steps: a reader setting an effort usually wants to say
+    // something about the context too, and committing on the first would send them back in.
+    it('changes nothing until the model name is clicked', async () => {
       const { onChoose } = picker();
       await openMenu();
 
       await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with long context' }));
 
-      expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-opus-5', reasoningEffort: 'high' }));
+      expect(onChoose).not.toHaveBeenCalled();
+      expect(screen.getByRole('listbox')).toBeTruthy();
     });
 
-    it('reports the model when a context size is picked', async () => {
+    it('commits everything set on the row when the name is clicked', async () => {
       const { onChoose } = picker();
       await openMenu();
 
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
       await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with long context' }));
+      await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
 
-      expect(onChoose).toHaveBeenCalledWith(
-        expect.objectContaining({ model: 'claude-opus-5', contextTier: 'long_context' }),
-      );
-    });
-
-    // Changing one part of the setting must not quietly discard the other.
-    it('keeps the effort already chosen when only the context changes', async () => {
-      const { onChoose } = picker({ current: { model: 'claude-opus-5', reasoningEffort: 'low' } });
-      await openMenu();
-
-      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with long context' }));
-
+      expect(onChoose).toHaveBeenCalledTimes(1);
       expect(onChoose).toHaveBeenCalledWith({
         model: 'claude-opus-5',
-        reasoningEffort: 'low',
+        reasoningEffort: 'high',
         contextTier: 'long_context',
       });
     });
 
-    it('keeps the context already chosen when only the effort changes', async () => {
-      const { onChoose } = picker({ current: { model: 'claude-opus-5', contextTier: 'long_context' } });
+    it('marks what has been set but not yet committed', async () => {
+      picker();
       await openMenu();
 
       await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
 
+      expect(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }).getAttribute('aria-pressed')).toBe(
+        'true',
+      );
+      expect(screen.getByRole('button', { name: 'Claude Opus 5 thinking low' }).getAttribute('aria-pressed')).toBe(
+        'false',
+      );
+    });
+
+    // Opening the menu and committing the model already in use must change nothing.
+    it('starts each row from what that model already runs with', async () => {
+      const { onChoose } = picker({ current: { model: 'claude-opus-5', reasoningEffort: 'low', contextTier: 'long_context' } });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
+
       expect(onChoose).toHaveBeenCalledWith({
         model: 'claude-opus-5',
-        reasoningEffort: 'high',
+        reasoningEffort: 'low',
         contextTier: 'long_context',
       });
     });
@@ -195,6 +204,19 @@ describe('ModelPicker', () => {
       await userEvent.click(screen.getByRole('option', { name: /Auto/ }));
 
       expect(screen.queryByRole('listbox')).toBeNull();
+    });
+
+    // A row half-set and left is not a decision, so reopening should not remember it.
+    it('forgets what was set on a row that was never committed', async () => {
+      const { onChoose } = picker();
+      await openMenu();
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
+
+      await userEvent.keyboard('{Escape}');
+      await openMenu();
+      await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
+
+      expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: undefined }));
     });
   });
 
