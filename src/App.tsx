@@ -15,6 +15,7 @@ import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { ModelPicker } from './components/ModelPicker';
 import { PermissionPrompt } from './components/PermissionPrompt';
+import { Shortcuts } from './components/Shortcuts';
 import { Queue } from './components/Queue';
 import { SessionPath } from './components/SessionPath';
 import { Sidebar } from './components/Sidebar';
@@ -43,6 +44,7 @@ import { mergeLivePreviews } from './lib/livePreviews';
 import { contentOf } from './lib/timeline';
 import { useModel } from './lib/useModel';
 import { useQueue } from './lib/useQueue';
+import { useShortcuts } from './lib/useShortcuts';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
 import { useTauriEvent } from './lib/useTauriEvent';
@@ -58,6 +60,8 @@ export default function App() {
    */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  /** Whether the shortcut list is up. There is nothing else in the app that names them. */
+  const [help, setHelp] = useState(false);
   const [resuming, setResuming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** Set when the sidecar exits: nothing works afterwards, so it outranks any other message. */
@@ -111,6 +115,9 @@ export default function App() {
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
+  /** Read by a shortcut handler registered once, which would otherwise hold the first render's answer. */
+  const busyRef = useRef(false);
+  busyRef.current = busy;
 
   const refreshSessions = useCallback(() => {
     // Returned so a caller that needs the list to contain something can wait for it.
@@ -252,12 +259,39 @@ export default function App() {
     }),
   );
 
+  /** Stop the turn, saying so rather than leaving the press looking unnoticed. */
+  const interrupt = useCallback(() => {
+    const forSession = selectedRef.current;
+    if (forSession) abortSession(forSession).catch((e: unknown) => setError(String(e)));
+  }, []);
+
+  useShortcuts(
+    useCallback(
+      (shortcut) => {
+        if (shortcut === 'help') {
+          setHelp((showing) => !showing);
+          return;
+        }
+
+        if (shortcut === 'interrupt') {
+          interrupt();
+          return;
+        }
+
+        // Escape twice means "undo what I was about to do": stopping the turn while one is
+        // running, and otherwise throwing away what was written but not sent.
+        if (busyRef.current) interrupt();
+        else if (selectedRef.current) setDrafts((current) => ({ ...current, [selectedRef.current!]: '' }));
+      },
+      [interrupt],
+    ),
+  );
+
   function handleElicitation(
     pending: PendingElicitation,
     action: ElicitationAction,
     content?: Record<string, ElicitationFieldValue>,
-  ) {
-    // Drop it immediately so the form cannot be submitted twice.
+  ) {    // Drop it immediately so the form cannot be submitted twice.
     setElicitations((current) => current.filter((e) => e.requestId !== pending.requestId));
     void resolveElicitation(pending.requestId, action, content).catch((e: unknown) =>
       setError(String(e)),
@@ -316,6 +350,8 @@ export default function App() {
 
   return (
     <div className="app">
+      {help && <Shortcuts onClose={() => setHelp(false)} />}
+
       <Sidebar
         sessions={ordered}
         selectedId={selectedId}
@@ -403,9 +439,7 @@ export default function App() {
                 value={drafts[selected.sessionId] ?? ''}
                 onChange={(text) => setDrafts((current) => ({ ...current, [selected.sessionId]: text }))}
                 onSend={(prompt) => void handleSend(prompt)}
-                // A stop that fails leaves the agent working with nothing to show for the
-                // press, which reads as the button doing nothing.
-                onAbort={() => selectedId && abortSession(selectedId).catch((e: unknown) => setError(String(e)))}
+                onAbort={interrupt}
               />
             </div>
           </>
