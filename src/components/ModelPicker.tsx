@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { startingEffort } from '../lib/models';
 import { credits, tokens } from '../lib/units';
 import type { ContextTier, ModelChoice, ReasoningEffort, SessionModel } from '../../shared/protocol';
 
@@ -169,14 +170,13 @@ function Prices({ model }: { model: ModelChoice }) {
   // Every row starts from what the session is set to, not just the row for the model it is
   // on: someone changing model almost always wants to carry their effort and their context
   // across rather than restate them. Where this model does not offer what the session uses,
-  // there is nothing to carry, and the row starts from its own default.
-  const wanted = current?.reasoningEffort as ReasoningEffort | undefined;
+  // the row still starts somewhere, since committing sends whatever it holds.
   const wantedTier = (current?.contextTier as ContextTier) ?? 'default';
 
   // Held per row, and forgotten when the menu closes, because a half-made choice on a model
   // that was not committed to means nothing later.
-  const [effort, setEffort] = useState<ReasoningEffort | undefined>(
-    wanted && model.reasoningEfforts.includes(wanted) ? wanted : undefined,
+  const [effort, setEffort] = useState<ReasoningEffort | undefined>(() =>
+    startingEffort(model, current?.reasoningEffort as ReasoningEffort | undefined),
   );
   const [tier, setTier] = useState<ContextTier>(
     model.contexts.some((context) => context.tier === wantedTier) ? wantedTier : 'default',

@@ -112,6 +112,8 @@ export interface ModelChoice {
   name: string;
   /** The levels this model offers, empty when it does not take direction on thinking. */
   reasoningEfforts: ReasoningEffort[];
+  /** The level it would pick for itself, when it says. */
+  defaultReasoningEffort?: ReasoningEffort;
   /** The sizes it can run at. One means there is nothing to choose. */
   contexts: ModelContext[];
   prices?: ModelPrices;
