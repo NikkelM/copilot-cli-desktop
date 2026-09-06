@@ -34,11 +34,19 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
 
   const expandable = Boolean(entry.output) || Boolean(choices) || Boolean(entry.command);
   const lines = entry.output ? entry.output.split('\n').length : 0;
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 'es'}`;
+
+  // Finding nothing is a result worth stating, and it is the one case with no output to
+  // count, so a search says how it went rather than how much came back.
   const count = choices
     ? `${choices.length} ${choices.length === 1 ? 'option' : 'options'}`
-    : lines > 0
-      ? `${lines} ${lines === 1 ? 'line' : 'lines'}`
-      : null;
+    : entry.search && entry.status === 'ok'
+      ? lines > 0
+        ? plural(lines, 'match')
+        : 'no matches'
+      : lines > 0
+        ? `${lines} ${lines === 1 ? 'line' : 'lines'}`
+        : null;
 
   return (
     <div className={`tool ${entry.status}${open ? ' open' : ''}`}>
@@ -58,7 +66,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
         {/* Doubles as the affordance that the row opens, and says how much is behind it.
             Right-aligned, so it reads as a separate column without needing punctuation. */}
-        {expandable && !open && count && <span className="tool-lines">{count}</span>}
+        {!open && count && <span className="tool-lines">{count}</span>}
       </button>
       {open &&
         (choices ? (
