@@ -573,6 +573,93 @@ body {
   white-space: pre;
 }
 
+/*
+ * Token colours for highlighted code.
+ *
+ * The app's palette is GitHub's dark one, so these are the syntax colours that go with it:
+ * a block should look like it belongs in the window rather than arriving with a theme of
+ * its own. Only the token groups the bundled grammars actually emit are named.
+ */
+.markdown .hljs-keyword,
+.markdown .hljs-doctag,
+.markdown .hljs-type,
+.markdown .hljs-template-tag,
+.markdown .hljs-template-variable,
+.markdown .hljs-variable.language_ {
+  color: #ff7b72;
+}
+
+.markdown .hljs-title,
+.markdown .hljs-title.class_,
+.markdown .hljs-title.function_ {
+  color: #d2a8ff;
+}
+
+.markdown .hljs-attr,
+.markdown .hljs-attribute,
+.markdown .hljs-literal,
+.markdown .hljs-meta,
+.markdown .hljs-number,
+.markdown .hljs-operator,
+.markdown .hljs-variable,
+.markdown .hljs-selector-attr,
+.markdown .hljs-selector-class,
+.markdown .hljs-selector-id {
+  color: #79c0ff;
+}
+
+.markdown .hljs-string,
+.markdown .hljs-regexp,
+.markdown .hljs-meta .hljs-string {
+  color: #a5d6ff;
+}
+
+.markdown .hljs-built_in,
+.markdown .hljs-symbol {
+  color: #ffa657;
+}
+
+.markdown .hljs-comment,
+.markdown .hljs-code,
+.markdown .hljs-formula {
+  color: var(--text-muted);
+}
+
+.markdown .hljs-name,
+.markdown .hljs-quote,
+.markdown .hljs-selector-tag,
+.markdown .hljs-selector-pseudo {
+  color: #7ee787;
+}
+
+.markdown .hljs-section {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.markdown .hljs-bullet {
+  color: #f2cc60;
+}
+
+.markdown .hljs-emphasis {
+  font-style: italic;
+}
+
+.markdown .hljs-strong {
+  font-weight: 600;
+}
+
+/* A diff block colours whole lines, so these carry a background as well as a colour. */
+.markdown .hljs-addition {
+  color: #aff5b4;
+  background: rgba(46, 160, 67, 0.15);
+}
+
+.markdown .hljs-deletion {
+  color: #ffdcd7;
+  background: rgba(248, 81, 73, 0.15);
+}
+
 .markdown blockquote {
   margin: 0 0 10px;
   padding-left: 12px;
