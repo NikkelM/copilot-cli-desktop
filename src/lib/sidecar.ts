@@ -11,10 +11,8 @@ import type {
   PendingPermission,
   PermissionChoice,
   PermissionResolvedNotification,
-  RuntimeStatus,
   SendParams,
   SendResult,
-  SessionChangesResult,
   SessionEventNotification,
   SessionLoadedNotification,
 } from '../../shared/protocol';
@@ -38,20 +36,6 @@ export function getTranscript(
   return request<GetTranscriptResult>('sessions.transcript', { sessionId, limit, before });
 }
 
-export function getRuntimeStatus(): Promise<RuntimeStatus> {
-  return request<RuntimeStatus>('runtime.status');
-}
-
-/** What the agent has changed since the current turn began. Costs a couple of git calls. */
-export function getChanges(sessionId: string): Promise<SessionChangesResult> {
-  return request<SessionChangesResult>('sessions.changes', { sessionId });
-}
-
-/** The patch for one changed file. Fetched only when a file is opened. */
-export function getDiff(sessionId: string, path: string): Promise<{ patch: string }> {
-  return request<{ patch: string }>('sessions.diff', { sessionId, path });
-}
-
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */
 export function createSession(workingDirectory?: string): Promise<{ sessionId: string }> {
   return request<{ sessionId: string }>('sessions.create', { workingDirectory });
@@ -64,10 +48,6 @@ export function sendMessage(params: SendParams): Promise<SendResult> {
 
 export function abortSession(sessionId: string): Promise<void> {
   return request<void>('sessions.abort', { sessionId });
-}
-
-export function evictSession(sessionId: string): Promise<void> {
-  return request<void>('sessions.evict', { sessionId });
 }
 
 export function setApprovalPolicy(sessionId: string, policy: 'prompt' | 'approve-all'): Promise<void> {

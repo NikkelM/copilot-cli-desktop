@@ -16,9 +16,36 @@ import { dirname, join } from 'node:path';
 
 import { resolveCliPath, sessionStateDir } from './paths.js';
 import { sessionCwd } from './sessionIndex.js';
-import { appendSnapshot, readSnapshots, type SnapshotRecord } from './snapshotStore.js';
-import { recordPatches, reportsChanges, splitPatches, touchedFiles, type FilePatch } from './toolDiffs.js';
-import { changesSince, diffOf, restoreTo, takeSnapshot, workspaceOf, type Change, type Workspace } from './snapshots.js';
+import { appendSnapshot, readSnapshots, writeSnapshots, type SnapshotRecord } from './snapshotStore.js';
+import {
+  changesSince,
+  diffOf,
+  dropSnapshots,
+  restoreTo,
+  takeSnapshot,
+  workspaceOf,
+  type Change,
+  type Workspace,
+} from './snapshots.js';
+
+/**
+ * The number for the next turn's point.
+ *
+ * Counted from the highest already taken rather than from how many are kept: letting go
+ * of the middle of a history shortens it, and numbering by length then reuses a name that
+ * is still in use, quietly overwriting the point it belongs to.
+ */
+function nextTurn(points: readonly { id: string }[]): number {
+  const highest = points.reduce((max, point) => {
+    const n = /^turn-(\d+)$/.exec(point.id);
+    return n ? Math.max(max, Number(n[1])) : max;
+  }, 0);
+  return highest + 1;
+}
+
+/** How many points a session keeps before the middle of its history is let go. */
+const MAX_POINTS = 25;
+
 
 /** What the agent changed, and the repository the paths are relative to. */
 export interface SessionChanges {
@@ -69,13 +96,6 @@ async function defaultClientFactory(): Promise<CopilotClient> {
   });
 }
 
-/** The parts of a tool event this cares about; the SDK types do not expose them. */
-interface ToolEventData {
-  toolCallId?: string;
-  toolName?: string;
-  result?: { detailedContent?: unknown };
-}
-
 /** A request waiting on the user, with the resolver that unblocks the agent. */
 interface LoadedSession {
   session: CopilotSession;
@@ -87,10 +107,6 @@ interface LoadedSession {
   workspace?: Workspace | null;
   /** Every point recorded for this session, oldest first. The first is the baseline. */
   points: SnapshotRecord[];
-  /** Calls from tools that report their changes, awaiting their results. */
-  writingTools: Set<string>;
-  /** What the file tools said they changed, in the order they said it. */
-  patches: FilePatch[];
   /** A private git index, kept warm so capturing the tree stays fast. */
   index: string;
   /** In flight while the tree is being photographed, so a question can wait for it. */
@@ -109,6 +125,8 @@ export type SnapshotScope = 'session' | 'turn' | { id: string };
 export interface RuntimeOptions {
   /** Sessions kept resumed at once before the least recently used is disconnected. */
   maxLoadedSessions?: number;
+  /** Points a session keeps before the middle of its history is let go. */
+  maxSnapshotPoints?: number;
   /** Disconnect an untouched session after this long. Zero disables the timer. */
   idleTimeoutMs?: number;
   /** How long a permission request waits for the user before giving up. */
@@ -164,6 +182,7 @@ export class SessionRuntime {
 
   private readonly maxLoadedSessions: number;
   private readonly idleTimeoutMs: number;
+  private readonly maxPoints: number;
   private readonly onEvent?: (sessionId: string, event: SessionEvent) => void;
   private readonly onLoadedChange?: (sessionId: string, loaded: boolean) => void;
   private readonly onPermissionRequest?: (
@@ -191,6 +210,7 @@ export class SessionRuntime {
   constructor(options: RuntimeOptions = {}) {
     this.maxLoadedSessions = options.maxLoadedSessions ?? 2;
     this.idleTimeoutMs = options.idleTimeoutMs ?? 10 * 60_000;
+    this.maxPoints = options.maxSnapshotPoints ?? MAX_POINTS;
     this.onEvent = options.onEvent;
     this.onLoadedChange = options.onLoadedChange;
     this.onPermissionRequest = options.onPermissionRequest;
@@ -335,8 +355,6 @@ export class SessionRuntime {
       unsubscribe,
       busy: false,
       points: [],
-      patches: [],
-      writingTools: new Set(),
       index: join(sessionStateDir(sessionId), 'desktop-index'),
       policy: 'prompt',
       idleTimer: null,
@@ -493,41 +511,10 @@ export class SessionRuntime {
       }
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') entry.busy = false;
 
-      // The file tools account for their own work, wherever on disk it happened, which is
-      // the only record there is for anything outside a repository. Both halves of a call
-      // matter: the start names the tool, the completion carries what it wrote.
-      if (event.type === 'tool.execution_start' || event.type === 'tool.execution_complete') {
-        this.recordToolChanges(entry, event);
-      }
-
       this.touch(sessionId);
     }
 
     this.onEvent?.(sessionId, event);
-  }
-
-  /**
-   * Keep what a completed tool said it changed, if it is one that says.
-   *
-   * A completion names only the call, not the tool: the name arrives on the start event
-   * and has to be remembered until its result comes back. Matching on the diff alone
-   * would be simpler and wrong - a shell command that runs `git diff` prints one, and it
-   * describes the repository rather than anything the agent did.
-   */
-  private recordToolChanges(entry: LoadedSession, event: SessionEvent): void {
-    const data = (event as unknown as { data?: ToolEventData }).data;
-    const callId = data?.toolCallId;
-    if (!callId) return;
-
-    if (event.type === 'tool.execution_start') {
-      if (reportsChanges(data?.toolName)) entry.writingTools.add(callId);
-      return;
-    }
-
-    if (!entry.writingTools.delete(callId)) return;
-
-    const detail = data?.result?.detailedContent;
-    if (typeof detail === 'string') entry.patches = recordPatches(entry.patches, splitPatches(detail));
   }
 
   /**
@@ -561,15 +548,45 @@ export class SessionRuntime {
       // session that has never been written to.
       mkdirSync(dirname(entry.index), { recursive: true });
 
-      const id = entry.points.length === 0 ? 'baseline' : `turn-${entry.points.length}`;
+      const id = entry.points.length === 0 ? 'baseline' : `turn-${nextTurn(entry.points)}`;
       const taken = await takeSnapshot(entry.workspace, entry.index, `${sessionId}/${id}`);
       if (!taken) return;
 
       const record: SnapshotRecord = { ...taken, id };
-      entry.points = appendSnapshot(sessionId, entry.workspace.root, record).snapshots;
+      entry.points = await this.forget(
+        sessionId,
+        entry.workspace,
+        appendSnapshot(sessionId, entry.workspace.root, record).snapshots,
+      );
     } catch {
       // Nothing here is worth failing a turn over.
     }
+  }
+
+  /**
+   * Drop the middle of a session's history, keeping the baseline and the recent turns.
+   *
+   * Each point holds a git ref, and a ref stops git collecting the tree behind it, so a
+   * session left running pins a copy of the working tree per turn indefinitely. The
+   * baseline is what a session's whole work is measured against and is never dropped; the
+   * recent turns are what going back a step or two needs.
+   */
+  private async forget(
+    sessionId: string,
+    workspace: Workspace,
+    points: SnapshotRecord[],
+  ): Promise<SnapshotRecord[]> {
+    if (points.length <= this.maxPoints) return points;
+
+    const kept = [points[0]!, ...points.slice(-(this.maxPoints - 1))];
+    const dropped = points.filter((point) => !kept.includes(point));
+
+    await dropSnapshots(
+      workspace,
+      dropped.map((point) => `${sessionId}/${point.id}`),
+    );
+    writeSnapshots(sessionId, { version: 1, root: workspace.root, snapshots: kept });
+    return kept;
   }
 
   /** The point a scope is measured from: where the session was found, or the newest turn. */
@@ -585,33 +602,28 @@ export class SessionRuntime {
    * Since the session by default: a reader asking what changed means the work, not the
    * last thing that happened to be written.
    */
+  /**
+   * What the agent has changed, since the session was picked up or since its last turn.
+   *
+   * The repository's own account of it. What a file tool reported is kept in the log and
+   * shown on the row that made it, which reaches files no repository covers and survives
+   * being read back weeks later; this is the other half, covering writes no tool
+   * accounted for, and it is the half a rewind needs.
+   */
   async changes(sessionId: string, scope: SnapshotScope = 'session'): Promise<SessionChanges | null> {
     const entry = this.loaded.get(sessionId);
     // A turn that has just begun is still being photographed; answering now would compare
     // against the previous turn and report its work as this one's.
     await entry?.snapshotting;
-    if (!entry) return null;
 
-    // What the tools reported, which covers anywhere on disk, merged with what the
-    // repository shows, which covers writes no tool accounted for. A file in both is the
-    // repository's to describe, since it compares against the tree rather than one edit.
-    const reported = touchedFiles(entry.patches);
     const from = this.from(entry, scope);
-    const tracked =
-      entry.workspace && from ? await changesSince(entry.workspace, from, entry.index) : [];
+    if (!entry?.workspace || !from) return null;
 
-    const root = entry.workspace?.root ?? null;
-    const absolute = new Set(tracked.map((change) => join(root ?? '', change.path)));
-    const merged = [
-      ...tracked.map((change) => ({ ...change, path: root ? join(root, change.path) : change.path })),
-      ...reported.filter((change) => !absolute.has(change.path)),
-    ].sort((a, b) => a.path.localeCompare(b.path));
-
-    if (merged.length === 0 && !from && reported.length === 0) return null;
-
+    const changes = await changesSince(entry.workspace, from, entry.index);
     return {
-      root,
-      changes: merged,
+      root: entry.workspace.root,
+      // Absolute, so a caller need not know which repository they came from.
+      changes: changes.map((change) => ({ ...change, path: join(entry.workspace!.root, change.path) })),
       points: entry.points.map(({ id, at, prompt }) => ({ id, at, prompt })),
     };
   }
@@ -620,24 +632,16 @@ export class SessionRuntime {
   async diff(sessionId: string, path: string, scope: SnapshotScope = 'session'): Promise<string | null> {
     const entry = this.loaded.get(sessionId);
     await entry?.snapshotting;
-    if (!entry) return null;
 
     const from = this.from(entry, scope);
-    if (entry.workspace && from) {
-      // Relative to the repository, since that is how git names what it reports.
-      const inside = path.startsWith(entry.workspace.root)
-        ? path.slice(entry.workspace.root.length).replace(/^[\\/]+/, '')
-        : null;
-      if (inside) {
-        const patch = await diffOf(entry.workspace, from, inside, entry.index);
-        if (patch.trim()) return patch;
-      }
-    }
+    if (!entry?.workspace || !from) return null;
 
-    // Outside the repository, or a file the tree comparison had nothing to say about:
-    // what the tools reported is the whole record. Newest last, as they happened.
-    const reported = entry.patches.filter((patch) => patch.path === path);
-    return reported.length > 0 ? reported.map((patch) => patch.patch).join('\n') : null;
+    // Relative to the repository, since that is how git names what it reports.
+    const inside = path.startsWith(entry.workspace.root)
+      ? path.slice(entry.workspace.root.length).replace(/^[\\/]+/, '')
+      : path;
+
+    return diffOf(entry.workspace, from, inside, entry.index);
   }
 
   /**
