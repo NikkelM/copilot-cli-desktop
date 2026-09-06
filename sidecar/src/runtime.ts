@@ -69,6 +69,13 @@ async function defaultClientFactory(): Promise<CopilotClient> {
   });
 }
 
+/** The parts of a tool event this cares about; the SDK types do not expose them. */
+interface ToolEventData {
+  toolCallId?: string;
+  toolName?: string;
+  result?: { detailedContent?: unknown };
+}
+
 /** A request waiting on the user, with the resolver that unblocks the agent. */
 interface LoadedSession {
   session: CopilotSession;
@@ -80,6 +87,8 @@ interface LoadedSession {
   workspace?: Workspace | null;
   /** Every point recorded for this session, oldest first. The first is the baseline. */
   points: SnapshotRecord[];
+  /** Calls from tools that report their changes, awaiting their results. */
+  writingTools: Set<string>;
   /** What the file tools said they changed, in the order they said it. */
   patches: FilePatch[];
   /** A private git index, kept warm so capturing the tree stays fast. */
@@ -327,6 +336,7 @@ export class SessionRuntime {
       busy: false,
       points: [],
       patches: [],
+      writingTools: new Set(),
       index: join(sessionStateDir(sessionId), 'desktop-index'),
       policy: 'prompt',
       idleTimer: null,
@@ -484,8 +494,11 @@ export class SessionRuntime {
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') entry.busy = false;
 
       // The file tools account for their own work, wherever on disk it happened, which is
-      // the only record there is for anything outside a repository.
-      if (event.type === 'tool.execution_complete') this.recordToolChanges(entry, event);
+      // the only record there is for anything outside a repository. Both halves of a call
+      // matter: the start names the tool, the completion carries what it wrote.
+      if (event.type === 'tool.execution_start' || event.type === 'tool.execution_complete') {
+        this.recordToolChanges(entry, event);
+      }
 
       this.touch(sessionId);
     }
@@ -493,17 +506,28 @@ export class SessionRuntime {
     this.onEvent?.(sessionId, event);
   }
 
-  /** Keep what a completed tool said it changed, if it is one that says. */
+  /**
+   * Keep what a completed tool said it changed, if it is one that says.
+   *
+   * A completion names only the call, not the tool: the name arrives on the start event
+   * and has to be remembered until its result comes back. Matching on the diff alone
+   * would be simpler and wrong - a shell command that runs `git diff` prints one, and it
+   * describes the repository rather than anything the agent did.
+   */
   private recordToolChanges(entry: LoadedSession, event: SessionEvent): void {
-    // The payload is under data, as it is for every other event; reading it off the event
-    // itself found nothing and recorded nothing, silently.
-    const data = (event as unknown as { data?: { toolName?: string; result?: { detailedContent?: unknown } } }).data;
-    if (!reportsChanges(data?.toolName)) return;
+    const data = (event as unknown as { data?: ToolEventData }).data;
+    const callId = data?.toolCallId;
+    if (!callId) return;
+
+    if (event.type === 'tool.execution_start') {
+      if (reportsChanges(data?.toolName)) entry.writingTools.add(callId);
+      return;
+    }
+
+    if (!entry.writingTools.delete(callId)) return;
 
     const detail = data?.result?.detailedContent;
-    if (typeof detail !== 'string') return;
-
-    entry.patches = recordPatches(entry.patches, splitPatches(detail));
+    if (typeof detail === 'string') entry.patches = recordPatches(entry.patches, splitPatches(detail));
   }
 
   /**
