@@ -1,3 +1,4 @@
+// Shared by the sidecar and the frontend so sidebar previews render identically on both sides
 /** How much of the last message to keep for the sidebar preview. */
 export const PREVIEW_LENGTH = 160;
 

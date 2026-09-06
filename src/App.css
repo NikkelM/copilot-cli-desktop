@@ -149,6 +149,9 @@ body {
   /* Header, notices, transcript, footer. Rows are assigned by position, so every one of
      those must always render: a conditional child shifts the rest up a row. */
   grid-template-rows: auto auto 1fr auto;
+  /* Without this the pane refuses to shrink below its widest line, so one long command
+     pushes the rest of the app off the window instead of being clipped or wrapped. */
+  min-width: 0;
   padding: 16px 24px 16px;
   overflow: hidden;
 }
@@ -185,6 +188,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* A grid item will not shrink below its content without this, so one long command in a
+     prompt below would widen the whole pane and push the rest off the window. */
+  min-width: 0;
 }
 
 .elicitation {
@@ -326,6 +332,9 @@ body {
   border: 1px solid #9e6a03;
   border-radius: 8px;
   background: #2d2000;
+  /* Every level between the pane and the text has to agree to shrink, or the widest
+     line in the prompt sets the width of all of them. */
+  min-width: 0;
 }
 
 .permission-header {
@@ -333,6 +342,7 @@ body {
   align-items: baseline;
   gap: 10px;
   margin-bottom: 8px;
+  min-width: 0;
   font-size: 13px;
 }
 
