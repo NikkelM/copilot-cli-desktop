@@ -151,8 +151,7 @@ function Prices({ model }: { model: ModelChoice }) {
  * and the model name commits. A reader wanting a different effort usually wants to say
  * something about the context too, and committing on the first of those would send them
  * back into the menu to say the second.
- */
-function ModelRow({
+ */function ModelRow({
   model,
   current,
   onChoose,
@@ -167,13 +166,21 @@ function ModelRow({
 }) {
   const chosen = current?.model === model.id;
 
-  // Starts from what this model is already running with, so opening the menu and clicking
-  // the name changes nothing. Held per row, and forgotten when the menu closes, because a
-  // half-made choice on a model that was not committed to means nothing later.
+  // Every row starts from what the session is set to, not just the row for the model it is
+  // on: someone changing model almost always wants to carry their effort and their context
+  // across rather than restate them. Where this model does not offer what the session uses,
+  // there is nothing to carry, and the row starts from its own default.
+  const wanted = current?.reasoningEffort as ReasoningEffort | undefined;
+  const wantedTier = (current?.contextTier as ContextTier) ?? 'default';
+
+  // Held per row, and forgotten when the menu closes, because a half-made choice on a model
+  // that was not committed to means nothing later.
   const [effort, setEffort] = useState<ReasoningEffort | undefined>(
-    chosen ? (current?.reasoningEffort as ReasoningEffort | undefined) : undefined,
+    wanted && model.reasoningEfforts.includes(wanted) ? wanted : undefined,
   );
-  const [tier, setTier] = useState<ContextTier>(chosen ? ((current?.contextTier as ContextTier) ?? 'default') : 'default');
+  const [tier, setTier] = useState<ContextTier>(
+    model.contexts.some((context) => context.tier === wantedTier) ? wantedTier : 'default',
+  );
 
   return (
     // Focus does what the pointer does, so the price follows a reader using the keyboard.

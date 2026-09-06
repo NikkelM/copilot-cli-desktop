@@ -273,17 +273,56 @@ describe('ModelPicker', () => {
       });
     });
 
-    // The settings belong to the model they were chosen for, not to the next one picked.
-    it('does not carry one model\u2019s effort onto another', async () => {
-      const { onChoose } = picker({ current: { model: 'auto', reasoningEffort: 'max' } });
-      await openMenu();
+    /**
+     * Someone changing model almost always wants to keep the effort and the context they
+     * were working at, and restating both on the new row is work the picker can do for them.
+     */
+    describe('carrying the session\u2019s settings onto every row', () => {
+      it('starts another model from the effort the session is using', async () => {
+        const { onChoose } = picker({ current: { model: 'auto', reasoningEffort: 'high' } });
+        await openMenu();
 
-      await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
+        await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
 
-      expect(onChoose).toHaveBeenCalledWith({
-        model: 'claude-opus-5',
-        reasoningEffort: undefined,
-        contextTier: 'default',
+        expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'high' }));
+      });
+
+      it('starts another model from the context the session is using', async () => {
+        const { onChoose } = picker({ current: { model: 'auto', contextTier: 'long_context' } });
+        await openMenu();
+
+        await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
+
+        expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ contextTier: 'long_context' }));
+      });
+
+      it('marks what it carried over, so the row shows what will be sent', async () => {
+        picker({ current: { model: 'auto', reasoningEffort: 'high' } });
+        await openMenu();
+
+        expect(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }).getAttribute('aria-pressed')).toBe(
+          'true',
+        );
+      });
+
+      // There is nothing to carry when the model does not offer it, and marking a level it
+      // does not have would promise something it cannot do.
+      it('leaves the effort unset when the model does not offer it', async () => {
+        const { onChoose } = picker({ current: { model: 'auto', reasoningEffort: 'max' } });
+        await openMenu();
+
+        await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
+
+        expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: undefined }));
+      });
+
+      it('falls back to the standard size when the model has no larger one', async () => {
+        const { onChoose } = picker({ current: { model: 'claude-opus-5', contextTier: 'long_context' } });
+        await openMenu();
+
+        await userEvent.click(screen.getByRole('option', { name: /Grok 4.6/ }));
+
+        expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ contextTier: 'default' }));
       });
     });
 
