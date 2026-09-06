@@ -461,10 +461,12 @@ describe('SessionRuntime tracking changes outside any repository', () => {
       '+after',
     ].join('\n');
 
+  // Shaped as the runtime really receives it: the payload is under data, which the code
+  // under test once ignored - and this helper once agreed with it, so both were wrong
+  // together and the tests passed against a feature that recorded nothing.
   const completed = (toolName: string, detailedContent: string) => ({
     type: 'tool.execution_complete',
-    toolName,
-    result: { detailedContent },
+    data: { toolName, result: { detailedContent } },
   });
 
   it('reports a file the agent edited with no repository in sight', async () => {

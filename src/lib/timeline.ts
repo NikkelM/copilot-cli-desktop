@@ -63,15 +63,21 @@ export function appendLive(current: TimelineEvent[], event: TimelineEvent): Time
   }
 
   // Thinking grows the same way a reply does, and for the same reason: hundreds of chunks
-  // would be hundreds of events for every later render to walk.
+  // would be hundreds of events for every later render to walk. The complete block arrives
+  // after them saying the same thing, and replaces the run rather than following it.
   const reasoningId = reasoningIdOf(event);
-  if (reasoningId && event.type === 'assistant.reasoning_delta') {
+  if (reasoningId && (event.type === 'assistant.reasoning_delta' || event.type === 'assistant.reasoning')) {
     const index = current.findIndex(
-      (entry) => entry.type === 'assistant.reasoning_delta' && reasoningIdOf(entry) === reasoningId,
+      (entry) =>
+        (entry.type === 'assistant.reasoning_delta' || entry.type === 'assistant.reasoning') &&
+        reasoningIdOf(entry) === reasoningId,
     );
     if (index !== -1) {
       const next = [...current];
-      next[index] = { ...event, data: { reasoningId, deltaContent: deltaOf(next[index]!) + deltaOf(event) } };
+      next[index] =
+        event.type === 'assistant.reasoning'
+          ? event
+          : { ...event, data: { reasoningId, deltaContent: deltaOf(next[index]!) + deltaOf(event) } };
       return next;
     }
   }

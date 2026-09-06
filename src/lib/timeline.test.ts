@@ -143,4 +143,21 @@ describe('thinking arriving live', () => {
 
     expect(live).toHaveLength(2);
   });
+
+  /**
+   * The complete block arrives after the chunks that built it, saying the same thing. Two
+   * rows of identical thinking appeared in the app before this.
+   */
+  it('replaces the chunks with the finished block rather than showing both', () => {
+    let live = appendLive([], chunk('r1', 'I should look'));
+    live = appendLive(live, { type: 'assistant.reasoning', data: { reasoningId: 'r1', content: 'I should look' } });
+
+    expect(live).toHaveLength(1);
+    expect(live[0]!.type).toBe('assistant.reasoning');
+  });
+
+  it('keeps a finished block that had no chunks before it', () => {
+    const live = appendLive([], { type: 'assistant.reasoning', data: { reasoningId: 'r1', content: 'thought' } });
+    expect(live).toHaveLength(1);
+  });
 });
