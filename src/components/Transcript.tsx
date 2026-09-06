@@ -41,7 +41,8 @@ function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
       <button type="button" className="reasoning-head" onClick={() => setOpen((was) => !was)}>
         <span className="reasoning-caret">{open ? '▾' : '▸'}</span>
         <span className="reasoning-label">Thinking</span>
-        {!open && <span className="reasoning-count">{words} words</span>}
+        {/* Kept when open: it describes the row, not the fact that it is folded. */}
+        <span className="reasoning-count">{words} words</span>
       </button>
       {open && (
         <div className="reasoning-body">
@@ -101,15 +102,16 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         </span>
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
         {/* What the change came to, in the shape a diff is always summarised. */}
-        {changed && !open && (changed.added > 0 || changed.removed > 0) && (
+        {changed && (changed.added > 0 || changed.removed > 0) && (
           <span className="tool-counts">
             {changed.added > 0 && <span className="added">+{changed.added}</span>}
             {changed.removed > 0 && <span className="removed">−{changed.removed}</span>}
           </span>
         )}
-        {/* Doubles as the affordance that the row opens, and says how much is behind it.
-            Right-aligned, so it reads as a separate column without needing punctuation. */}
-        {!open && count && <span className="tool-lines">{count}</span>}
+        {/* Says how much is behind the row, and stays once it is opened: it describes the
+            row rather than the fact that it is folded. Right-aligned, so it reads as a
+            separate column without needing punctuation. */}
+        {count && <span className="tool-lines">{count}</span>}
       </button>
       {open &&
         (choices ? (

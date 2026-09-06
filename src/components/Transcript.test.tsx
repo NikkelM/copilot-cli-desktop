@@ -346,3 +346,46 @@ describe('how a change is drawn', () => {
     expect(container.querySelector('tr.skip')?.textContent).toContain('unchanged lines');
   });
 });
+
+/**
+ * A count says what is in the row, not that the row is folded, so it stays when opened.
+ * Hiding it meant the one moment you might want to check it against what you were reading
+ * was the moment it vanished.
+ */
+describe('what a row says about itself', () => {
+  it('keeps the line count when the row is opened', async () => {
+    show(shell('e1', 'ls', 't1'));
+    expect(screen.getByText('1 line')).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: /ls/ }));
+    expect(screen.getByText('1 line')).toBeTruthy();
+  });
+
+  it('keeps the change counts when the diff is opened', async () => {
+    show([
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'edit', arguments: { path: 'n.txt' } }, 'e1'),
+      event(
+        'tool.execution_complete',
+        { toolCallId: 't1', success: true, result: { detailedContent: 'diff --git a/n b/n\n@@ -1 +1 @@\n-was\n+now' } },
+        'e2',
+      ),
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /n\.txt/ }));
+    expect(screen.getByText('+1')).toBeTruthy();
+    expect(screen.getByText('−1')).toBeTruthy();
+  });
+
+  it('keeps the option count when a question is opened', async () => {
+    show([
+      event(
+        'tool.execution_start',
+        { toolCallId: 'q1', toolName: 'ask_user', arguments: { question: 'Which?', choices: ['A', 'B'] } },
+        'e1',
+      ),
+    ]);
+
+    await userEvent.click(screen.getByRole('button', { name: /Which\?/ }));
+    expect(screen.getByText('2 options')).toBeTruthy();
+  });
+});
