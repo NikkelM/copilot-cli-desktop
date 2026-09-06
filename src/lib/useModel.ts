@@ -23,11 +23,28 @@ let asking: Promise<ModelChoice[]> | null = null;
  */
 const REMEMBERED = 'copilot-desktop.models';
 
+/**
+ * A remembered entry is only usable if it still matches what this version expects.
+ *
+ * What is stored outlives the code that stored it: an entry written before the catalogue
+ * carried context sizes has no `contexts` on it, and reading one crashed the header. Shape
+ * is checked rather than versioned so that any future change is caught the same way.
+ */
+function usable(value: unknown): value is ModelChoice {
+  const model = value as ModelChoice | null;
+  return (
+    typeof model?.id === 'string' &&
+    typeof model.name === 'string' &&
+    Array.isArray(model.reasoningEfforts) &&
+    Array.isArray(model.contexts)
+  );
+}
+
 function remembered(): ModelChoice[] | null {
   try {
     const stored = localStorage.getItem(REMEMBERED);
     const parsed: unknown = stored ? JSON.parse(stored) : null;
-    return Array.isArray(parsed) && parsed.length > 0 ? (parsed as ModelChoice[]) : null;
+    return Array.isArray(parsed) && parsed.length > 0 && parsed.every(usable) ? (parsed as ModelChoice[]) : null;
   } catch {
     // A corrupt or unreadable entry is worth no more than an absent one.
     return null;
