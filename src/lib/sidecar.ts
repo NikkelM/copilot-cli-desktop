@@ -90,6 +90,11 @@ export function onSidecarStopped(handler: (reason: string) => void) {
   return listen<string>('sidecar-stopped', (event) => handler(event.payload));
 }
 
+/** Another sidecar took over from one that died. Anything it was told is gone. */
+export function onSidecarRestarted(handler: () => void) {
+  return listen('sidecar-restarted', () => handler());
+}
+
 /** A tool call is waiting on the user before it can run. */
 export function onPermissionRequested(handler: (payload: PendingPermission) => void) {
   return listen<PendingPermission>('permission-requested', (e) => handler(e.payload));

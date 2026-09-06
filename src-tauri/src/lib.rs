@@ -1,18 +1,41 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
 
 type Pending = Arc<Mutex<HashMap<u64, Sender<Result<Value, String>>>>>;
+/// The pipe to the sidecar in use, absent while one is being replaced.
+type Link = Arc<Mutex<Option<ChildStdin>>>;
 
 /// Told to every request still waiting when the sidecar goes away.
 const SIDECAR_STOPPED: &str = "the runtime stopped; restart the app";
+/// Told to a request that arrives while a replacement is starting.
+const SIDECAR_RESTARTING: &str = "the runtime is restarting; try again";
+
+/// How many times to replace a sidecar that dies before concluding it will not stay up.
+const MAX_RESTARTS: u32 = 3;
+/// A sidecar that ran at least this long was working, so its death does not count towards
+/// the limit. Only a sidecar dying repeatedly and quickly is a loop worth stopping.
+const HEALTHY: Duration = Duration::from_secs(30);
+
+/**
+ * Whether to start another sidecar after one has died, and which attempt it would be.
+ *
+ * Replacing one that dies at once, over and over, only hides the reason it will not run.
+ * Replacing one that had been working for a while is worth doing however often it happens,
+ * so time spent running resets the count rather than adding to it.
+ */
+fn next_attempt(attempt: u32, ran_for: Duration) -> Option<u32> {
+    let attempt = if ran_for >= HEALTHY { 0 } else { attempt };
+    (attempt < MAX_RESTARTS).then_some(attempt + 1)
+}
 
 /**
  * Answer every waiting request, so none of them waits on a reply that cannot arrive.
@@ -28,90 +51,136 @@ fn fail_all(pending: &Pending, message: &str) {
     }
 }
 
-/// Owns the Node sidecar process and multiplexes JSON-RPC requests over its stdio.
-struct Sidecar {
-    stdin: Mutex<ChildStdin>,
+/// Everything a sidecar needs to be replaced by another, kept together so the reader
+/// thread can start its own successor.
+#[derive(Clone)]
+struct Supervisor {
+    script: PathBuf,
+    app: tauri::AppHandle,
     pending: Pending,
-    next_id: AtomicU64,
-    /// Set once the sidecar's output ends, so later requests fail rather than block.
+    link: Link,
     stopped: Arc<AtomicBool>,
-    _child: Mutex<Child>,
 }
 
-impl Sidecar {
-    fn spawn(script: PathBuf, app: tauri::AppHandle) -> Result<Self, String> {
+impl Supervisor {
+    /**
+     * Start a sidecar and read from it until it goes, then start another.
+     *
+     * Little is lost by replacing one: it holds only which sessions are resumed and which
+     * requests are outstanding, and both die with it either way. History is on disk, and
+     * a session resumes on the next message regardless.
+     */
+    fn start(&self, attempt: u32) -> Result<(), String> {
         let mut child = Command::new(node_executable())
             // node:sqlite is stable in behaviour but still flagged experimental; the
             // warning would otherwise be printed on every launch.
             .arg("--no-warnings=ExperimentalWarning")
-            .arg(&script)
+            .arg(&self.script)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
             .spawn()
-            .map_err(|e| format!("failed to spawn sidecar {}: {e}", script.display()))?;
+            .map_err(|e| format!("failed to spawn sidecar {}: {e}", self.script.display()))?;
 
         let stdin = child.stdin.take().ok_or("sidecar stdin unavailable")?;
         let stdout = child.stdout.take().ok_or("sidecar stdout unavailable")?;
-        let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
-        let stopped = Arc::new(AtomicBool::new(false));
+        *self.link.lock().unwrap() = Some(stdin);
 
-        // Reader thread resolves in-flight requests by id and forwards notifications.
-        let reader_pending = Arc::clone(&pending);
-        let reader_stopped = Arc::clone(&stopped);
-        let reader_app = app.clone();
+        let supervisor = self.clone();
         std::thread::spawn(move || {
-            for line in BufReader::new(stdout).lines() {
-                let Ok(line) = line else { break };
-                let Ok(message) = serde_json::from_str::<Value>(&line) else {
-                    continue;
-                };
+            let started = Instant::now();
+            supervisor.read(stdout);
 
-                let Some(id) = message.get("id").and_then(Value::as_u64) else {
-                    // Sidecar-initiated notification: re-emit for the frontend.
-                    if let Some(method) = message.get("method").and_then(Value::as_str) {
-                        let event = match method {
-                            "session.event" => "session-event",
-                            "session.loaded" => "session-loaded",
-                            "sessions.changed" => "sessions-changed",
-                            "permission.requested" => "permission-requested",
-                            "permission.resolved" => "permission-resolved",
-                            "elicitation.requested" => "elicitation-requested",
-                            "elicitation.resolved" => "elicitation-resolved",
-                            _ => continue,
-                        };
-                        let payload = message.get("params").cloned().unwrap_or(Value::Null);
-                        let _ = reader_app.emit(event, payload);
-                    }
-                    continue;
-                };
+            // Nothing can be sent until a replacement is up, and everything already sent
+            // is owed an answer this sidecar will never give.
+            *supervisor.link.lock().unwrap() = None;
+            let _ = child.kill();
+            fail_all(&supervisor.pending, SIDECAR_RESTARTING);
 
-                if let Some(tx) = reader_pending.lock().unwrap().remove(&id) {
-                    let outcome = match message.get("error") {
-                        Some(err) => Err(err
-                            .get("message")
-                            .and_then(Value::as_str)
-                            .unwrap_or("sidecar error")
-                            .to_string()),
-                        None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
-                    };
-                    let _ = tx.send(outcome);
-                }
+            let restarted = match next_attempt(attempt, started.elapsed()) {
+                Some(next) => supervisor.start(next).is_ok(),
+                None => false,
+            };
+
+            if restarted {
+                let _ = supervisor.app.emit("sidecar-restarted", ());
+            } else {
+                supervisor.stopped.store(true, Ordering::Relaxed);
+                fail_all(&supervisor.pending, SIDECAR_STOPPED);
+                let _ = supervisor.app.emit("sidecar-stopped", SIDECAR_STOPPED);
             }
-
-            // Output ended, so the sidecar is gone and nothing else will ever answer.
-            // Without this the app carries on looking busy and never says otherwise.
-            reader_stopped.store(true, Ordering::Relaxed);
-            fail_all(&reader_pending, SIDECAR_STOPPED);
-            let _ = reader_app.emit("sidecar-stopped", SIDECAR_STOPPED);
         });
 
+        Ok(())
+    }
+
+    /// Resolve replies by id and forward notifications, until the sidecar's output ends.
+    fn read(&self, stdout: std::process::ChildStdout) {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            let Ok(message) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+
+            let Some(id) = message.get("id").and_then(Value::as_u64) else {
+                // Sidecar-initiated notification: re-emit for the frontend.
+                if let Some(method) = message.get("method").and_then(Value::as_str) {
+                    let event = match method {
+                        "session.event" => "session-event",
+                        "session.loaded" => "session-loaded",
+                        "sessions.changed" => "sessions-changed",
+                        "permission.requested" => "permission-requested",
+                        "permission.resolved" => "permission-resolved",
+                        "elicitation.requested" => "elicitation-requested",
+                        "elicitation.resolved" => "elicitation-resolved",
+                        _ => continue,
+                    };
+                    let payload = message.get("params").cloned().unwrap_or(Value::Null);
+                    let _ = self.app.emit(event, payload);
+                }
+                continue;
+            };
+
+            if let Some(tx) = self.pending.lock().unwrap().remove(&id) {
+                let outcome = match message.get("error") {
+                    Some(err) => Err(err
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("sidecar error")
+                        .to_string()),
+                    None => Ok(message.get("result").cloned().unwrap_or(Value::Null)),
+                };
+                let _ = tx.send(outcome);
+            }
+        }
+    }
+}
+
+/// Owns the Node sidecar process and multiplexes JSON-RPC requests over its stdio.
+struct Sidecar {
+    pending: Pending,
+    next_id: AtomicU64,
+    link: Link,
+    /// Set once no sidecar will be started again, so later requests fail rather than block.
+    stopped: Arc<AtomicBool>,
+}
+
+impl Sidecar {
+    fn spawn(script: PathBuf, app: tauri::AppHandle) -> Result<Self, String> {
+        let supervisor = Supervisor {
+            script,
+            app,
+            pending: Arc::new(Mutex::new(HashMap::new())),
+            link: Arc::new(Mutex::new(None)),
+            stopped: Arc::new(AtomicBool::new(false)),
+        };
+        supervisor.start(0)?;
+
         Ok(Self {
-            stdin: Mutex::new(stdin),
-            pending,
+            pending: Arc::clone(&supervisor.pending),
             next_id: AtomicU64::new(1),
-            stopped,
-            _child: Mutex::new(child),
+            link: Arc::clone(&supervisor.link),
+            stopped: Arc::clone(&supervisor.stopped),
         })
     }
 
@@ -133,10 +202,15 @@ impl Sidecar {
 
         let payload = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
         let written = {
-            let mut stdin = self.stdin.lock().unwrap();
-            writeln!(stdin, "{payload}")
-                .and_then(|()| stdin.flush())
-                .map_err(|e| format!("sidecar write failed: {e}"))
+            let mut link = self.link.lock().unwrap();
+            match link.as_mut() {
+                Some(stdin) => writeln!(stdin, "{payload}")
+                    .and_then(|()| stdin.flush())
+                    .map_err(|e| format!("sidecar write failed: {e}")),
+                // Between one sidecar dying and its replacement being up. Rare, brief,
+                // and better reported than queued against a pipe that may never open.
+                None => Err(SIDECAR_RESTARTING.to_string()),
+            }
         };
 
         // Nothing was sent, so nothing will answer: take the entry back rather than
@@ -239,5 +313,36 @@ mod tests {
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
         fail_all(&pending, SIDECAR_STOPPED);
         assert!(pending.lock().unwrap().is_empty());
+    }
+
+    const INSTANTLY: Duration = Duration::from_millis(50);
+
+    #[test]
+    fn a_sidecar_that_dies_at_once_is_replaced_a_few_times_then_left() {
+        let mut attempt = 0;
+        let mut starts = 0;
+
+        while let Some(next) = next_attempt(attempt, INSTANTLY) {
+            attempt = next;
+            starts += 1;
+        }
+
+        assert_eq!(starts, MAX_RESTARTS, "should stop rather than loop");
+    }
+
+    // Otherwise a long-lived app would use up its restarts on unrelated failures and
+    // eventually stop replacing a sidecar that had been running for hours.
+    #[test]
+    fn a_sidecar_that_had_been_running_is_always_replaced() {
+        let worked_for = HEALTHY + Duration::from_secs(1);
+
+        assert_eq!(next_attempt(0, worked_for), Some(1));
+        assert_eq!(next_attempt(MAX_RESTARTS, worked_for), Some(1));
+        assert_eq!(next_attempt(MAX_RESTARTS * 10, worked_for), Some(1));
+    }
+
+    #[test]
+    fn a_death_just_short_of_healthy_still_counts() {
+        assert_eq!(next_attempt(MAX_RESTARTS, HEALTHY - Duration::from_millis(1)), None);
     }
 }
