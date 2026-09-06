@@ -13,6 +13,11 @@ function messageIdOf(event: TranscriptEvent): string | null {
   return typeof data?.messageId === 'string' ? data.messageId : null;
 }
 
+function reasoningIdOf(event: TranscriptEvent): string | null {
+  const data = event.data as { reasoningId?: unknown } | null;
+  return typeof data?.reasoningId === 'string' ? data.reasoningId : null;
+}
+
 function deltaOf(event: TranscriptEvent): string {
   const data = event.data as { deltaContent?: unknown } | null;
   return typeof data?.deltaContent === 'string' ? data.deltaContent : '';
@@ -53,6 +58,20 @@ export function appendLive(current: TimelineEvent[], event: TimelineEvent): Time
         event.type === 'assistant.message'
           ? event
           : { ...event, data: { messageId, deltaContent: deltaOf(next[index]!) + deltaOf(event) } };
+      return next;
+    }
+  }
+
+  // Thinking grows the same way a reply does, and for the same reason: hundreds of chunks
+  // would be hundreds of events for every later render to walk.
+  const reasoningId = reasoningIdOf(event);
+  if (reasoningId && event.type === 'assistant.reasoning_delta') {
+    const index = current.findIndex(
+      (entry) => entry.type === 'assistant.reasoning_delta' && reasoningIdOf(entry) === reasoningId,
+    );
+    if (index !== -1) {
+      const next = [...current];
+      next[index] = { ...event, data: { reasoningId, deltaContent: deltaOf(next[index]!) + deltaOf(event) } };
       return next;
     }
   }

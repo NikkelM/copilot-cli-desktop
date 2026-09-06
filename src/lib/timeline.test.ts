@@ -122,3 +122,25 @@ describe('streaming a reply', () => {
     expect(live[1]!.type).toBe('tool.execution_start');
   });
 });
+
+describe('thinking arriving live', () => {
+  const chunk = (reasoningId: string, deltaContent: string): TimelineEvent => ({
+    type: 'assistant.reasoning_delta',
+    data: { reasoningId, deltaContent },
+  });
+
+  it('grows one event rather than collecting hundreds', () => {
+    let live: TimelineEvent[] = [];
+    for (const part of ['I should ', 'look at ', 'the file']) live = appendLive(live, chunk('r1', part));
+
+    expect(live).toHaveLength(1);
+    expect(live[0]!.data).toEqual({ reasoningId: 'r1', deltaContent: 'I should look at the file' });
+  });
+
+  it('keeps separate blocks of thinking apart', () => {
+    let live = appendLive([], chunk('r1', 'first'));
+    live = appendLive(live, chunk('r2', 'second'));
+
+    expect(live).toHaveLength(2);
+  });
+});
