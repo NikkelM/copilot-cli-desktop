@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ToolEntry } from '../lib/transcriptEntries';
+import { Markdown } from './Markdown';
 
 /**
  * How far from the bottom still counts as being at it.
@@ -209,7 +210,9 @@ const EntryRow = memo(
     return entry.kind === 'tool' ? (
       <ToolRow entry={entry} />
     ) : (
-      <div className={`message ${entry.variant}`}>{entry.body}</div>
+      <div className={`message ${entry.variant}`}>
+        <Markdown body={entry.body} />
+      </div>
     );
   },
   (before, after) => sameEntry(before.entry, after.entry),
