@@ -7,9 +7,11 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import rehypeKatex from 'rehype-katex';
 import rehypeSlug from 'rehype-slug';
+import rehypeHighlight from 'rehype-highlight';
 import { openUrl } from '@tauri-apps/plugin-opener';
 
 import { scopeAnchors } from '../lib/scopeAnchors';
+import { aliases, languages } from '../lib/highlight';
 import 'katex/dist/katex.min.css';
 
 /**
@@ -45,6 +47,9 @@ export const Markdown = memo(function Markdown({ body, anchor }: { body: string;
         rehypePlugins={[
           rehypeRaw,
           [rehypeSanitize, schema],
+          // After sanitising, so the classes it marks tokens with survive, and with an
+          // explicit set of languages: an unknown one is left plain rather than guessed at.
+          [rehypeHighlight, { languages, aliases }],
           rehypeKatex,
           ...(anchor ? ([rehypeSlug, scopeAnchors(anchor)] as const) : []),
         ]}

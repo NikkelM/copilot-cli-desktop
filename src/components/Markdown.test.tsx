@@ -151,3 +151,39 @@ describe('links within a reply', () => {
     expect(openUrl).toHaveBeenCalledWith('https://example.com/docs');
   });
 });
+
+/**
+ * A fenced block says what it is, and that is enough to colour it. A wall of one-colour
+ * text is the thing this replaces; guessing at an unknown language would be worse.
+ */
+describe('code blocks', () => {
+  it('marks up the parts of a block whose language it knows', () => {
+    const { container } = render(<Markdown body={'```ts\nconst x: number = 1;\n```'} />);
+
+    expect(container.querySelector('code')?.className).toContain('hljs');
+    expect(container.querySelector('.hljs-keyword')?.textContent).toBe('const');
+  });
+
+  // The name on the fence is whatever the language is usually called, not the grammar's own.
+  it.each(['ts', 'sh', 'yml', 'ps1', 'rs', 'py'])('knows %s by the name a reply writes', (lang) => {
+    const { container } = render(<Markdown body={'```' + lang + '\nx\n```'} />);
+    expect(container.querySelector('code')?.className).toContain('hljs');
+  });
+
+  it('leaves a block plain when the language is one it does not carry', () => {
+    const { container } = render(<Markdown body={'```brainfuck\n+++.\n```'} />);
+    expect(container.querySelectorAll('span').length).toBe(0);
+  });
+
+  it('leaves a block plain when no language was given', () => {
+    const { container } = render(<Markdown body={'```\nsome output\n```'} />);
+    expect(container.querySelectorAll('span').length).toBe(0);
+    expect(container.querySelector('code')?.className ?? '').not.toContain('hljs');
+  });
+
+  // Inline code is a word in a sentence, not a program.
+  it('leaves inline code alone', () => {
+    const { container } = render(<Markdown body="the `const` keyword" />);
+    expect(container.querySelectorAll('span').length).toBe(0);
+  });
+});
