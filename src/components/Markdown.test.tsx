@@ -31,14 +31,52 @@ describe('Markdown', () => {
   });
 
   /**
-   * A reply is text from a model, not markup to be trusted. react-markdown ignores raw
-   * HTML unless told otherwise, and this is here so that stays true if plugins change.
+   * A reply is text from a model, not markup to be trusted. Replies do use HTML, and
+   * `<details>` especially, so it is allowed through a schema rather than shown as tags -
+   * which means what that schema refuses is worth pinning down.
    */
-  it('does not render raw HTML', () => {
-    const { container } = render(<Markdown body={'<img src=x onerror="alert(1)">\n\nafter'} />);
+  it('keeps the HTML a reply legitimately uses', () => {
+    const { container } = render(
+      <Markdown body={'<details><summary>More</summary>\n\nhidden\n\n</details>\n\nPress <kbd>Ctrl</kbd>'} />,
+    );
 
-    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('details summary')?.textContent).toBe('More');
+    expect(container.querySelector('kbd')?.textContent).toBe('Ctrl');
+  });
+
+  it('refuses the HTML that could act', () => {
+    const { container } = render(
+      <Markdown
+        body={'<script>window.stolen = 1</script>\n\n<img src=x onerror="window.stolen = 2">\n\n<iframe src="https://example.com"></iframe>\n\nafter'}
+      />,
+    );
+
+    expect(container.querySelector('script')).toBeNull();
+    expect(container.querySelector('iframe')).toBeNull();
+    expect(container.querySelector('img')?.getAttribute('onerror')).toBeNull();
+    // The text around it survives: refusing markup is not the same as dropping the reply.
     expect(container.textContent).toContain('after');
+  });
+
+  it('renders maths rather than its source', () => {
+    const { container } = render(<Markdown body={'Inline $E = mc^2$ and more'} />);
+
+    // The source stays in the MathML annotation, which is what a screen reader reads, so
+    // it is the drawn output that says whether this worked.
+    expect(container.querySelector('.katex-html')).not.toBeNull();
+    expect(container.querySelector('.katex-display')).toBeNull();
+  });
+
+  // Delimiters on their own lines are what makes maths a block rather than part of a
+  // sentence, and only the block form is centred and given room.
+  it('tells block maths from inline', () => {
+    const { container } = render(<Markdown body={'Then:\n\n$$\n\\int_0^1 x\\,dx\n$$'} />);
+    expect(container.querySelector('.katex-display')).not.toBeNull();
+  });
+
+  it('turns emoji shortcodes into emoji', () => {
+    const { container } = render(<Markdown body="ship it :rocket:" />);
+    expect(container.textContent).toBe('ship it 🚀');
   });
 
   // The webview is the app: following a link inside it leaves nowhere to go back to.
