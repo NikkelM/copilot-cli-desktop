@@ -82,6 +82,14 @@ export function onSessionsChanged(handler: () => void) {
   return listen('sessions-changed', () => handler());
 }
 
+/**
+ * The sidecar exited. Every session is gone with it and nothing will answer again, so
+ * this is reported rather than left to look like an app that has simply gone quiet.
+ */
+export function onSidecarStopped(handler: (reason: string) => void) {
+  return listen<string>('sidecar-stopped', (event) => handler(event.payload));
+}
+
 /** A tool call is waiting on the user before it can run. */
 export function onPermissionRequested(handler: (payload: PendingPermission) => void) {
   return listen<PendingPermission>('permission-requested', (e) => handler(e.payload));

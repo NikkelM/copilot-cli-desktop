@@ -26,6 +26,7 @@ import {
   onSessionEvent,
   onSessionLoaded,
   onSessionsChanged,
+  onSidecarStopped,
   resolveElicitation,
   resolvePermission,
   sendMessage,
@@ -57,6 +58,8 @@ export default function App() {
   const [olderCursor, setOlderCursor] = useState<number | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set when the sidecar exits: nothing works afterwards, so it outranks any other message. */
+  const [stopped, setStopped] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PendingPermission[]>([]);
   const [elicitations, setElicitations] = useState<PendingElicitation[]>([]);
   const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
@@ -177,6 +180,18 @@ export default function App() {
   // a terminal, so this keeps the sidebar current without polling.
   useTauriEvent(() => onSessionsChanged(() => refreshSessions()), [refreshSessions]);
 
+  // Losing the sidecar takes every session with it, and a request that will never be
+  // answered otherwise shows as the app quietly doing nothing.
+  useTauriEvent(() =>
+    onSidecarStopped((reason) => {
+      setStopped(reason);
+      setBusy(false);
+      setResuming(false);
+      setPermissions([]);
+      setElicitations([]);
+    }),
+  );
+
   useTauriEvent(() =>
     onPermissionRequested((pending) => {
       setPermissions((current) =>
@@ -269,7 +284,14 @@ export default function App() {
       <Sidebar sessions={ordered} selectedId={selectedId} onSelect={setSelectedId} />
 
       <main className="main">
-        {selected ? (
+        {/* Nothing here works once the sidecar is gone, so it says so instead of showing
+            a transcript that can no longer be added to. One child, like the other
+            branches: .main assigns its rows by position. */}
+        {stopped ? (
+          <div className="placeholder">
+            <p className="error">{stopped}</p>
+          </div>
+        ) : selected ? (
           <>
             <header className="main-header">
               <div className="main-title">
