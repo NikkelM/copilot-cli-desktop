@@ -476,25 +476,51 @@ body {
   margin: 0 0 10px;
 }
 
-/* This is a conversation rather than a document: headings mark sections without
-   becoming the loudest thing on screen. */
+/* Six levels have to be tellable apart at a glance, but this is a conversation rather
+   than a document: the largest is only a little above the prose, and the rest separate
+   by weight and colour once the sizes run out. */
 .markdown h1,
 .markdown h2,
 .markdown h3,
 .markdown h4,
 .markdown h5,
 .markdown h6 {
-  margin: 16px 0 8px;
-  font-size: 14px;
+  margin: 18px 0 8px;
   font-weight: 600;
   line-height: 1.3;
 }
 
-.markdown h1,
+.markdown h1 {
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--border);
+  font-size: 20px;
+}
+
 .markdown h2 {
   padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
+  font-size: 17px;
+}
+
+.markdown h3 {
   font-size: 15px;
+}
+
+.markdown h4 {
+  font-size: 14px;
+}
+
+/* Below the fourth level size stops being a useful signal, so these lean on colour and
+   letterspacing instead of shrinking into illegibility. */
+.markdown h5,
+.markdown h6 {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.markdown h6 {
+  color: var(--text-muted);
 }
 
 .markdown ul,
@@ -840,4 +866,72 @@ body {
   white-space: pre-wrap;
   overflow: auto;
   overflow-wrap: anywhere;
+}
+
+/* HTML a reply is allowed to bring with it. */
+.markdown details {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+
+.markdown summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.markdown details[open] summary {
+  margin-bottom: 8px;
+}
+
+.markdown kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.markdown mark {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: rgba(210, 153, 34, 0.35);
+  color: var(--text);
+}
+
+/* A task list has no checkbox to tick: the state was decided when the reply was written. */
+.markdown input[type='checkbox'] {
+  margin-right: 4px;
+  pointer-events: none;
+}
+
+.markdown li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -18px;
+}
+
+/* Three rules in a row should read as three separators, not as one thick band. */
+.markdown hr {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid var(--border);
+}
+
+/* Block maths gets room; inline maths must not push the line apart.
+   Integrals, sums and fractions reach above the line they sit on, and clipping the
+   overflow to keep a wide equation scrollable cuts their tops off, so the padding is
+   what keeps them whole. */
+.markdown .katex-display {
+  margin: 12px 0;
+  padding: 8px 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.markdown .katex {
+  font-size: 1em;
 }
