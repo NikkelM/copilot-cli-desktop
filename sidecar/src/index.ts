@@ -92,7 +92,7 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
         prompt: string;
         mode?: 'enqueue' | 'immediate';
       };
-      return { messageId: await runtime.send(sessionId, prompt, mode) };
+      return runtime.send(sessionId, prompt, mode);
     }
 
     case 'sessions.abort': {

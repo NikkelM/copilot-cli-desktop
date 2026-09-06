@@ -50,7 +50,7 @@ export function Composer({ disabled, busy, focusOn, value, onChange, onSend, onA
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder={busy ? 'Agent is working. Enter queues a follow-up.' : 'Send a message. Enter to send, Shift+Enter for a newline.'}
+        placeholder={busy ? 'Agent is working. Enter queues this behind it.' : 'Send a message. Enter to send, Shift+Enter for a newline.'}
         rows={3}
         disabled={disabled}
       />
