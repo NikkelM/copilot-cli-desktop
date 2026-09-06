@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -141,23 +141,65 @@ describe('ModelPicker', () => {
       picker({ current: { model: 'claude-opus-5' } });
       await openMenu();
 
-      expect(screen.getByText('Cost per 1M tokens')).toBeTruthy();
+      expect(screen.getByText(/Cost per 1M tokens/)).toBeTruthy();
       expect(screen.getByText('500 credits')).toBeTruthy();
       expect(screen.getByText('2,500 credits')).toBeTruthy();
     });
 
-    it('shows no price when the model in use has none', async () => {
+    // Auto has no price of its own: what it costs depends on where it routes. The block
+    // still shows, so the list does not move as the pointer passes over it.
+    it('says a model is not priced rather than showing nothing', async () => {
       picker({ current: { model: 'grok-4.6' } });
       await openMenu();
 
-      expect(screen.queryByText('Cost per 1M tokens')).toBeNull();
+      expect(screen.getByText('Not priced on its own')).toBeTruthy();
     });
 
     it('shows no price when nothing is in use yet', async () => {
       picker({ current: null });
       await openMenu();
 
-      expect(screen.queryByText('Cost per 1M tokens')).toBeNull();
+      expect(screen.queryByText(/Cost per 1M tokens/)).toBeNull();
+    });
+
+    describe('following what the reader is looking at', () => {
+      it('shows the price of the model under the pointer', async () => {
+        picker({ current: { model: 'auto' } });
+        await openMenu();
+
+        await userEvent.hover(screen.getByRole('option', { name: /Claude Opus 5/ }));
+
+        expect(screen.getByText('500 credits')).toBeTruthy();
+      });
+
+      it('names the model the price belongs to', async () => {
+        picker({ current: { model: 'auto' } });
+        await openMenu();
+
+        await userEvent.hover(screen.getByRole('option', { name: /Claude Opus 5/ }));
+
+        expect(screen.getByText(/Claude Opus 5/, { selector: '.model-prices-of' })).toBeTruthy();
+      });
+
+      it('goes back to the model in use once the pointer leaves the list', async () => {
+        picker({ current: { model: 'claude-opus-5' } });
+        await openMenu();
+        await userEvent.hover(screen.getByRole('option', { name: /Auto/ }));
+
+        await userEvent.unhover(screen.getByRole('listbox'));
+
+        expect(screen.getByText('500 credits')).toBeTruthy();
+      });
+
+      // Following the keyboard too, since the picker must not need a pointer at all.
+      it('follows focus as well as the pointer', async () => {
+        picker({ current: { model: 'auto' } });
+        await openMenu();
+
+        await act(async () => screen.getByRole('option', { name: /Claude Opus 5/ }).focus());
+
+        expect(screen.getByText('500 credits')).toBeTruthy();
+      });
     });
   });
   describe('choosing', () => {
