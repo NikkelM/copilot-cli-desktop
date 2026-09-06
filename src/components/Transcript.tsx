@@ -32,11 +32,13 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   // A typed reply is not among the options, so it needs its own line to appear at all.
   const freeform = choices && entry.answer && !choices.includes(entry.answer) ? entry.answer : null;
 
-  const expandable = Boolean(entry.output) || Boolean(choices);
+  const expandable = Boolean(entry.output) || Boolean(choices) || Boolean(entry.command);
   const lines = entry.output ? entry.output.split('\n').length : 0;
   const count = choices
     ? `${choices.length} ${choices.length === 1 ? 'option' : 'options'}`
-    : `${lines} ${lines === 1 ? 'line' : 'lines'}`;
+    : lines > 0
+      ? `${lines} ${lines === 1 ? 'line' : 'lines'}`
+      : null;
 
   return (
     <div className={`tool ${entry.status}${open ? ' open' : ''}`}>
@@ -56,7 +58,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
         {/* Doubles as the affordance that the row opens, and says how much is behind it.
             Right-aligned, so it reads as a separate column without needing punctuation. */}
-        {expandable && !open && <span className="tool-lines">{count}</span>}
+        {expandable && !open && count && <span className="tool-lines">{count}</span>}
       </button>
       {open &&
         (choices ? (
@@ -79,7 +81,12 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
             )}
           </ul>
         ) : (
-          entry.output && <pre className="tool-output">{entry.output}</pre>
+          <>
+            {entry.output && <pre className="tool-output">{entry.output}</pre>}
+            {/* Last, as in the CLI: what came back is read more often than what ran, and
+                the header only had room for a description of it. */}
+            {entry.command && <pre className="tool-command">{entry.command}</pre>}
+          </>
         ))}
     </div>
   );
