@@ -53,6 +53,12 @@ describe('ModelPicker', () => {
       expect(screen.getAllByRole('button')[0].textContent).not.toContain('none');
     });
 
+  // Reading the log takes a moment, and switching sessions used to flash a claim that the
+  // session had no model before the answer arrived.
+  it('says nothing at all until the log has been read', () => {
+    picker({ current: undefined });
+    expect(screen.getAllByRole('button')[0].textContent).toBe('');
+  });
     it('says so when the log never named a model', () => {
       picker({ current: null });
       expect(screen.getAllByRole('button')[0].textContent).toContain('No model recorded');

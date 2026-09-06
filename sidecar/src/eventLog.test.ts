@@ -250,6 +250,64 @@ describe('lastModel', () => {
     expect((await lastModel('s1'))?.model).toBe('claude-opus-4.8');
   });
 
+  // Neither a change nor an opening line reliably carries all three, so reading only the
+  // newest event that names a model dropped whatever that event left out.
+  it('assembles the model, the effort and the context from separate events', async () => {
+    writeLog('s1', [
+      start('gpt-5.4', { contextTier: 'long_context' }),
+      line(1),
+      change('claude-opus-5', { reasoningEffort: 'max' }),
+      line(2),
+    ]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toEqual({
+      model: 'claude-opus-5',
+      reasoningEffort: 'max',
+      contextTier: 'long_context',
+    });
+  });
+
+  it('takes the newest mention of each part', async () => {
+    writeLog('s1', [
+      start('gpt-5.4', { reasoningEffort: 'low', contextTier: 'default' }),
+      change('claude-opus-5', { reasoningEffort: 'max' }),
+    ]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toMatchObject({ reasoningEffort: 'max', contextTier: 'default' });
+  });
+
+  // The runtime writes null for a setting nobody chose, and null is not a value to show.
+  it('treats a setting written as null as unset', async () => {
+    writeLog('s1', [start('claude-opus-5', { reasoningEffort: null, contextTier: null })]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toEqual({ model: 'claude-opus-5', reasoningEffort: undefined, contextTier: undefined });
+  });
+
+  // The opening line sometimes carries the context and no model at all, which is only
+  // useful if it is still read for the part it does have.
+  it('takes the context from an opening line that names no model', async () => {
+    writeLog('s1', [start(undefined as unknown as string, { contextTier: 'long_context' }), change('claude-opus-4.8')]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toMatchObject({ model: 'claude-opus-4.8', contextTier: 'long_context' });
+  });
+
+  // The tail is where a recent change is, but it rarely mentions the context, which is set
+  // once at the top of the run and never again.
+  it('fills in from the opening line when a long tail leaves parts out', async () => {
+    const filler = Array.from({ length: 4000 }, (_, index) => line(index));
+    writeLog('s1', [start('gpt-5.4', { contextTier: 'long_context' }), ...filler, change('claude-opus-5', { reasoningEffort: 'high' })]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toEqual({
+      model: 'claude-opus-5',
+      reasoningEffort: 'high',
+      contextTier: 'long_context',
+    });
+  });
   it('says nothing when the log never names a model', async () => {
     writeLog('s1', [line(1), line(2)]);
     const { lastModel } = await loadEventLog();
