@@ -1,0 +1,35 @@
+version: 2
+
+updates:
+  # The app's own dependencies. Grouped, because a week of Tauri, React and Vite bumps as
+  # separate pull requests is noise rather than signal, and they are usually reviewed together.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ['@tauri-apps/*']
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+      markdown:
+        patterns: ['react-markdown', 'remark-*', 'rehype-*', 'mermaid', 'katex']
+      dev:
+        dependency-type: development
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns: ['tauri', 'tauri-*']
+
+  # Workflow actions go stale quietly: a pinned v4 keeps working long after v5 is the one
+  # getting fixes, and nothing complains.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

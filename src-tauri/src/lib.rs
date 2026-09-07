@@ -344,6 +344,9 @@ mod tests {
 
     #[test]
     fn a_death_just_short_of_healthy_still_counts() {
-        assert_eq!(next_attempt(MAX_RESTARTS, HEALTHY - Duration::from_millis(1)), None);
+        assert_eq!(
+            next_attempt(MAX_RESTARTS, HEALTHY - Duration::from_millis(1)),
+            None
+        );
     }
 }
