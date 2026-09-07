@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -355,7 +355,14 @@ describe('SessionRuntime tracking what a turn changes', () => {
   let repo: string;
 
   beforeEach(() => {
-    repo = mkdtempSync(join(tmpdir(), 'ccd-runtime-git-'));
+    // realpath.native, because these tests compare a path the runtime derived from git
+    // against one built here. On a Windows machine whose TMP is an 8.3 short name - which
+    // the GitHub runners have, as `RUNNER~1` - the two spell the same directory differently
+    // and the comparison fails for a reason unrelated to what is being tested.
+    //
+    // The native variant specifically: plain realpathSync resolves symlinks but leaves a
+    // short name short, which was measured rather than assumed.
+    repo = realpathSync.native(mkdtempSync(join(tmpdir(), 'ccd-runtime-git-')));
     execFileSync('git', ['-C', repo, 'init', '-q']);
     execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
     execFileSync('git', ['-C', repo, 'config', 'user.name', 'test']);
@@ -484,7 +491,9 @@ describe('SessionRuntime letting go of old points', () => {
   let repo: string;
 
   beforeEach(() => {
-    repo = mkdtempSync(join(tmpdir(), 'ccd-runtime-keep-'));
+    // realpath.native for the same reason as above: a short-name TMP would make any
+    // comparison against a path git reported spell the same directory two ways.
+    repo = realpathSync.native(mkdtempSync(join(tmpdir(), 'ccd-runtime-keep-')));
     execFileSync('git', ['-C', repo, 'init', '-q']);
     execFileSync('git', ['-C', repo, 'config', 'user.email', 'test@example.com']);
     execFileSync('git', ['-C', repo, 'config', 'user.name', 'test']);

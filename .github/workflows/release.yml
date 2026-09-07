@@ -1,9 +1,8 @@
 name: Release
 run-name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag) }}
 
-# Started by hand rather than by pushing a tag, so the tag is created here only once the
-# build has actually succeeded. A tag in this repository therefore always names something
-# that built and passed its tests.
+# Started by hand rather than by pushing a tag, so the tag is created only once everything
+# has passed. A tag in this repository therefore always names something that built.
 on:
   workflow_dispatch:
     inputs:
@@ -19,19 +18,31 @@ permissions:
   contents: write # required for pushing the release commit and tag, and creating the release
 
 jobs:
-  release:
-    name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag) }}
-    runs-on: windows-latest
-
+  # Fails before anything is built, so a malformed version number costs seconds rather than
+  # the twenty minutes the rest of this takes.
+  version:
+    name: Check the version number
+    runs-on: ubuntu-latest
     steps:
       - name: Check input tag format
-        shell: bash
         run: |
           if ! echo "${{ inputs.tag }}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "::error title=Invalid version number::Version numbers must follow the Major.Minor.Patch format (e.g. 0.2.0), without a leading v."
             exit 1
           fi
 
+  # The same two jobs CI runs, from the same file. A release passes exactly what a push
+  # passes, and neither can drift from the other.
+  checks:
+    needs: version
+    uses: ./.github/workflows/checks.yml
+
+  release:
+    name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag) }}
+    needs: checks
+    runs-on: windows-latest
+
+    steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v7
@@ -46,11 +57,6 @@ jobs:
           workspaces: src-tauri
 
       - run: npm ci
-
-      # A release skips nothing. Code that does not typecheck, or whose tests fail, has no
-      # business being installed by anyone.
-      - run: npm run typecheck
-      - run: npm test
 
       # Three files carry the version and all three are read by something: npm, the bundler,
       # and cargo. Setting them here means a release never depends on remembering to.
@@ -71,10 +77,9 @@ jobs:
       # Builds the frontend, compiles the sidecar, assembles its dependency bundle and
       # packages the lot - tauri.conf.json's beforeBuildCommand does the first three.
       #
-      # Unsigned. SignTool is what Tauri would call, and it is already wired up through
-      # bundle.windows.certificateThumbprint or signCommand - what is missing is a
-      # certificate that CI can use, which since 2023 means a cloud signing service rather
-      # than a file. See the release notes in the README.
+      # Unsigned. SignTool is not what is missing - Tauri already calls it, through
+      # bundle.windows.certificateThumbprint or signCommand. A certificate CI can reach is,
+      # and since 2023 a bought one lives on hardware. The README explains the options.
       - name: Build the installers
         run: npm run tauri build
 
