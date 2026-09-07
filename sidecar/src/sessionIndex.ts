@@ -7,6 +7,18 @@ import { toPreview } from '../../shared/preview.js';
 import { sessionEventLog, sessionStateDir, sessionStoreDb } from './paths.js';
 
 /**
+ * Names already read, keyed by session, with what the file looked like when they were.
+ *
+ * Reading `workspace.yaml` for every session was 49ms of a 113ms refresh - by far the most
+ * expensive thing the list did, and almost entirely wasted: a session's name is set once and
+ * then never changes. A stat is a tenth of the cost of an open-read-close, so the file is
+ * only opened when it differs from what was read last.
+ *
+ * Bounded by the number of sessions on disk, and each entry is one short string.
+ */
+const names = new Map<string, { at: number; size: number; name: string | null }>();
+
+/**
  * The session's display name, which lives outside the history database.
  *
  * `sessions.summary` holds an auto-generated summary derived from early conversation
@@ -19,8 +31,25 @@ import { sessionEventLog, sessionStateDir, sessionStoreDb } from './paths.js';
  */
 function readSessionName(sessionId: string): string | null {
   const path = join(sessionStateDir(sessionId), 'workspace.yaml');
-  if (!existsSync(path)) return null;
 
+  // One stat rather than an exists and a read: it answers whether the file is there and
+  // whether it has changed since it was last read, which is everything needed to decide.
+  const info = statSync(path, { throwIfNoEntry: false });
+  if (!info) {
+    names.delete(sessionId);
+    return null;
+  }
+
+  const seen = names.get(sessionId);
+  if (seen && seen.at === info.mtimeMs && seen.size === info.size) return seen.name;
+
+  const name = parseSessionName(path);
+  names.set(sessionId, { at: info.mtimeMs, size: info.size, name });
+  return name;
+}
+
+/** The `name:` field, or null when the file has none or cannot be read. */
+function parseSessionName(path: string): string | null {
   try {
     for (const line of readFileSync(path, 'utf8').split('\n')) {
       const match = /^name:\s*(.*)$/.exec(line.trimEnd());
@@ -33,7 +62,7 @@ function readSessionName(sessionId: string): string | null {
       return name.trim() || null;
     }
   } catch {
-    return null; // A missing or malformed file just means falling back to the summary.
+    return null; // A malformed or unreadable file just means falling back to the summary.
   }
   return null;
 }
@@ -93,21 +122,22 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
 
     const held = new Set(keep);
     const sessions = rows
+      .map((row) => ({ row, log: statSync(sessionEventLog(row.id), { throwIfNoEntry: false }) }))
       // The database and the logs are separate: deleting a session's directory, or
       // restoring a machine without it, leaves a row describing a session that cannot be
       // opened. Listing it promises something the transcript then cannot deliver.
       //
       // A session the runtime is holding is exempt: its log is written on the first turn,
       // so one just started has none yet and would otherwise be hidden as though deleted.
-      .filter((row) => held.has(row.id) || existsSync(sessionEventLog(row.id)))
-      .map((row) => ({
+      .filter(({ row, log }) => held.has(row.id) || log !== undefined)
+      .map(({ row, log }) => ({
         sessionId: row.id,
         title: readSessionName(row.id) ?? row.summary,
         cwd: row.cwd,
         repository: row.repository,
         branch: row.branch,
         createdAt: row.created_at,
-        updatedAt: lastActivity(row.id, row.updated_at) ?? row.updated_at,
+        updatedAt: newest(log?.mtime.toISOString() ?? null, row.updated_at) ?? row.updated_at,
         preview: toPreview(row.preview),
         loaded: false,
       }));
@@ -153,15 +183,16 @@ export function findSessions(prefix: string): SessionSummary[] {
       .all(`${needle.replace(/[\\%_]/g, '\\$&')}%`) as unknown as SessionRow[];
 
     return rows
-      .filter((row) => existsSync(sessionEventLog(row.id)))
-      .map((row) => ({
+      .map((row) => ({ row, log: statSync(sessionEventLog(row.id), { throwIfNoEntry: false }) }))
+      .filter(({ log }) => log !== undefined)
+      .map(({ row, log }) => ({
         sessionId: row.id,
         title: readSessionName(row.id) ?? row.summary,
         cwd: row.cwd,
         repository: row.repository,
         branch: row.branch,
         createdAt: row.created_at,
-        updatedAt: lastActivity(row.id, row.updated_at) ?? row.updated_at,
+        updatedAt: newest(log?.mtime.toISOString() ?? null, row.updated_at) ?? row.updated_at,
         // A hidden session has no turn to preview, so there is nothing to read here.
         preview: null,
         loaded: false,
@@ -181,13 +212,18 @@ export function findSessions(prefix: string): SessionSummary[] {
  * considered, since a session with no log has only the database to go on.
  */
 export function lastActivity(sessionId: string, fromTurns: string | null): string | null {
-  let logged: string | null = null;
-  try {
-    logged = statSync(sessionEventLog(sessionId)).mtime.toISOString();
-  } catch {
-    logged = null; // No log yet, or unreadable.
-  }
+  const log = statSync(sessionEventLog(sessionId), { throwIfNoEntry: false });
+  return newest(log?.mtime.toISOString() ?? null, fromTurns);
+}
 
+/**
+ * Whichever of two times is later, allowing for either being absent.
+ *
+ * Split out from `lastActivity` because the listing already has the log's mtime in hand -
+ * it stats the file to decide whether the session still exists - and statting it a second
+ * time to answer the same question was a tenth of that loop's cost.
+ */
+function newest(logged: string | null, fromTurns: string | null): string | null {
   if (!logged) return fromTurns;
   if (!fromTurns) return logged;
   return toTime(logged) > toTime(fromTurns) ? logged : fromTurns;

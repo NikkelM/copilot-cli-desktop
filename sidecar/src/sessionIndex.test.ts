@@ -6,6 +6,26 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
+ * Names read from disk, so a cache that promises not to read twice can be held to it.
+ *
+ * Counting the reads is the only honest test of that promise: trying to change a file while
+ * leaving it looking untouched fails, because restoring a modification time cannot reproduce
+ * its sub-millisecond part, which the cache compares.
+ */
+const reads = vi.hoisted(() => [] as string[]);
+vi.mock('node:fs', async () => {
+  const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
+  return {
+    ...actual,
+    default: actual,
+    readFileSync: (path: Parameters<typeof actual.readFileSync>[0], ...rest: unknown[]) => {
+      reads.push(String(path));
+      return (actual.readFileSync as (...args: unknown[]) => unknown)(path, ...rest);
+    },
+  };
+});
+
+/**
  * Build a throwaway .copilot directory with the CLI's real schema.
  *
  * Exercising actual SQL against a real database is the point: every bug in this area so
@@ -76,6 +96,10 @@ function makeStore() {
       const log = join(dir, 'events.jsonl');
       writeFileSync(log, '{}\n');
       if (logMtime) utimesSync(log, logMtime, logMtime);
+    },
+    /** Take the name file away, as deleting or never writing it would. */
+    removeName(sessionId: string) {
+      rmSync(join(home, 'session-state', sessionId, 'workspace.yaml'), { force: true });
     },
     close() {
       db.close();
@@ -295,6 +319,68 @@ describe('findSessions', () => {
 
     const { findSessions } = await loadIndex();
     expect(findSessions('abcdef').map((s) => s.sessionId)).toHaveLength(1);
+  });
+});
+
+/**
+ * Reading `workspace.yaml` for every session was 49ms of a 113ms refresh, on the app's
+ * hottest path. It is now read only when the file differs from what was read last - which
+ * is only correct if a change is actually noticed.
+ */
+describe('the session name cache', () => {
+  it('shows a name that changed since it was last read', async () => {
+    store.addSession('renamed', { summary: 'Auto summary' });
+    store.addTurn('renamed', 0, 'x', 'y', '2026-09-05 09:00:00');
+    store.addState('renamed', { name: 'Before' });
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.title).toBe('Before');
+
+    store.addState('renamed', { name: 'After' });
+    expect(listSessions()[0]?.title).toBe('After');
+  });
+
+  // Two names of the same length written in the same millisecond would look identical to a
+  // check on mtime alone, so the size is not enough on its own either - but a rename that
+  // keeps both is the pathological case, not the normal one.
+  it('notices a name of a different length', async () => {
+    store.addSession('renamed', { summary: 'Auto summary' });
+    store.addTurn('renamed', 0, 'x', 'y', '2026-09-05 09:00:00');
+    store.addState('renamed', { name: 'Short' });
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.title).toBe('Short');
+
+    store.addState('renamed', { name: 'Considerably longer than before' });
+    expect(listSessions()[0]?.title).toBe('Considerably longer than before');
+  });
+
+  it('falls back to the summary when the name file is taken away', async () => {
+    store.addSession('unnamed', { summary: 'Auto summary' });
+    store.addTurn('unnamed', 0, 'x', 'y', '2026-09-05 09:00:00');
+    store.addState('unnamed', { name: 'Named' });
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.title).toBe('Named');
+
+    store.removeName('unnamed');
+    expect(listSessions()[0]?.title).toBe('Auto summary');
+  });
+
+  it('does not read the file again while it looks unchanged', async () => {
+    store.addSession('stable', { summary: 'Auto summary' });
+    store.addTurn('stable', 0, 'x', 'y', '2026-09-05 09:00:00');
+    store.addState('stable', { name: 'Stable' });
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.title).toBe('Stable');
+
+    const after = reads.filter((path) => path.includes('workspace.yaml')).length;
+    listSessions();
+    listSessions();
+    listSessions();
+
+    expect(reads.filter((path) => path.includes('workspace.yaml'))).toHaveLength(after);
   });
 });
 
