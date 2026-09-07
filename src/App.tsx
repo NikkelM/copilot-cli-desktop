@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
+  Attachment,
   ElicitationAction,
   ElicitationFieldValue,
   PendingElicitation,
@@ -14,6 +15,7 @@ import { toPreview } from '../shared/preview';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { ModelPicker } from './components/ModelPicker';
+import { OpenIn } from './components/OpenIn';
 import { PermissionPrompt } from './components/PermissionPrompt';
 import { Shortcuts } from './components/Shortcuts';
 import { Queue } from './components/Queue';
@@ -36,6 +38,7 @@ import {
   onSidecarStopped,
   resolveElicitation,
   resolvePermission,
+  runtimeStatus,
   sendMessage,
   setApprovalPolicy,
 } from './lib/sidecar';
@@ -59,10 +62,19 @@ export default function App() {
    * next, and be sent there instead.
    */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  /** Files waiting to go with a draft, kept per session for the same reason the text is. */
+  const [attachments, setAttachments] = useState<Record<string, Attachment[]>>({});
   const [busy, setBusy] = useState(false);
   /** Whether the shortcut list is up. There is nothing else in the app that names them. */
   const [help, setHelp] = useState(false);
-  const [resuming, setResuming] = useState(false);
+  /**
+   * The session being woken, if one is.
+   *
+   * Kept per session rather than as a flag: waking takes seconds, and a reader who moves
+   * to another session in the meantime was being told that one was waking, and having
+   * their Enter refused for it.
+   */
+  const [resuming, setResuming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** Set when the sidecar exits: nothing works afterwards, so it outranks any other message. */
   const [stopped, setStopped] = useState<string | null>(null);
@@ -71,8 +83,24 @@ export default function App() {
   const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
   /** Session ids in activation order, most recent first. Fixes the active group's order. */
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
+  const [maxLoaded, setMaxLoaded] = useState<number | undefined>(undefined);
+  /**
+   * A session opened by id that the list does not carry.
+   *
+   * The sidebar hides sessions with no title and no turns, but one can still be found by
+   * id and opened. Without somewhere to put its summary the header would have no path, no
+   * branch and no title for a session that is plainly open.
+   */
+  const [offList, setOffList] = useState<SessionSummary | null>(null);
 
-  const selected = sessions.find((session) => session.sessionId === selectedId) ?? null;
+  const selected =
+    sessions.find((session) => session.sessionId === selectedId) ??
+    (offList?.sessionId === selectedId ? offList : null);
+
+  const open = useCallback((sessionId: string, session?: SessionSummary) => {
+    setSelectedId(sessionId);
+    setOffList(session ?? null);
+  }, []);
 
   const transcript = useTranscript(selectedId, setError);
   const tree = useTreeState(selected?.cwd ?? null);
@@ -132,6 +160,14 @@ export default function App() {
 
   useEffect(() => void refreshSessions(), [refreshSessions]);
 
+  // How many sessions may be resident at once, so the sidebar can say what the cap is.
+  // Asked once: it is a setting rather than a reading, and asking costs no process.
+  useEffect(() => {
+    runtimeStatus()
+      .then((status) => setMaxLoaded(status.maxLoadedSessions))
+      .catch(() => undefined);
+  }, []);
+
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {
       // The sidebar preview comes from the turns table, which is flushed well after the
@@ -160,7 +196,9 @@ export default function App() {
 
       if (sessionId !== selectedRef.current) return;
 
-      if (event.type === 'assistant.turn_start') setBusy(true);
+      if (event.type === 'assistant.turn_start') {
+        setBusy(true);
+      }
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') setBusy(false);
       if (event.type === 'session.error') setError(describeError(event));
       // The agent working is what changes the working tree, so this is the moment the
@@ -211,7 +249,7 @@ export default function App() {
     onSidecarStopped((reason) => {
       setStopped(reason);
       setBusy(false);
-      setResuming(false);
+      setResuming(null);
       setPermissions([]);
       setElicitations([]);
     }),
@@ -224,7 +262,7 @@ export default function App() {
       onSidecarRestarted(() => {
         setError(null);
         setBusy(false);
-        setResuming(false);
+        setResuming(null);
         setPermissions([]);
         setElicitations([]);
         refreshSessions();
@@ -296,7 +334,8 @@ export default function App() {
     pending: PendingElicitation,
     action: ElicitationAction,
     content?: Record<string, ElicitationFieldValue>,
-  ) {    // Drop it immediately so the form cannot be submitted twice.
+  ) {
+    // Drop it immediately so the form cannot be submitted twice.
     setElicitations((current) => current.filter((e) => e.requestId !== pending.requestId));
     void resolveElicitation(pending.requestId, action, content).catch((e: unknown) =>
       setError(String(e)),
@@ -322,9 +361,13 @@ export default function App() {
     if (!selectedId) return;
     setError(null);
     setDrafts((current) => ({ ...current, [selectedId]: '' }));
+    // Taken before the send so a file picked while it is in flight belongs to the next
+    // message rather than this one.
+    const sent = attachments[selectedId] ?? [];
+    setAttachments((current) => ({ ...current, [selectedId]: [] }));
 
     const wasCold = !sessions.find((s) => s.sessionId === selectedId)?.loaded;
-    setResuming(wasCold);
+    setResuming(wasCold ? selectedId : null);
 
     // Show the prompt straight away when nothing is running; resuming a cold session takes
     // seconds, and a prompt that appears only afterwards looks like it was not sent. While
@@ -335,7 +378,7 @@ export default function App() {
     setBusy(true);
 
     try {
-      const { messageId, queued } = await sendMessage({ sessionId: selectedId, prompt });
+      const { messageId, queued } = await sendMessage({ sessionId: selectedId, prompt, attachments: sent });
 
       // The runtime decides, and a turn can end while the message is on its way, so the
       // guess above is reconciled with what actually happened.
@@ -345,7 +388,7 @@ export default function App() {
       setError(String(e));
       setBusy(false);
     } finally {
-      setResuming(false);
+      setResuming(null);
     }
   }
 
@@ -360,9 +403,10 @@ export default function App() {
       <Sidebar
         sessions={ordered}
         selectedId={selectedId}
-        onSelect={setSelectedId}
+        onSelect={open}
         onCreate={() => void handleCreate()}
         creating={creating}
+        maxLoaded={maxLoaded}
       />
 
       <main className="main">
@@ -376,26 +420,34 @@ export default function App() {
         ) : selected ? (
           <>
             <header className="main-header">
-              <div className="main-title">
-                <h1>{selected.title ?? 'Untitled session'}</h1>
-                <SessionPath cwd={selected.cwd} state={tree.state} />
-              </div>
-              <div className="header-controls">
-                <ModelPicker
-                  current={model.current}
-                  models={model.models}
-                  failed={model.failed}
-                  onOpen={model.refresh}
-                  onChoose={model.choose}
+              <h1>{selected.title ?? 'Untitled session'}</h1>
+              {/* Path, buttons and controls on one line: the buttons were a row of their
+                  own against the left edge, which wasted the width the header has. */}
+              <div className="header-row">
+                <SessionPath cwd={selected.cwd} state={tree.state} onError={setError} />
+                <OpenIn
+                  cwd={selected.cwd}
+                  remote={tree.state?.remote ?? null}
+                  branch={tree.state?.branch ?? selected.branch}
+                  onError={setError}
                 />
-                <label className="toggle" title="Approve every tool call in this session without asking">
-                  <input
-                    type="checkbox"
-                    checked={allowAll[selected.sessionId] ?? false}
-                    onChange={(e) => toggleAllowAll(selected.sessionId, e.target.checked)}
+                <div className="header-controls">
+                  <ModelPicker
+                    current={model.current}
+                    models={model.models}
+                    failed={model.failed}
+                    onOpen={model.refresh}
+                    onChoose={model.choose}
                   />
-                  Allow all
-                </label>
+                  <label className="toggle" title="Approve every tool call in this session without asking">
+                    <input
+                      type="checkbox"
+                      checked={allowAll[selected.sessionId] ?? false}
+                      onChange={(e) => toggleAllowAll(selected.sessionId, e.target.checked)}
+                    />
+                    Allow all
+                  </label>
+                </div>
               </div>
             </header>
 
@@ -403,7 +455,6 @@ export default function App() {
                 child that comes and goes moves the transcript into another row. */}
             <div className="notices">
               {error && <p className="error">{error}</p>}
-              {resuming && <p className="notice">Resuming into the shared runtime. This takes a few seconds.</p>}
             </div>
 
             <Transcript
@@ -439,6 +490,10 @@ export default function App() {
               <Composer
                 disabled={!selectedId}
                 busy={busy}
+                resuming={resuming === selected.sessionId}
+                attached={attachments[selected.sessionId] ?? []}
+                onAttach={(files) => setAttachments((current) => ({ ...current, [selected.sessionId]: files }))}
+                onError={setError}
                 // A question or a permission request blocks the agent until answered, so
                 // it keeps the keyboard; the composer takes it back once nothing is waiting.
                 focusOn={sessionElicitations.length + sessionPermissions.length > 0 ? null : selectedId}

@@ -14,6 +14,7 @@ const on = (branch: string): TreeState => ({
   modified: false,
   untracked: false,
   staged: false,
+  remote: null,
 });
 
 beforeEach(() => {

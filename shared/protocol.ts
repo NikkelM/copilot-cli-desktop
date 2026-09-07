@@ -347,4 +347,12 @@ export interface TreeState {
   untracked: boolean;
   /** Something is staged for the next commit. */
   staged: boolean;
+  /**
+   * The `owner/repo` this checkout pushes to on GitHub, or null when it does not.
+   *
+   * Read from the remote rather than taken from the session store, which records a name
+   * without saying where it came from. A directory can be a git repository, or a GitHub
+   * one, or neither, and only the second has a page to link to.
+   */
+  remote: string | null;
 }
