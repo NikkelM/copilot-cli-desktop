@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { treeStateOf } from './git.js';
+import { githubSlug, treeStateOf } from './git.js';
 
 /**
  * Real repositories rather than a stubbed git, for the same reason the snapshot tests use
@@ -38,6 +38,7 @@ describe('treeStateOf', () => {
       modified: false,
       untracked: false,
       staged: false,
+      remote: null,
     });
   });
 
@@ -106,5 +107,66 @@ describe('treeStateOf', () => {
     const state = await treeStateOf(dir);
     expect(state?.detached).toBe(true);
     expect(state?.branch).toBe(head.slice(0, 8));
+  });
+
+  /**
+   * Whether a directory has a GitHub page is a question about its remotes, not about the
+   * name the session store happens to have recorded - which says where it came from about
+   * as reliably as a filename says what is in a file.
+   */
+  describe('the remote', () => {
+    it('reports nothing for a repository with no remotes', async () => {
+      expect((await treeStateOf(dir))?.remote).toBeNull();
+    });
+
+    it('reports the GitHub repository origin points at', async () => {
+      git('remote', 'add', 'origin', 'https://github.com/NikkelM/thing.git');
+      expect((await treeStateOf(dir))?.remote).toBe('NikkelM/thing');
+    });
+
+    it('reports nothing for a remote that is not on GitHub', async () => {
+      git('remote', 'add', 'origin', 'https://gitlab.com/NikkelM/thing.git');
+      expect((await treeStateOf(dir))?.remote).toBeNull();
+    });
+
+    // A fork usually has both, and the reader is working in origin.
+    it('prefers origin over another remote', async () => {
+      git('remote', 'add', 'upstream', 'https://github.com/upstream/thing.git');
+      git('remote', 'add', 'origin', 'https://github.com/NikkelM/thing.git');
+
+      expect((await treeStateOf(dir))?.remote).toBe('NikkelM/thing');
+    });
+
+    it('falls back to another remote when there is no origin', async () => {
+      git('remote', 'add', 'upstream', 'git@github.com:upstream/thing.git');
+      expect((await treeStateOf(dir))?.remote).toBe('upstream/thing');
+    });
+  });
+});
+
+describe('githubSlug', () => {
+  it.each([
+    ['https://github.com/NikkelM/thing.git', 'NikkelM/thing'],
+    ['https://github.com/NikkelM/thing', 'NikkelM/thing'],
+    ['http://github.com/NikkelM/thing/', 'NikkelM/thing'],
+    ['git@github.com:NikkelM/thing.git', 'NikkelM/thing'],
+    ['ssh://git@github.com/NikkelM/thing.git', 'NikkelM/thing'],
+    ['https://user:token@github.com/NikkelM/thing.git', 'NikkelM/thing'],
+    // Case is not meaningful in a host name, and git does not normalise it.
+    ['https://GitHub.com/NikkelM/thing', 'NikkelM/thing'],
+  ])('reads %s as %s', (url, expected) => {
+    expect(githubSlug(url)).toBe(expected);
+  });
+
+  it.each([
+    ['https://gitlab.com/NikkelM/thing.git'],
+    ['git@bitbucket.org:NikkelM/thing.git'],
+    ['C:\\work\\some-bare-repo'],
+    // Close enough to catch a substring match written carelessly, but not GitHub.
+    ['https://github.com.evil.example/NikkelM/thing'],
+    ['https://notgithub.com/NikkelM/thing'],
+    [''],
+  ])('reports nothing for %s', (url) => {
+    expect(githubSlug(url)).toBeNull();
   });
 });
