@@ -291,7 +291,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            app.manage(Sidecar::spawn(sidecar_script(app.handle()), app.handle().clone())?);
+            app.manage(Sidecar::spawn(
+                sidecar_script(app.handle()),
+                app.handle().clone(),
+            )?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![sidecar_request])
