@@ -180,3 +180,16 @@ Not affiliated with GitHub. GitHub also ships an official
 [Copilot app](https://docs.github.com/copilot/concepts/agents/github-copilot-app),
 which is repository-centric; this project targets lightweight session management
 across arbitrary folders, including ones that are not git repositories.
+
+## Licence
+
+Copyright (C) 2026 Nikkel Mollenhauer
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version.
+See [LICENSE](LICENSE).
+
+Every dependency is permissively licensed - MIT, ISC, BSD, Apache-2.0 or MPL-2.0 -
+so nothing here conflicts with that choice. Note that Apache-2.0 is compatible with
+GPL version 3 but not version 2, which is one reason this is v3.
