@@ -1,14 +1,66 @@
 use std::collections::HashMap;
+use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
+
+/// Where anything worth reading after the fact is written, once the app knows where that is.
+static LOG: OnceLock<Mutex<Option<File>>> = OnceLock::new();
+
+/**
+ * Record a line, to the log file and to stdout.
+ *
+ * An installed app has no console: `stderr(Stdio::inherit())` sent the sidecar's own
+ * diagnostics nowhere, so a sidecar that died on startup left no trace of why. Everything
+ * that could explain a failure now goes to a file next to the app's data.
+ *
+ * Printing as well costs nothing and keeps `tauri dev` behaving as it did.
+ */
+fn log(line: &str) {
+    let stamped = format!(
+        "{} {line}",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
+    );
+    println!("{stamped}");
+
+    if let Some(handle) = LOG.get() {
+        if let Ok(mut file) = handle.lock() {
+            if let Some(file) = file.as_mut() {
+                let _ = writeln!(file, "{stamped}");
+                let _ = file.flush();
+            }
+        }
+    }
+}
+
+/// Open the log file for this run, appending to whatever previous runs left.
+fn open_log(app: &tauri::AppHandle) {
+    let Ok(dir) = app.path().app_log_dir() else {
+        return;
+    };
+    if create_dir_all(&dir).is_err() {
+        return;
+    }
+
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("copilot-cli-desktop.log"))
+        .ok();
+
+    let opened = file.is_some();
+    let _ = LOG.set(Mutex::new(file));
+    if opened {
+        log(&format!("--- started, logging to {} ---", dir.display()));
+    }
+}
 
 type Pending = Arc<Mutex<HashMap<u64, Sender<Result<Value, String>>>>>;
 /// The pipe to the sidecar in use, absent while one is being replaced.
@@ -56,6 +108,8 @@ fn fail_all(pending: &Pending, message: &str) {
 #[derive(Clone)]
 struct Supervisor {
     script: PathBuf,
+    /// Where the sidecar should keep what belongs to this app, rather than to the CLI.
+    data: Option<PathBuf>,
     app: tauri::AppHandle,
     pending: Pending,
     link: Link,
@@ -71,25 +125,75 @@ impl Supervisor {
      * a session resumes on the next message regardless.
      */
     fn start(&self, attempt: u32) -> Result<(), String> {
-        let mut child = Command::new(node_executable())
+        let node = node_executable();
+        log(&format!(
+            "starting sidecar (attempt {attempt}): {node} {}",
+            self.script.display()
+        ));
+
+        let mut command = Command::new(&node);
+        command
             // node:sqlite is stable in behaviour but still flagged experimental; the
             // warning would otherwise be printed on every launch.
             .arg("--no-warnings=ExperimentalWarning")
             .arg(&self.script)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|e| format!("failed to spawn sidecar {}: {e}", self.script.display()))?;
+            // Piped rather than inherited: an installed app has no console to inherit, so
+            // everything the sidecar said about why it was failing went nowhere.
+            .stderr(Stdio::piped());
+
+        if let Some(data) = &self.data {
+            command.env("COPILOT_DESKTOP_DATA", data);
+        }
+
+        // Without this every sidecar start flashes a console window on Windows, and a
+        // sidecar that dies and is replaced flashes one per attempt - which looks like the
+        // app is doing something furtive rather than starting a helper it owns.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = command.spawn().map_err(|e| {
+            let message = format!(
+                "failed to spawn sidecar: {node} {}: {e}",
+                self.script.display()
+            );
+            log(&message);
+            message
+        })?;
 
         let stdin = child.stdin.take().ok_or("sidecar stdin unavailable")?;
         let stdout = child.stdout.take().ok_or("sidecar stdout unavailable")?;
+
+        // Its own thread, because the sidecar can fill this pipe while nothing is reading
+        // stdout - and a full pipe would block the process that is trying to explain itself.
+        if let Some(stderr) = child.stderr.take() {
+            std::thread::spawn(move || {
+                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                    // The sidecar labels its own lines, for when it is run on its own. Only
+                    // the ones it did not label - a Node stack trace, say - need labelling
+                    // here, and doubling the label on the rest reads as a bug.
+                    log(&format!(
+                        "[sidecar] {}",
+                        line.strip_prefix("[sidecar] ").unwrap_or(&line)
+                    ));
+                }
+            });
+        }
         *self.link.lock().unwrap() = Some(stdin);
 
         let supervisor = self.clone();
         std::thread::spawn(move || {
             let started = Instant::now();
             supervisor.read(stdout);
+            log(&format!(
+                "sidecar output ended after {:?} (attempt {attempt})",
+                started.elapsed()
+            ));
 
             // Nothing can be sent until a replacement is up, and everything already sent
             // is owed an answer this sidecar will never give.
@@ -105,6 +209,7 @@ impl Supervisor {
             if restarted {
                 let _ = supervisor.app.emit("sidecar-restarted", ());
             } else {
+                log("sidecar stopped and will not be replaced");
                 supervisor.stopped.store(true, Ordering::Relaxed);
                 fail_all(&supervisor.pending, SIDECAR_STOPPED);
                 let _ = supervisor.app.emit("sidecar-stopped", SIDECAR_STOPPED);
@@ -166,9 +271,14 @@ struct Sidecar {
 }
 
 impl Sidecar {
-    fn spawn(script: PathBuf, app: tauri::AppHandle) -> Result<Self, String> {
+    fn spawn(
+        script: PathBuf,
+        data: Option<PathBuf>,
+        app: tauri::AppHandle,
+    ) -> Result<Self, String> {
         let supervisor = Supervisor {
             script,
+            data,
             app,
             pending: Arc::new(Mutex::new(HashMap::new())),
             link: Arc::new(Mutex::new(None)),
@@ -228,6 +338,26 @@ fn node_executable() -> String {
     std::env::var("COPILOT_DESKTOP_NODE").unwrap_or_else(|_| "node".to_string())
 }
 
+/**
+ * Drop the `\\?\` prefix Windows uses for extended-length paths.
+ *
+ * `resource_dir()` hands back a verbatim path, and Rust is perfectly happy with it - which
+ * is why the existence check below passed while the app was still broken. Node is not: its
+ * module resolver walks the path component by component and tries to `lstat` the first one,
+ * which for `\\?\C:\...` is the bare `C:`, and that fails with EISDIR. The installed app
+ * therefore started a sidecar that died instantly, three times, and gave up.
+ *
+ * Only the plain drive form is unwrapped. `\\?\UNC\server\share` means something different
+ * and is left alone rather than being turned into a path to nowhere.
+ */
+fn readable_path(path: PathBuf) -> PathBuf {
+    let text = path.to_string_lossy().to_string();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with("UNC\\") => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
 /// Resolve the built sidecar entrypoint, preferring an explicit override.
 ///
 /// Three places, in the order they can be trusted. An override wins, because a developer
@@ -240,6 +370,9 @@ fn node_executable() -> String {
 /// branch there was, which is why an installer could never have started its sidecar.
 fn sidecar_script(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(path) = std::env::var("COPILOT_DESKTOP_SIDECAR") {
+        log(&format!(
+            "sidecar script from COPILOT_DESKTOP_SIDECAR: {path}"
+        ));
         return PathBuf::from(path);
     }
 
@@ -247,15 +380,24 @@ fn sidecar_script(app: &tauri::AppHandle) -> PathBuf {
         // The compiled tree is copied wholesale rather than flattened, because its files
         // import each other by relative path. Node resolves `node_modules` by walking up,
         // so the dependencies sit beside `dist` rather than inside it.
-        let bundled = resources
-            .join("sidecar")
-            .join("dist")
-            .join("sidecar")
-            .join("src")
-            .join("index.js");
+        let bundled = readable_path(
+            resources
+                .join("sidecar")
+                .join("dist")
+                .join("sidecar")
+                .join("src")
+                .join("index.js"),
+        );
+        log(&format!(
+            "looking for the bundled sidecar at {} (exists: {})",
+            bundled.display(),
+            bundled.exists()
+        ));
         if bundled.exists() {
             return bundled;
         }
+    } else {
+        log("no resource directory; falling back to the source tree");
     }
 
     // In development the crate sits at <repo>/src-tauri.
@@ -291,8 +433,18 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            open_log(app.handle());
+
+            // Its own directory, not the CLI's. Uninstalling this app is scoped to the
+            // directories Tauri owns, so anything written outside them would outlive it.
+            let data = app.path().app_local_data_dir().ok().map(readable_path);
+            if let Some(dir) = &data {
+                log(&format!("sidecar data: {}", dir.display()));
+            }
+
             app.manage(Sidecar::spawn(
                 sidecar_script(app.handle()),
+                data,
                 app.handle().clone(),
             )?);
             Ok(())
@@ -305,6 +457,35 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /**
+     * The bug that made every installed copy fail: `resource_dir()` returns a verbatim path,
+     * Rust accepts it happily, and Node's module resolver then tries to `lstat` the bare
+     * `C:` and dies. Nothing else in the app noticed, because the existence check passed.
+     */
+    #[test]
+    fn a_verbatim_path_is_made_readable_for_node() {
+        assert_eq!(
+            readable_path(PathBuf::from(r"\\?\C:\Program Files\app\index.js")),
+            PathBuf::from(r"C:\Program Files\app\index.js")
+        );
+    }
+
+    #[test]
+    fn an_ordinary_path_is_left_alone() {
+        assert_eq!(
+            readable_path(PathBuf::from(r"C:\Program Files\app\index.js")),
+            PathBuf::from(r"C:\Program Files\app\index.js")
+        );
+    }
+
+    // `\\?\UNC\server\share` is not a drive path with a prefix; stripping it would leave
+    // `UNC\server\share`, which names nothing.
+    #[test]
+    fn a_verbatim_network_path_is_left_alone() {
+        let unc = PathBuf::from(r"\\?\UNC\server\share\app\index.js");
+        assert_eq!(readable_path(unc.clone()), unc);
+    }
 
     #[test]
     fn waiting_requests_are_answered_when_the_sidecar_stops() {

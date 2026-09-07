@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { sessionStateDir } from './paths.js';
+import { sessionDataDir } from './paths.js';
 import type { Snapshot } from './snapshots.js';
 
 /** One point a session can be looked at, or put back to. */
@@ -20,7 +20,7 @@ interface SnapshotFile {
 }
 
 const VERSION = 1;
-const FILE = 'desktop-snapshots.json';
+const FILE = 'snapshots.json';
 
 /**
  * Snapshots kept for one session, on disk beside the session's own state.
@@ -31,7 +31,7 @@ const FILE = 'desktop-snapshots.json';
  * eviction of an idle session and a restart of the app.
  */
 export function readSnapshots(sessionId: string): SnapshotFile | null {
-  const path = join(sessionStateDir(sessionId), FILE);
+  const path = join(sessionDataDir(sessionId), FILE);
   if (!existsSync(path)) return null;
 
   try {
@@ -45,7 +45,7 @@ export function readSnapshots(sessionId: string): SnapshotFile | null {
 }
 
 export function writeSnapshots(sessionId: string, file: SnapshotFile): void {
-  const dir = sessionStateDir(sessionId);
+  const dir = sessionDataDir(sessionId);
   const path = join(dir, FILE);
 
   try {

@@ -19,6 +19,28 @@ export function sessionEventLog(sessionId: string): string {
 }
 
 /**
+ * Where this app keeps what belongs to it.
+ *
+ * Deliberately outside `.copilot`, which belongs to the CLI and is only read. Writing there
+ * worked, but left files nobody would ever clean up: uninstalling this app is scoped to its
+ * own directories, so anything it scattered through the CLI's would have stayed forever.
+ *
+ * The shell passes the directory Tauri resolved, so both halves agree on one location. The
+ * fallback is for the sidecar running on its own - tests, and the scripts in `scripts/`.
+ */
+export const desktopDataDir =
+  process.env.COPILOT_DESKTOP_DATA ??
+  join(
+    process.env.LOCALAPPDATA ?? join(homedir(), '.local', 'share'),
+    'com.nikkelm.copilot-cli-desktop',
+  );
+
+/** Where this app keeps what it worked out about one session. */
+export function sessionDataDir(sessionId: string): string {
+  return join(desktopDataDir, 'sessions', sessionId);
+}
+
+/**
  * Locate the Copilot CLI executable that the SDK should drive.
  * The SDK spawns this once and hosts every session inside it.
  */

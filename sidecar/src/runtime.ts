@@ -22,7 +22,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { resolveCliPath, sessionStateDir } from './paths.js';
+import { resolveCliPath, sessionDataDir } from './paths.js';
 import { sessionCwd } from './sessionIndex.js';
 import { appendSnapshot, readSnapshots, writeSnapshots, type SnapshotRecord } from './snapshotStore.js';
 import {
@@ -370,7 +370,7 @@ export class SessionRuntime {
       unsubscribe,
       busy: false,
       points: [],
-      index: join(sessionStateDir(sessionId), 'desktop-index'),
+      index: join(sessionDataDir(sessionId), 'index'),
       policy: 'prompt',
       idleTimer: null,
     });

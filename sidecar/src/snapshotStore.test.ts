@@ -4,13 +4,13 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The store writes beside a session's own state, so the tests point that somewhere
- * disposable rather than at the reader's real sessions.
+ * The store writes into this app's own data directory - deliberately not the CLI's, which
+ * is only ever read - so the tests point that somewhere disposable.
  */
 let home: string;
 
 vi.mock('./paths.js', () => ({
-  sessionStateDir: (id: string) => join(process.env.CCD_TEST_HOME!, id),
+  sessionDataDir: (id: string) => join(process.env.CCD_TEST_HOME!, id),
 }));
 
 const { appendSnapshot, readSnapshots, writeSnapshots } = await import('./snapshotStore.js');
@@ -54,7 +54,7 @@ describe('snapshotStore', () => {
 
   it('refuses a file it did not write', () => {
     mkdirSync(join(home, 's1'), { recursive: true });
-    writeFileSync(join(home, 's1', 'desktop-snapshots.json'), '{ not json');
+    writeFileSync(join(home, 's1', 'snapshots.json'), '{ not json');
 
     expect(readSnapshots('s1')).toBeNull();
   });
@@ -62,7 +62,7 @@ describe('snapshotStore', () => {
   // Reading a newer format as though it were this one would misreport what happened.
   it('refuses a version it does not know', () => {
     writeSnapshots('s1', { version: 1, root: '/repo', snapshots: [record('baseline', 'aaa')] });
-    const path = join(home, 's1', 'desktop-snapshots.json');
+    const path = join(home, 's1', 'snapshots.json');
     writeFileSync(path, JSON.stringify({ version: 99, root: '/repo', snapshots: [] }));
 
     expect(readSnapshots('s1')).toBeNull();
