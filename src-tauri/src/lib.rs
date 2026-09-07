@@ -229,10 +229,35 @@ fn node_executable() -> String {
 }
 
 /// Resolve the built sidecar entrypoint, preferring an explicit override.
-fn sidecar_script() -> PathBuf {
+///
+/// Three places, in the order they can be trusted. An override wins, because a developer
+/// pointing at a specific build means it. Then the app's own resource directory, which is
+/// where the bundled sidecar lives once installed. Only then the source tree, which exists
+/// while developing and nowhere else.
+///
+/// The source-tree path is baked in at compile time by `CARGO_MANIFEST_DIR`, so on an
+/// installed copy it names a directory on whichever machine did the build. That was the only
+/// branch there was, which is why an installer could never have started its sidecar.
+fn sidecar_script(app: &tauri::AppHandle) -> PathBuf {
     if let Ok(path) = std::env::var("COPILOT_DESKTOP_SIDECAR") {
         return PathBuf::from(path);
     }
+
+    if let Ok(resources) = app.path().resource_dir() {
+        // The compiled tree is copied wholesale rather than flattened, because its files
+        // import each other by relative path. Node resolves `node_modules` by walking up,
+        // so the dependencies sit beside `dist` rather than inside it.
+        let bundled = resources
+            .join("sidecar")
+            .join("dist")
+            .join("sidecar")
+            .join("src")
+            .join("index.js");
+        if bundled.exists() {
+            return bundled;
+        }
+    }
+
     // In development the crate sits at <repo>/src-tauri.
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -266,7 +291,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            app.manage(Sidecar::spawn(sidecar_script(), app.handle().clone())?);
+            app.manage(Sidecar::spawn(sidecar_script(app.handle()), app.handle().clone())?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![sidecar_request])

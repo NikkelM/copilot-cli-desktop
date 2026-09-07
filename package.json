@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "build:sidecar": "npm run build --workspace sidecar",
     "tauri": "tauri",
-    "app": "tauri dev"
+    "app": "tauri dev",
+    "bundle:sidecar": "node scripts/bundle-sidecar.mjs"
   },
   "workspaces": [
     "sidecar"
