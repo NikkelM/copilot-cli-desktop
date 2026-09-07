@@ -55,9 +55,12 @@ jobs:
 
       - run: npm ci
 
-      # tauri-build reads tauri.conf.json and expects frontendDist to exist, so the crate
-      # cannot be checked at all without the frontend having been built first.
+      # tauri-build reads tauri.conf.json and refuses to proceed when a declared resource is
+      # missing, so the sidecar bundle has to be assembled before the crate can be checked at
+      # all - and npm run build produces the frontendDist it also expects.
       - run: npm run build
+      - run: npm run build:sidecar
+      - run: npm run bundle:sidecar
 
       - uses: dtolnay/rust-toolchain@stable
         with:
