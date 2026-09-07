@@ -3,6 +3,9 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
 import { countChanges, parsePatch, type PatchLine } from '../lib/patch';
+import { formatClock, formatExact } from '../lib/time';
+import { CopyButton } from './CopyButton';
+import { Elapsed } from './Elapsed';
 import { Markdown } from './Markdown';
 
 /**
@@ -50,6 +53,20 @@ function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * When a message was said.
+ *
+ * A clock, not "5m ago": the transcript is already in order, so a reader looking at a line
+ * wants the time it happened at. Fixed text, so unlike the sidebar it needs no ticker.
+ */
+function Said({ at }: { at: string }) {
+  return (
+    <time dateTime={at} title={formatExact(at)}>
+      {formatClock(at)}
+    </time>
   );
 }
 
@@ -112,6 +129,10 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
             row rather than the fact that it is folded. Right-aligned, so it reads as a
             separate column without needing punctuation. */}
         {count && <span className="tool-lines">{count}</span>}
+        {/* How long it has been going, which is what makes a slow command feel like
+            progress rather than a hang. Kept once it finishes: knowing a command took two
+            minutes is worth as much afterwards. */}
+        <Elapsed since={entry.startedAt} until={entry.endedAt} />
       </button>
       {open &&
         (choices ? (
@@ -305,9 +326,13 @@ const EntryRow = memo(
 
     return (
       <div className={`message ${entry.variant}`}>
-        <Markdown body={entry.body} anchor={entry.key} />
-        {/* What the agent had said when it was stopped, which is not what it meant to say. */}
-        {entry.partial && <p className="message-partial">Cut off here</p>}
+        <div className="message-meta">
+          {/* The whole reply, since selecting a long one by hand is not really possible. */}
+          {entry.variant === 'assistant' && <CopyButton text={entry.body} what="reply" />}
+          {/* Coarse on the face of it, exact on hover: "2h ago" covers an hour of moments. */}
+          {entry.at && <Said at={entry.at} />}
+        </div>
+        <Markdown body={entry.body} anchor={entry.key} streaming={entry.streaming} />
       </div>
     );
   },

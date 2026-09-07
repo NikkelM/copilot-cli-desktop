@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getTranscript } from './sidecar';
 import { appendLive, timelineOf, type TimelineEvent } from './timeline';
 
+/** How many stopped replies to keep per session. Whole replies, so a few is enough. */
+const MAX_ABANDONED = 20;
+
 /**
  * The transcript of one session: what is on disk, and what has happened since.
  *
@@ -76,6 +79,11 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
 
   /** Record an event from the running session. */
   const push = useCallback((event: TimelineEvent) => {
+    // Captured here rather than read inside the updater below, which React may run later
+    // and more than once: the session on screen at that point is not necessarily the one
+    // this event belongs to.
+    const forSession = showing.current ?? '';
+
     // A stopped turn is the one case where what was on screen is not written down: the
     // runtime records streamed text only when a turn finishes. The text is moved out of the
     // live list and kept against the abort that ended it, so it survives leaving the
@@ -86,9 +94,13 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
         const said = partOf(current);
         if (!said) return current;
 
-        const forSession = abandoned.current.get(showing.current ?? '') ?? new Map<string, string>();
-        forSession.set(abortId, said.text);
-        abandoned.current.set(showing.current ?? '', forSession);
+        const kept = abandoned.current.get(forSession) ?? new Map<string, string>();
+        kept.set(abortId, said.text);
+        // Only the last few are worth keeping: they are whole replies, and a session
+        // stopped a hundred times would otherwise hold a hundred of them for as long as
+        // the app is open.
+        while (kept.size > MAX_ABANDONED) kept.delete(kept.keys().next().value!);
+        abandoned.current.set(forSession, kept);
 
         return current.filter((entry) => entry !== said.entry);
       });
@@ -104,7 +116,14 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
   const showSent = useCallback((prompt: string) => {
     setLive((current) => [
       ...current,
-      { type: 'user.message', data: { content: prompt }, id: crypto.randomUUID(), local: true },
+      {
+        type: 'user.message',
+        data: { content: prompt },
+        id: crypto.randomUUID(),
+        // Stamped here so it is not the one untimed row until the runtime echoes it back.
+        timestamp: new Date().toISOString(),
+        local: true,
+      },
     ]);
   }, []);
 

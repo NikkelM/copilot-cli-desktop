@@ -10,6 +10,10 @@ export interface MessageEntry {
   key: string;
   variant: 'user' | 'assistant' | 'failed' | 'stopped';
   body: string;
+  /** When it was said. Absent only for an entry the app invented before the runtime spoke. */
+  at?: string;
+  /** Still arriving, so anything that needs the whole of it should wait for the rest. */
+  streaming?: boolean;
   /**
    * A reply that was cut off part way through.
    *
@@ -76,6 +80,10 @@ export interface ToolEntry {
   patch?: string;
   /** A search, whose result is counted in matches rather than lines. */
   search?: boolean;
+  /** When it began, so a long-running call can say how long it has been going. */
+  startedAt?: string;
+  /** When it stopped, whether it finished or was cancelled. Absent while it runs. */
+  endedAt?: string;
 }
 
 export type Entry = MessageEntry | ReasoningEntry | ToolEntry;
@@ -83,6 +91,21 @@ export type Entry = MessageEntry | ReasoningEntry | ToolEntry;
 function text(data: Record<string, unknown>, key: string): string | null {
   const value = data[key];
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/**
+ * Give up on calls that will never report back.
+ *
+ * A call interrupted mid-flight gets no completion of its own, so the event that ended the
+ * turn is also when it stopped - without which its timer would keep counting for as long as
+ * the transcript stayed open.
+ */
+function cancel(pending: Map<string, ToolEntry>, at?: string): void {
+  for (const entry of pending.values()) {
+    entry.status = 'cancelled';
+    entry.endedAt = at;
+  }
+  pending.clear();
 }
 
 /**
@@ -242,7 +265,7 @@ export function toEntries(
     switch (event.type) {
       case 'user.message': {
         const content = text(data, 'content');
-        if (content) entries.push({ kind: 'message', key, variant: 'user', body: content });
+        if (content) entries.push({ kind: 'message', key, variant: 'user', body: content, at: event.timestamp });
         break;
       }
 
@@ -259,7 +282,9 @@ export function toEntries(
         }
         // Keyed by the message rather than the event, so the finished reply lands on the
         // row its own deltas were already drawing instead of replacing it.
-        if (content) entries.push({ kind: 'message', key: messageKey(data, key), variant: 'assistant', body: content });
+        if (content) {
+          entries.push({ kind: 'message', key: messageKey(data, key), variant: 'assistant', body: content, at: event.timestamp });
+        }
         break;
       }
 
@@ -283,7 +308,18 @@ export function toEntries(
       // never reach the log, so replaying a session shows the finished message instead.
       case 'assistant.message_delta': {
         const content = text(data, 'deltaContent');
-        if (content) entries.push({ kind: 'message', key: messageKey(data, key), variant: 'assistant', body: content });
+        if (content) {
+          entries.push({
+            kind: 'message',
+            key: messageKey(data, key),
+            variant: 'assistant',
+            body: content,
+            at: event.timestamp,
+            // Still arriving, so anything needing the whole reply - a diagram, which will
+            // not parse until its fence closes - waits rather than failing per chunk.
+            streaming: true,
+          });
+        }
         break;
       }
 
@@ -312,6 +348,7 @@ export function toEntries(
               summary: clipLine(question),
               output: null,
               status: 'running',
+              startedAt: event.timestamp,
               question: true,
               choices: Array.isArray(args?.choices)
                 ? args.choices.filter((c): c is string => typeof c === 'string' && c.trim() !== '')
@@ -324,6 +361,7 @@ export function toEntries(
               summary: clipLine(summarise(args, cwd)),
               output: null,
               status: 'running',
+              startedAt: event.timestamp,
               command,
               search: search || undefined,
             };
@@ -360,6 +398,7 @@ export function toEntries(
           entry.status = succeeded ? 'ok' : 'failed';
           entry.output = output || null;
           entry.patch = patch;
+          entry.endedAt = event.timestamp;
 
           // Answering a question is the outcome, so it belongs in the header rather than
           // hidden behind an expander nobody would think to open. It carries its own
@@ -407,14 +446,12 @@ export function toEntries(
         // A reply that simply stops mid-sentence reads as the app losing the thread. The
         // event is written to the log, so this says so on every later replay too.
         entries.push({ kind: 'message', key, variant: 'stopped', body: stopReason(data) });
-        for (const entry of pending.values()) entry.status = 'cancelled';
-        pending.clear();
+        cancel(pending, event.timestamp);
         break;
 
       case 'session.idle':
       case 'session.shutdown':
-        for (const entry of pending.values()) entry.status = 'cancelled';
-        pending.clear();
+        cancel(pending, event.timestamp);
         break;
 
       // permission.requested is deliberately absent: the approval panel above the
@@ -444,7 +481,13 @@ export function sameEntry(a: Entry, b: Entry): boolean {
 
   if (a.kind === 'message') {
     const other = b as MessageEntry;
-    return a.variant === other.variant && a.body === other.body && a.partial === other.partial;
+    return (
+      a.variant === other.variant &&
+      a.body === other.body &&
+      a.partial === other.partial &&
+      a.at === other.at &&
+      a.streaming === other.streaming
+    );
   }
 
   const other = b as ToolEntry;
@@ -457,6 +500,8 @@ export function sameEntry(a: Entry, b: Entry): boolean {
     a.command === other.command &&
     a.patch === other.patch &&
     a.search === other.search &&
+    a.startedAt === other.startedAt &&
+    a.endedAt === other.endedAt &&
     sameChoices(a.choices, other.choices)
   );
 }

@@ -389,3 +389,87 @@ describe('what a row says about itself', () => {
     expect(screen.getByText('2 options')).toBeTruthy();
   });
 });
+
+/**
+ * Whether a reply came seconds or hours after the message above it, which the transcript
+ * otherwise gives no way to tell.
+ */
+describe('when a message was said', () => {
+  const said = (at: string) => ({
+    type: 'user.message',
+    data: { content: 'hello' },
+    id: 'u1',
+    timestamp: at,
+  });
+
+  /**
+   * A clock rather than "2h ago": the transcript is already in order, so what a reader
+   * wants from a line is when it happened, not how far back it was.
+   */
+  it('shows the time a message was said', () => {
+    const at = new Date(Date.now() - 7_200_000);
+    show([said(at.toISOString())]);
+
+    const expected = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    expect(screen.getByText(expected)).toBeTruthy();
+  });
+
+  // The clock says nothing about the day, and a session can run over several.
+  it('keeps the full moment for anyone who wants it', () => {
+    const at = new Date(Date.now() - 7_200_000);
+    show([said(at.toISOString())]);
+
+    const shown = at.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    expect(screen.getByText(shown).getAttribute('title')).toContain(at.getFullYear().toString());
+  });
+
+  it('says nothing when the event carried no time', () => {
+    const { container } = show([{ type: 'user.message', data: { content: 'hello' }, id: 'u1' }]);
+
+    expect(container.querySelector('time')).toBeNull();
+  });
+});
+
+/**
+ * A slow command should feel like progress rather than a hang, which is the whole reason
+ * the CLI shows a duration against the action.
+ */
+describe('how long a tool call took', () => {
+  const at = (ms: number) => new Date(Date.now() - ms).toISOString();
+
+  it('shows the length of a call that finished', () => {
+    show([
+      { ...event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } }, 'e1'), timestamp: at(80_000) },
+      { ...event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'out' } }, 'e2'), timestamp: at(1000) },
+    ]);
+
+    expect(screen.getByText('1m 19s')).toBeTruthy();
+  });
+
+  it('shows how long a call has been running', () => {
+    show([
+      { ...event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } }, 'e1'), timestamp: at(45_000) },
+    ]);
+
+    expect(screen.getByText('45s')).toBeTruthy();
+  });
+
+  // Without an end, an interrupted call would count for as long as the transcript is open.
+  it('stops counting a call that was interrupted', () => {
+    show([
+      { ...event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } }, 'e1'), timestamp: at(120_000) },
+      { ...event('abort', { reason: 'user_initiated' }, 'e2'), timestamp: at(60_000) },
+    ]);
+
+    expect(screen.getByText('1m 0s')).toBeTruthy();
+  });
+
+  it('says nothing about a call that was over in no time', () => {
+    show([
+      { ...event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } }, 'e1'), timestamp: at(1200) },
+      { ...event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'out' } }, 'e2'), timestamp: at(1000) },
+    ]);
+
+    expect(screen.queryByText(/\ds/)).toBeNull();
+  });
+});

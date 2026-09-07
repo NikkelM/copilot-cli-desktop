@@ -195,6 +195,21 @@ describe('useTranscript keeping what a stopped turn had said', () => {
     expect(result.current.abandoned?.get('a1')).toBeUndefined();
   });
 
+  // Whole replies, kept for as long as the app is open: a session stopped a hundred times
+  // would otherwise hold a hundred of them.
+  it('keeps only the last few stopped replies of a session', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    for (let index = 0; index < 25; index++) {
+      act(() => result.current.push(streaming(`reply ${index}`, `m${index}`)));
+      act(() => result.current.push(stop(`a${index}`)));
+    }
+
+    expect(result.current.abandoned?.size).toBe(20);
+    expect(result.current.abandoned?.get('a0')).toBeUndefined();
+    expect(result.current.abandoned?.get('a24')).toBe('reply 24');
+  });
   it('keeps nothing when the turn was stopped before it spoke', async () => {
     const { result } = renderHook(() => useTranscript('s1', () => {}));
     await waitFor(() => expect(getTranscript).toHaveBeenCalled());
