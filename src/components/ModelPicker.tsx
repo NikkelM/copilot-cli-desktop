@@ -79,10 +79,14 @@ export function ModelPicker({ current, models, failed, onOpen, onChoose }: Model
         title="Change the model, how hard it thinks, and how much room it has"
       >
         {/* Named even before the catalogue is known: this comes from the session's own log,
-            so a session says what it runs on without being started. Blank rather than
-            "nothing recorded" until that read comes back, so switching sessions does not
-            flash a claim that turns out to be false. */}
-        <span className="model-id">{current === undefined ? '' : (current?.model ?? 'No model recorded')}</span>
+            so a session says what it runs on without being started. While that read is in
+            flight the control holds its shape rather than showing a name that may turn out
+            to be wrong - blanking the text alone collapsed it to an empty blob. */}
+        {current === undefined ? (
+          <span className="model-id waiting" aria-label="Reading which model this session uses" />
+        ) : (
+          <span className="model-id">{current?.model ?? 'No model recorded'}</span>
+        )}
         {effort && <span className="model-tag">{effort}</span>}
         {/* Only once the catalogue is known, since the size is not in the session's log. */}
         {room && <span className="model-tag">{tokens(room.maxPromptTokens)}</span>}

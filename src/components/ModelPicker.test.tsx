@@ -71,6 +71,20 @@ describe('ModelPicker', () => {
     picker({ current: undefined });
     expect(screen.getAllByRole('button')[0].textContent).toBe('');
   });
+
+  /**
+   * Blanking the text alone collapsed the control to a small empty blob on every session
+   * switch, then snapped it back. It has to hold its shape while the read is in flight.
+   */
+  it('keeps its shape while the log is being read', () => {
+    picker({ current: undefined });
+    expect(screen.getByLabelText('Reading which model this session uses')).toBeTruthy();
+  });
+
+  it('has no placeholder left once the read comes back', () => {
+    picker({ current: { model: 'claude-opus-5' } });
+    expect(screen.queryByLabelText('Reading which model this session uses')).toBeNull();
+  });
     it('says so when the log never named a model', () => {
       picker({ current: null });
       expect(screen.getAllByRole('button')[0].textContent).toContain('No model recorded');
