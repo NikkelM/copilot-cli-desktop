@@ -1,16 +1,12 @@
-<!-- Copilot CLI Desktop - see docs/ for architecture notes -->
-<!-- hello -->
-
 # Copilot CLI Desktop
+
+[![CI](https://github.com/NikkelM/copilot-cli-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/NikkelM/copilot-cli-desktop/actions/workflows/ci.yml)
 
 A low-footprint desktop shell for the [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli).
 
 Sessions are listed in a sidebar ordered by last use. Browsing them costs nothing:
 a session is only loaded into a running Copilot process when you actually send it a
 message, so a week-old session you never open never consumes memory.
-
-> Status: early scaffold. The session browser is the first milestone; the live
-> session runtime is stubbed and lands next.
 
 ## Why
 
@@ -47,10 +43,12 @@ Together these decouple *viewing* from *loading*:
 | List sessions | SQLite query, no process |
 | Open a session and read its history | Read `events.jsonl`, no process |
 | Send a message | `resumeSession()` in the shared server |
-| Exceed the loaded-session cap | Least recently used session is disconnected |
+| Leave a session untouched for ten minutes | It is disconnected, freeing its memory |
 
 Resuming takes roughly 1.5-6 s depending on history size, which is why it is
-deferred until it is genuinely needed.
+deferred until it is genuinely needed. There is no cap on how many sessions may be
+loaded at once: how many are worth keeping is your judgement, and the idle timer
+reclaims whatever you stop using.
 
 ## Architecture
 
@@ -98,7 +96,7 @@ mistake is silent rather than obvious:
   schema. Every bug here so far has been about which column or file the data came from,
   which a stubbed data layer would not have caught.
 - **Runtime** covers the memory rules the whole design rests on: lazy start, resume
-  deduplication, LRU eviction, never evicting mid-turn, and settling permission requests
+  deduplication, eviction on idle, never evicting mid-turn, and settling permission requests
   on every teardown path, since the agent blocks on that promise.
 - **Transcript** covers the event to entry mapping, including pairing tool calls and
   cancelling ones interrupted before they completed.
