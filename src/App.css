@@ -113,12 +113,12 @@ body {
 
 .session-title {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* A long title wraps rather than being cut: which session it is is the whole point of
+     the row, and the end of a name is often the part that distinguishes it. */
+  overflow-wrap: anywhere;
 }
 
 .dot {
@@ -158,12 +158,28 @@ body {
 
 .main-header {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 6px;
+  /* Space enough that the first line of the transcript reads as a separate thing from the
+     header, rather than as the next line of it. */
+  padding-bottom: 14px;
 }
 
-.main-title h1 {
+/*
+ * Everything that describes the session, on one line.
+ *
+ * The path, the branch, the buttons that open it elsewhere and the controls that change it
+ * are all facts about the same thing, and the header has the width for them. The buttons
+ * were a row of their own against the left edge, which read as an afterthought.
+ */
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.main-header h1 {
   margin: 0;
   font-size: 18px;
 }
@@ -172,6 +188,8 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
+  /* Pushed to the far end, so the path can grow without moving them. */
+  margin-left: auto;
 }
 
 /* The model a session runs on: a fact to check far more often than a decision to make. */
@@ -195,6 +213,19 @@ body {
 
 .model-current:hover {
   color: var(--text);
+}
+
+/*
+ * The control while the session's model is being read.
+ *
+ * Holds the width a model name takes so switching sessions does not shrink the control to a
+ * blob and then snap it back. Deliberately not a name: the read may say something else.
+ */
+.model-id.waiting {
+  width: 88px;
+  height: 11px;
+  border-radius: 3px;
+  background: rgba(110, 118, 129, 0.25);
 }
 
 .model-tag {
@@ -598,7 +629,7 @@ body {
 }
 
 .cwd {
-  margin: 4px 0 12px;
+  margin: 0;
   color: var(--text-muted);
   font-size: 12px;
   font-family: ui-monospace, monospace;
@@ -612,6 +643,21 @@ body {
   border-radius: 10px;
   color: var(--text);
   white-space: nowrap;
+}
+
+/* The branch doubles as the link to it on GitHub, so it has to look like it can be clicked
+   without becoming a second button next to the row of them. */
+.branch.link {
+  background: none;
+  font: inherit;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.branch.link:hover,
+.branch.link:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .notice {
@@ -647,6 +693,35 @@ body {
 
 .message {
   overflow-wrap: anywhere;
+}
+
+/*
+ * Keeping clear of what is drawn in the corner.
+ *
+ * A prompt carries only its time, and is usually a line or two, so the whole thing is
+ * narrowed - the text simply ends before the clock. A reply carries a copy button too and
+ * runs for screens, so only its first element gives up the width: everything below the
+ * corner has the full measure.
+ *
+ * The widths are named once because two things depend on each: the room to leave, and how
+ * far a code block's own copy button has to step aside to avoid landing under the reply's.
+ */
+.message {
+  --time-lane: 46px;
+  --meta-lane: 104px;
+}
+
+.message.user > .markdown {
+  padding-right: var(--time-lane);
+}
+
+.message.assistant > .markdown > :first-child {
+  padding-right: var(--meta-lane);
+}
+
+/* A code block opening a reply would otherwise put its button exactly where the reply's is. */
+.message.assistant > .markdown > .block:first-child > .copy {
+  right: calc(4px + var(--meta-lane));
 }
 
 /* Markdown brings its own block spacing, so the outer edges are flattened to keep a
@@ -1006,6 +1081,228 @@ body {
   text-overflow: ellipsis;
 }
 
+/*
+ * Copying, which the app is otherwise bad at: selecting a long reply by hand is not really
+ * possible, and selecting code catches whatever is around it.
+ *
+ * Out of the way until the block is hovered or focused, since a transcript is mostly read
+ * and a button on every block would be most of what is on screen.
+ */
+/* When it was said, and the means to take it away. Together, so they cannot collide. */
+/*
+ * The time, and the button to copy the whole reply.
+ *
+ * Drawn over the top right corner rather than given a row of its own: a row cost about
+ * eighteen pixels on every message in the transcript, which is a lot of empty space to
+ * spend on two small things.
+ *
+ * What has to keep clear of it differs by who is speaking, below.
+ */
+.message-meta {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.message-meta time {
+  white-space: nowrap;
+}
+
+.copy {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 80ms linear;
+}
+
+.block .copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+}
+
+.block,
+.message.user,
+.message.assistant {
+  position: relative;
+}
+
+/* The block's own button belongs to the block; the reply's belongs to the reply's own row. */
+.block:hover > .copy,
+.block:focus-within > .copy,
+.message:hover > .message-meta > .copy,
+.message:focus-within > .message-meta > .copy {
+  opacity: 1;
+}
+
+.copy:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/* What is going with the message, shown before it goes. */
+/* Above the buttons, so several files grow the composer upwards rather than sideways. */
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 0;
+}
+
+.attach {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.attach:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 10px;
+  background: rgba(110, 118, 129, 0.25);
+  font-size: 11px;
+}
+
+.attachment button {
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.attachment button:hover {
+  color: var(--text);
+}
+
+/* A diagram, drawn. Given room, since a flowchart is wider than a paragraph. */
+.markdown .mermaid {
+  margin: 0 0 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  overflow-x: auto;
+}
+
+.markdown .mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* What a diagram falls back to: the source, which is what a terminal would have shown. */
+.markdown .mermaid-source {
+  max-height: 420px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  overflow: auto;
+}
+
+/* Where the working directory can be taken. Quiet until wanted, beside the path itself. */
+.open-in {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* Sized to be hit rather than to be small: they sit beside the path, not under it. */
+.open-in button {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.open-in button:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+/*
+ * The boundary between sessions holding memory and sessions costing nothing, which is the
+ * distinction the whole app is built on and was previously a four-pixel dot.
+ */
+.group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.group-count {
+  margin-left: auto;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/*
+ * Waking a session, said where the reader is looking after pressing Send.
+ *
+ * It pulses rather than sitting still, because the wait is a few seconds of variable
+ * length and a static line reads as something that has already failed.
+ */
+.waking {
+  margin-right: auto;
+  color: var(--text-muted);
+  font-size: 12px;
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* How long something has taken. Quiet, and in a column of its own on a tool row. */
+.elapsed {
+  flex: none;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
 /* Said before the turn was stopped, and no more than that. */
 .message-partial {
   margin: 2px 0 0;
@@ -1223,10 +1520,16 @@ body {
   border-color: var(--accent);
 }
 
+/* One row: Attach on the left, the rest on the right, so nothing wraps to a line of its own. */
 .composer-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+  padding-top: 8px;
+}
+
+.composer-actions .attach {
+  margin-right: auto;
 }
 
 .composer button {
