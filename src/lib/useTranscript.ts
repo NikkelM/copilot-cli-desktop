@@ -7,6 +7,20 @@ import { appendLive, timelineOf, type TimelineEvent } from './timeline';
 const MAX_ABANDONED = 20;
 
 /**
+ * Events per page, both for opening a session and for reaching back through it.
+ *
+ * Smaller than the sidecar's own cap of 500, because the cost of a transcript is not the
+ * DOM it makes - 500 events is 112 entries and about 1100 nodes, which is nothing - but the
+ * markdown parsed to build it, at roughly 9ms per kilobyte. Measured on a real session, 500
+ * events took 288ms to render and 100 took 31ms, of which about half was markdown.
+ *
+ * 150 is a few screens of conversation: enough that opening a session does not immediately
+ * ration the reader, and little enough that it appears at once. Reaching further back is
+ * already handled by scrolling up, so nothing is lost by asking for less to begin with.
+ */
+const PAGE_EVENTS = 150;
+
+/**
  * The transcript of one session: what is on disk, and what has happened since.
  *
  * Replaying history and receiving live events are separate concerns that used to share a
@@ -49,7 +63,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     // Selecting elsewhere, or React running this effect twice, leaves a reply in flight
     // that describes a transcript no longer on screen.
     let current = true;
-    getTranscript(sessionId)
+    getTranscript(sessionId, PAGE_EVENTS)
       .then((result) => {
         if (!current) return;
         setHistory(result.events);
@@ -66,7 +80,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
   const loadOlder = useCallback(() => {    if (!sessionId || olderCursor === null) return;
 
     setLoadingOlder(true);
-    getTranscript(sessionId, undefined, olderCursor)
+    getTranscript(sessionId, PAGE_EVENTS, olderCursor)
       .then((result) => {
         // A page fetched for one session must not be spliced into another's transcript.
         if (showing.current !== sessionId) return;

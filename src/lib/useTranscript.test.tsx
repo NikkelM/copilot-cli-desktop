@@ -84,6 +84,36 @@ describe('useTranscript', () => {
     expect(bodies(result.current.events)).toEqual(['second session']);
   });
 
+  /**
+   * Opening a session used to ask for the sidecar's full cap of 500 events, which is 288ms
+   * of markdown parsing on a real session against 37ms for a page of 150. The cost is the
+   * parsing, not the DOM - 500 events is only about 1100 nodes - so asking for less is the
+   * whole fix, and scrolling up already reaches the rest.
+   */
+  it('asks for a page rather than everything the sidecar would give', async () => {
+    getTranscript.mockResolvedValue({ events: [], nextBefore: null });
+    renderHook(() => useTranscript('s1', () => {}));
+
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+    const [, limit] = getTranscript.mock.calls[0] as [string, number | undefined];
+    expect(limit).toBeGreaterThan(0);
+    expect(limit).toBeLessThan(500);
+  });
+
+  it('holds older pages to the same size', async () => {
+    getTranscript.mockResolvedValueOnce({ events: [reply('newer', 'e2')], nextBefore: 40 });
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(result.current.hasOlder).toBe(true));
+
+    getTranscript.mockResolvedValueOnce({ events: [reply('older', 'e1')], nextBefore: null });
+    await act(async () => result.current.loadOlder());
+
+    const first = getTranscript.mock.calls[0] as [string, number | undefined];
+    const older = getTranscript.mock.calls[1] as [string, number | undefined, number];
+    expect(older[1]).toBe(first[1]);
+    expect(older[2]).toBe(40);
+  });
+
   it('prepends an older page and follows the cursor back', async () => {
     getTranscript.mockResolvedValueOnce({ events: [reply('newer', 'e2')], nextBefore: 40 });
     const { result } = renderHook(() => useTranscript('s1', () => {}));
