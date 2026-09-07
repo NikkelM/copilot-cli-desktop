@@ -95,6 +95,24 @@ describe('SessionRuntime', () => {
     expect(client.resumeSession).toHaveBeenCalledTimes(1);
   });
 
+  /**
+   * How many sessions are worth keeping resident is the reader's judgement, not this app's.
+   * The idle timer already reclaims what is not being used, so a hard cap only got in the
+   * way of someone deliberately working across several sessions at once.
+   */
+  it('keeps every session loaded by default, however many there are', async () => {
+    const { runtime, sessions } = makeRuntime();
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) await runtime.send(id, 'x');
+
+    expect([...sessions.values()].some((session) => session.disconnected)).toBe(false);
+    expect(runtime.status().activeSessionIds).toHaveLength(6);
+  });
+
+  it('reports having no cap rather than a number nobody set', async () => {
+    const { runtime } = makeRuntime();
+    expect(runtime.status().maxLoadedSessions).toBe(0);
+  });
+
   it('evicts the least recently used session past the cap', async () => {
     const { runtime, sessions } = makeRuntime({ maxLoadedSessions: 2 });
     await runtime.send('a', 'x');

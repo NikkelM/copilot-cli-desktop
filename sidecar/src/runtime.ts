@@ -10,8 +10,9 @@ import {
 } from '@github/copilot-sdk';
 
 import type {
-  ElicitationAction,
+  Attachment,
   ContextTier,
+  ElicitationAction,
   ElicitationFieldValue,
   ModelChoice,
   PermissionChoice,
@@ -131,6 +132,13 @@ export type SnapshotScope = 'session' | 'turn' | { id: string };
 
 export interface RuntimeOptions {
   /** Sessions kept resumed at once before the least recently used is disconnected. */
+  /**
+   * Most sessions resident at once before the least recently used is disconnected.
+   *
+   * Zero, the default, means no cap: how many sessions are worth keeping is the reader's
+   * judgement, not this app's, and the idle timer already reclaims what is not being used.
+   * A number is still honoured, since the eviction path has to stay testable.
+   */
   maxLoadedSessions?: number;
   /** Points a session keeps before the middle of its history is let go. */
   maxSnapshotPoints?: number;
@@ -215,7 +223,7 @@ export class SessionRuntime {
   private readonly userInputs: PendingRequests<UserInputResponse>;
 
   constructor(options: RuntimeOptions = {}) {
-    this.maxLoadedSessions = options.maxLoadedSessions ?? 2;
+    this.maxLoadedSessions = options.maxLoadedSessions ?? 0;
     this.idleTimeoutMs = options.idleTimeoutMs ?? 10 * 60_000;
     this.maxPoints = options.maxSnapshotPoints ?? MAX_POINTS;
     this.onEvent = options.onEvent;
@@ -696,6 +704,10 @@ export class SessionRuntime {
 
   /** Disconnect least recently used sessions until the cap is satisfied. */
   private async enforceCap(): Promise<void> {
+    // Zero means the reader decides how many sessions are worth keeping, which is the
+    // default. The idle timer still reclaims anything left alone.
+    if (this.maxLoadedSessions <= 0) return;
+
     for (let i = this.order.length - 1; i >= 0 && this.order.length > this.maxLoadedSessions; i -= 1) {
       const candidate = this.order[i];
       if (!candidate) continue;
@@ -741,12 +753,19 @@ export class SessionRuntime {
     sessionId: string,
     prompt: string,
     mode?: 'enqueue' | 'immediate',
+    attachments?: Attachment[],
   ): Promise<{ messageId: string; queued: boolean }> {
     const session = await this.ensureSession(sessionId);
     const queued = mode ? mode === 'enqueue' : (this.loaded.get(sessionId)?.busy ?? false);
 
     return {
-      messageId: await session.send({ prompt, mode: queued ? 'enqueue' : 'immediate' }),
+      messageId: await session.send({
+        prompt,
+        mode: queued ? 'enqueue' : 'immediate',
+        // Passed straight through: the runtime reads the files, so nothing here needs to
+        // open them, and a path is all it wants.
+        ...(attachments?.length ? { attachments } : {}),
+      }),
       queued,
     };
   }
