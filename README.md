@@ -75,8 +75,16 @@ alongside the installed CLI, keeping SDK and CLI versions in lockstep.
 
 ```bash
 npm install
-npm run app        # builds the sidecar, then launches the Tauri dev shell
+npm run app        # builds the sidecar, stages its bundle, then launches the Tauri dev shell
 ```
+
+The first launch stages the sidecar's runtime dependencies into `src-tauri/sidecar-bundle`,
+which takes about thirty seconds and 120 MB. Later launches cost nothing: the compiled tree is
+refreshed and the dependencies are left alone unless `sidecar/package.json` changed.
+
+That directory is declared as a bundle resource, which means **tauri-build refuses to compile
+the crate without it** - so `cargo check` and `cargo clippy` in `src-tauri` need
+`npm run bundle:sidecar` to have run at least once.
 
 Other useful scripts:
 
@@ -84,6 +92,7 @@ Other useful scripts:
 npm run typecheck      # frontend and sidecar
 npm test               # vitest, or npm run test:watch
 npm run build:sidecar  # compile the sidecar only
+npm run bundle:sidecar # stage the sidecar and its dependencies for packaging
 npm run tauri build    # production bundle
 ```
 

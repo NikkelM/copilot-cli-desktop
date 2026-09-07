@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.nikkelm.copilot-cli-desktop",
   "build": {
-    "beforeDevCommand": "npm run build:sidecar && npm run dev",
+    "beforeDevCommand": "npm run build:sidecar && npm run bundle:sidecar && npm run dev",
     "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "npm run build:sidecar && npm run bundle:sidecar && npm run build",
     "frontendDist": "../dist"

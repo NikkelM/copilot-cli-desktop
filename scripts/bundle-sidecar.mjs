@@ -23,18 +23,33 @@ if (!existsSync(compiled)) {
   process.exit(1);
 }
 
-// Rebuilt from nothing each time. A stale file left behind here would be shipped, and the
-// bundle is the one place where that would not show up until someone installed it.
-rmSync(staging, { recursive: true, force: true });
+const { dependencies } = JSON.parse(readFileSync(join(root, 'sidecar', 'package.json'), 'utf8'));
+const manifest = `${JSON.stringify({ name: 'copilot-cli-desktop-sidecar', private: true, type: 'module', dependencies }, null, 2)}\n`;
+const manifestPath = join(staging, 'package.json');
+
+// Declaring this directory as a bundle resource means tauri-build refuses to compile the
+// crate without it - including for `tauri dev`. So this runs before the app starts too, and
+// has to be cheap when nothing has changed: installing 120MB of dependencies on every launch
+// would make starting the app take ten seconds for no reason.
+const installed =
+  existsSync(join(staging, 'node_modules')) &&
+  existsSync(manifestPath) &&
+  readFileSync(manifestPath, 'utf8') === manifest;
+
 mkdirSync(staging, { recursive: true });
 
+// The compiled tree is cheap and changes constantly, so it is always replaced. Removing it
+// first because cpSync merges rather than replaces, and a file deleted from the sidecar
+// would otherwise linger here and be shipped.
+rmSync(join(staging, 'dist'), { recursive: true, force: true });
 cpSync(compiled, join(staging, 'dist'), { recursive: true });
 
-const { dependencies } = JSON.parse(readFileSync(join(root, 'sidecar', 'package.json'), 'utf8'));
-writeFileSync(
-  join(staging, 'package.json'),
-  `${JSON.stringify({ name: 'copilot-cli-desktop-sidecar', private: true, type: 'module', dependencies }, null, 2)}\n`,
-);
+if (installed) {
+  console.log('sidecar bundle: dependencies unchanged, refreshed the compiled tree only');
+  process.exit(0);
+}
+
+writeFileSync(manifestPath, manifest);
 
 // --omit=dev keeps the closure to what runs; --ignore-scripts because nothing here needs to
 // build anything, and a postinstall in a dependency has no business running during packaging.
@@ -44,11 +59,12 @@ execFileSync('npm', ['install', '--omit=dev', '--ignore-scripts', '--no-audit', 
   shell: process.platform === 'win32',
 });
 
-const size = execFileSync(process.execPath, [
-  '-e',
-  `const {readdirSync,statSync}=require('node:fs'),{join}=require('node:path');
-   const walk=(d)=>readdirSync(d,{withFileTypes:true}).reduce((n,e)=>n+(e.isDirectory()?walk(join(d,e.name)):statSync(join(d,e.name)).size),0);
-   process.stdout.write(String(walk(${JSON.stringify(staging)})));`,
-]).toString();
+const walk = (dir) =>
+  execFileSync(process.execPath, [
+    '-e',
+    `const {readdirSync,statSync}=require('node:fs'),{join}=require('node:path');
+     const w=(d)=>readdirSync(d,{withFileTypes:true}).reduce((n,e)=>n+(e.isDirectory()?w(join(d,e.name)):statSync(join(d,e.name)).size),0);
+     process.stdout.write(String(w(${JSON.stringify(dir)})));`,
+  ]).toString();
 
-console.log(`sidecar bundle: ${(Number(size) / 1024 / 1024).toFixed(1)} MB at ${staging}`);
+console.log(`sidecar bundle: ${(Number(walk(staging)) / 1024 / 1024).toFixed(1)} MB at ${staging}`);
