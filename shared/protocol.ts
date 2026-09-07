@@ -230,6 +230,8 @@ export interface ResolveElicitationParams {
 /** Requests the frontend may issue. */
 export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };
+  /** Sessions matching the start of an id, including the ones the list hides. */
+  'sessions.find': { params: { prefix: string }; result: ListSessionsResult };
   'sessions.transcript': { params: GetTranscriptParams; result: GetTranscriptResult };
   'sessions.send': { params: SendParams; result: SendResult };
   'sessions.abort': { params: { sessionId: string }; result: void };
