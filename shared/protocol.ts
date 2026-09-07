@@ -40,7 +40,7 @@ export interface TranscriptEvent {
    * Absent only on events the app itself invents, such as an optimistic prompt.
    */
   id?: string;
-  /** Present on replayed events only; live events are timestamped on arrival. */
+  /** When the runtime recorded it. Present on live events as well as replayed ones. */
   timestamp?: string;
 }
 
@@ -72,7 +72,7 @@ export interface RuntimeStatus {
   serverRunning: boolean;
   /** Sessions currently held in memory, most-recently-used first. */
   activeSessionIds: string[];
-  /** Maximum concurrently loaded sessions before LRU eviction kicks in. */
+  /** Maximum concurrently loaded sessions before LRU eviction kicks in; zero means no cap. */
   maxLoadedSessions: number;
 }
 
