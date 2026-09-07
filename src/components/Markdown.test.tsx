@@ -1,9 +1,21 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const openUrl = vi.fn();
+
+// Drawing is mermaid's business; what matters here is when it is asked and what happens
+// when it refuses.
+vi.mock('mermaid', () => ({
+  default: {
+    initialize: () => {},
+    render: (_id: string, source: string) =>
+      source.includes('graph')
+        ? Promise.resolve({ svg: '<svg><g>drawn</g></svg>' })
+        : Promise.reject(new Error('Parse error')),
+  },
+}));
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: (url: string) => openUrl(url) }));
 
 const { Markdown } = await import('./Markdown');
@@ -185,5 +197,88 @@ describe('code blocks', () => {
   it('leaves inline code alone', () => {
     const { container } = render(<Markdown body="the `const` keyword" />);
     expect(container.querySelectorAll('span').length).toBe(0);
+  });
+});
+
+/**
+ * Getting text back out. Selecting a long reply by hand is not really possible, and
+ * selecting code catches the prose around it.
+ */
+describe('copying', () => {
+  const writeText = vi.fn();
+
+  beforeEach(() => {
+    writeText.mockReset().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+  });
+
+  it('offers to copy a code block', async () => {
+    render(<Markdown body={'```ts\nconst x = 1;\n```'} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+
+    expect(writeText).toHaveBeenCalledWith('const x = 1;\n');
+  });
+
+  // By the time a block is on screen it is a span per token, and reassembling those would
+  // depend on how the highlighter happened to split them.
+  it('copies the code as written, not as coloured', async () => {
+    render(<Markdown body={'```ts\nexport function thing() {\n  return 1;\n}\n```'} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+
+    expect(writeText).toHaveBeenCalledWith('export function thing() {\n  return 1;\n}\n');
+  });
+
+  it('offers one button per block', async () => {
+    render(<Markdown body={'```ts\none\n```\n\ntext\n\n```ts\ntwo\n```'} />);
+
+    expect(screen.getAllByRole('button', { name: 'Copy code' })).toHaveLength(2);
+  });
+
+  // Inline code is a word in a sentence; a button beside it would be larger than the code.
+  it('offers nothing for inline code', () => {
+    render(<Markdown body="the `const` keyword" />);
+
+    expect(screen.queryByRole('button', { name: 'Copy code' })).toBeNull();
+  });
+});
+
+/**
+ * A diagram written as text, which the terminal could only ever show as text. Mermaid is
+ * mocked here: what matters is when it is asked to draw and what happens when it will not.
+ */
+describe('diagrams', () => {
+  const flowchart = '```mermaid\ngraph TD\n  A[Start] --> B[End]\n```';
+
+  it('draws a mermaid fence rather than showing its source', async () => {
+    const { container } = render(<Markdown body={flowchart} />);
+
+    await vi.waitFor(() => expect(container.querySelector('.mermaid svg')).toBeTruthy());
+  });
+
+  // Models get mermaid wrong, and a diagram that will not parse must not take the message
+  // with it - the source is what a terminal would have shown anyway.
+  it('falls back to the source when it will not parse', async () => {
+    render(<Markdown body={'```mermaid\nnot a diagram\n```'} />);
+
+    expect(await screen.findByText(/not a diagram/)).toBeTruthy();
+  });
+
+  // A fence is incomplete for most of a streamed reply, and mermaid throws on incomplete
+  // input: attempting per chunk means repeated failures and repeated work.
+  it('waits for the whole reply before drawing', () => {
+    const { container } = render(<Markdown body={flowchart} streaming />);
+
+    expect(container.querySelector('.mermaid svg')).toBeNull();
+    expect(container.textContent).toContain('graph TD');
+  });
+
+  // A block that merely looks like a diagram is still code someone wanted to read as code.
+  it('leaves other code blocks alone', () => {
+    const { container } = render(<Markdown body={'```ts\ngraph TD\n```'} />);
+
+    expect(container.querySelector('.mermaid')).toBeNull();
+    expect(container.querySelector('pre code')).toBeTruthy();
   });
 });
