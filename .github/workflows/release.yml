@@ -1,36 +1,38 @@
 name: Release
+run-name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag) }}
 
-# Tags only. A release is a deliberate act, and building one takes twelve minutes of
-# compilation that no ordinary push should pay for.
+# Started by hand rather than by pushing a tag, so the tag is created here only once the
+# build has actually succeeded. A tag in this repository therefore always names something
+# that built and passed its tests.
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: Tag to build, for a release that needs rebuilding
+        description: "Tag / Version number"
         required: true
+      is-dry-run:
+        description: "Dry-run (build and check only, publish nothing)"
+        type: boolean
+        default: true
 
 permissions:
-  contents: write
+  contents: write # required for pushing the release commit and tag, and creating the release
 
 jobs:
-  build:
-    name: ${{ matrix.name }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      # One platform failing should not throw away another that took twelve minutes.
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            name: Windows
-            args: ''
+  release:
+    name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag) }}
+    runs-on: windows-latest
 
     steps:
+      - name: Check input tag format
+        shell: bash
+        run: |
+          if ! echo "${{ inputs.tag }}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error title=Invalid version number::Version numbers must follow the Major.Minor.Patch format (e.g. 0.2.0), without a leading v."
+            exit 1
+          fi
+
       - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.tag || github.ref }}
 
       - uses: actions/setup-node@v7
         with:
@@ -45,27 +47,87 @@ jobs:
 
       - run: npm ci
 
-      # The same checks CI runs. A tag skips nothing: a release built from code that does
-      # not typecheck is worse than no release.
+      # A release skips nothing. Code that does not typecheck, or whose tests fail, has no
+      # business being installed by anyone.
       - run: npm run typecheck
       - run: npm test
 
-      # Builds the frontend, compiles the sidecar, assembles its bundle and packages the
-      # lot - tauri.conf.json's beforeBuildCommand does the first three.
-      - uses: tauri-apps/tauri-action@action-v1.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: ${{ inputs.tag || github.ref_name }}
-          releaseBody: |
-            Requires [Node.js](https://nodejs.org) 24+ and the
-            [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli),
-            logged in. Both are checked on first run.
+      # Three files carry the version and all three are read by something: npm, the bundler,
+      # and cargo. Setting them here means a release never depends on remembering to.
+      - name: Set the version
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            for (const f of ['package.json', 'src-tauri/tauri.conf.json']) {
+              const j = JSON.parse(fs.readFileSync(f, 'utf8'));
+              j.version = '${{ inputs.tag }}';
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+            }
+          "
+          sed -i 's/^version = ".*"/version = "${{ inputs.tag }}"/' src-tauri/Cargo.toml
+          cargo update --package copilot-cli-desktop --manifest-path src-tauri/Cargo.toml
 
-            The installer is unsigned, so Windows SmartScreen will warn on first launch.
-          # Left as a draft on purpose. The notes are worth reading before anyone is told
-          # there is something to download.
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+      # Builds the frontend, compiles the sidecar, assembles its dependency bundle and
+      # packages the lot - tauri.conf.json's beforeBuildCommand does the first three.
+      #
+      # Unsigned. SignTool is what Tauri would call, and it is already wired up through
+      # bundle.windows.certificateThumbprint or signCommand - what is missing is a
+      # certificate that CI can use, which since 2023 means a cloud signing service rather
+      # than a file. See the release notes in the README.
+      - name: Build the installers
+        run: npm run tauri build
+
+      - name: Collect what was built
+        id: artifacts
+        shell: bash
+        run: |
+          {
+            echo 'paths<<EOF'
+            find src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*-setup.exe' \)
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # Kept even on a dry run, which is most of the point of one: the installer can be
+      # downloaded and tried before anything is published.
+      - name: Upload installers to the workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ inputs.tag }}
+          path: ${{ steps.artifacts.outputs.paths }}
+          retention-days: 7
+
+      - name: Tag and push
+        if: ${{ !inputs.is-dry-run }}
+        shell: bash
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          git commit --message "Release ${{ inputs.tag }}"
+          git tag "v${{ inputs.tag }}" --annotate --message "Release ${{ inputs.tag }}"
+          git push origin HEAD:${{ github.ref_name }} --tags
+
+      # Taken from CHANGELOG.md between the markers, so the notes are written and reviewed in
+      # the repository rather than typed into a release form once and never seen again.
+      - name: Create release notes
+        if: ${{ !inputs.is-dry-run }}
+        shell: bash
+        run: |
+          sed -n '/<!--Releasenotes start-->/,/<!--Releasenotes end-->/p' CHANGELOG.md \
+            | sed '/<!--Releasenotes/d' > RELEASE_NOTES.md
+          printf '\n**[Full changelog](CHANGELOG.md)**\n' >> RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      # A draft, so the notes can be read before anyone is told there is something to download.
+      - name: Create the release
+        if: ${{ !inputs.is-dry-run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "v${{ inputs.tag }}" \
+            --title "v${{ inputs.tag }}" \
+            --notes-file RELEASE_NOTES.md \
+            --draft \
+            $(find src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*-setup.exe' \))

@@ -181,6 +181,36 @@ Not affiliated with GitHub. GitHub also ships an official
 which is repository-centric; this project targets lightweight session management
 across arbitrary folders, including ones that are not git repositories.
 
+## Releases
+
+Built by the `Release` workflow, started by hand with a version number. The tag is created
+only after the build has passed its tests, so a tag here always names something that built.
+Run it as a dry run first: it produces the installers as workflow artifacts and publishes
+nothing. Release notes come from `CHANGELOG.md`, between the `Releasenotes` markers.
+
+### On signing
+
+The installers are **not signed**, so Windows warns on first launch.
+
+SignTool is not the missing piece - Tauri already calls it, through
+`bundle.windows.certificateThumbprint` for a certificate in the Windows store, or
+`bundle.windows.signCommand` for anything else. What is missing is a certificate, and the
+options are worse than they used to be:
+
+- **Self-signed** costs nothing and signs happily, but Authenticode only trusts a chain
+  ending at a root the machine already trusts. Anyone else still sees an unknown publisher,
+  which reads worse than no signature at all.
+- **A bought OV certificate** cannot be used from CI. Since June 2023 the CA/Browser Forum
+  requires the private key to live on FIPS 140-2 Level 2 hardware, so there is no `.pfx` to
+  put in a secret - signing means a USB token in a machine, by hand.
+- **EV certificates** have the same hardware requirement and cost more, but carry SmartScreen
+  reputation immediately, which OV does not: an OV signature still warns until the download
+  count builds reputation.
+- **[SignPath Foundation](https://signpath.org/apply.html)** signs open source projects for
+  free, from CI, via `signCommand`. It requires an OSI-approved licence, which GPL-3.0 is,
+  and a **public** repository, which this is not yet. That is the route worth taking if this
+  ever goes public.
+
 ## Licence
 
 Copyright (C) 2026 Nikkel Mollenhauer
