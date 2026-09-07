@@ -14,6 +14,7 @@ import type {
   PermissionChoice,
   PermissionResolvedNotification,
   ReasoningEffort,
+  RuntimeStatus,
   SendParams,
   SendResult,
   SessionEventNotification,
@@ -30,6 +31,22 @@ async function request<T>(method: string, params?: unknown): Promise<T> {
 /** Reads the sidebar model from session-store.db. Spawns no Copilot process. */
 export function listSessions(): Promise<ListSessionsResult> {
   return request<ListSessionsResult>('sessions.list');
+}
+
+/**
+ * Sessions whose id starts with this, including ones the list hides.
+ *
+ * Separate from the list because it reaches rows the list deliberately drops - crashed
+ * starts with no title and no turns - and because paying for them on every refresh would
+ * roughly double its cost for results nobody normally looks at.
+ */
+export function findSessions(prefix: string): Promise<ListSessionsResult> {
+  return request<ListSessionsResult>('sessions.find', { prefix });
+}
+
+/** What the runtime is holding. Reports only; starts no process. */
+export function runtimeStatus(): Promise<RuntimeStatus> {
+  return request<RuntimeStatus>('runtime.status');
 }
 
 /** The models this account may use. Starts the shared server, so it is asked for lazily. */

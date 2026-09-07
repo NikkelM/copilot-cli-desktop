@@ -119,6 +119,59 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
   }
 }
 
+/** How many hidden sessions one lookup will return, so a short prefix cannot flood the list. */
+const FIND_LIMIT = 20;
+
+/**
+ * Find sessions by the start of their id, including the ones the list leaves out.
+ *
+ * A session with no title and no turns is hidden from the sidebar deliberately - most are
+ * crashed starts, and on this store they are 99 of 182. But a reader who has an id in hand,
+ * from CLI output or a state directory, is asking about one specific session, and being
+ * told it does not exist is wrong: it is on disk and can be opened.
+ *
+ * Kept apart from `listSessions` rather than folded into it because the cost is per row and
+ * the list is the app's hottest path - measured, the hidden rows would take one refresh from
+ * 28ms to around 60ms, for results nobody normally looks at. This pays only when asked.
+ */
+export function findSessions(prefix: string): SessionSummary[] {
+  const needle = prefix.trim().toLowerCase();
+  if (!needle || !existsSync(sessionStoreDb)) return [];
+
+  const db = new DatabaseSync(sessionStoreDb, { readOnly: true });
+  try {
+    // LIKE with the wildcard only at the end is a prefix match, which is how an id is
+    // quoted. ESCAPE keeps a literal _ or % in the query from acting as a pattern.
+    const rows = db
+      .prepare(
+        `SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at, s.updated_at
+         FROM sessions s
+         WHERE LOWER(s.id) LIKE ? ESCAPE '\\'
+         ORDER BY s.updated_at DESC
+         LIMIT ${FIND_LIMIT}`,
+      )
+      .all(`${needle.replace(/[\\%_]/g, '\\$&')}%`) as unknown as SessionRow[];
+
+    return rows
+      .filter((row) => existsSync(sessionEventLog(row.id)))
+      .map((row) => ({
+        sessionId: row.id,
+        title: readSessionName(row.id) ?? row.summary,
+        cwd: row.cwd,
+        repository: row.repository,
+        branch: row.branch,
+        createdAt: row.created_at,
+        updatedAt: lastActivity(row.id, row.updated_at) ?? row.updated_at,
+        // A hidden session has no turn to preview, so there is nothing to read here.
+        preview: null,
+        loaded: false,
+      }))
+      .sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * When the session last did anything, as an ISO timestamp.
  *

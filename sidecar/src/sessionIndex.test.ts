@@ -228,6 +228,76 @@ describe('listSessions', () => {
   });
 });
 
+/**
+ * The list hides sessions with no title and no turns because almost all of them are crashed
+ * starts - 99 of 182 on a real store. But an id typed into the filter names one session, and
+ * answering "no sessions match" for one that is sitting on disk reads as data loss.
+ */
+describe('findSessions', () => {
+  it('finds a session the list hides', async () => {
+    store.addSession('0bd2d807-816c-46ce-8e8e-20c74b9be864');
+
+    const { findSessions, listSessions } = await loadIndex();
+    expect(listSessions().map((s) => s.sessionId)).toEqual([]);
+    expect(findSessions('0bd2d807').map((s) => s.sessionId)).toEqual([
+      '0bd2d807-816c-46ce-8e8e-20c74b9be864',
+    ]);
+  });
+
+  // Ids are quoted by their first characters, in CLI output and in directory names.
+  it('matches from the start rather than anywhere', async () => {
+    store.addSession('0bd2d807-816c-46ce-8e8e-20c74b9be864');
+
+    const { findSessions } = await loadIndex();
+    expect(findSessions('816c')).toEqual([]);
+  });
+
+  it('ignores the case the id was typed in', async () => {
+    store.addSession('0bd2d807-816c-46ce-8e8e-20c74b9be864');
+
+    const { findSessions } = await loadIndex();
+    expect(findSessions('0BD2D807').map((s) => s.sessionId)).toHaveLength(1);
+  });
+
+  /**
+   * LIKE treats _ and % as patterns, so an unescaped query would match ids it was not
+   * asked about - `_` alone would match every session whose id has any first character.
+   */
+  it('takes wildcards in the query literally', async () => {
+    store.addSession('abcdef00-0000-0000-0000-000000000000');
+
+    const { findSessions } = await loadIndex();
+    expect(findSessions('_bcdef')).toEqual([]);
+    expect(findSessions('%')).toEqual([]);
+  });
+
+  // Same rule as the list: a row whose directory is gone describes a session that cannot
+  // be opened, so offering it promises something the transcript cannot deliver.
+  it('leaves out a session whose log is gone', async () => {
+    store.addSession('deadbeef-0000-0000-0000-000000000000');
+    store.removeState('deadbeef-0000-0000-0000-000000000000');
+
+    const { findSessions } = await loadIndex();
+    expect(findSessions('deadbeef')).toEqual([]);
+  });
+
+  it('says nothing for an empty query rather than everything', async () => {
+    store.addSession('abcdef00-0000-0000-0000-000000000000');
+
+    const { findSessions } = await loadIndex();
+    expect(findSessions('')).toEqual([]);
+    expect(findSessions('   ')).toEqual([]);
+  });
+
+  it('finds listed sessions too, so a match never depends on which side it is on', async () => {
+    store.addSession('abcdef00-0000-0000-0000-000000000000', { summary: 'Named' });
+    store.addTurn('abcdef00-0000-0000-0000-000000000000', 0, 'x', 'y', '2026-09-05 09:00:00');
+
+    const { findSessions } = await loadIndex();
+    expect(findSessions('abcdef').map((s) => s.sessionId)).toHaveLength(1);
+  });
+});
+
 describe('lastActivity', () => {
   // The turns table is flushed late; for a session this app holds open it was measured
   // eight minutes behind the event log.

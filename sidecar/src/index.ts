@@ -8,14 +8,15 @@
 import { createInterface } from 'node:readline';
 
 import type {
+  Attachment,
+  ContextTier,
   ElicitationAction,
   ElicitationFieldValue,
-  ContextTier,
   JsonRpcRequest,
-  ReasoningEffort,
-  SnapshotScope,
   JsonRpcResponse,
   PermissionChoice,
+  ReasoningEffort,
+  SnapshotScope,
 } from '../../shared/protocol.js';
 import {
   NOTIFY_ELICITATION_REQUESTED,
@@ -30,7 +31,7 @@ import { type Channel, startDevChannel } from './devChannel.js';
 import { lastModel, readTranscript } from './eventLog.js';
 import { treeStateOf } from './git.js';
 import { type ApprovalPolicy, SessionRuntime } from './runtime.js';
-import { listSessions } from './sessionIndex.js';
+import { findSessions, listSessions } from './sessionIndex.js';
 import { watchSessionStore } from './storeWatcher.js';
 
 /** Anything written to stdout is protocol, so diagnostics must go to stderr. */
@@ -79,6 +80,15 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
       return { sessions };
     }
 
+    case 'sessions.find': {
+      const { prefix } = request.params as { prefix: string };
+      const sessions = findSessions(prefix).map((session) => ({
+        ...session,
+        loaded: runtime.isActive(session.sessionId),
+      }));
+      return { sessions };
+    }
+
     case 'sessions.transcript': {
       const { sessionId, limit, before } = request.params as {
         sessionId: string;
@@ -89,12 +99,13 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
     }
 
     case 'sessions.send': {
-      const { sessionId, prompt, mode } = request.params as {
+      const { sessionId, prompt, mode, attachments } = request.params as {
         sessionId: string;
         prompt: string;
         mode?: 'enqueue' | 'immediate';
+        attachments?: Attachment[];
       };
-      return runtime.send(sessionId, prompt, mode);
+      return runtime.send(sessionId, prompt, mode, attachments);
     }
 
     case 'sessions.abort': {
@@ -178,7 +189,8 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
       return null;
     }
 
-    case 'git.state': {      const { cwd } = request.params as { cwd: string };
+    case 'git.state': {
+      const { cwd } = request.params as { cwd: string };
       return { state: await treeStateOf(cwd) };
     }
 
