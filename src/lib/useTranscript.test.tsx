@@ -128,3 +128,94 @@ describe('useTranscript', () => {
     expect(String(onError.mock.calls[0]?.[0])).toContain('log unreadable');
   });
 });
+
+/**
+ * A stopped turn is the one case where what was on screen is never written down: the
+ * runtime records streamed text only when a turn finishes.
+ */
+describe('useTranscript keeping what a stopped turn had said', () => {
+  const streaming = (text: string, messageId = 'm1') => ({
+    type: 'assistant.message_delta',
+    data: { messageId, deltaContent: text },
+    id: `d-${text}`,
+  });
+  const stop = (id: string) => ({ type: 'abort', data: { reason: 'user_initiated' }, id });
+
+  beforeEach(() => {
+    getTranscript.mockReset();
+    getTranscript.mockResolvedValue({ events: [], nextBefore: null });
+  });
+
+  it('keeps the text against the abort that ended it', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    act(() => result.current.push(streaming('half a thought')));
+    act(() => result.current.push(stop('a1')));
+
+    expect(result.current.abandoned?.get('a1')).toBe('half a thought');
+  });
+
+  // Otherwise it would be shown twice: once from the live list, once from what was kept.
+  it('takes the text out of the live list', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    act(() => result.current.push(streaming('half a thought')));
+    act(() => result.current.push(stop('a1')));
+
+    expect(result.current.events.some((e) => e.type === 'assistant.message_delta')).toBe(false);
+  });
+
+  // The whole point: leaving the session and coming back used to lose it.
+  it('still has the text after the reader looks elsewhere and returns', async () => {
+    const { result, rerender } = renderHook(({ id }) => useTranscript(id, () => {}), {
+      initialProps: { id: 's1' },
+    });
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+    act(() => result.current.push(streaming('half a thought')));
+    act(() => result.current.push(stop('a1')));
+
+    rerender({ id: 's2' });
+    rerender({ id: 's1' });
+
+    expect(result.current.abandoned?.get('a1')).toBe('half a thought');
+  });
+
+  it('keeps each session\u2019s remains to itself', async () => {
+    const { result, rerender } = renderHook(({ id }) => useTranscript(id, () => {}), {
+      initialProps: { id: 's1' },
+    });
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+    act(() => result.current.push(streaming('from one')));
+    act(() => result.current.push(stop('a1')));
+
+    rerender({ id: 's2' });
+
+    expect(result.current.abandoned?.get('a1')).toBeUndefined();
+  });
+
+  it('keeps nothing when the turn was stopped before it spoke', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    act(() => result.current.push(stop('a1')));
+
+    expect(result.current.abandoned?.get('a1')).toBeUndefined();
+  });
+
+  // A turn that finished sent its whole message, which replaced the run of deltas; there
+  // is nothing left over to keep.
+  it('keeps nothing from a turn that finished before it was stopped', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    act(() => result.current.push(streaming('half a thought')));
+    act(() =>
+      result.current.push({ type: 'assistant.message', data: { messageId: 'm1', content: 'the whole thought' }, id: 'm' }),
+    );
+    act(() => result.current.push(stop('a1')));
+
+    expect(result.current.abandoned?.get('a1')).toBeUndefined();
+  });
+});

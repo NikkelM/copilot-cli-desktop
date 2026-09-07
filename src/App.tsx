@@ -410,6 +410,7 @@ export default function App() {
               events={transcript.events}
               sessionId={selected.sessionId}
               cwd={selected.cwd}
+              abandoned={transcript.abandoned}
               hasOlder={transcript.hasOlder}
               loadingOlder={transcript.loadingOlder}
               onLoadOlder={transcript.loadOlder}
