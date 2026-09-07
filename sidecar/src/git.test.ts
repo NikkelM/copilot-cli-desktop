@@ -2,9 +2,19 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { githubSlug, treeStateOf } from './git.js';
+
+/**
+ * Every test here spawns git, several times over.
+ *
+ * The default five seconds is a limit on how long a piece of pure logic may take, and these
+ * are not that: one of them was measured at 3.2s alone, which leaves nothing for a machine
+ * that is also running the app. A generous limit here still catches a genuine hang, and
+ * stops a busy machine from being reported as a broken test.
+ */
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 /**
  * Real repositories rather than a stubbed git, for the same reason the snapshot tests use

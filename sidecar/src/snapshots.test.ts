@@ -2,9 +2,18 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { changesSince, diffOf, restoreTo, takeSnapshot, workspaceOf, type Workspace } from './snapshots.js';
+
+/**
+ * Every test here builds a real repository and spawns git, several times over.
+ *
+ * The default five seconds is a limit on how long a piece of pure logic may take, and these
+ * are not that: the restore cases run 1.3 to 2.3s each on an idle machine. Eleven of them
+ * failed in one run on a busy one, and all eleven passed alone moments later.
+ */
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 /**
  * Real repositories rather than a stubbed git. The whole mechanism is what git does with

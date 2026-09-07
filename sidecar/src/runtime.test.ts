@@ -7,6 +7,15 @@ import { join } from 'node:path';
 import { SessionRuntime, type RuntimeOptions } from './runtime.js';
 
 /**
+ * The tests that track what a turn changed spawn git, several times over.
+ *
+ * The default five seconds is a limit on how long a piece of pure logic may take, and those
+ * are not that: one was measured at 3.2s alone, which leaves nothing for a machine that is
+ * also running the app. It failed exactly that way under load while passing on its own.
+ */
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
+
+/**
  * A stand-in for a resumed session.
  * Only the surface the runtime touches is implemented, so the rules under test are the
  * runtime's own rather than the SDK's.
