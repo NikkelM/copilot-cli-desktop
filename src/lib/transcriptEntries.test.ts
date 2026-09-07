@@ -401,6 +401,8 @@ describe('sameEntry', () => {
     command: 'echo hi',
     search: true,
     patch: 'diff --git a/x b/x',
+    startedAt: '2026-09-05T12:00:00.000Z',
+    endedAt: '2026-09-05T12:01:19.000Z',
   };
 
   it('treats a rebuilt but identical entry as unchanged', () => {
@@ -424,6 +426,8 @@ describe('sameEntry', () => {
       command: 'echo bye',
       search: undefined,
       patch: undefined,
+      startedAt: '2026-09-05T12:00:01.000Z',
+      endedAt: undefined,
     };
 
     for (const [field, value] of Object.entries(changed)) {
