@@ -15,6 +15,10 @@ function Host({ session, onSend }: { session: string; onSend: (prompt: string) =
     <Composer
       disabled={false}
       busy={false}
+      resuming={false}
+      attached={[]}
+      onAttach={() => {}}
+      onError={() => {}}
       focusOn={session}
       value={drafts[session] ?? ''}
       onChange={(text) => setDrafts((current) => ({ ...current, [session]: text }))}
@@ -39,6 +43,10 @@ function bare(props: Partial<Parameters<typeof Composer>[0]> = {}) {
     <Composer
       disabled={false}
       busy={false}
+      resuming={false}
+      attached={[]}
+      onAttach={() => {}}
+      onError={() => {}}
       focusOn="s1"
       value=""
       onChange={() => {}}
@@ -64,6 +72,10 @@ describe('Composer', () => {
       <Composer
         disabled={false}
         busy={false}
+      resuming={false}
+      attached={[]}
+      onAttach={() => {}}
+      onError={() => {}}
         focusOn="s2"
         value=""
         onChange={() => {}}
@@ -128,5 +140,86 @@ describe('Composer', () => {
 
     view.rerender(<Host session="a" onSend={() => {}} />);
     expect(box().value).toBe('meant for a');
+  });
+});
+
+/**
+ * Waking a cold session is the one action that genuinely costs something - up to five and
+ * a half seconds - and the app used to say so in a grey line at the top of the pane, far
+ * from where the reader was looking.
+ */
+describe('while a cold session wakes', () => {
+  const composer = (props: Record<string, unknown> = {}) =>
+    render(
+      <Composer
+        disabled={false}
+        busy={false}
+        resuming={true}
+        attached={[]}
+        onAttach={() => {}}
+        onError={() => {}}
+        focusOn="s1"
+        value="hello"
+        onChange={() => {}}
+        onSend={() => {}}
+        onAbort={() => {}}
+        {...props}
+      />,
+    );
+
+  it('says what is happening, beside the button that was pressed', () => {
+    composer();
+    expect(screen.getByText('Waking this session up')).toBeTruthy();
+  });
+
+  // A second send would look like the fix for a button that appears to have done nothing.
+  it('refuses a second send', async () => {
+    const onSend = vi.fn();
+    composer({ onSend });
+
+    await userEvent.click(screen.getByRole('button', { name: /Waking/ }));
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('refuses one from the keyboard too', async () => {
+    const onSend = vi.fn();
+    composer({ onSend });
+
+    await userEvent.type(screen.getByRole('textbox'), '{Enter}');
+
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('says nothing once the session is awake', () => {
+    composer({ resuming: false });
+    expect(screen.queryByText('Waking this session up')).toBeNull();
+  });
+});
+
+/**
+ * Waking takes seconds. A reader who moves to another session in the meantime was being
+ * told that one was waking, and having their Enter refused for it.
+ */
+describe('the waking state belongs to one session', () => {
+  it('says nothing in a session that is not the one waking', () => {
+    render(
+      <Composer
+        disabled={false}
+        busy={false}
+        resuming={false}
+        attached={[]}
+        onAttach={() => {}}
+        onError={() => {}}
+        focusOn="s2"
+        value="hello"
+        onChange={() => {}}
+        onSend={() => {}}
+        onAbort={() => {}}
+      />,
+    );
+
+    expect(screen.queryByText('Waking this session up')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
   });
 });

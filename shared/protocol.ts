@@ -128,9 +128,24 @@ export interface SessionModel {
   contextTier?: string;
 }
 
+/**
+ * Something sent along with a message.
+ *
+ * The runtime takes several shapes - directories, selections, raw blobs - and this is the
+ * one a file picker produces. The others are different gestures and can be added when
+ * something in the app makes them.
+ */
+export interface Attachment {
+  type: 'file';
+  path: string;
+  displayName?: string;
+}
+
 export interface SendParams {
   sessionId: string;
   prompt: string;
+  /** Files to send with it. Referenced by path: the runtime reads them, not this app. */
+  attachments?: Attachment[];
   /**
    * `enqueue` queues behind an in-flight turn instead of starting a new one.
    *
