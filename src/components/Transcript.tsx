@@ -194,6 +194,8 @@ interface TranscriptProps {
   sessionId: string;
   /** Used to shorten file paths in tool summaries. */
   cwd: string | null;
+  /** What a stopped turn had already said, by the abort that ended it. */
+  abandoned?: ReadonlyMap<string, string>;
   /** Whether older history exists before the events supplied. */
   hasOlder: boolean;
   loadingOlder: boolean;
@@ -204,11 +206,12 @@ export function Transcript({
   events,
   sessionId,
   cwd,
+  abandoned,
   hasOlder,
   loadingOlder,
   onLoadOlder,
 }: TranscriptProps) {
-  const entries = toEntries(events, cwd);
+  const entries = toEntries(events, cwd, abandoned);
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
   /** Scroll height before older events were prepended, so the view can be held still. */
@@ -303,6 +306,8 @@ const EntryRow = memo(
     return (
       <div className={`message ${entry.variant}`}>
         <Markdown body={entry.body} anchor={entry.key} />
+        {/* What the agent had said when it was stopped, which is not what it meant to say. */}
+        {entry.partial && <p className="message-partial">Cut off here</p>}
       </div>
     );
   },

@@ -704,3 +704,61 @@ describe('a stopped turn', () => {
     expect(toEntries([event(type)], null)).toEqual([]);
   });
 });
+
+  /**
+   * A reply that was cut off is the one thing the runtime never writes down: streamed text
+   * is only recorded when a turn finishes, and a stopped turn never gets that far.
+   */
+  describe('what a stopped turn had already said', () => {
+    it('shows the text against the abort that ended it', () => {
+      const entries = toEntries(
+        [event('user.message', { content: 'go' }), { ...event('abort', { reason: 'user_initiated' }), id: 'a1' }],
+        null,
+        new Map([['a1', 'I had started to say']]),
+      );
+
+      expect(entries[1]).toMatchObject({ kind: 'message', variant: 'assistant', body: 'I had started to say' });
+    });
+
+    // The text came before the stop, and reading them the other way round is nonsense.
+    it('puts the text above the stop, not below it', () => {
+      const entries = toEntries([{ ...event('abort', {}), id: 'a1' }], null, new Map([['a1', 'partial']]));
+
+      expect(entries.map((entry) => (entry as { variant?: string }).variant)).toEqual(['assistant', 'stopped']);
+    });
+
+    it('marks it as cut off rather than passing it off as a reply', () => {
+      const entries = toEntries([{ ...event('abort', {}), id: 'a1' }], null, new Map([['a1', 'partial']]));
+
+      expect(entries[0]).toMatchObject({ partial: true });
+    });
+
+    it('says nothing extra when the turn was stopped before it spoke', () => {
+      const entries = toEntries([{ ...event('abort', {}), id: 'a1' }], null, new Map());
+
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ variant: 'stopped' });
+    });
+
+    // Two stopped turns in one session each have their own remains.
+    it('keeps each stop to its own text', () => {
+      const entries = toEntries(
+        [
+          { ...event('abort', { reason: 'user_initiated' }), id: 'a1' },
+          { ...event('abort', { reason: 'user_initiated' }), id: 'a2' },
+        ],
+        null,
+        new Map([
+          ['a1', 'first'],
+          ['a2', 'second'],
+        ]),
+      );
+
+      expect(entries.map((entry) => (entry as { body?: string }).body)).toEqual([
+        'first',
+        'Cancelled by user',
+        'second',
+        'Cancelled by user',
+      ]);
+    });
+  });

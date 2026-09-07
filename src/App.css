@@ -1006,6 +1006,14 @@ body {
   text-overflow: ellipsis;
 }
 
+/* Said before the turn was stopped, and no more than that. */
+.message-partial {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: italic;
+}
+
 .message.failed {
   color: #f85149;
   font-family: ui-monospace, monospace;

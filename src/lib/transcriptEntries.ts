@@ -10,6 +10,13 @@ export interface MessageEntry {
   key: string;
   variant: 'user' | 'assistant' | 'failed' | 'stopped';
   body: string;
+  /**
+   * A reply that was cut off part way through.
+   *
+   * Worth saying: the text is what the agent had said when it was stopped, not what it
+   * meant to say, and a transcript that presents the two alike is misleading about both.
+   */
+  partial?: boolean;
 }
 
 /**
@@ -210,8 +217,16 @@ function answerOf(result: string): string | null {
  * Tool starts and completions arrive as separate events but describe one action, so
  * they are paired by `toolCallId` into a single entry. Anything not handled here is
  * invisible, so new event types need a case rather than a fallback.
+ *
+ * @param abandoned what a stopped turn had already said, by the id of the abort that ended
+ *   it. The runtime writes streamed text down only when a turn finishes, so this is the
+ *   only record of a reply that was interrupted.
  */
-export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[] {
+export function toEntries(
+  events: TranscriptEvent[],
+  cwd: string | null,
+  abandoned?: ReadonlyMap<string, string>,
+): Entry[] {
   const entries: Entry[] = [];
   /** Thinking already shown as it was written, so the message repeating it is skipped. */
   const streamed = new Set<string>();
@@ -382,6 +397,13 @@ export function toEntries(events: TranscriptEvent[], cwd: string | null): Entry[
       // An abort emits `abort` then `assistant.turn_end`, with no `session.idle` at all,
       // so all three signals are needed rather than idle alone.
       case 'abort':
+        // The text the agent had already said, which the runtime never writes down: a
+        // stopped turn emits no assistant.message, so without this the reply that was on
+        // screen a moment ago is gone on the next visit as though it never happened.
+        {
+          const said = abandoned?.get(key);
+          if (said) entries.push({ kind: 'message', key: `${key}-partial`, variant: 'assistant', body: said, partial: true });
+        }
         // A reply that simply stops mid-sentence reads as the app losing the thread. The
         // event is written to the log, so this says so on every later replay too.
         entries.push({ kind: 'message', key, variant: 'stopped', body: stopReason(data) });
@@ -422,7 +444,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
 
   if (a.kind === 'message') {
     const other = b as MessageEntry;
-    return a.variant === other.variant && a.body === other.body;
+    return a.variant === other.variant && a.body === other.body && a.partial === other.partial;
   }
 
   const other = b as ToolEntry;

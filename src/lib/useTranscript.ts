@@ -26,6 +26,14 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
   report.current = onError;
   const showing = useRef(sessionId);
   showing.current = sessionId;
+  /**
+   * What each session's stopped turns had already said, by the abort that ended them.
+   *
+   * Kept here rather than in state because it outlives the live list it came from: this
+   * hook stays mounted while the reader moves between sessions, and the text would
+   * otherwise be gone the moment they looked away.
+   */
+  const abandoned = useRef(new Map<string, Map<string, string>>());
 
   // Selecting a session only replays its log from disk; nothing is resumed until the
   // user sends a message, which is what keeps idle sessions free.
@@ -52,8 +60,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
   }, [sessionId]);
 
   /** Fetch the page before the events already held and prepend it. */
-  const loadOlder = useCallback(() => {
-    if (!sessionId || olderCursor === null) return;
+  const loadOlder = useCallback(() => {    if (!sessionId || olderCursor === null) return;
 
     setLoadingOlder(true);
     getTranscript(sessionId, undefined, olderCursor)
@@ -69,6 +76,24 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
 
   /** Record an event from the running session. */
   const push = useCallback((event: TimelineEvent) => {
+    // A stopped turn is the one case where what was on screen is not written down: the
+    // runtime records streamed text only when a turn finishes. The text is moved out of the
+    // live list and kept against the abort that ended it, so it survives leaving the
+    // session and is shown in the same place on returning.
+    if (event.type === 'abort' && event.id) {
+      const abortId = event.id;
+      setLive((current) => {
+        const said = partOf(current);
+        if (!said) return current;
+
+        const forSession = abandoned.current.get(showing.current ?? '') ?? new Map<string, string>();
+        forSession.set(abortId, said.text);
+        abandoned.current.set(showing.current ?? '', forSession);
+
+        return current.filter((entry) => entry !== said.entry);
+      });
+    }
+
     setLive((current) => appendLive(current, event));
   }, []);
 
@@ -85,5 +110,31 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
 
   const events = useMemo(() => timelineOf(history, live), [history, live]);
 
-  return { events, hasOlder: olderCursor !== null, loadingOlder, loadOlder, push, showSent };
+  return {
+    events,
+    hasOlder: olderCursor !== null,
+    loadingOlder,
+    loadOlder,
+    push,
+    showSent,
+    abandoned: abandoned.current.get(sessionId ?? ''),
+  };
+}
+
+/**
+ * The reply being streamed when a turn was stopped, if there was one.
+ *
+ * A reply in flight is a single folded run of deltas at the end of the live list. Once the
+ * turn ends normally the runtime sends the whole message and the run is replaced, so a run
+ * still standing is one that will never be completed.
+ */
+function partOf(live: TimelineEvent[]): { entry: TimelineEvent; text: string } | null {
+  for (let index = live.length - 1; index >= 0; index--) {
+    const entry = live[index]!;
+    if (entry.type !== 'assistant.message_delta') continue;
+
+    const text = (entry.data as { deltaContent?: unknown } | null)?.deltaContent;
+    return typeof text === 'string' && text.length > 0 ? { entry, text } : null;
+  }
+  return null;
 }
