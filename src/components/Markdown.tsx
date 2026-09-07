@@ -12,7 +12,39 @@ import { openUrl } from '@tauri-apps/plugin-opener';
 
 import { scopeAnchors } from '../lib/scopeAnchors';
 import { aliases, languages } from '../lib/highlight';
+import { CopyButton } from './CopyButton';
+import { Mermaid } from './Mermaid';
 import 'katex/dist/katex.min.css';
+
+/**
+ * The text of a block, as it was written.
+ *
+ * Taken from the parsed node rather than the rendered element: by the time a block is on
+ * screen it has been cut into a span per token, and reassembling those would depend on how
+ * the highlighter happened to split them.
+ */
+function textOf(node: unknown): string {
+  const element = node as { type?: string; value?: string; children?: unknown[] } | undefined;
+  if (!element) return '';
+  if (element.type === 'text') return element.value ?? '';
+
+  return (element.children ?? []).map(textOf).join('');
+}
+
+/**
+ * The source of a block that says it is a diagram, or null for anything else.
+ *
+ * Read from the fence's own language rather than guessed from the content: a block that
+ * merely looks like mermaid is still a block of code someone wanted to read as code.
+ */
+function mermaidIn(node: unknown): string | null {
+  const pre = node as { children?: { tagName?: string; properties?: { className?: unknown } }[] } | undefined;
+  const code = pre?.children?.find((child) => child.tagName === 'code');
+  if (!code) return null;
+
+  const classes = Array.isArray(code.properties?.className) ? (code.properties.className as string[]) : [];
+  return classes.includes('language-mermaid') ? textOf(code) : null;
+}
 
 /**
  * What HTML a reply may bring with it.
@@ -37,7 +69,16 @@ const schema = {
  * Replies are written to be read as markdown, so showing the source leaves headings,
  * emphasis and lists as punctuation to read past.
  */
-export const Markdown = memo(function Markdown({ body, anchor }: { body: string; anchor?: string }) {
+export const Markdown = memo(function Markdown({
+  body,
+  anchor,
+  streaming,
+}: {
+  body: string;
+  anchor?: string;
+  /** Still arriving, so anything that needs the whole of it should wait. */
+  streaming?: boolean;
+}) {
   return (
     <div className="markdown">
       <ReactMarkdown
@@ -54,6 +95,20 @@ export const Markdown = memo(function Markdown({ body, anchor }: { body: string;
           ...(anchor ? ([rehypeSlug, scopeAnchors(anchor)] as const) : []),
         ]}
         components={{
+          // A block of code is the thing most often wanted out of a reply, and selecting it
+          // by hand catches the line numbers of whatever is around it.
+          pre: ({ children, node }) => {
+            const diagram = mermaidIn(node);
+            // A picture written as text, which the terminal could only ever show as text.
+            if (diagram !== null) return <Mermaid source={diagram} streaming={streaming} />;
+
+            return (
+              <div className="block">
+                <CopyButton text={textOf(node)} what="code" />
+                <pre>{children}</pre>
+              </div>
+            );
+          },
           a: ({ href, children }) => (
             <a
               href={href}
