@@ -32,10 +32,13 @@ jobs:
           fi
 
   # The same two jobs CI runs, from the same file. A release passes exactly what a push
-  # passes, and neither can drift from the other.
+  # passes, and neither can drift from the other - with the tests run on Windows as well,
+  # since that is what is being shipped and the extra minutes are noise beside the build.
   checks:
     needs: version
     uses: ./.github/workflows/checks.yml
+    with:
+      windows: true
 
   release:
     name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag) }}

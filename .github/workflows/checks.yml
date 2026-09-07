@@ -5,14 +5,27 @@ name: Checks
 # live in one file instead of being copied into two.
 on:
   workflow_call:
+    inputs:
+      windows:
+        description: Also run the tests on Windows, which bills at twice the Linux rate.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   types-and-tests:
-    name: Types and tests
-    runs-on: ubuntu-latest
+    name: Types and tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Linux every time, Windows only when it is worth paying for. The app is built for
+      # Windows and one bug has already got through this way - a runner whose TMP is an 8.3
+      # short name broke three tests that passed everywhere else - but at 2x the rate, on a
+      # 2000 minute allowance, running it on every push would cost more than it catches.
+      fail-fast: false
+      matrix:
+        os: ${{ inputs.windows && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v7
 

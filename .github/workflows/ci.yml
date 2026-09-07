@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      windows:
+        description: Also run the tests on Windows
+        type: boolean
+        default: false
 
 # A second push to the same branch makes the first one's answer irrelevant, and the Rust job
 # is slow enough that leaving it running would queue work behind a result nobody will read.
@@ -18,3 +23,7 @@ permissions:
 jobs:
   checks:
     uses: ./.github/workflows/checks.yml
+    with:
+      # Off for an ordinary push, and available on demand for when a change is one Windows
+      # might disagree about.
+      windows: ${{ inputs.windows || false }}
