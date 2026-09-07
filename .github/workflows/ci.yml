@@ -20,7 +20,7 @@ jobs:
     name: Types and tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The sidecar reads the CLI's history with node:sqlite, which arrived in Node 22.
       - uses: actions/setup-node@v4
@@ -39,7 +39,7 @@ jobs:
     name: Rust
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # What Tauri links against. The app is built for Windows, but nothing in this crate is
       # platform-specific, so checking it here costs a fraction of what a Windows runner does.
