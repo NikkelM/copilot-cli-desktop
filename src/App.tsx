@@ -43,6 +43,7 @@ import {
   sendMessage,
 } from './lib/sidecar';
 import { CHANGES } from './lib/localCommands';
+import { messageOf } from './lib/errors';
 import { useChanges } from './lib/useChanges';
 import { useModel } from './lib/useModel';
 import { useCommands } from './lib/useCommands';
@@ -389,12 +390,21 @@ export default function App() {
    *
    * Nothing about this reaches the event log: the runtime hands the output back once and
    * keeps no record, so the rows written here are the only account of it there will ever be.
+   *
+   * Everything it has to say goes to the transcript, refusals included, which is where the
+   * CLI puts them: its whole slash path is one try/catch, and both arms append a timeline
+   * entry. A refusal is the answer to a line that was typed into the transcript, so a
+   * banner over the top separates it from the thing it is about (#145).
    */
   async function runCommand(sessionId: string, command: SlashCommand, input: string) {
     setError(null);
 
+    // The draft is left alone: the command is fine, only the timing is wrong, so it stays
+    // in the composer ready to send again once the turn ends.
     if (busy && !command.allowDuringTurn) {
-      setError(`/${command.name} cannot run while the agent is working. Stop the turn first.`);
+      transcript.showLocal('command.failed', {
+        text: `/${command.name} cannot run while the agent is working. Stop the turn first.`,
+      });
       return;
     }
 
@@ -427,11 +437,15 @@ export default function App() {
         // Named rather than swallowed: a command that quietly did nothing is worse than one
         // that says this app cannot do it yet.
         case 'unsupported':
-          setError(`/${command.name} needs a ${outcome.what} view, which this app does not have yet.`);
+          transcript.showLocal('command.failed', {
+            text: `/${command.name} needs a ${outcome.what} view, which this app does not have yet.`,
+          });
           break;
       }
     } catch (e: unknown) {
-      setError(String(e));
+      // The runtime's own wording, which already names the command and says what it wanted:
+      // invoking /add-dir with no argument answers with its usage line.
+      transcript.showLocal('command.failed', { text: messageOf(e) });
     } finally {
       setResuming(null);
     }
