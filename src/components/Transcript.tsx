@@ -2,9 +2,10 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
-import { countChanges, parsePatch, type PatchLine } from '../lib/patch';
+import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
 import { CopyButton } from './CopyButton';
+import { Diff } from './Diff';
 import { Elapsed } from './Elapsed';
 import { Markdown } from './Markdown';
 
@@ -164,47 +165,6 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
             {entry.command && <pre className="tool-command">{entry.command}</pre>}
           </>
         ))}
-    </div>
-  );
-}
-
-/** A change, with the line numbers that say where in the file to look. */
-function Diff({ lines }: { lines: PatchLine[] }) {
-  return (
-    <div className="tool-diff">
-      <table>
-        <tbody>
-          {lines.map((line, index) =>
-            line.kind === 'skip' ? (
-              <tr key={index} className="skip">
-                <td className="gutter" colSpan={3}>
-                  {line.hidden ? `${line.hidden} unchanged lines` : ''}
-                </td>
-              </tr>
-            ) : (
-              <tr key={index} className={line.kind}>
-                <td className="gutter">{line.before ?? ''}</td>
-                <td className="gutter">{line.after ?? ''}</td>
-                <td className="mark">{line.kind === 'added' ? '+' : line.kind === 'removed' ? '−' : ''}</td>
-                <td className="code">
-                  {/* Marked in two tones: the line is changed, and within it this is the
-                      part that changed. Colouring the whole line only says something
-                      happened somewhere in it. */}
-                  {line.segments
-                    ? line.segments.map((segment, at) =>
-                        segment.changed ? (
-                          <mark key={at}>{segment.text}</mark>
-                        ) : (
-                          <span key={at}>{segment.text}</span>
-                        ),
-                      )
-                    : line.text}
-                </td>
-              </tr>
-            ),
-          )}
-        </tbody>
-      </table>
     </div>
   );
 }
