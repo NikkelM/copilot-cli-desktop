@@ -48,7 +48,7 @@ import { mergeLivePreviews } from './lib/livePreviews';
 import { contentOf } from './lib/timeline';
 import { useModel } from './lib/useModel';
 import { useCommands } from './lib/useCommands';
-import { findCommand, typedCommand } from './lib/slash';
+import { dispatch } from './lib/slash';
 import { useQueue } from './lib/useQueue';
 import { useShortcuts } from './lib/useShortcuts';
 import { useTranscript } from './lib/useTranscript';
@@ -69,7 +69,13 @@ export default function App() {
   const [attachments, setAttachments] = useState<Record<string, Attachment[]>>({});
   const [busy, setBusy] = useState(false);
   /** Whether the shortcut list is up. There is nothing else in the app that names them. */
-  const [help, setHelp] = useState(false);
+  /**
+   * Which help is showing, if any.
+   *
+   * Two lists, not two components: `?` asks for the keys, `/help` for the keys and every
+   * command. Split so the reminder stays short enough to read at a glance.
+   */
+  const [help, setHelp] = useState<'keys' | 'full' | null>(null);
   /**
    * The session being woken, if one is.
    *
@@ -316,7 +322,7 @@ export default function App() {
     useCallback(
       (shortcut) => {
         if (shortcut === 'help') {
-          setHelp((showing) => !showing);
+          setHelp((showing) => (showing ? null : 'keys'));
           return;
         }
 
@@ -362,9 +368,25 @@ export default function App() {
 
     // A leading slash naming a command is a command, not a message. Anything else that
     // starts with one - a path, a fraction, a sentence - is text, and is sent as text.
-    const typed = typedCommand(prompt);
-    const command = typed && findCommand(slash.commands, typed.name);
-    if (typed && command) return runCommand(selectedId, command, typed.input ?? '');
+    const what = dispatch(prompt, slash.commands);
+
+    if (what.kind === 'local') {
+      setDrafts((current) => ({ ...current, [selectedId]: '' }));
+      setError(null);
+      setHelp('full');
+      return;
+    }
+
+    if (what.kind === 'command') return runCommand(selectedId, what.command, what.input);
+
+    if (what.kind === 'unknown') {
+      const near = what.near.map((each) => `/${each.name}`);
+      setError(
+        `Unknown command /${what.name}.` +
+          (near.length > 0 ? ` Did you mean ${near.join(', ')}?` : ' Type / to see what there is.'),
+      );
+      return;
+    }
 
     return send(selectedId, prompt, prompt);
   }
@@ -531,7 +553,9 @@ export default function App() {
             <div className="footer">
               {/* Above the composer and below everything else, because that is where the
                   CLI puts it and where someone typing is already looking. */}
-              {help && <Shortcuts onClose={() => setHelp(false)} />}
+              {help && (
+                <Shortcuts commands={help === 'full' ? slash.commands : undefined} onClose={() => setHelp(null)} />
+              )}
 
               <Queue messages={queue.queues[selected.sessionId] ?? []} />
 

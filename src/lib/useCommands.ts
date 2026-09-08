@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { listCommands } from './sidecar';
+import { LOCAL_COMMANDS, isLocal } from './localCommands';
 import type { SlashCommand } from '../../shared/protocol';
 
 /**
@@ -34,10 +35,11 @@ function remembered(): SlashCommand[] {
   try {
     const stored = localStorage.getItem(REMEMBERED);
     const parsed: unknown = stored ? JSON.parse(stored) : null;
-    return Array.isArray(parsed) && parsed.length > 0 && parsed.every(usable) ? (parsed as SlashCommand[]) : [];
+    const known = Array.isArray(parsed) && parsed.length > 0 && parsed.every(usable) ? (parsed as SlashCommand[]) : [];
+    return merge(known, [...LOCAL_COMMANDS]);
   } catch {
     // A corrupt or unreadable entry is worth no more than an absent one.
-    return [];
+    return merge([], [...LOCAL_COMMANDS]);
   }
 }
 
@@ -82,7 +84,9 @@ export function useCommands(sessionId: string | null) {
           setCommands((known) => {
             const merged = merge(known, found);
             try {
-              localStorage.setItem(REMEMBERED, JSON.stringify(merged));
+              // Ours are added back on read from the current definition, so storing them
+              // would only preserve a stale copy of something this build already knows.
+              localStorage.setItem(REMEMBERED, JSON.stringify(merged.filter((c) => !isLocal(c.name))));
             } catch {
               // Remembering is an optimisation; failing to is not worth reporting.
             }
@@ -108,11 +112,11 @@ export function useCommands(sessionId: string | null) {
     [refresh],
   );
 
-  // Nothing is fetched on mount. The first slash is what asks, and only when there is
-  // nothing remembered to answer with.
+  // Nothing is fetched on mount. The first slash is what asks, and only when the list holds
+  // nothing but the handful this app answers itself.
   const open = useCallback(() => {
-    if (commands.length === 0) refresh(sessionId);
-  }, [commands.length, refresh, sessionId]);
+    if (commands.every((command) => isLocal(command.name))) refresh(sessionId);
+  }, [commands, refresh, sessionId]);
 
   return { commands, failed, open, observe };
 }

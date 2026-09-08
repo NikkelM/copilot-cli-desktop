@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { commandText, completionOf, findCommand, matchCommands, typedCommand } from './slash';
+import {
+  commandText,
+  completionOf,
+  dispatch,
+  findCommand,
+  looksLikeCommand,
+  matchCommands,
+  typedCommand,
+} from './slash';
+import { HELP } from './localCommands';
 import type { SlashCommand } from '../../shared/protocol';
 
 function command(name: string, extra: Partial<SlashCommand> = {}): SlashCommand {
@@ -41,6 +50,27 @@ describe('typedCommand', () => {
 
   it('is not a command once it spans more than one line', () => {
     expect(typedCommand('/model\nand another thing')).toBeNull();
+  });
+});
+
+// What separates a command nobody has heard of, which is worth an error, from text that
+// happens to start with a slash, which is worth sending.
+describe('looksLikeCommand', () => {
+  it('accepts the shapes the runtime names its commands', () => {
+    for (const name of ['help', 'allow-all', 'model', 'security-review', 'a', 'b2']) {
+      expect(looksLikeCommand(name), name).toBe(true);
+    }
+  });
+
+  it('rejects a path, which is text and has to stay text', () => {
+    expect(looksLikeCommand('usr/bin/env')).toBe(false);
+    expect(looksLikeCommand('home/nikke')).toBe(false);
+  });
+
+  it('rejects a bare slash, a fraction and a sentence', () => {
+    expect(looksLikeCommand('')).toBe(false);
+    expect(looksLikeCommand('2')).toBe(false);
+    expect(looksLikeCommand('not.a.command')).toBe(false);
   });
 });
 
@@ -115,5 +145,80 @@ describe('commandText', () => {
 
   it('adds no space to a command that takes nothing', () => {
     expect(commandText(COMMANDS[4]!)).toBe('/usage');
+  });
+});
+
+describe('dispatch', () => {
+  it('runs a command the runtime owns, with whatever followed it', () => {
+    expect(dispatch('/compact only the tests', COMMANDS)).toEqual({
+      kind: 'command',
+      command: COMMANDS[3],
+      input: 'only the tests',
+    });
+  });
+
+  it('runs a command with no argument as a command with an empty one', () => {
+    expect(dispatch('/usage', COMMANDS)).toEqual({ kind: 'command', command: COMMANDS[4], input: '' });
+  });
+
+  it('finds a command under an alias', () => {
+    expect(dispatch('/yolo on', COMMANDS)).toEqual({ kind: 'command', command: COMMANDS[2], input: 'on' });
+  });
+
+  // Answered here, so it needs no session and never reaches the runtime that has not heard
+  // of it.
+  it('separates the commands this app answers itself', () => {
+    const what = dispatch('/help', [...COMMANDS, HELP]);
+
+    expect(what).toEqual({ kind: 'local', command: HELP, input: '' });
+  });
+
+  it('sends anything without a leading slash as text', () => {
+    expect(dispatch('what does /model do?', COMMANDS)).toEqual({ kind: 'text' });
+  });
+
+  // A slash alone does not make a command, or a pasted path would become one.
+  it('sends a path as text', () => {
+    expect(dispatch('/usr/bin/env python', COMMANDS)).toEqual({ kind: 'text' });
+  });
+
+  it('sends a fraction as text', () => {
+    expect(dispatch('/2 of the way there', COMMANDS)).toEqual({ kind: 'text' });
+  });
+
+  it('sends a bare slash as text', () => {
+    expect(dispatch('/', COMMANDS)).toEqual({ kind: 'text' });
+  });
+
+  /**
+   * The bug this exists for: forty of the CLI's commands are drawn by the terminal and
+   * unknown to the runtime, so they used to fall past the lookup and reach the agent as a
+   * message - spending a turn on a word never meant for it.
+   */
+  describe('a command nobody has heard of', () => {
+    it('is named rather than sent', () => {
+      const what = dispatch('/chronicle', COMMANDS);
+
+      expect(what.kind).toBe('unknown');
+      expect(what).toMatchObject({ name: 'chronicle' });
+    });
+
+    it('offers what it might have meant', () => {
+      const what = dispatch('/mode', COMMANDS);
+
+      expect(what).toMatchObject({ kind: 'unknown', near: [COMMANDS[0]] });
+    });
+
+    it('offers no more than three', () => {
+      const what = dispatch('/m', COMMANDS);
+
+      expect(what.kind === 'unknown' && what.near.length).toBeLessThanOrEqual(3);
+    });
+
+    // Nothing can be said to be unknown against a list that has not arrived, and a message
+    // is the one outcome that is never wrong to fall back to.
+    it('is sent as text while there is no list to check against', () => {
+      expect(dispatch('/chronicle', [])).toEqual({ kind: 'text' });
+    });
   });
 });

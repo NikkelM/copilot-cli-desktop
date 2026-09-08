@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Shortcuts } from './Shortcuts';
 import { BINDINGS } from '../lib/useShortcuts';
+import type { SlashCommand } from '../../shared/protocol';
 
 describe('Shortcuts', () => {
   // Built from the bindings themselves, so it cannot describe a key that does nothing.
@@ -71,5 +72,46 @@ describe('Shortcuts', () => {
     render(<Shortcuts onClose={() => {}} />);
 
     expect(screen.queryAllByRole('option', { selected: true })).toHaveLength(0);
+  });
+
+  /**
+   * `?` asks for the keys, `/help` for everything. Same list, one longer, exactly as the CLI
+   * divides its quick help from its full help.
+   */
+  describe('given commands', () => {
+    const commands: SlashCommand[] = [
+      { name: 'model', description: 'choose a model', aliases: [], allowDuringTurn: true },
+      { name: 'usage', description: 'show token usage', aliases: [], allowDuringTurn: true },
+    ];
+
+    it('lists them under the keys', () => {
+      render(<Shortcuts commands={commands} onClose={() => {}} />);
+
+      expect(screen.getByText('/model')).toBeTruthy();
+      expect(screen.getByText('choose a model')).toBeTruthy();
+      expect(screen.getByText('?')).toBeTruthy();
+    });
+
+    it('says it is the full help, not the shortcuts', () => {
+      render(<Shortcuts commands={commands} onClose={() => {}} />);
+
+      expect(screen.getByRole('listbox', { name: 'Help' })).toBeTruthy();
+    });
+
+    // Nothing is fetched to draw it: the list is whatever is already known, so reading the
+    // help never starts a server.
+    it('draws without any commands at all', () => {
+      render(<Shortcuts commands={[]} onClose={() => {}} />);
+
+      expect(screen.getByText('?')).toBeTruthy();
+    });
+
+    // The quick list names /help so it can be found from `?`, which would say it twice here.
+    it('says a command the keys already name only once', () => {
+      const help: SlashCommand = { name: 'help', description: 'show full help', aliases: [], allowDuringTurn: true };
+      render(<Shortcuts commands={[...commands, help]} onClose={() => {}} />);
+
+      expect(screen.getAllByText('/help')).toHaveLength(1);
+    });
   });
 });

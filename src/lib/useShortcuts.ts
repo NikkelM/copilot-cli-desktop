@@ -36,6 +36,7 @@ export interface Binding {
  * read as one tool.
  */
 export const BINDINGS: readonly Binding[] = [
+  { keys: '/help', what: 'show full help' },
   { id: 'help', keys: '?', what: 'show quick help' },
   { keys: '/', what: 'commands' },
   { id: 'interrupt', keys: 'ctrl+c', what: 'cancel' },
