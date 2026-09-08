@@ -35,11 +35,6 @@ export const desktopDataDir =
     'com.nikkelm.copilot-cli-desktop',
   );
 
-/** Where this app keeps what it worked out about one session. */
-export function sessionDataDir(sessionId: string): string {
-  return join(desktopDataDir, 'sessions', sessionId);
-}
-
 /**
  * Locate the Copilot CLI executable that the SDK should drive.
  * The SDK spawns this once and hosts every session inside it.

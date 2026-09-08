@@ -288,9 +288,6 @@ export interface SidecarRequests {
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'sessions.create': { params: { workingDirectory?: string }; result: { sessionId: string } };
-  'sessions.changes': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
-  'sessions.diff': { params: { sessionId: string; path: string; scope?: SnapshotScope }; result: { patch: string } };
-  'sessions.rewind': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
   'git.state': { params: { cwd: string }; result: { state: TreeState | null } };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**
@@ -368,29 +365,6 @@ export interface JsonRpcNotification {
   jsonrpc: '2.0';
   method: string;
   params?: unknown;
-}
-
-/** A file the agent changed during the current turn. */
-export interface SessionChange {
-  path: string;
-  status: 'added' | 'modified' | 'deleted' | 'renamed';
-}
-
-/** Which recorded point to measure from, or to put the files back to. */
-export type SnapshotScope = 'session' | 'turn' | { id: string };
-
-/** A point a session can be compared against, or returned to. */
-export interface SnapshotPoint {
-  id: string;
-  at: string;
-  prompt?: string;
-}
-
-export interface SessionChangesResult {
-  /** Null when the session is not in a git repository, or has no snapshot yet. */
-  root: string | null;
-  changes: SessionChange[];
-  points: SnapshotPoint[];
 }
 
 /**

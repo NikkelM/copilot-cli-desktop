@@ -17,8 +17,8 @@ import { githubSlug, treeStateOf } from './git.js';
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 
 /**
- * Real repositories rather than a stubbed git, for the same reason the snapshot tests use
- * them: the whole of this is how git reports its own state, so a fake would test the fake.
+ * Real repositories rather than a stubbed git: the whole of this is how git reports its own
+ * state, so a fake would test the fake.
  */
 let dir: string;
 
@@ -66,7 +66,8 @@ describe('treeStateOf', () => {
   });
 
   // A branch exists before its first commit does, and that is exactly when a reader is
-  // most likely to be looking. Snapshots refuse this case; this must not.
+  // most likely to be looking
+
   it('reports the branch of a repository with no commits', async () => {
     const fresh = mkdtempSync(join(tmpdir(), 'ccd-git-empty-'));
     execFileSync('git', ['-C', fresh, 'init', '-q', '-b', 'main']);

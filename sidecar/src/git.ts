@@ -8,15 +8,11 @@ const run = promisify(execFile);
 /**
  * Run git in a directory and hand back what it printed.
  *
- * Shared rather than written per caller so the buffer limit and the private-index escape
- * hatch below hold everywhere: a diff of a large change overruns the default buffer, and a
- * caller that stages must not disturb the staging area the reader is using.
+ * Shared rather than written per caller so the buffer limit holds everywhere: reading a
+ * large repository's status overruns the default buffer.
  */
-export async function git(root: string, args: string[], indexFile?: string): Promise<string> {
-  const { stdout } = await run('git', ['-C', root, ...args], {
-    maxBuffer: 64 * 1024 * 1024,
-    env: indexFile ? { ...process.env, GIT_INDEX_FILE: indexFile } : process.env,
-  });
+export async function git(root: string, args: string[]): Promise<string> {
+  const { stdout } = await run('git', ['-C', root, ...args], { maxBuffer: 64 * 1024 * 1024 });
   return stdout;
 }
 
@@ -68,8 +64,8 @@ async function githubRemote(cwd: string): Promise<string | null> {
  *
  * One status call rather than a branch lookup and a status walk: the porcelain format
  * carries the branch in its header, and status is the expensive half on a large repository.
- * Unlike a snapshot this asks nothing of HEAD, so a repository whose first commit is still
- * to come reports its branch rather than nothing.
+ * Nothing is asked of HEAD, so a repository whose first commit is still to come reports its
+ * branch rather than nothing.
  *
  * The remote is read alongside it rather than after, since neither waits on the other.
  */

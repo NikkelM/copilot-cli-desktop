@@ -16,7 +16,6 @@ import type {
   JsonRpcResponse,
   PermissionChoice,
   ReasoningEffort,
-  SnapshotScope,
 } from '../../shared/protocol.js';
 import {
   NOTIFY_ELICITATION_REQUESTED,
@@ -151,23 +150,6 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
     case 'sessions.create': {
       const { workingDirectory } = request.params as { workingDirectory: string };
       return runtime.create(workingDirectory);
-    }
-
-    case 'sessions.changes': {
-      const { sessionId, scope } = request.params as { sessionId: string; scope?: SnapshotScope };
-      const found = await runtime.changes(sessionId, scope);
-      return found ?? { root: null, changes: [], points: [] };
-    }
-
-    case 'sessions.diff': {
-      const { sessionId, path, scope } = request.params as { sessionId: string; path: string; scope?: SnapshotScope };
-      return { patch: (await runtime.diff(sessionId, path, scope)) ?? '' };
-    }
-
-    case 'sessions.rewind': {
-      const { sessionId, scope } = request.params as { sessionId: string; scope?: SnapshotScope };
-      const undone = await runtime.rewind(sessionId, scope);
-      return undone ?? { root: null, changes: [], points: [] };
     }
 
     case 'models.list':
