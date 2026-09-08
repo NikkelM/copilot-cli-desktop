@@ -142,6 +142,10 @@ export default function App() {
   // Selecting a session cannot leave the composer disabled by a turn that was running in
   // whichever session was open before.
   useEffect(() => setBusy(false), [selectedId]);
+
+  // Nor a help list open over a session nobody asked to read it in. Not remembered per
+  // session: it is a reference, so wanting it back is a keypress away.
+  useEffect(() => setHelp(null), [selectedId]);
   /**
    * Previews derived from live events, which are ahead of the database.
    * A ref rather than state: refetches read it, but it never needs to trigger a render
@@ -381,10 +385,13 @@ export default function App() {
 
     if (what.kind === 'unknown') {
       const near = what.near.map((each) => `/${each.name}`);
-      setError(
-        `Unknown command /${what.name}.` +
+      setDrafts((current) => ({ ...current, [selectedId]: '' }));
+      setError(null);
+      transcript.showLocal('command.failed', {
+        text:
+          `Unknown command /${what.name}.` +
           (near.length > 0 ? ` Did you mean ${near.join(', ')}?` : ' Type / to see what there is.'),
-      );
+      });
       return;
     }
 

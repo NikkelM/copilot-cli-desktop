@@ -455,6 +455,15 @@ export function toEntries(
         break;
       }
 
+      // A command that could not run. Belongs here rather than in a banner over the top:
+      // it answers something that was typed into the transcript, and reads as the reply to
+      // it. Local for the same reason as its output - nothing about it is written down.
+      case 'command.failed': {
+        const body = text(data, 'text');
+        if (body) entries.push({ kind: 'message', key, variant: 'failed', body, at: event.timestamp });
+        break;
+      }
+
       // An interrupted turn never emits tool.execution_complete, so anything still
       // pending when the session stops will never complete. Without this such a row
       // stays "running" forever, including on every later replay.

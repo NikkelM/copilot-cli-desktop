@@ -38,6 +38,22 @@ describe('toEntries', () => {
     expect(entries).toEqual([]);
   });
 
+  /**
+   * A command that could not run answers something typed into the transcript, so it reads
+   * as the reply to it rather than as a banner over the top of everything.
+   */
+  describe('a command that could not run', () => {
+    it('reads as a failure in the transcript', () => {
+      const entries = toEntries([event('command.failed', { text: 'Unknown command /exit.' }, 'e1')], null);
+
+      expect(entries).toEqual([{ kind: 'message', key: 'e1', variant: 'failed', body: 'Unknown command /exit.' }]);
+    });
+
+    it('says nothing when there is nothing to say', () => {
+      expect(toEntries([event('command.failed', {}, 'e1')], null)).toEqual([]);
+    });
+  });
+
   it('pairs a tool start with its completion into one entry', () => {
     const entries = toEntries(
       [
