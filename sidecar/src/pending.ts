@@ -57,11 +57,4 @@ export class PendingRequests<T> {
 
     return settled;
   }
-
-  /** Apply a value to every outstanding request for a session, e.g. when policy changes. */
-  ids(sessionId: string): string[] {
-    return [...this.entries]
-      .filter(([, entry]) => entry.sessionId === sessionId)
-      .map(([requestId]) => requestId);
-  }
 }

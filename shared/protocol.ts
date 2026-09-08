@@ -166,11 +166,6 @@ export interface SendResult {
   queued: boolean;
 }
 
-export interface SetApprovalPolicyParams {
-  sessionId: string;
-  policy: 'prompt' | 'approve-all';
-}
-
 /** What the user chose for a pending permission request. */
 export type PermissionChoice = 'approve-once' | 'approve-for-session' | 'reject';
 
@@ -284,7 +279,6 @@ export interface SidecarRequests {
   'sessions.send': { params: SendParams; result: SendResult };
   'sessions.abort': { params: { sessionId: string }; result: void };
   'sessions.evict': { params: { sessionId: string }; result: void };
-  'sessions.setApprovalPolicy': { params: SetApprovalPolicyParams; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'sessions.create': { params: { workingDirectory?: string }; result: { sessionId: string } };

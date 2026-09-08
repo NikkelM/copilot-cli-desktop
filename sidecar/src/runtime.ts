@@ -64,9 +64,6 @@ export interface AskContext {
   url: string | null;
 }
 
-/** How a session answers tool permission requests. */
-export type ApprovalPolicy = 'prompt' | 'approve-all';
-
 /**
  * One server process hosts every session; that is the whole point of the design.
  * Stdio avoids opening a listening port for something only this app talks to.
@@ -84,7 +81,6 @@ interface LoadedSession {
   unsubscribe: () => void;
   /** True between a turn starting and the session going idle. Busy sessions are never evicted. */
   busy: boolean;
-  policy: ApprovalPolicy;
   /** What the turn in progress has changed, in the CLI's rewind format. Null when idle. */
   turn?: ReturnType<typeof beginTurn> | null;
   /** The last prompt sent, so a turn's record can name what caused it as the CLI's does. */
@@ -320,7 +316,6 @@ export class SessionRuntime {
       session,
       unsubscribe,
       busy: false,
-      policy: 'prompt',
       idleTimer: null,
     });
     this.touch(sessionId);
@@ -328,8 +323,12 @@ export class SessionRuntime {
   }
 
   /**
-   * Answer a tool permission request, asking the user unless the session opted into
-   * blanket approval.
+   * Answer a tool permission request by asking the user.
+   *
+   * There is no blanket approval here on purpose. The runtime has its own, reached through
+   * `/allow-all` and `/permissions`, which stops it issuing a request at all rather than
+   * approving one that was issued. That one is stored with the session, so it survives an
+   * unload and the CLI honours it too; a flag of ours could do neither.
    *
    * The returned promise is what blocks the agent, so every path must settle it:
    * a user decision, the timeout, or the session being torn down.
@@ -338,10 +337,6 @@ export class SessionRuntime {
     sessionId: string,
     request: PermissionRequest,
   ): Promise<PermissionRequestResult> {
-    if (this.loaded.get(sessionId)?.policy === 'approve-all') {
-      return Promise.resolve({ kind: 'approve-for-session' });
-    }
-
     // Without a listening UI there is genuinely nobody to ask, and reporting that is
     // more honest than silently approving.
     if (!this.onPermissionRequest) {
@@ -444,18 +439,6 @@ export class SessionRuntime {
     }
     for (const requestId of this.userInputs.abandon(sessionId, { answer: '', wasFreeform: true })) {
       this.onElicitationResolved?.(requestId);
-    }
-  }
-
-  setApprovalPolicy(sessionId: string, policy: ApprovalPolicy): void {
-    const entry = this.loaded.get(sessionId);
-    if (entry) entry.policy = policy;
-
-    // Anything already waiting should follow the new policy rather than sit there.
-    if (policy === 'approve-all') {
-      for (const requestId of this.permissions.ids(sessionId)) {
-        this.settlePermission(requestId, { kind: 'approve-for-session' });
-      }
     }
   }
 

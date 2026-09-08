@@ -127,10 +127,6 @@ export function abortSession(sessionId: string): Promise<void> {
   return request<void>('sessions.abort', { sessionId });
 }
 
-export function setApprovalPolicy(sessionId: string, policy: 'prompt' | 'approve-all'): Promise<void> {
-  return request<void>('sessions.setApprovalPolicy', { sessionId, policy });
-}
-
 /** Answer a pending tool permission request, unblocking the agent. */
 export function resolvePermission(
   sessionId: string,

@@ -194,26 +194,20 @@ describe('permissions', () => {
     });
   });
 
-  it('stops asking once the session opts into allow-all', async () => {
-    const onPermissionRequest = vi.fn();
-    const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest });
-    await runtime.send('a', 'x');
-    runtime.setApprovalPolicy('a', 'approve-all');
-
-    await expect(permissionHandlers.get('a')?.({ kind: 'shell' })).resolves.toEqual({
-      kind: 'approve-for-session',
-    });
-    expect(onPermissionRequest).not.toHaveBeenCalled();
-  });
-
-  it('settles requests already waiting when allow-all is switched on', async () => {
+  /**
+   * Blanket approval is the runtime's job, reached through `/allow-all`, which stops it
+   * issuing a request at all. Verified against a live session: with it on, no permission
+   * request reaches this handler and the tool simply runs. A flag here would have been a
+   * second answer to the same question, forgotten on unload and invisible to the CLI.
+   */
+  it('leaves blanket approval to the runtime and always asks', async () => {
     const onPermissionRequest = vi.fn();
     const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest });
     await runtime.send('a', 'x');
 
-    const pending = permissionHandlers.get('a')?.({ kind: 'shell' });
-    runtime.setApprovalPolicy('a', 'approve-all');
-    await expect(pending).resolves.toEqual({ kind: 'approve-for-session' });
+    void permissionHandlers.get('a')?.({ kind: 'shell' });
+
+    expect(onPermissionRequest).toHaveBeenCalledTimes(1);
   });
 
   // The agent blocks on this promise, so every teardown path has to settle it.

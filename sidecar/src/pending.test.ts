@@ -48,22 +48,6 @@ describe('PendingRequests', () => {
     await expect(b.answered).resolves.toBe('still answerable');
   });
 
-  it('lists outstanding requests for a session', () => {
-    const pending = new PendingRequests<string>('t', 60_000, () => 'timeout');
-    const a = pending.add('session-a');
-    pending.add('session-b');
-
-    expect(pending.ids('session-a')).toEqual([a.requestId]);
-  });
-
-  it('stops listing a request once it is settled', () => {
-    const pending = new PendingRequests<string>('t', 60_000, () => 'timeout');
-    const { requestId } = pending.add('session-a');
-
-    pending.settle(requestId, 'done');
-    expect(pending.ids('session-a')).toEqual([]);
-  });
-
   it('gives each request a distinct prefixed id', () => {
     const pending = new PendingRequests<string>('perm', 60_000, () => 'timeout');
     const first = pending.add('s');

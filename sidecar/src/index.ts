@@ -29,7 +29,7 @@ import {
 import { type Channel, startDevChannel } from './devChannel.js';
 import { lastModel, readTranscript } from './eventLog.js';
 import { treeStateOf } from './git.js';
-import { type ApprovalPolicy, SessionRuntime } from './runtime.js';
+import { SessionRuntime } from './runtime.js';
 import { findSessions, listSessions } from './sessionIndex.js';
 import { watchSessionStore } from './storeWatcher.js';
 
@@ -116,15 +116,6 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
     case 'sessions.evict': {
       const { sessionId } = request.params as { sessionId: string };
       await runtime.evict(sessionId);
-      return null;
-    }
-
-    case 'sessions.setApprovalPolicy': {
-      const { sessionId, policy } = request.params as {
-        sessionId: string;
-        policy: ApprovalPolicy;
-      };
-      runtime.setApprovalPolicy(sessionId, policy);
       return null;
     }
 
