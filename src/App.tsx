@@ -8,6 +8,7 @@ import type {
   PendingPermission,
   PermissionChoice,
   SessionSummary,
+  SlashCommand,
   TranscriptEvent,
 } from '../shared/protocol';
 
@@ -39,6 +40,7 @@ import {
   resolveElicitation,
   resolvePermission,
   runtimeStatus,
+  invokeCommand,
   sendMessage,
   setApprovalPolicy,
 } from './lib/sidecar';
@@ -46,6 +48,8 @@ import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
 import { contentOf } from './lib/timeline';
 import { useModel } from './lib/useModel';
+import { useCommands } from './lib/useCommands';
+import { findCommand, typedCommand } from './lib/slash';
 import { useQueue } from './lib/useQueue';
 import { useShortcuts } from './lib/useShortcuts';
 import { useTranscript } from './lib/useTranscript';
@@ -106,6 +110,7 @@ export default function App() {
   const tree = useTreeState(selected?.cwd ?? null);
   const queue = useQueue();
   const model = useModel(selectedId, setError);
+  const slash = useCommands(selectedId);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
    * has been said, so it says it is working rather than appearing to have done nothing.
@@ -236,6 +241,10 @@ export default function App() {
         // The queue lives in the session that was let go, so nothing is waiting any more.
         queue.clear(sessionId);
       }
+
+      // A session that is awake knows about a few commands the runtime at large does not,
+      // and a server is already running to ask, so this costs nothing to take.
+      slash.observe(loaded, sessionId);
     }),
   );
 
@@ -359,31 +368,102 @@ export default function App() {
 
   async function handleSend(prompt: string) {
     if (!selectedId) return;
+
+    // A leading slash naming a command is a command, not a message. Anything else that
+    // starts with one - a path, a fraction, a sentence - is text, and is sent as text.
+    const typed = typedCommand(prompt);
+    const command = typed && findCommand(slash.commands, typed.name);
+    if (typed && command) return runCommand(selectedId, command, typed.input ?? '');
+
+    return send(selectedId, prompt, prompt);
+  }
+
+  /**
+   * Run a slash command, and show whatever it produced.
+   *
+   * Nothing about this reaches the event log: the runtime hands the output back once and
+   * keeps no record, so the rows written here are the only account of it there will ever be.
+   */
+  async function runCommand(sessionId: string, command: SlashCommand, input: string) {
     setError(null);
-    setDrafts((current) => ({ ...current, [selectedId]: '' }));
+
+    if (busy && !command.allowDuringTurn) {
+      setError(`/${command.name} cannot run while the agent is working. Stop the turn first.`);
+      return;
+    }
+
+    setDrafts((current) => ({ ...current, [sessionId]: '' }));
+    // Echoed as typed, so the transcript says what was asked for as well as what came back.
+    transcript.showSent(input ? `/${command.name} ${input}` : `/${command.name}`);
+
+    const wasCold = !sessions.find((s) => s.sessionId === sessionId)?.loaded;
+    setResuming(wasCold ? sessionId : null);
+
+    try {
+      const outcome = await invokeCommand(sessionId, command.name, input || undefined);
+
+      switch (outcome.kind) {
+        case 'text':
+          transcript.showLocal('command.output', { text: outcome.text, markdown: outcome.markdown });
+          break;
+
+        // The command wrote the prompt; the transcript already shows the command that did
+        // so, which is the record of what was asked for. The prompt itself is machinery.
+        case 'prompt':
+          if (outcome.notice) transcript.showLocal('command.output', { text: outcome.notice });
+          await send(sessionId, outcome.prompt, null);
+          break;
+
+        case 'done':
+          if (outcome.message) transcript.showLocal('command.output', { text: outcome.message });
+          break;
+
+        // Named rather than swallowed: a command that quietly did nothing is worse than one
+        // that says this app cannot do it yet.
+        case 'unsupported':
+          setError(`/${command.name} needs a ${outcome.what} view, which this app does not have yet.`);
+          break;
+      }
+    } catch (e: unknown) {
+      setError(String(e));
+    } finally {
+      setResuming(null);
+    }
+  }
+
+  /**
+   * Send a message to the agent.
+   *
+   * The text sent and the text shown are not always the same: a command that produces a
+   * prompt writes something longer than the transcript should carry, and has already put
+   * the command that produced it there. Null means it is shown somewhere already.
+   */
+  async function send(sessionId: string, prompt: string, display: string | null) {
+    setError(null);
+    setDrafts((current) => ({ ...current, [sessionId]: '' }));
     // Taken before the send so a file picked while it is in flight belongs to the next
     // message rather than this one.
-    const sent = attachments[selectedId] ?? [];
-    setAttachments((current) => ({ ...current, [selectedId]: [] }));
+    const sent = attachments[sessionId] ?? [];
+    setAttachments((current) => ({ ...current, [sessionId]: [] }));
 
-    const wasCold = !sessions.find((s) => s.sessionId === selectedId)?.loaded;
-    setResuming(wasCold ? selectedId : null);
+    const wasCold = !sessions.find((s) => s.sessionId === sessionId)?.loaded;
+    setResuming(wasCold ? sessionId : null);
 
     // Show the prompt straight away when nothing is running; resuming a cold session takes
     // seconds, and a prompt that appears only afterwards looks like it was not sent. While
     // a turn is running the message will queue, and showing it in the conversation would
     // claim the agent had already been given it.
     const expectQueued = busy;
-    if (!expectQueued) transcript.showSent(prompt);
+    if (!expectQueued && display !== null) transcript.showSent(display);
     setBusy(true);
 
     try {
-      const { messageId, queued } = await sendMessage({ sessionId: selectedId, prompt, attachments: sent });
+      const { messageId, queued } = await sendMessage({ sessionId, prompt, attachments: sent });
 
       // The runtime decides, and a turn can end while the message is on its way, so the
       // guess above is reconciled with what actually happened.
-      if (queued) queue.add(selectedId, { id: messageId, prompt });
-      else if (expectQueued) transcript.showSent(prompt);
+      if (queued) queue.add(sessionId, { id: messageId, prompt: display ?? prompt });
+      else if (expectQueued && display !== null) transcript.showSent(display);
     } catch (e: unknown) {
       setError(String(e));
       setBusy(false);
@@ -503,6 +583,8 @@ export default function App() {
                 onChange={(text) => setDrafts((current) => ({ ...current, [selected.sessionId]: text }))}
                 onSend={(prompt) => void handleSend(prompt)}
                 onAbort={interrupt}
+                commands={slash.commands}
+                onCommandsNeeded={slash.open}
               />
             </div>
           </>

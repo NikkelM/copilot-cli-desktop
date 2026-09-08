@@ -8,10 +8,18 @@ export interface MessageEntry {
   kind: 'message';
   /** Identity of the source event, so rows survive history being prepended. */
   key: string;
-  variant: 'user' | 'assistant' | 'failed' | 'stopped';
+  variant: 'user' | 'assistant' | 'failed' | 'stopped' | 'command';
   body: string;
   /** When it was said. Absent only for an entry the app invented before the runtime spoke. */
   at?: string;
+  /**
+   * Shown as written, rather than parsed as markdown.
+   *
+   * Command output is laid out with spaces and newlines and means them: run through
+   * markdown its columns collapse and its blank lines disappear. Set only when the runtime
+   * says the text is not markdown, since some commands answer in it.
+   */
+  preformatted?: boolean;
   /** Still arriving, so anything that needs the whole of it should wait for the rest. */
   streaming?: boolean;
   /**
@@ -429,6 +437,24 @@ export function toEntries(
         });
         break;
 
+      // What a slash command produced. Only ever a local event: a command's output is
+      // returned to whoever ran it and written down nowhere, so this row exists for as long
+      // as the session stays open and is gone on the next visit.
+      case 'command.output': {
+        const body = text(data, 'text');
+        if (body) {
+          entries.push({
+            kind: 'message',
+            key,
+            variant: 'command',
+            body,
+            preformatted: data.markdown !== true,
+            at: event.timestamp,
+          });
+        }
+        break;
+      }
+
       // An interrupted turn never emits tool.execution_complete, so anything still
       // pending when the session stops will never complete. Without this such a row
       // stays "running" forever, including on every later replay.
@@ -485,6 +511,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
       a.variant === other.variant &&
       a.body === other.body &&
       a.partial === other.partial &&
+      a.preformatted === other.preformatted &&
       a.at === other.at &&
       a.streaming === other.streaming
     );

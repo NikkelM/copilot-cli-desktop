@@ -141,6 +141,20 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     ]);
   }, []);
 
+  /**
+   * Put a row in the transcript that no event will ever bring.
+   *
+   * A slash command's output is returned to whoever ran it and written down nowhere, so
+   * this is the only place it can exist. It lasts as long as the session stays open, which
+   * matches the CLI: its command output does not survive a restart either.
+   */
+  const showLocal = useCallback((type: string, data: unknown) => {
+    setLive((current) => [
+      ...current,
+      { type, data, id: crypto.randomUUID(), timestamp: new Date().toISOString(), local: true },
+    ]);
+  }, []);
+
   const events = useMemo(() => timelineOf(history, live), [history, live]);
 
   return {
@@ -150,6 +164,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     loadOlder,
     push,
     showSent,
+    showLocal,
     abandoned: abandoned.current.get(sessionId ?? ''),
   };
 }

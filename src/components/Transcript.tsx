@@ -332,7 +332,11 @@ const EntryRow = memo(
           {/* Coarse on the face of it, exact on hover: "2h ago" covers an hour of moments. */}
           {entry.at && <Said at={entry.at} />}
         </div>
-        <Markdown body={entry.body} anchor={entry.key} streaming={entry.streaming} />
+        {entry.preformatted ? (
+          <pre className="plain">{entry.body}</pre>
+        ) : (
+          <Markdown body={entry.body} anchor={entry.key} streaming={entry.streaming} />
+        )}
       </div>
     );
   },
