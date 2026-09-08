@@ -11,12 +11,14 @@ import {
 
 import type {
   Attachment,
+  CommandOutcome,
   ContextTier,
   ElicitationAction,
   ElicitationFieldValue,
   ModelChoice,
   PermissionChoice,
   ReasoningEffort,
+  SlashCommand,
 } from '../../shared/protocol.js';
 import { mkdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -55,6 +57,17 @@ function nextTurn(points: readonly { id: string }[]): number {
 
 /** How many points a session keeps before the middle of its history is let go. */
 const MAX_POINTS = 25;
+
+/**
+ * Remove terminal colour and cursor sequences from command output.
+ *
+ * Commands that expect a terminal write them unasked, and this app draws HTML: left in,
+ * the escape would appear as its own characters in the middle of the text it was meant to
+ * colour. Matches the CSI and OSC forms, which is everything the CLI's own output uses.
+ */
+function stripAnsi(text: string): string {
+  return text.replace(/\u001B\[[0-9;?]*[A-Za-z]|\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)/g, '');
+}
 
 
 /** What the agent changed, and the repository the paths are relative to. */
@@ -873,6 +886,84 @@ export class SessionRuntime {
         needsAgreement: model.policy?.state === 'unconfigured',
       };
     });
+  }
+
+  /**
+   * The slash commands there are.
+   *
+   * A loaded session is asked in preference to the runtime at large, because it knows about
+   * a few more: the ones that only mean anything inside a conversation, such as /compact and
+   * /context. A cold session is deliberately not resumed for this - browsing what a command
+   * does should never cost what running one does - so it falls back to the general list,
+   * which is four commands shorter and otherwise identical.
+   *
+   * Either way this needs the shared server, so it is asked for when someone opens the list
+   * rather than in anticipation of them doing so. The frontend remembers the answer between
+   * runs, which is what keeps the first slash from being the thing that starts a process.
+   */
+  async commands(sessionId?: string): Promise<SlashCommand[]> {
+    const live = sessionId ? this.loaded.get(sessionId)?.session : undefined;
+    const client = live ? null : await this.ensureClient();
+    const { commands } = live ? await live.rpc.commands.list() : await client!.rpc.commands.list();
+
+    return commands.map((command) => ({
+      name: command.name,
+      description: command.description,
+      aliases: command.aliases ?? [],
+      ...(command.input?.hint ? { hint: command.input.hint } : {}),
+      ...(command.input?.required ? { required: true } : {}),
+      ...(command.input?.choices?.length
+        ? { choices: command.input.choices.map(({ name, description }) => ({ name, description })) }
+        : {}),
+      allowDuringTurn: command.allowDuringAgentExecution,
+      ...(command.experimental ? { experimental: true } : {}),
+    }));
+  }
+
+  /**
+   * Run a slash command in a session.
+   *
+   * Unlike a message this returns its result rather than emitting it: nothing about a
+   * command reaches the event log, so what it produced is only ever known here, and only
+   * once. The caller has to show it, because nothing will show it again.
+   *
+   * Costs a resume for a cold session, which is the same price as sending to it - running
+   * a command in a conversation is working in that conversation.
+   */
+  async invoke(sessionId: string, name: string, input?: string): Promise<CommandOutcome> {
+    const session = await this.ensureSession(sessionId);
+    const result = await session.rpc.commands.invoke({ name, ...(input ? { input } : {}) });
+
+    switch (result.kind) {
+      case 'text':
+        // Terminal escapes are asked for by commands that expect a terminal. This is not
+        // one, and leaving them in would print their letters rather than their colours.
+        return { kind: 'text', text: stripAnsi(result.text), ...(result.markdown ? { markdown: true } : {}) };
+
+      case 'agent-prompt':
+        // The prompt the command wrote is what the agent is given. Its display form is
+        // dropped: the transcript already carries the command that produced it, which is
+        // the record of what was asked for.
+        return {
+          kind: 'prompt',
+          prompt: result.prompt,
+          ...(result.notice ? { notice: result.notice } : {}),
+        };
+
+      case 'completed':
+        return { kind: 'done', ...(result.message ? { message: result.message } : {}) };
+
+      // Not output so much as a row the runtime wants added, but the difference does not
+      // survive into anything this app draws.
+      case 'add-timeline-entry':
+        return { kind: 'text', text: stripAnsi(result.entry.text) };
+
+      // Sub-command pickers, model dialogues and the rest ask the client to run a piece of
+      // its own interface. Named rather than swallowed, so an unsupported one reads as
+      // missing rather than as a command that silently did nothing.
+      default:
+        return { kind: 'unsupported', what: result.kind };
+    }
   }
 
   /**

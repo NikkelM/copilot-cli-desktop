@@ -173,6 +173,20 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
     case 'models.list':
       return { models: await runtime.models() };
 
+    case 'commands.list': {
+      const { sessionId } = (request.params ?? {}) as { sessionId?: string };
+      return { commands: await runtime.commands(sessionId) };
+    }
+
+    case 'commands.invoke': {
+      const { sessionId, name, input } = request.params as {
+        sessionId: string;
+        name: string;
+        input?: string;
+      };
+      return { outcome: await runtime.invoke(sessionId, name, input) };
+    }
+
     case 'sessions.model': {
       const { sessionId } = request.params as { sessionId: string };
       return { current: await lastModel(sessionId) };

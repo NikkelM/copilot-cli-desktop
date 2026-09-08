@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import type {
+  CommandOutcome,
   ContextTier,
   ElicitationAction,
   ElicitationFieldValue,
@@ -20,6 +21,7 @@ import type {
   SessionEventNotification,
   SessionLoadedNotification,
   SessionModel,
+  SlashCommand,
   TreeState,
 } from '../../shared/protocol';
 
@@ -53,6 +55,31 @@ export function runtimeStatus(): Promise<RuntimeStatus> {
 export async function listModels(): Promise<ModelChoice[]> {
   const { models } = await request<{ models: ModelChoice[] }>('models.list');
   return models;
+}
+
+/**
+ * The slash commands there are. Starts the shared server, so it is asked for lazily.
+ *
+ * A loaded session is asked in preference to the runtime at large, since it knows about the
+ * few that only mean something inside a conversation. A cold one is never resumed for this.
+ */
+export async function listCommands(sessionId?: string): Promise<SlashCommand[]> {
+  const { commands } = await request<{ commands: SlashCommand[] }>('commands.list', { sessionId });
+  return commands;
+}
+
+/** Run a slash command in a session, resuming it if it is cold. */
+export async function invokeCommand(
+  sessionId: string,
+  name: string,
+  input?: string,
+): Promise<CommandOutcome> {
+  const { outcome } = await request<{ outcome: CommandOutcome }>('commands.invoke', {
+    sessionId,
+    name,
+    input,
+  });
+  return outcome;
 }
 
 /** What a session runs on, read from its log. Costs no Copilot process. */

@@ -227,6 +227,54 @@ export interface ResolveElicitationParams {
   content?: Record<string, ElicitationFieldValue>;
 }
 
+/** One of the fixed values a command's argument accepts, such as `on` or `off`. */
+export interface CommandChoice {
+  name: string;
+  description: string;
+}
+
+/**
+ * A slash command, as the runtime describes itself.
+ *
+ * Trimmed from the runtime's own metadata, which also carries whether a command may be the
+ * target of a schedule and which source registered it - neither of which changes what this
+ * app draws or how it dispatches.
+ */
+export interface SlashCommand {
+  /** Without the leading slash, which is how it is invoked. */
+  name: string;
+  description: string;
+  /** Other names for the same command, matched alongside the canonical one. */
+  aliases: string[];
+  /** What the argument is for, for commands that take one. */
+  hint?: string;
+  /** The command will not do anything useful without an argument. */
+  required?: boolean;
+  /** The values the argument accepts, when it is a choice rather than free text. */
+  choices?: CommandChoice[];
+  /** Whether it may run while a turn is in flight. */
+  allowDuringTurn: boolean;
+  experimental?: boolean;
+}
+
+/**
+ * What invoking a command produced.
+ *
+ * Narrowed from the runtime's union, which has eight arms describing effects a terminal
+ * client applies to itself. The three that carry something to show are kept as they are;
+ * the rest collapse into `unsupported` so an unhandled one says so rather than looking
+ * like a command that did nothing.
+ */
+export type CommandOutcome =
+  /** Output to show. Already stripped of terminal escapes, which this app cannot draw. */
+  | { kind: 'text'; text: string; markdown?: boolean }
+  /** The command wants a prompt sent to the agent on the user's behalf. */
+  | { kind: 'prompt'; prompt: string; notice?: string }
+  /** It did its work itself; the message, when there is one, is the confirmation. */
+  | { kind: 'done'; message?: string }
+  /** An effect this app has no way to apply yet. `what` is the runtime's own name for it. */
+  | { kind: 'unsupported'; what: string };
+
 /** Requests the frontend may issue. */
 export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };
@@ -245,6 +293,19 @@ export interface SidecarRequests {
   'sessions.rewind': { params: { sessionId: string; scope?: SnapshotScope }; result: SessionChangesResult };
   'git.state': { params: { cwd: string }; result: { state: TreeState | null } };
   'models.list': { params: void; result: { models: ModelChoice[] } };
+  /**
+   * The slash commands there are.
+   *
+   * Takes a session because a loaded one knows about a few more than the runtime does in
+   * general - the ones that only mean something inside a conversation, such as /compact -
+   * but never resumes one to find out.
+   */
+  'commands.list': { params: { sessionId?: string }; result: { commands: SlashCommand[] } };
+  /** Run a command in a session, resuming it if it is cold. */
+  'commands.invoke': {
+    params: { sessionId: string; name: string; input?: string };
+    result: { outcome: CommandOutcome };
+  };
   'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };
   'sessions.setModel': {
     params: { sessionId: string; model: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier };
