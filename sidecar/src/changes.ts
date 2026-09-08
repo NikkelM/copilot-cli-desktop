@@ -221,6 +221,19 @@ function diffOf(path: string, before: Buffer, after: Buffer): string | null {
 const CONTEXT = 4;
 
 /**
+ * A change with nothing left to show at all.
+ *
+ * The file the session left behind is no longer on disk and no copy of it was kept, so the
+ * row can only report its own absence - and the thing it describes is gone, so there is
+ * nothing to review either. A file the session itself deleted is not this: that deletion is
+ * the change, and it is still worth reporting.
+ */
+function vanished(sessionId: string, ends: Ends): boolean {
+  if (ends.last.kind === 'absent') return false;
+  return !existsSync(ends.path) && contentsOf(sessionId, ends.last, ends.path) === null;
+}
+
+/**
  * Every file this session left changed, most recently touched first.
  *
  * Files the session created and then deleted, or edited back to what they were, are left
@@ -235,6 +248,7 @@ export function sessionChanges(sessionId: string, since?: string): SessionChange
   for (const ends of follow(readRewind(sessionId), since).values()) {
     if (unchanged(ends.first, ends.last)) continue;
     if (transient(ends.path)) continue;
+    if (vanished(sessionId, ends)) continue;
 
     changes.push({
       path: ends.path,

@@ -209,16 +209,20 @@ describe('what a session changed', () => {
 
   /** Around a quarter of the blobs a real store references are gone. That is normal. */
   it('still lists a file whose backup has been pruned, and says it has no diff', async () => {
+    const file = join(home, 'w', 'f.ts');
+    mkdirSync(join(home, 'w'), { recursive: true });
+    writeFileSync(file, 'something else entirely\n');
+
     await writeStore([
       {
         at: '2026-01-01T00:00:00.000Z',
-        files: [{ path: '/w/f.ts', preimage: await pruned('a\n'), postimage: await pruned('b\n'), linesAdded: 1, linesRemoved: 1 }],
+        files: [{ path: file, preimage: await pruned('a\n'), postimage: await pruned('b\n'), linesAdded: 1, linesRemoved: 1 }],
       },
     ]);
 
     const { sessionChanges, sessionDiff } = await load();
     expect(sessionChanges(SESSION)[0]).toMatchObject({ diffable: false, linesAdded: 1, linesRemoved: 1 });
-    expect(sessionDiff(SESSION, '/w/f.ts')).toMatchObject({ patch: null, reason: 'gone' });
+    expect(sessionDiff(SESSION, file)).toMatchObject({ patch: null, reason: 'replaced' });
   });
 
   /**
@@ -315,6 +319,62 @@ describe('temporary files', () => {
 
     const { sessionDiff } = await load(scratch);
     expect(sessionDiff(SESSION, file).patch).toContain('+x');
+  });
+});
+
+/**
+ * A row that can only report its own absence is not worth drawing: the file the session
+ * left behind is gone and no copy of it was kept, so there is nothing to review.
+ */
+describe('files that are no longer there', () => {
+  it('leaves out one whose contents were not kept and is gone from disk', async () => {
+    await writeStore([
+      {
+        at: '2026-01-01T00:00:00.000Z',
+        files: [{ path: join(home, 'w', 'gone.ts'), preimage: ABSENT, postimage: await pruned('x\n') }],
+      },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION)).toEqual([]);
+  });
+
+  /** The deletion is the change. Nothing being on disk is what it is reporting. */
+  it('keeps one the session itself deleted', async () => {
+    await writeStore([
+      {
+        at: '2026-01-01T00:00:00.000Z',
+        files: [{ path: join(home, 'w', 'removed.ts'), preimage: await blob('x\n'), postimage: ABSENT }],
+      },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION).map((change) => change.status)).toEqual(['deleted']);
+  });
+
+  /** Someone deleted it afterwards, but what the session made can still be shown. */
+  it('keeps one that is gone from disk but was backed up', async () => {
+    const path = join(home, 'w', 'kept.ts');
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path, preimage: ABSENT, postimage: await blob('x\n') }] },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION).map((change) => change.path)).toEqual([path]);
+  });
+
+  /** Still on disk, merely changed by someone else since. The session's work stands. */
+  it('keeps one whose contents were not kept but which is still on disk', async () => {
+    const path = join(home, 'w', 'edited.ts');
+    mkdirSync(join(home, 'w'), { recursive: true });
+    writeFileSync(path, 'someone else wrote this\n');
+
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path, preimage: ABSENT, postimage: await pruned('x\n') }] },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION).map((change) => change.path)).toEqual([path]);
   });
 });
 
