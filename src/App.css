@@ -802,12 +802,16 @@ body {
  */
 .menu {
   margin: 0 0 8px;
-  padding: 4px 0;
   max-height: 40vh;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-raised);
+}
+
+.menu-list {
+  margin: 0;
+  padding: 4px 0;
   list-style: none;
 }
 
@@ -822,7 +826,13 @@ body {
 /* Laid out as the CLI's own quick help is: as many columns as the widest row leaves room
    for, filled downwards so one is read through before the next begins. The width comes from
    the content, set on the element - a reference list is short enough that a fixed count
-   would leave it either cramped or half empty. */
+   would leave it either cramped or half empty.
+
+   On the list rather than on the box that scrolls, and this is the whole reason the two are
+   separate elements: a column layout given a height of its own does not scroll when it runs
+   out of room, it starts another column off the side of the window. Left to find its own
+   height it balances instead, and the box around it scrolls if that comes to more than the
+   room there is. */
 .menu-columns {
   columns: var(--menu-column);
   column-gap: 4px;

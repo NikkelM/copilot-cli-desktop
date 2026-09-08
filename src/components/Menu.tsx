@@ -43,6 +43,9 @@ interface MenuProps {
   label: string;
 }
 
+/** How wide a column's description may grow before it stops earning the room, in characters. */
+const WIDEST_COLUMN = 56;
+
 /**
  * A list that opens above the composer and is driven entirely from the keyboard.
  *
@@ -129,31 +132,35 @@ export function Menu({
 
   // Only the description varies: the name sits in a gutter of its own so the descriptions
   // line up, which is why the widest one is what decides how much room a column needs.
-  const widest = Math.max(...items.map((item) => item.description.length));
+  // Capped, because descriptions ellipsize: without it a single long one from the runtime
+  // would widen every column past the window and collapse the list back into one.
+  const widest = Math.min(Math.max(...items.map((item) => item.description.length)), WIDEST_COLUMN);
 
   return (
-    <ul
-      className={columns ? 'menu menu-columns' : 'menu'}
-      style={columns ? ({ '--menu-column': `calc(164px + ${widest}ch)` } as CSSProperties) : undefined}
-      ref={list}
-      role="listbox"
-      aria-label={label}
-    >
-      {items.map((item, index) => (
-        <li
-          key={item.id}
-          role="option"
-          aria-selected={index === selected}
-          className={index === selected ? 'menu-row selected' : 'menu-row'}
-          // Hovering moves the cursor rather than acting, so the pointer and the keyboard
-          // agree about which row Enter would take.
-          onMouseMove={() => index !== selected && onSelect(index)}
-          onClick={() => onChoose?.(item, 'Enter')}
-        >
-          <span className="menu-label">{item.label}</span>
-          <span className="menu-description">{item.description}</span>
-        </li>
-      ))}
-    </ul>
+    <div className="menu">
+      <ul
+        className={columns ? 'menu-list menu-columns' : 'menu-list'}
+        style={columns ? ({ '--menu-column': `calc(164px + ${widest}ch)` } as CSSProperties) : undefined}
+        ref={list}
+        role="listbox"
+        aria-label={label}
+      >
+        {items.map((item, index) => (
+          <li
+            key={item.id}
+            role="option"
+            aria-selected={index === selected}
+            className={index === selected ? 'menu-row selected' : 'menu-row'}
+            // Hovering moves the cursor rather than acting, so the pointer and the keyboard
+            // agree about which row Enter would take.
+            onMouseMove={() => index !== selected && onSelect(index)}
+            onClick={() => onChoose?.(item, 'Enter')}
+          >
+            <span className="menu-label">{item.label}</span>
+            <span className="menu-description">{item.description}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

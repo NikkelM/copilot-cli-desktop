@@ -157,7 +157,34 @@ describe('Menu', () => {
       );
 
       expect(container.querySelector('.menu-columns')).toBeNull();
-      expect((container.querySelector('.menu') as HTMLElement).style.getPropertyValue('--menu-column')).toBe('');
+      expect((container.querySelector('.menu-list') as HTMLElement).style.getPropertyValue('--menu-column')).toBe('');
+    });
+
+    /**
+     * A column layout given a height of its own does not scroll when it runs out of room, it
+     * starts another column off the side of the window - which is what a long help list did.
+     * The columns go on the list and the height on the box around it, so it balances to the
+     * height it needs and the box scrolls.
+     */
+    it('keeps the columns off the box that scrolls', () => {
+      const { container } = render(
+        <Menu items={items} selected={0} onSelect={() => {}} onDismiss={() => {}} columns label="Keys" />,
+      );
+
+      expect(container.querySelector('.menu')?.classList.contains('menu-columns')).toBe(false);
+      expect(container.querySelector('.menu-columns')?.getAttribute('role')).toBe('listbox');
+    });
+
+    // Capped, or one long description from the runtime would widen every column past the
+    // window and collapse the list back into one.
+    it('stops widening a column past what it can earn', () => {
+      const long = [{ id: 'a', label: '/a', description: 'x'.repeat(200) }];
+      const { container } = render(
+        <Menu items={long} selected={0} onSelect={() => {}} onDismiss={() => {}} columns label="Keys" />,
+      );
+
+      const menu = container.querySelector('.menu-columns') as HTMLElement;
+      expect(menu.style.getPropertyValue('--menu-column')).toBe('calc(164px + 56ch)');
     });
   });
 
