@@ -159,6 +159,37 @@ describe('skipping unchanged ground', () => {
   });
 });
 
+describe('the phantom line at the end of a patch', () => {
+  /**
+   * Taken verbatim from a real `edit` tool call. A file ending in a newline splits into one
+   * more piece than it has lines, and the CLI's patch generator keeps that empty piece - so
+   * editing a two-line file claims three, with a final context line containing nothing.
+   */
+  const asTheCliWroteIt = ['@@ -1,2 +1,3 @@', ' test', '+second line', ' ', ''].join('\n');
+
+  it('does not show a line the file does not have', () => {
+    const lines = parsePatch(asTheCliWroteIt);
+    expect(lines.map((line) => line.text)).toEqual(['test', 'second line']);
+  });
+
+  it('leaves the last real line numbered as it is', () => {
+    const lines = parsePatch(asTheCliWroteIt);
+    expect(lines[lines.length - 1]?.after).toBe(2);
+  });
+
+  // A file that genuinely ends in a blank line produces two empty context lines, and only
+  // the artefact should go.
+  it('keeps a blank line the file really has', () => {
+    const patch = ['@@ -1,3 +1,4 @@', ' test', '+second line', ' ', ' ', ''].join('\n');
+    expect(parsePatch(patch).map((line) => line.text)).toEqual(['test', 'second line', '']);
+  });
+
+  it('leaves a patch that ends on a change alone', () => {
+    const patch = ['@@ -1,1 +1,2 @@', ' test', '+second line', ''].join('\n');
+    expect(parsePatch(patch).map((line) => line.text)).toEqual(['test', 'second line']);
+  });
+});
+
 describe('countChanges', () => {
   it('counts what was added and removed', () => {
     expect(countChanges(parsePatch(patch))).toEqual({ added: 2, removed: 1 });

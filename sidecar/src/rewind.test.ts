@@ -213,6 +213,32 @@ describe('counting lines', () => {
     const same = Buffer.from('a\nb\nc');
     expect(countLines(same, same)).toEqual({ linesAdded: 0, linesRemoved: 0 });
   });
+
+  /**
+   * A file ending in a newline splits into one more piece than it has lines. Counting that
+   * empty piece reported a two-line file as three - the same artefact that put a phantom
+   * line in the diff view.
+   */
+  it('does not count the newline that ends the last line', async () => {
+    const { countLines } = await loadRewind();
+    expect(countLines(null, Buffer.from('test\nsecond line\n'))).toEqual({
+      linesAdded: 2,
+      linesRemoved: 0,
+    });
+  });
+
+  it('counts a file that genuinely ends in a blank line', async () => {
+    const { countLines } = await loadRewind();
+    expect(countLines(null, Buffer.from('test\n\n'))).toEqual({ linesAdded: 2, linesRemoved: 0 });
+  });
+
+  it('counts adding a line to a newline-terminated file as one line', async () => {
+    const { countLines } = await loadRewind();
+    const before = Buffer.from('test\n');
+    const after = Buffer.from('test\nsecond line\n');
+
+    expect(countLines(before, after)).toEqual({ linesAdded: 1, linesRemoved: 0 });
+  });
 });
 
 describe('the summary the CLI keeps on each snapshot', () => {

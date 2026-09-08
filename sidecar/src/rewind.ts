@@ -221,7 +221,16 @@ export function countLines(before: Buffer | null, after: Buffer | null): {
   linesAdded: number;
   linesRemoved: number;
 } {
-  const lines = (content: Buffer | null) => (content ? content.toString('utf8').split('\n') : []);
+  const lines = (content: Buffer | null) => {
+    if (!content) return [];
+    const split = content.toString('utf8').split('\n');
+    // A file ending in a newline splits into one more piece than it has lines. Counting the
+    // empty last piece would report a two-line file as three, which is the same artefact
+    // that put a phantom line in the diff view.
+    if (split.length > 1 && split[split.length - 1] === '') split.pop();
+    return split;
+  };
+
   const from = lines(before);
   const to = lines(after);
 

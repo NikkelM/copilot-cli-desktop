@@ -66,7 +66,8 @@ describe('recording a turn', () => {
 
     const [snapshot] = readRewind('s1');
     expect(snapshot?.fileCount).toBe(1);
-    expect(snapshot?.linesAdded).toBe(3);
+    // Two lines, not three: the newline ending the last line does not start another.
+    expect(snapshot?.linesAdded).toBe(2);
 
     const change = Object.values(snapshot!.files)[0]!;
     expect(change.path).toBe(path);

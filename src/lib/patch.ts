@@ -72,7 +72,24 @@ export function parsePatch(patch: string): PatchLine[] {
     // A blank trailing line is an artefact of splitting, not part of the patch.
   }
 
-  return collapse(markWithinLines(lines));
+  return collapse(markWithinLines(withoutPhantomLine(lines)));
+}
+
+/**
+ * Drop the empty context line the CLI's patches end with.
+ *
+ * A file ending in a newline splits into one more piece than it has lines, and the CLI's
+ * patch generator keeps that empty piece: editing a two-line file produces
+ * `@@ -1,2 +1,3 @@` and a final context line containing nothing. Rendered faithfully, that
+ * showed a third line in a file that has two.
+ *
+ * Only the very last line, and only when it is empty context. A file that genuinely ends in
+ * a blank line produces two of them, and the real one must survive.
+ */
+function withoutPhantomLine(lines: PatchLine[]): PatchLine[] {
+  const last = lines[lines.length - 1];
+  if (last?.kind === 'context' && last.text === '') return lines.slice(0, -1);
+  return lines;
 }
 
 /**
