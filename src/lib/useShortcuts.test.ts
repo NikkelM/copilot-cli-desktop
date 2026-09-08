@@ -253,10 +253,20 @@ describe('useShortcuts', () => {
 });
 
 describe('BINDINGS', () => {
-  // The list a reader sees is built from these, so a shortcut that does something must be
-  // described, and nothing described may do nothing.
+  // The list a reader sees is built from these, so a shortcut this hook reports must be
+  // described, and nothing described as this hook's may do nothing.
   it('describes every shortcut the hook can report', () => {
-    expect(BINDINGS.map((binding) => binding.id).sort()).toEqual(['escape-twice', 'help', 'interrupt']);
+    const mine = BINDINGS.map((binding) => binding.id).filter(Boolean);
+    expect(mine.sort()).toEqual(['escape-twice', 'help', 'interrupt']);
+  });
+
+  // The rest are the composer's and the menu's. They are listed because the reader does not
+  // care which part of the app answers a key, only that pressing it does something.
+  it('covers keys this hook does not own', () => {
+    const others = BINDINGS.filter((binding) => !binding.id).map((binding) => binding.keys);
+    expect(others).toContain('/');
+    expect(others).toContain('Enter');
+    expect(others).toContain('Tab');
   });
 
   it('says which keys to press and what they do', () => {
@@ -264,5 +274,11 @@ describe('BINDINGS', () => {
       expect(binding.keys.length).toBeGreaterThan(0);
       expect(binding.what.length).toBeGreaterThan(0);
     }
+  });
+
+  // Two rows reading the same would be two rows the reader has to tell apart.
+  it('names each key once', () => {
+    const keys = BINDINGS.map((binding) => binding.keys);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });

@@ -6,23 +6,40 @@ const DOUBLE_ESCAPE_MS = 800;
 export type Shortcut = 'interrupt' | 'escape-twice' | 'help';
 
 export interface Binding {
-  id: Shortcut;
+  /**
+   * Set when this hook is what implements the key.
+   *
+   * Absent for the ones the composer or the menu owns. The reader does not care which part
+   * of the app answers a key, so the list covers all of them - but only this hook's can be
+   * held to reporting a `Shortcut`.
+   */
+  id?: Shortcut;
   /** As a reader would press it, for the list they can call up. */
   keys: string;
   what: string;
 }
 
 /**
- * Every shortcut there is, in one list.
+ * Every key the app answers, in one list.
  *
- * The list the reader sees is built from this rather than written beside it, so a shortcut
- * cannot exist without being documented, or be documented without existing. Unlike the CLI
- * there is no status line to put a hint in, which makes the list the only way to find them.
+ * The list the reader sees is built from this rather than written beside it, so a key cannot
+ * be described here without working. Unlike the CLI there is no status line to put a hint
+ * in, which makes the list the only way to find them.
+ *
+ * Ordinary text editing is left out. The CLI documents ctrl+a, ctrl+e, ctrl+k and the rest
+ * because a terminal gives none of them for free; a text box already has the ones this
+ * platform uses, and listing them would be documenting the operating system.
  */
 export const BINDINGS: readonly Binding[] = [
-  { id: 'escape-twice', keys: 'Esc Esc', what: 'Stop the turn, or clear what is written' },
-  { id: 'interrupt', keys: 'Ctrl+C', what: 'Stop the turn' },
   { id: 'help', keys: '?', what: 'Show these shortcuts' },
+  { keys: '/', what: 'Run a command rather than send a message' },
+  { keys: 'Enter', what: 'Send, or queue behind the turn already running' },
+  { keys: 'Shift+Enter', what: 'Start a new line' },
+  { keys: '↑ ↓', what: 'Move through the menu' },
+  { keys: 'Tab', what: 'Complete the highlighted command without running it' },
+  { keys: 'Esc', what: 'Close the menu' },
+  { id: 'interrupt', keys: 'Ctrl+C', what: 'Stop the turn' },
+  { id: 'escape-twice', keys: 'Esc Esc', what: 'Stop the turn, or clear what is written' },
 ];
 
 /** Whether a key press belongs to whatever is being typed into. */
