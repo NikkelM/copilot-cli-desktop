@@ -42,6 +42,21 @@ function remembered(): SlashCommand[] {
 }
 
 /**
+ * Fold a fresh answer into what is already known.
+ *
+ * The two sources are not equivalent: a loaded session knows a handful of commands that
+ * only make sense inside a conversation, and a client with no session has never heard of
+ * them. Replacing the list would let whichever answer arrived last decide what exists, so a
+ * narrower one fills gaps instead of emptying them, while a newer definition of a command
+ * already known still wins.
+ */
+function merge(known: SlashCommand[], found: SlashCommand[]): SlashCommand[] {
+  const byName = new Map(known.map((command) => [command.name, command]));
+  for (const command of found) byName.set(command.name, command);
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
  * The slash commands there are.
  *
  * Seeded from what was remembered so the menu has something to show the instant a slash is
@@ -64,12 +79,15 @@ export function useCommands(sessionId: string | null) {
       listCommands(forSession ?? undefined)
         .then((found) => {
           if (found.length === 0) return;
-          setCommands(found);
-          try {
-            localStorage.setItem(REMEMBERED, JSON.stringify(found));
-          } catch {
-            // Remembering is an optimisation; failing to is not worth reporting.
-          }
+          setCommands((known) => {
+            const merged = merge(known, found);
+            try {
+              localStorage.setItem(REMEMBERED, JSON.stringify(merged));
+            } catch {
+              // Remembering is an optimisation; failing to is not worth reporting.
+            }
+            return merged;
+          });
         })
         .catch((e: unknown) => setFailed(String(e)))
         .finally(() => (asking.current = false));
