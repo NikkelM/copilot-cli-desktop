@@ -19,12 +19,14 @@ import type {
   ReasoningEffort,
 } from '../../shared/protocol.js';
 import { mkdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { resolveCliPath, sessionDataDir } from './paths.js';
 import { sessionCwd } from './sessionIndex.js';
 import { appendSnapshot, readSnapshots, writeSnapshots, type SnapshotRecord } from './snapshotStore.js';
+import { beginTurn, endTurn, noteToolEnd, noteToolStart, pathOf, shouldRecord } from './rewindCapture.js';
 import {
   changesSince,
   diffOf,
@@ -119,6 +121,10 @@ interface LoadedSession {
   index: string;
   /** In flight while the tree is being photographed, so a question can wait for it. */
   snapshotting?: Promise<void> | null;
+  /** What the turn in progress has changed, in the CLI's rewind format. Null when idle. */
+  turn?: ReturnType<typeof beginTurn> | null;
+  /** The last prompt sent, so a turn's record can name what caused it as the CLI's does. */
+  lastPrompt?: string;
   idleTimer: NodeJS.Timeout | null;
 }
 
@@ -523,13 +529,55 @@ export class SessionRuntime {
         entry.snapshotting = this.snapshot(sessionId, entry).finally(() => {
           entry.snapshotting = null;
         });
+
+        // The CLI records every turn it runs in the session's own rewind store, and a turn
+        // driven through the SDK records nothing - so this app writes the same format in the
+        // same place, and the two can see each other's work.
+        entry.turn = shouldRecord(sessionId)
+          ? beginTurn(event.id ?? randomUUID(), entry.lastPrompt ?? '')
+          : null;
       }
-      if (event.type === 'session.idle' || event.type === 'assistant.turn_end') entry.busy = false;
+
+      this.captureFileChange(entry, event);
+
+      if (event.type === 'session.idle' || event.type === 'assistant.turn_end') {
+        entry.busy = false;
+        if (entry.turn) {
+          try {
+            endTurn(sessionId, entry.turn);
+          } catch {
+            // A turn is not worth failing over something written for its own history.
+          }
+          entry.turn = null;
+        }
+      }
 
       this.touch(sessionId);
     }
 
     this.onEvent?.(sessionId, event);
+  }
+
+  /**
+   * Follow a tool call that changes a file, so the turn's record has both versions.
+   *
+   * Read at the tool's start and again at its finish, rather than comparing the whole tree
+   * at each end of the turn: that is what the git mechanism did, and it is why it needed a
+   * repository to be affordable.
+   */
+  private captureFileChange(entry: LoadedSession, event: SessionEvent): void {
+    if (!entry.turn) return;
+
+    const data = event.data as { toolCallId?: string; toolName?: string; arguments?: unknown } | undefined;
+    const callId = data?.toolCallId;
+    if (!callId) return;
+
+    if (event.type === 'tool.execution_start') {
+      const path = pathOf(data?.toolName, data?.arguments);
+      if (path) noteToolStart(entry.turn, callId, path);
+    } else if (event.type === 'tool.execution_complete') {
+      noteToolEnd(entry.turn, callId);
+    }
   }
 
   /**
@@ -757,6 +805,11 @@ export class SessionRuntime {
   ): Promise<{ messageId: string; queued: boolean }> {
     const session = await this.ensureSession(sessionId);
     const queued = mode ? mode === 'enqueue' : (this.loaded.get(sessionId)?.busy ?? false);
+
+    // Kept so the turn's own record can name the prompt that caused it, which is what makes
+    // a rewind point recognisable rather than a timestamp.
+    const entry = this.loaded.get(sessionId);
+    if (entry) entry.lastPrompt = prompt;
 
     return {
       messageId: await session.send({
