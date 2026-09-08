@@ -62,15 +62,6 @@ describe('the file key', () => {
   });
 });
 
-describe('the encoded path', () => {
-  // Big-endian, which is not what the little-endian Windows convention suggests: 1092 of
-  // 1092 entries in a real store match big-endian and none match little-endian.
-  it('is utf-16 big-endian hex', async () => {
-    const { encodePath } = await loadRewind();
-    expect(encodePath('C:')).toEqual({ encoding: 'windows-wide', data: '0043003a' });
-  });
-});
-
 describe('reading', () => {
   it('has nothing to say about a session it has never seen', async () => {
     const { readRewind } = await loadRewind();
@@ -98,82 +89,16 @@ describe('reading', () => {
   });
 });
 
-describe('writing', () => {
-  it('records a turn and reads it back', async () => {
-    const { appendRewind, readRewind } = await loadRewind();
-
-    expect(appendRewind('s1', snapshot({ userMessage: 'first' }))).toBe(true);
-    appendRewind('s1', snapshot({ snapshotId: 's2', userMessage: 'second' }));
-
-    expect(readRewind('s1').map((s) => s.userMessage)).toEqual(['first', 'second']);
-  });
-
-  it('writes the schema the CLI expects', async () => {
-    const { appendRewind } = await loadRewind();
-    appendRewind('s1', snapshot());
-
-    const written = JSON.parse(readFileSync(join(dirOf('s1'), 'index.json'), 'utf8'));
-    expect(written.schema).toBe(1);
-  });
-
-  // Left behind, the staging file would be read by nothing but would look like debris in a
-  // directory another program owns.
-  it('leaves no staging file behind', async () => {
-    const { appendRewind } = await loadRewind();
-    appendRewind('s1', snapshot());
-
-    expect(existsSync(join(dirOf('s1'), 'index.json.tmp'))).toBe(false);
-  });
-
-  it('starts tracking a session nothing has tracked yet', async () => {
-    const { appendRewind } = await loadRewind();
-    appendRewind('s1', snapshot());
-
-    const tracking = JSON.parse(readFileSync(join(dirOf('s1'), 'tracking.json'), 'utf8'));
-    expect(tracking).toEqual({ schema: 1, tracking: true });
-  });
-
-  /**
-   * Someone who turned rewind off in the CLI should not have it turned back on by another
-   * program writing to the same directory.
-   */
-  it('writes nothing when the CLI has tracking switched off', async () => {
-    mkdirSync(dirOf('s1'), { recursive: true });
-    writeFileSync(join(dirOf('s1'), 'tracking.json'), JSON.stringify({ schema: 1, tracking: false }));
-
-    const { appendRewind, readRewind } = await loadRewind();
-    expect(appendRewind('s1', snapshot())).toBe(false);
-    expect(readRewind('s1')).toEqual([]);
-  });
-
-  it('does not overwrite the CLI\u2019s own tracking file', async () => {
-    mkdirSync(dirOf('s1'), { recursive: true });
-    writeFileSync(join(dirOf('s1'), 'tracking.json'), JSON.stringify({ schema: 1, tracking: true, extra: 'kept' }));
-
-    const { appendRewind } = await loadRewind();
-    appendRewind('s1', snapshot());
-
-    const tracking = JSON.parse(readFileSync(join(dirOf('s1'), 'tracking.json'), 'utf8'));
-    expect(tracking.extra).toBe('kept');
-  });
-});
 
 describe('backups', () => {
-  it('stores contents under their own hash and reads them back', async () => {
-    const { imageOf, readBackup } = await loadRewind();
-    const image = imageOf('s1', 'C:\\work\\a.txt', Buffer.from('hello\n'));
+  it('reads a blob back by its hash', async () => {
+    const { contentHash, readBackup } = await loadRewind();
+    const hash = contentHash('hello\n');
 
-    expect(image.kind).toBe('content');
-    if (image.kind !== 'content') return;
-    expect(readBackup('s1', image.contentHash)?.toString()).toBe('hello\n');
-  });
+    mkdirSync(join(dirOf('s1'), 'backups'), { recursive: true });
+    writeFileSync(join(dirOf('s1'), 'backups', hash), 'hello\n');
 
-  it('stores identical contents once', async () => {
-    const { imageOf, backupCount } = await loadRewind();
-    imageOf('s1', 'C:\\work\\a.txt', Buffer.from('same'));
-    imageOf('s1', 'C:\\work\\b.txt', Buffer.from('same'));
-
-    expect(backupCount('s1')).toBe(1);
+    expect(readBackup('s1', hash)?.toString()).toBe('hello\n');
   });
 
   /**
@@ -187,77 +112,6 @@ describe('backups', () => {
   });
 });
 
-describe('counting lines', () => {
-  it('counts a new file as all added', async () => {
-    const { countLines } = await loadRewind();
-    expect(countLines(null, Buffer.from('a\nb\nc'))).toEqual({ linesAdded: 3, linesRemoved: 0 });
-  });
-
-  it('counts a deleted file as all removed', async () => {
-    const { countLines } = await loadRewind();
-    expect(countLines(Buffer.from('a\nb'), null)).toEqual({ linesAdded: 0, linesRemoved: 2 });
-  });
-
-  // Without excluding the shared ends, editing one line of a long file would read as the
-  // whole file being rewritten.
-  it('ignores what did not change around an edit', async () => {
-    const { countLines } = await loadRewind();
-    const before = Buffer.from('one\ntwo\nthree\nfour');
-    const after = Buffer.from('one\nTWO\nthree\nfour');
-
-    expect(countLines(before, after)).toEqual({ linesAdded: 1, linesRemoved: 1 });
-  });
-
-  it('says nothing changed when nothing did', async () => {
-    const { countLines } = await loadRewind();
-    const same = Buffer.from('a\nb\nc');
-    expect(countLines(same, same)).toEqual({ linesAdded: 0, linesRemoved: 0 });
-  });
-
-  /**
-   * A file ending in a newline splits into one more piece than it has lines. Counting that
-   * empty piece reported a two-line file as three - the same artefact that put a phantom
-   * line in the diff view.
-   */
-  it('does not count the newline that ends the last line', async () => {
-    const { countLines } = await loadRewind();
-    expect(countLines(null, Buffer.from('test\nsecond line\n'))).toEqual({
-      linesAdded: 2,
-      linesRemoved: 0,
-    });
-  });
-
-  it('counts a file that genuinely ends in a blank line', async () => {
-    const { countLines } = await loadRewind();
-    expect(countLines(null, Buffer.from('test\n\n'))).toEqual({ linesAdded: 2, linesRemoved: 0 });
-  });
-
-  it('counts adding a line to a newline-terminated file as one line', async () => {
-    const { countLines } = await loadRewind();
-    const before = Buffer.from('test\n');
-    const after = Buffer.from('test\nsecond line\n');
-
-    expect(countLines(before, after)).toEqual({ linesAdded: 1, linesRemoved: 0 });
-  });
-});
-
-describe('the summary the CLI keeps on each snapshot', () => {
-  it('totals the files and lines, and lists every blob referenced', async () => {
-    const { summarise, imageOf } = await loadRewind();
-    const before = imageOf('s1', 'C:\\a.txt', Buffer.from('old'));
-    const after = imageOf('s1', 'C:\\a.txt', Buffer.from('new'));
-
-    const summary = summarise({
-      k1: { path: 'C:\\a.txt', preimage: before, postimage: after, linesAdded: 1, linesRemoved: 1 },
-      k2: { path: 'C:\\b.txt', preimage: { kind: 'absent' }, postimage: after, linesAdded: 3, linesRemoved: 0 },
-    });
-
-    expect(summary.fileCount).toBe(2);
-    expect(summary.linesAdded).toBe(4);
-    expect(summary.linesRemoved).toBe(1);
-    expect(summary.backupFiles).toHaveLength(2);
-  });
-});
 
 /**
  * The real store on this machine, when there is one. Not a fixture: the point is to notice
@@ -271,7 +125,7 @@ describe('against the CLI\u2019s own store', () => {
 
     delete process.env.COPILOT_HOME;
     vi.resetModules();
-    const { fileKey, encodePath, contentHash } = await import('./rewind.js');
+    const { fileKey, contentHash } = await import('./rewind.js');
     const { readdirSync } = await import('node:fs');
 
     const sessions = readdirSync(real);
@@ -288,7 +142,6 @@ describe('against the CLI\u2019s own store', () => {
         expect(fileKey(change.path)).toBe(key);
         for (const image of [change.preimage, change.postimage]) {
           if (image.kind !== 'content') continue;
-          expect(encodePath(image.resolvedPath)).toEqual(image.encodedPath);
           expect(image.contentHash).toHaveLength(contentHash('x').length);
         }
       }

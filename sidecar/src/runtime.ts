@@ -20,11 +20,9 @@ import type {
   ReasoningEffort,
   SlashCommand,
 } from '../../shared/protocol.js';
-import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 
 import { resolveCliPath } from './paths.js';
-import { beginTurn, endTurn, noteToolEnd, noteToolStart, pathOf, shouldRecord } from './rewindCapture.js';
 
 /**
  * Remove terminal colour and cursor sequences from command output.
@@ -81,8 +79,6 @@ interface LoadedSession {
   unsubscribe: () => void;
   /** True between a turn starting and the session going idle. Busy sessions are never evicted. */
   busy: boolean;
-  /** What the turn in progress has changed, in the CLI's rewind format. Null when idle. */
-  turn?: ReturnType<typeof beginTurn> | null;
   /** The last prompt sent, so a turn's record can name what caused it as the CLI's does. */
   lastPrompt?: string;
   idleTimer: NodeJS.Timeout | null;
@@ -270,6 +266,10 @@ export class SessionRuntime {
       onPermissionRequest: (request) => this.decidePermission(id, request),
       onUserInputRequest: (request) => this.askUserInput(id, request),
       onElicitationRequest: (context) => this.askElicitation(id, context),
+      // The runtime owns the rewind store, and only fills it when asked to. Asking on
+      // creation is the only chance to get a complete record: capture starts with the
+      // first turn and cannot be reconstructed later.
+      enableFileChangeTracking: true,
       streaming: true,
     });
 
@@ -280,7 +280,8 @@ export class SessionRuntime {
   }
 
   /** Resume a session if it is not already loaded, evicting another if needed. */
-  private async ensureSession(sessionId: string): Promise<CopilotSession> {    const existing = this.loaded.get(sessionId);
+  private async ensureSession(sessionId: string): Promise<CopilotSession> {
+    const existing = this.loaded.get(sessionId);
     if (existing) {
       this.touch(sessionId);
       return existing.session;
@@ -303,6 +304,10 @@ export class SessionRuntime {
       // The legacy one arrives here as a user input request.
       onUserInputRequest: (request) => this.askUserInput(sessionId, request),
       onElicitationRequest: (context) => this.askElicitation(sessionId, context),
+      // Turns tracking on for a session that still has a baseline to track against. A
+      // session that has run untracked turns keeps them untracked: the runtime cannot
+      // reconstruct what it did not watch, and says so rather than guessing.
+      enableFileChangeTracking: true,
       streaming: true,
     });
 
@@ -456,59 +461,19 @@ export class SessionRuntime {
 
     if (entry) {
       // Track turn boundaries so a session mid-turn is never evicted underneath itself.
-      if (event.type === 'assistant.turn_start') {
-        entry.busy = true;
-
-        // The CLI records every turn it runs in the session's own rewind store, and a turn
-        // driven through the SDK records nothing - so this app writes the same format in the
-        // same place, and the two can see each other's work.
-        entry.turn = shouldRecord(sessionId)
-          ? beginTurn(event.id ?? randomUUID(), entry.lastPrompt ?? '')
-          : null;
-      }
-
-      this.captureFileChange(entry, event);
+      if (event.type === 'assistant.turn_start') entry.busy = true;
 
       if (event.type === 'session.idle' || event.type === 'assistant.turn_end') {
+        // A turn that changed nothing still says so: the panel asks the runtime what it
+        // holds, and the answer is cheap enough that guessing when to ask is not worth it.
+        if (entry.busy) this.onChangesRecorded?.(sessionId);
         entry.busy = false;
-        if (entry.turn) {
-          try {
-            // Announced before the event that ended the turn is forwarded, so anything
-            // reading the store in response to either is reading it after the write.
-            if (endTurn(sessionId, entry.turn)) this.onChangesRecorded?.(sessionId);
-          } catch {
-            // A turn is not worth failing over something written for its own history.
-          }
-          entry.turn = null;
-        }
       }
 
       this.touch(sessionId);
     }
 
     this.onEvent?.(sessionId, event);
-  }
-
-  /**
-   * Follow a tool call that changes a file, so the turn's record has both versions.
-   *
-   * Read at the tool's start and again at its finish, rather than comparing the whole tree
-   * at each end of the turn: that is what the git mechanism did, and it is why it needed a
-   * repository to be affordable.
-   */
-  private captureFileChange(entry: LoadedSession, event: SessionEvent): void {
-    if (!entry.turn) return;
-
-    const data = event.data as { toolCallId?: string; toolName?: string; arguments?: unknown } | undefined;
-    const callId = data?.toolCallId;
-    if (!callId) return;
-
-    if (event.type === 'tool.execution_start') {
-      const path = pathOf(data?.toolName, data?.arguments);
-      if (path) noteToolStart(entry.turn, callId, path);
-    } else if (event.type === 'tool.execution_complete') {
-      noteToolEnd(entry.turn, callId);
-    }
   }
 
   /** Mark a session most recently used and restart its idle countdown. */
@@ -544,13 +509,31 @@ export class SessionRuntime {
   }
 
   /**
+   * Write out what the runtime is still holding for a loaded session.
+   *
+   * The runtime captures a turn's file changes in memory and only persists them when the
+   * next turn begins, so anything reading the store straight after a turn would be one turn
+   * behind. Asking for the session's rewind points is what makes it write, and costs nothing
+   * for a session that is not loaded - which is every session the app has only browsed.
+   */
+  async flushChanges(sessionId: string): Promise<void> {
+    const entry = this.loaded.get(sessionId);
+    if (!entry) return;
+
+    try {
+      await entry.session.rpc.history.listRewindPoints();
+    } catch {
+      // Only ever a matter of freshness: the store is readable either way.
+    }
+  }
+
+  /**
    * Release a session's memory while preserving it on disk.
    *
    * `disconnect()` is not destructive: the session can be resumed again later with its
    * history intact, which is what makes automatic eviction safe.
    */
-  async evict(sessionId: string): Promise<void> {
-    const entry = this.loaded.get(sessionId);
+  async evict(sessionId: string): Promise<void> {    const entry = this.loaded.get(sessionId);
     if (!entry || entry.busy) return;
 
     if (entry.idleTimer) clearTimeout(entry.idleTimer);

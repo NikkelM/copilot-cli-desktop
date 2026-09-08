@@ -1,7 +1,3 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
 import { describe, expect, it, vi } from 'vitest';
 
 import { SessionRuntime, type RuntimeOptions } from './runtime.js';
@@ -25,6 +21,7 @@ function makeSession(id: string) {
       for (const handler of [...handlers]) handler(event);
     },
     send: vi.fn(async (_options: { prompt: string; mode?: string }) => `msg-${id}`),
+    rpc: { history: { listRewindPoints: vi.fn(async () => ({ points: [] })) } },
     abort: vi.fn(async function (this: { aborted: boolean }) {
       this.aborted = true;
     }),
@@ -332,44 +329,64 @@ describe('questions from the agent', () => {
 });
 
 /**
- * A panel showing what a session changed has to know when the answer moves, and re-reading
- * it costs reading every file the session touched at both ends. So it is announced, and
- * only when a turn actually wrote something down.
+ * A panel showing what a session changed has to know when the answer moves. The runtime
+ * keeps that record itself now (#142), so every turn that ends is announced rather than only
+ * the ones this app saw write something - it no longer watches the tools to know.
  */
 describe('SessionRuntime announcing what a turn changed', () => {
-  const turn = (session: FakeSession, act: () => void) => {
-    session.emit({ type: 'assistant.turn_start', data: {} });
-    act();
-    session.emit({ type: 'assistant.turn_end', data: {} });
-  };
-
-  it('announces a turn that changed a file', async () => {
+  it('announces a turn ending', async () => {
     const onChangesRecorded = vi.fn();
     const { runtime, sessions } = makeRuntime({ onChangesRecorded });
     await runtime.send('a', 'make a file');
 
-    const path = join(mkdtempSync(join(tmpdir(), 'ccd-turn-')), 'made.txt');
     const session = sessions.get('a')!;
-    turn(session, () => {
-      session.emit({
-        type: 'tool.execution_start',
-        data: { toolCallId: 'c1', toolName: 'create', arguments: { path } },
-      });
-      writeFileSync(path, 'hello\n');
-      session.emit({ type: 'tool.execution_complete', data: { toolCallId: 'c1', success: true } });
-    });
+    session.emit({ type: 'assistant.turn_start', data: {} });
+    session.emit({ type: 'assistant.turn_end', data: {} });
 
     expect(onChangesRecorded).toHaveBeenCalledWith('a');
   });
 
-  it('says nothing about a turn that changed nothing', async () => {
+  it('says nothing when no turn was running', async () => {
     const onChangesRecorded = vi.fn();
     const { runtime, sessions } = makeRuntime({ onChangesRecorded });
     await runtime.send('a', 'just talk');
 
-    turn(sessions.get('a')!, () => {});
+    sessions.get('a')!.emit({ type: 'session.idle', data: {} });
 
     expect(onChangesRecorded).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The runtime holds a turn's record in memory until the next turn begins, so a panel reading
+ * the store straight after a turn would be a turn behind. Asking for the rewind points is
+ * what makes it write, and there is nothing to ask a session nobody has opened.
+ */
+describe('SessionRuntime flushing what it holds', () => {
+  it('asks a loaded session to write its record out', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'hello');
+
+    await runtime.flushChanges('a');
+
+    expect(sessions.get('a')!.rpc.history.listRewindPoints).toHaveBeenCalled();
+  });
+
+  it('starts no session for one that is not loaded', async () => {
+    const { runtime, sessions, client } = makeRuntime();
+
+    await runtime.flushChanges('never-opened');
+
+    expect(sessions.size).toBe(0);
+    expect(client.resumeSession).not.toHaveBeenCalled();
+  });
+
+  it('stays quiet when the runtime cannot answer', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'hello');
+    sessions.get('a')!.rpc.history.listRewindPoints.mockRejectedValueOnce(new Error('session busy'));
+
+    await expect(runtime.flushChanges('a')).resolves.toBeUndefined();
   });
 });
 
