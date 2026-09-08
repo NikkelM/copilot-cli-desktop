@@ -372,16 +372,6 @@ body {
   color: var(--accent);
 }
 
-.toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
 .footer {
   display: flex;
   flex-direction: column;

@@ -42,7 +42,6 @@ import {
   runtimeStatus,
   invokeCommand,
   sendMessage,
-  setApprovalPolicy,
 } from './lib/sidecar';
 import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
@@ -84,7 +83,6 @@ export default function App() {
   const [stopped, setStopped] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PendingPermission[]>([]);
   const [elicitations, setElicitations] = useState<PendingElicitation[]>([]);
-  const [allowAll, setAllowAll] = useState<Record<string, boolean>>({});
   /** Session ids in activation order, most recent first. Fixes the active group's order. */
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
   const [maxLoaded, setMaxLoaded] = useState<number | undefined>(undefined);
@@ -359,13 +357,6 @@ export default function App() {
     );
   }
 
-  function toggleAllowAll(sessionId: string, enabled: boolean) {
-    setAllowAll((current) => ({ ...current, [sessionId]: enabled }));
-    void setApprovalPolicy(sessionId, enabled ? 'approve-all' : 'prompt').catch((e: unknown) =>
-      setError(String(e)),
-    );
-  }
-
   async function handleSend(prompt: string) {
     if (!selectedId) return;
 
@@ -517,14 +508,6 @@ export default function App() {
                     onOpen={model.refresh}
                     onChoose={model.choose}
                   />
-                  <label className="toggle" title="Approve every tool call in this session without asking">
-                    <input
-                      type="checkbox"
-                      checked={allowAll[selected.sessionId] ?? false}
-                      onChange={(e) => toggleAllowAll(selected.sessionId, e.target.checked)}
-                    />
-                    Allow all
-                  </label>
                 </div>
               </div>
             </header>
