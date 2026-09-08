@@ -23,6 +23,7 @@ import {
   NOTIFY_PERMISSION_REQUESTED,
   NOTIFY_PERMISSION_RESOLVED,
   NOTIFY_SESSION_EVENT,
+  NOTIFY_SESSION_CHANGES,
   NOTIFY_SESSION_LOADED,
   NOTIFY_SESSIONS_CHANGED,
 } from '../../shared/protocol.js';
@@ -59,6 +60,7 @@ function notify(method: string, params: unknown): void {
 const runtime = new SessionRuntime({
   onEvent: (sessionId, event) => notify(NOTIFY_SESSION_EVENT, { sessionId, event }),
   onLoadedChange: (sessionId, loaded) => notify(NOTIFY_SESSION_LOADED, { sessionId, loaded }),
+  onChangesRecorded: (sessionId) => notify(NOTIFY_SESSION_CHANGES, { sessionId }),
   onPermissionRequest: (sessionId, requestId, request) =>
     notify(NOTIFY_PERMISSION_REQUESTED, { sessionId, requestId, request }),
   onPermissionResolved: (sessionId, requestId) =>

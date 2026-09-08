@@ -218,7 +218,7 @@ describe('what a session changed', () => {
 
     const { sessionChanges, sessionDiff } = await load();
     expect(sessionChanges(SESSION)[0]).toMatchObject({ diffable: false, linesAdded: 1, linesRemoved: 1 });
-    expect(sessionDiff(SESSION, '/w/f.ts')).toMatchObject({ patch: null, reason: 'pruned' });
+    expect(sessionDiff(SESSION, '/w/f.ts')).toMatchObject({ patch: null, reason: 'gone' });
   });
 
   /**
@@ -242,7 +242,8 @@ describe('what a session changed', () => {
     await writeStore([{ at: '2026-01-01T00:00:00.000Z', files: [{ path: file, preimage: ABSENT, postimage: await pruned('one\ntwo\n') }] }]);
 
     const { sessionDiff } = await load();
-    expect(sessionDiff(SESSION, file)).toMatchObject({ patch: null, reason: 'pruned' });
+    // Still on disk, so the reason says so: only the version the session left is missing.
+    expect(sessionDiff(SESSION, file)).toMatchObject({ patch: null, reason: 'replaced' });
   });
 
   it('treats a skipped image as having no diff to show', async () => {

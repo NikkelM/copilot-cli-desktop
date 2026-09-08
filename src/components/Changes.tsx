@@ -156,7 +156,8 @@ export function Changes({
 
 /** Why there is no diff is worth as much as the diff, so it is said rather than left blank. */
 const WHY: Record<NonNullable<FileDiff['reason']>, string> = {
-  pruned: 'The CLI has cleaned up the contents this file had, so there is nothing left to compare.',
+  gone: 'This file is not on disk any more, and no copy of its contents was kept.',
+  replaced: 'The file on disk is no longer the version the session left, and no copy of that version was kept.',
   binary: 'Not a text file.',
   untracked: 'No snapshot mentions this file.',
 };

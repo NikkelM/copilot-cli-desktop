@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import { createTwoFilesPatch, diffLines } from 'diff';
@@ -264,12 +264,23 @@ export function sessionDiff(sessionId: string, path: string, since?: string): Fi
 
   const before = contentsOf(sessionId, ends.first, ends.path);
   const after = contentsOf(sessionId, ends.last, ends.path);
-  if (!before || !after) return { patch: null, reason: 'pruned', stale: false };
+  if (!before || !after) return { patch: null, reason: lost(ends.path), stale: false };
 
   const patch = diffOf(ends.path, before, after);
   if (!patch) return { patch: null, reason: 'binary', stale: false };
 
   return { patch, stale: !matchesDisk(ends.last, path) };
+}
+
+/**
+ * Why a version cannot be produced, said in terms of the file rather than the store.
+ *
+ * "The blob was pruned" is true and means nothing to anyone: what is worth knowing is
+ * whether the thing being asked about is still there. A file that has been deleted is gone
+ * for good; one that has merely moved on is at least still readable in the state it is in.
+ */
+function lost(path: string): 'gone' | 'replaced' {
+  return existsSync(path) ? 'replaced' : 'gone';
 }
 
 /** Whether the file is still what the session left behind, or has been changed since. */

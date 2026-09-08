@@ -233,6 +233,7 @@ impl Supervisor {
                     let event = match method {
                         "session.event" => "session-event",
                         "session.loaded" => "session-loaded",
+                        "session.changes" => "session-changes",
                         "sessions.changed" => "sessions-changed",
                         "permission.requested" => "permission-requested",
                         "permission.resolved" => "permission-resolved",

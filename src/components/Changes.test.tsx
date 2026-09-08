@@ -120,12 +120,12 @@ describe('Changes', () => {
       <Changes
         {...props}
         changes={[change({ diffable: false })]}
-        diffs={{ 'C:\\work\\repo\\src\\thing.ts': { patch: null, reason: 'pruned', stale: false } } as never}
+        diffs={{ 'C:\\work\\repo\\src\\thing.ts': { patch: null, reason: 'gone', stale: false } }}
       />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: /thing\.ts/ }));
-    expect(screen.getByText(/cleaned up the contents/)).toBeTruthy();
+    expect(screen.getByText(/not on disk any more/)).toBeTruthy();
   });
 
   it('closes a row that is open rather than reopening it', () => {

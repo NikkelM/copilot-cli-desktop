@@ -297,11 +297,18 @@ export interface FileDiff {
   /** Unified diff from what the session found to what it left. */
   patch: string | null;
   /**
-   * `pruned` - the CLI cleans up backing blobs, and around a quarter of them are gone.
+   * Why there is no patch, in terms the reader can go and check for themselves.
+   *
+   * The store is not self-contained: a version is kept as a blob only when it is not what
+   * the file already holds, so the two ends of a change are often read back off disk. Both
+   * ways of losing that are worth telling apart, because only one of them is recoverable.
+   *
+   * `gone` - the file is not there any more, and no copy of it was kept.
+   * `replaced` - the file is still there but is no longer that version, and no copy was kept.
    * `binary` - nothing a text diff would say anything useful about.
    * `untracked` - no snapshot mentions this path.
    */
-  reason?: 'pruned' | 'binary' | 'untracked';
+  reason?: 'gone' | 'replaced' | 'binary' | 'untracked';
   /**
    * The file on disk is no longer what the session left.
    *
@@ -387,9 +394,20 @@ export interface ElicitationResolvedNotification {
 /** Sent when the session list may have changed, so the sidebar can refetch. */
 export const NOTIFY_SESSIONS_CHANGED = 'sessions.changed';
 
+/**
+ * Sent when a turn recorded what it changed, so an open list of changes can catch up.
+ *
+ * Only when something was actually written. Re-reading a session's changes costs reading
+ * every file it touched at both ends, so a turn that changed nothing must not pay for it.
+ */
+export interface SessionChangesNotification {
+  sessionId: string;
+}
+
 /** Method names used by sidecar-initiated notifications. */
 export const NOTIFY_SESSION_EVENT = 'session.event';
 export const NOTIFY_SESSION_LOADED = 'session.loaded';
+export const NOTIFY_SESSION_CHANGES = 'session.changes';
 export const NOTIFY_PERMISSION_REQUESTED = 'permission.requested';
 export const NOTIFY_PERMISSION_RESOLVED = 'permission.resolved';
 export const NOTIFY_ELICITATION_REQUESTED = 'elicitation.requested';

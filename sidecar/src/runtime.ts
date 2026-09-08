@@ -106,6 +106,13 @@ export interface RuntimeOptions {
   onEvent?: (sessionId: string, event: SessionEvent) => void;
   /** Notifies that a session's loaded state changed, so the sidebar can update. */
   onLoadedChange?: (sessionId: string, loaded: boolean) => void;
+  /**
+   * A turn's changes were written to the session's rewind store.
+   *
+   * Sent only when there was something to write, so a panel showing what a session changed
+   * refreshes when the answer moves and stays still the rest of the time.
+   */
+  onChangesRecorded?: (sessionId: string) => void;
   /** Asks the UI to approve or deny a tool call. */
   onPermissionRequest?: (sessionId: string, requestId: string, request: PermissionRequest) => void;
   /** Tells the UI a pending request is no longer awaiting an answer. */
@@ -150,6 +157,7 @@ export class SessionRuntime {
   private readonly idleTimeoutMs: number;
   private readonly onEvent?: (sessionId: string, event: SessionEvent) => void;
   private readonly onLoadedChange?: (sessionId: string, loaded: boolean) => void;
+  private readonly onChangesRecorded?: (sessionId: string) => void;
   private readonly onPermissionRequest?: (
     sessionId: string,
     requestId: string,
@@ -176,6 +184,7 @@ export class SessionRuntime {
     this.idleTimeoutMs = options.idleTimeoutMs ?? 10 * 60_000;
     this.onEvent = options.onEvent;
     this.onLoadedChange = options.onLoadedChange;
+    this.onChangesRecorded = options.onChangesRecorded;
     this.onPermissionRequest = options.onPermissionRequest;
     this.onPermissionResolved = options.onPermissionResolved;
     this.onElicitationRequest = options.onElicitationRequest;
@@ -464,7 +473,9 @@ export class SessionRuntime {
         entry.busy = false;
         if (entry.turn) {
           try {
-            endTurn(sessionId, entry.turn);
+            // Announced before the event that ended the turn is forwarded, so anything
+            // reading the store in response to either is reading it after the write.
+            if (endTurn(sessionId, entry.turn)) this.onChangesRecorded?.(sessionId);
           } catch {
             // A turn is not worth failing over something written for its own history.
           }

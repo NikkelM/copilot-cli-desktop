@@ -22,6 +22,7 @@ import type {
   SessionEventNotification,
   SessionChange,
   SessionLoadedNotification,
+  SessionChangesNotification,
   SessionModel,
   SlashCommand,
   TreeState,
@@ -160,9 +161,14 @@ export function onSessionEvent(handler: (payload: SessionEventNotification) => v
   return listen<SessionEventNotification>('session-event', (e) => handler(e.payload));
 }
 
-/** Notifies when a session is resumed into, or released from, memory. */
+/** Notifies that a session is resumed into, or released from, memory. */
 export function onSessionLoaded(handler: (payload: SessionLoadedNotification) => void) {
   return listen<SessionLoadedNotification>('session-loaded', (e) => handler(e.payload));
+}
+
+/** A turn wrote down what it changed, so anything showing that list should read it again. */
+export function onSessionChanges(handler: (payload: SessionChangesNotification) => void) {
+  return listen<SessionChangesNotification>('session-changes', (e) => handler(e.payload));
 }
 
 /** The session store changed, so the sidebar should refetch. */

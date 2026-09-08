@@ -34,6 +34,7 @@ import {
   onPermissionRequested,
   onPermissionResolved,
   onSessionEvent,
+  onSessionChanges,
   onSessionLoaded,
   onSessionsChanged,
   onSidecarRestarted,
@@ -268,6 +269,22 @@ export default function App() {
   // The store changes on every turn of every running session, including ones started in
   // a terminal, so this keeps the sidebar current without polling.
   useTauriEvent(() => onSessionsChanged(() => refreshSessions()), [refreshSessions]);
+
+  /**
+   * A turn recorded what it changed while the list of changes was open.
+   *
+   * Read again rather than left as it was: the panel is opened to watch a turn's work, and
+   * one that has to be closed and reopened to say anything is answering about the past. The
+   * sidecar only sends this when a turn actually wrote something, and only an open panel
+   * acts on it, so a session working away with it closed costs nothing.
+   */
+  useTauriEvent(
+    () =>
+      onSessionChanges(({ sessionId }) => {
+        if (showChanges && sessionId === selectedId) changes.load();
+      }),
+    [showChanges, selectedId, changes.load],
+  );
 
   // Losing the sidecar takes every session with it, and a request that will never be
   // answered otherwise shows as the app quietly doing nothing.

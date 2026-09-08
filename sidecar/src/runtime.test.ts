@@ -1,3 +1,7 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { SessionRuntime, type RuntimeOptions } from './runtime.js';
@@ -325,6 +329,48 @@ describe('questions from the agent', () => {
     await expect(answered).resolves.toEqual({ answer: '', wasFreeform: true });
   });
 
+});
+
+/**
+ * A panel showing what a session changed has to know when the answer moves, and re-reading
+ * it costs reading every file the session touched at both ends. So it is announced, and
+ * only when a turn actually wrote something down.
+ */
+describe('SessionRuntime announcing what a turn changed', () => {
+  const turn = (session: FakeSession, act: () => void) => {
+    session.emit({ type: 'assistant.turn_start', data: {} });
+    act();
+    session.emit({ type: 'assistant.turn_end', data: {} });
+  };
+
+  it('announces a turn that changed a file', async () => {
+    const onChangesRecorded = vi.fn();
+    const { runtime, sessions } = makeRuntime({ onChangesRecorded });
+    await runtime.send('a', 'make a file');
+
+    const path = join(mkdtempSync(join(tmpdir(), 'ccd-turn-')), 'made.txt');
+    const session = sessions.get('a')!;
+    turn(session, () => {
+      session.emit({
+        type: 'tool.execution_start',
+        data: { toolCallId: 'c1', toolName: 'create', arguments: { path } },
+      });
+      writeFileSync(path, 'hello\n');
+      session.emit({ type: 'tool.execution_complete', data: { toolCallId: 'c1', success: true } });
+    });
+
+    expect(onChangesRecorded).toHaveBeenCalledWith('a');
+  });
+
+  it('says nothing about a turn that changed nothing', async () => {
+    const onChangesRecorded = vi.fn();
+    const { runtime, sessions } = makeRuntime({ onChangesRecorded });
+    await runtime.send('a', 'just talk');
+
+    turn(sessions.get('a')!, () => {});
+
+    expect(onChangesRecorded).not.toHaveBeenCalled();
+  });
 });
 
 
