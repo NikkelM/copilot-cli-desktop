@@ -868,7 +868,6 @@ body {
   font-family: ui-monospace, monospace;
   font-size: 12px;
 }
-}
 
 .markdown code {
   padding: 1px 5px;
@@ -1341,6 +1340,28 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/*
+ * What a slash command answered.
+ *
+ * Set apart from the conversation because nobody said it: the runtime handed it back to
+ * this app, and it is gone as soon as the session is closed. Marked down the left the way a
+ * quotation is, which is the nearest thing to "this came from somewhere else".
+ */
+.message.command {
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* Laid out with spaces and newlines, and means them. */
+.message.command .plain {
+  margin: 0;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
 /* Tool calls stay collapsed to one line; the detail is available but never in the way. */
 .tool-head {
   display: flex;
@@ -1516,6 +1537,39 @@ body {
   color: var(--text);
   font: inherit;
   resize: vertical;
+}
+
+/* The menu sits directly on the box it is completing, so the composer's own gap is all the
+   separation it needs. */
+.composer > .menu {
+  margin-bottom: 0;
+}
+
+/* Holds the ghost against the box, since a textarea cannot show text it does not own. */
+.composer-input {
+  position: relative;
+}
+
+/*
+ * The rest of the command name, drawn under the box in the same place the text would be.
+ *
+ * Inset by the border rather than laid over it, so the two sets of characters line up
+ * exactly. Transparent by default: only the part after what has been typed is coloured, and
+ * the part underneath must not double what the textarea is already drawing.
+ */
+.composer .ghost {
+  position: absolute;
+  inset: 1px;
+  padding: 10px 12px;
+  color: transparent;
+  font: inherit;
+  white-space: pre;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.composer .ghost-rest {
+  color: var(--text-muted);
 }
 
 .composer textarea:focus {

@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 
 import { Composer } from './Composer';
+import type { SlashCommand } from '../../shared/protocol';
 
 const box = () => screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -27,6 +28,8 @@ function Host({ session, onSend }: { session: string; onSend: (prompt: string) =
         onSend(prompt);
       }}
       onAbort={() => {}}
+      commands={[]}
+      onCommandsNeeded={() => {}}
     />
   );
 }
@@ -52,6 +55,8 @@ function bare(props: Partial<Parameters<typeof Composer>[0]> = {}) {
       onChange={() => {}}
       onSend={onSend}
       onAbort={() => {}}
+      commands={[]}
+      onCommandsNeeded={() => {}}
       {...props}
     />,
   );
@@ -81,6 +86,8 @@ describe('Composer', () => {
         onChange={() => {}}
         onSend={() => {}}
         onAbort={() => {}}
+        commands={[]}
+        onCommandsNeeded={() => {}}
       />,
     );
     expect(document.activeElement).toBe(box());
@@ -144,6 +151,155 @@ describe('Composer', () => {
 });
 
 /**
+ * The command menu, which is how a slash command is found at all.
+ *
+ * Modelled on the CLI: the list opens above the composer as soon as a slash is typed, and
+ * narrows as more of the name is. Tab finishes the word, Enter finishes it and acts.
+ */
+describe('the slash command menu', () => {
+  const COMMANDS: SlashCommand[] = [
+    { name: 'usage', description: 'What this session has cost', aliases: [], allowDuringTurn: true },
+    {
+      name: 'model',
+      description: 'Change the model',
+      aliases: ['models'],
+      hint: 'model',
+      allowDuringTurn: true,
+    },
+    {
+      name: 'allow-all',
+      description: 'Approve everything',
+      aliases: ['yolo'],
+      hint: '[on|off]',
+      choices: [
+        { name: 'on', description: 'Turn it on' },
+        { name: 'off', description: 'Turn it off' },
+      ],
+      allowDuringTurn: true,
+    },
+  ];
+
+  function menu(props: Record<string, unknown> = {}) {
+    const onSend = vi.fn();
+    function Wrapper() {
+      const [value, setValue] = useState('');
+      return (
+        <Composer
+          disabled={false}
+          busy={false}
+          resuming={false}
+          attached={[]}
+          onAttach={() => {}}
+          onError={() => {}}
+          focusOn="s1"
+          value={value}
+          onChange={setValue}
+          onSend={onSend}
+          onAbort={() => {}}
+          commands={COMMANDS}
+          onCommandsNeeded={() => {}}
+          {...props}
+        />
+      );
+    }
+    render(<Wrapper />);
+    return { onSend, user: userEvent.setup() };
+  }
+
+  const rows = () => screen.queryAllByRole('option').map((row) => row.textContent);
+
+  it('opens on a slash, offering everything', async () => {
+    const { user } = menu();
+    await user.keyboard('/');
+    expect(rows()).toHaveLength(COMMANDS.length);
+  });
+
+  it('narrows as the name is typed', async () => {
+    const { user } = menu();
+    await user.keyboard('/mod');
+    expect(rows()!.some((row) => row?.includes('/model'))).toBe(true);
+    expect(rows()).toHaveLength(1);
+  });
+
+  it('stays shut for ordinary text', async () => {
+    const { user } = menu();
+    await user.keyboard('what does /model do');
+    expect(rows()).toHaveLength(0);
+  });
+
+  // Sent as the text it is: the point of matching on the name is that a path matches none.
+  it('stays shut for a path', async () => {
+    const { onSend, user } = menu();
+    await user.keyboard('/usr/bin/env{Enter}');
+    expect(rows()).toHaveLength(0);
+    expect(onSend).toHaveBeenCalledWith('/usr/bin/env');
+  });
+
+  it('says what a command takes, so the argument is not a guess', async () => {
+    const { user } = menu();
+    await user.keyboard('/mod');
+    expect(rows()[0]).toContain('/model <model>');
+  });
+
+  it('completes on Tab without sending', async () => {
+    const { onSend, user } = menu();
+    await user.keyboard('/us{Tab}');
+
+    expect(box().value).toBe('/usage');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('leaves the cursor past a space for a command that takes an argument', async () => {
+    const { user } = menu();
+    await user.keyboard('/mod{Tab}');
+    expect(box().value).toBe('/model ');
+  });
+
+  it('runs a complete command on Enter', async () => {
+    const { onSend, user } = menu();
+    await user.keyboard('/us{Enter}');
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend).toHaveBeenCalledWith('/usage');
+  });
+
+  // Sending it half-written would only earn a refusal, and the argument would have to be
+  // typed all over again.
+  it('does not send a command still missing its argument', async () => {
+    const { onSend, user } = menu();
+    await user.keyboard('/mod{Enter}');
+
+    expect(box().value).toBe('/model ');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('offers the values an argument accepts', async () => {
+    const { user } = menu();
+    await user.keyboard('/allow-all ');
+    expect(rows()).toEqual(['on' + 'Turn it on', 'off' + 'Turn it off']);
+  });
+
+  it('sends the chosen value with the command', async () => {
+    const { onSend, user } = menu();
+    await user.keyboard('/allow-all o{ArrowDown}{Enter}');
+    expect(onSend).toHaveBeenCalledWith('/allow-all off');
+  });
+
+  it('closes on Escape and leaves what was typed alone', async () => {
+    const { user } = menu();
+    await user.keyboard('/mod{Escape}');
+
+    expect(rows()).toHaveLength(0);
+    expect(box().value).toBe('/mod');
+  });
+
+  it('opens again once a different command is started', async () => {
+    const { user } = menu();
+    await user.keyboard('/mod{Escape}e');
+    expect(rows()).toHaveLength(1);
+  });
+});
+
+/**
  * Waking a cold session is the one action that genuinely costs something - up to five and
  * a half seconds - and the app used to say so in a grey line at the top of the pane, far
  * from where the reader was looking.
@@ -163,6 +319,8 @@ describe('while a cold session wakes', () => {
         onChange={() => {}}
         onSend={() => {}}
         onAbort={() => {}}
+        commands={[]}
+        onCommandsNeeded={() => {}}
         {...props}
       />,
     );
@@ -216,6 +374,8 @@ describe('the waking state belongs to one session', () => {
         onChange={() => {}}
         onSend={() => {}}
         onAbort={() => {}}
+        commands={[]}
+        onCommandsNeeded={() => {}}
       />,
     );
 

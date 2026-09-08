@@ -69,13 +69,17 @@ describe('Menu', () => {
     expect(chosen()).toContain('/add-dir');
   });
 
-  it.each(['{Enter}', '{Tab}'])('takes the selected row with %s', async (key) => {
+  // The key matters as well as the row: Tab completes, Enter completes and acts.
+  it.each([
+    ['{Enter}', 'Enter'],
+    ['{Tab}', 'Tab'],
+  ])('takes the selected row with %s, and says which key took it', async (press, key) => {
     const onChoose = vi.fn();
     render(<Harness onChoose={onChoose} />);
     await userEvent.keyboard('{ArrowDown}');
-    await userEvent.keyboard(key);
+    await userEvent.keyboard(press);
 
-    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ label: '/allow-all' }));
+    expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ label: '/allow-all' }), key);
   });
 
   it('dismisses on Escape', async () => {

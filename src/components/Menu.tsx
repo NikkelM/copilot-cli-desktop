@@ -16,8 +16,14 @@ interface MenuProps {
   /** Which row is under the cursor, owned by the caller so typing can reset it. */
   selected: number;
   onSelect: (index: number) => void;
-  /** Absent for a list that is only a reference, such as the shortcuts. */
-  onChoose?: (item: MenuItem) => void;
+  /**
+   * Absent for a list that is only a reference, such as the shortcuts.
+   *
+   * Told which key was used, because the two mean different things where a menu completes
+   * something being typed: Tab finishes the word and leaves the cursor in the box, Enter
+   * finishes it and acts. Clicking is the mouse saying Enter.
+   */
+  onChoose?: (item: MenuItem, key: 'Tab' | 'Enter') => void;
   onDismiss: () => void;
   /**
    * Close on any key at all, as the CLI's own help does.
@@ -90,7 +96,7 @@ export function Menu({
               const item = items[selected];
               if (!onChoose || !item) return;
               event.preventDefault();
-              return onChoose(item);
+              return onChoose(item, event.key);
             }
             default:
               return;
@@ -123,7 +129,7 @@ export function Menu({
           // Hovering moves the cursor rather than acting, so the pointer and the keyboard
           // agree about which row Enter would take.
           onMouseMove={() => index !== selected && onSelect(index)}
-          onClick={() => onChoose?.(item)}
+          onClick={() => onChoose?.(item, 'Enter')}
         >
           <span className="menu-label">{item.label}</span>
           <span className="menu-description">{item.description}</span>
