@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type CSSProperties } from 'react';
 
 /** One row: a name, and what it does. */
 export interface MenuItem {
@@ -32,6 +32,14 @@ interface MenuProps {
    * you were doing. Wrong for a list being filtered, where typing is how it is narrowed.
    */
   dismissOnAnyKey?: boolean;
+  /**
+   * Flow into as many columns as the widest row leaves room for, as the CLI's help does.
+   *
+   * For a reference list, which is read rather than filtered: a single column of it would
+   * push the composer down the screen to say very little per line. A list being narrowed by
+   * typing stays in one column, where the row that matches is always in the same place.
+   */
+  columns?: boolean;
   label: string;
 }
 
@@ -53,6 +61,7 @@ export function Menu({
   onChoose,
   onDismiss,
   dismissOnAnyKey,
+  columns,
   label,
 }: MenuProps) {
   const list = useRef<HTMLUListElement>(null);
@@ -118,8 +127,18 @@ export function Menu({
 
   if (items.length === 0) return null;
 
+  // Only the description varies: the name sits in a gutter of its own so the descriptions
+  // line up, which is why the widest one is what decides how much room a column needs.
+  const widest = Math.max(...items.map((item) => item.description.length));
+
   return (
-    <ul className="menu" ref={list} role="listbox" aria-label={label}>
+    <ul
+      className={columns ? 'menu menu-columns' : 'menu'}
+      style={columns ? ({ '--menu-column': `calc(164px + ${widest}ch)` } as CSSProperties) : undefined}
+      ref={list}
+      role="listbox"
+      aria-label={label}
+    >
       {items.map((item, index) => (
         <li
           key={item.id}

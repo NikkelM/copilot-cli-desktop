@@ -819,6 +819,20 @@ body {
   cursor: pointer;
 }
 
+/* Laid out as the CLI's own quick help is: as many columns as the widest row leaves room
+   for, filled downwards so one is read through before the next begins. The width comes from
+   the content, set on the element - a reference list is short enough that a fixed count
+   would leave it either cramped or half empty. */
+.menu-columns {
+  columns: var(--menu-column);
+  column-gap: 4px;
+}
+
+/* A row broken across the gap between columns would read as two. */
+.menu-columns .menu-row {
+  break-inside: avoid;
+}
+
 /* The marker is drawn in a fixed gutter so the names stay in one column whichever row the
    cursor is on. */
 .menu-row::before {

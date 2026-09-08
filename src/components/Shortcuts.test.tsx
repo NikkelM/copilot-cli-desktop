@@ -58,4 +58,18 @@ describe('Shortcuts', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.getByRole('listbox', { name: 'Keyboard shortcuts' })).toBeTruthy();
   });
+
+  // Read rather than picked from, so it flows into columns as the CLI's quick help does.
+  it('flows into columns', () => {
+    const { container } = render(<Shortcuts onClose={() => {}} />);
+
+    expect(container.querySelector('.menu-columns')).toBeTruthy();
+  });
+
+  // A cursor on a list that cannot be moved through is a control that is not there.
+  it('marks no row as current', () => {
+    render(<Shortcuts onClose={() => {}} />);
+
+    expect(screen.queryAllByRole('option', { selected: true })).toHaveLength(0);
+  });
 });

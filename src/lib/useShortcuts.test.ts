@@ -265,8 +265,26 @@ describe('BINDINGS', () => {
   it('covers keys this hook does not own', () => {
     const others = BINDINGS.filter((binding) => !binding.id).map((binding) => binding.keys);
     expect(others).toContain('/');
-    expect(others).toContain('Enter');
-    expect(others).toContain('Tab');
+    expect(others).toContain('shift+enter');
+  });
+
+  /**
+   * A reference that spends its rows on arrows and Tab buries the keys nothing else would
+   * reveal, and a list on screen already invites them.
+   */
+  it('leaves out plain navigation', () => {
+    const keys = BINDINGS.map((binding) => binding.keys);
+    expect(keys).not.toContain('Tab');
+    expect(keys).not.toContain('↑ ↓');
+    expect(keys).not.toContain('esc');
+  });
+
+  // Worded as the CLI words its own, so the two read as one tool.
+  it('is worded in lower case, as the CLI is', () => {
+    for (const binding of BINDINGS) {
+      expect(binding.what).toBe(binding.what.toLowerCase());
+      expect(binding.keys).toBe(binding.keys.toLowerCase());
+    }
   });
 
   it('says which keys to press and what they do', () => {

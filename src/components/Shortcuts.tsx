@@ -1,5 +1,3 @@
-import { useState } from 'react';
-
 import { Menu } from './Menu';
 import { BINDINGS } from '../lib/useShortcuts';
 
@@ -14,8 +12,6 @@ import { BINDINGS } from '../lib/useShortcuts';
  * keys is the last thing that should take the keyboard away in order to be read.
  */
 export function Shortcuts({ onClose }: { onClose: () => void }) {
-  const [selected, setSelected] = useState(0);
-
   return (
     <Menu
       // No onChoose: this is a reference rather than something to pick from, so Enter is
@@ -27,11 +23,14 @@ export function Shortcuts({ onClose }: { onClose: () => void }) {
         label: binding.keys,
         description: binding.what,
       }))}
-      selected={selected}
-      onSelect={setSelected}
+      // No row is current, because there is none to choose. A cursor on a list that cannot
+      // be moved through is a control that is not there.
+      selected={-1}
+      onSelect={() => {}}
       onDismiss={onClose}
       // Read, then dismissed by carrying on with anything - as the CLI's own help behaves.
       dismissOnAnyKey
+      columns
       label="Keyboard shortcuts"
     />
   );

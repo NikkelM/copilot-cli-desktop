@@ -20,26 +20,27 @@ export interface Binding {
 }
 
 /**
- * Every key the app answers, in one list.
+ * Every key worth telling someone about, in one list.
  *
  * The list the reader sees is built from this rather than written beside it, so a key cannot
  * be described here without working. Unlike the CLI there is no status line to put a hint
  * in, which makes the list the only way to find them.
  *
- * Ordinary text editing is left out. The CLI documents ctrl+a, ctrl+e, ctrl+k and the rest
- * because a terminal gives none of them for free; a text box already has the ones this
- * platform uses, and listing them would be documenting the operating system.
+ * Two things are deliberately absent. Ordinary text editing, because the CLI documents
+ * ctrl+a and ctrl+k only for want of a terminal that provides them, and a text box already
+ * has what this platform uses. And plain navigation - arrows, Tab, a single Escape - which
+ * is what a list on screen already invites; a reference that spends its rows on them buries
+ * the keys nothing else would reveal.
+ *
+ * Worded and ordered as the CLI words and orders its own, down to the lower case, so the two
+ * read as one tool.
  */
 export const BINDINGS: readonly Binding[] = [
-  { id: 'help', keys: '?', what: 'Show these shortcuts' },
-  { keys: '/', what: 'Run a command rather than send a message' },
-  { keys: 'Enter', what: 'Send, or queue behind the turn already running' },
-  { keys: 'Shift+Enter', what: 'Start a new line' },
-  { keys: '↑ ↓', what: 'Move through the menu' },
-  { keys: 'Tab', what: 'Complete the highlighted command without running it' },
-  { keys: 'Esc', what: 'Close the menu' },
-  { id: 'interrupt', keys: 'Ctrl+C', what: 'Stop the turn' },
-  { id: 'escape-twice', keys: 'Esc Esc', what: 'Stop the turn, or clear what is written' },
+  { id: 'help', keys: '?', what: 'show quick help' },
+  { keys: '/', what: 'commands' },
+  { id: 'interrupt', keys: 'ctrl+c', what: 'cancel' },
+  { id: 'escape-twice', keys: 'esc esc', what: 'clear input or interrupt' },
+  { keys: 'shift+enter', what: 'insert newline' },
 ];
 
 /** Whether a key press belongs to whatever is being typed into. */

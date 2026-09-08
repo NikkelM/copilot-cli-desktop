@@ -133,6 +133,35 @@ describe('Menu', () => {
   });
 
   /**
+   * A reference list is read rather than filtered, so it flows into columns as the CLI's own
+   * help does. How many is left to the width available, decided from the widest description
+   * - a fixed count would leave a short list half empty and a long one cramped.
+   */
+  describe('flowing into columns', () => {
+    const widest = Math.max(...items.map((item) => item.description.length));
+
+    it('sizes a column by the longest description', () => {
+      const { container } = render(
+        <Menu items={items} selected={0} onSelect={() => {}} onDismiss={() => {}} columns label="Keys" />,
+      );
+
+      const menu = container.querySelector('.menu-columns') as HTMLElement;
+      expect(menu).toBeTruthy();
+      expect(menu.style.getPropertyValue('--menu-column')).toBe(`calc(164px + ${widest}ch)`);
+    });
+
+    // A list being narrowed by typing keeps the row that matches in the same place.
+    it('stays in one column otherwise', () => {
+      const { container } = render(
+        <Menu items={items} selected={0} onSelect={() => {}} onDismiss={() => {}} label="Commands" />,
+      );
+
+      expect(container.querySelector('.menu-columns')).toBeNull();
+      expect((container.querySelector('.menu') as HTMLElement).style.getPropertyValue('--menu-column')).toBe('');
+    });
+  });
+
+  /**
    * The shortcut list is read and then dismissed by carrying on with anything at all, which
    * is how the CLI's help behaves. A list being filtered must not do this: there, typing is
    * the point.
