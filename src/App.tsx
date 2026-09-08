@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type {
   Attachment,
@@ -12,7 +12,6 @@ import type {
   TranscriptEvent,
 } from '../shared/protocol';
 
-import { toPreview } from '../shared/preview';
 import { Changes } from './components/Changes';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
@@ -28,7 +27,6 @@ import {
   abortSession,
   createSession,
 
-  listSessions,
   onElicitationRequested,
   onElicitationResolved,
   onPermissionRequested,
@@ -41,19 +39,16 @@ import {
   onSidecarStopped,
   resolveElicitation,
   resolvePermission,
-  runtimeStatus,
   invokeCommand,
   sendMessage,
 } from './lib/sidecar';
-import { orderSessions } from './lib/ordering';
-import { mergeLivePreviews } from './lib/livePreviews';
 import { CHANGES } from './lib/localCommands';
-import { contentOf } from './lib/timeline';
 import { useChanges } from './lib/useChanges';
 import { useModel } from './lib/useModel';
 import { useCommands } from './lib/useCommands';
 import { dispatch } from './lib/slash';
 import { useQueue } from './lib/useQueue';
+import { useSessions } from './lib/useSessions';
 import { useShortcuts } from './lib/useShortcuts';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
@@ -61,7 +56,6 @@ import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
 export default function App() {
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /**
    * Unsent text, per session. An unsent message belongs to the session it was written
@@ -95,9 +89,6 @@ export default function App() {
   const [stopped, setStopped] = useState<string | null>(null);
   const [permissions, setPermissions] = useState<PendingPermission[]>([]);
   const [elicitations, setElicitations] = useState<PendingElicitation[]>([]);
-  /** Session ids in activation order, most recent first. Fixes the active group's order. */
-  const [activeOrder, setActiveOrder] = useState<string[]>([]);
-  const [maxLoaded, setMaxLoaded] = useState<number | undefined>(undefined);
   /**
    * A session opened by id that the list does not carry.
    *
@@ -107,9 +98,8 @@ export default function App() {
    */
   const [offList, setOffList] = useState<SessionSummary | null>(null);
 
-  const selected =
-    sessions.find((session) => session.sessionId === selectedId) ??
-    (offList?.sessionId === selectedId ? offList : null);
+  const sessions = useSessions(setError);
+  const selected = sessions.find(selectedId) ?? (offList?.sessionId === selectedId ? offList : null);
 
   const open = useCallback((sessionId: string, session?: SessionSummary) => {
     setSelectedId(sessionId);
@@ -137,7 +127,7 @@ export default function App() {
       const { sessionId } = await createSession();
       // Selected only once the list holds it, or the pane has nothing to show and the
       // button looks as though it did nothing.
-      await refreshSessions();
+      await sessions.refresh();
       setSelectedId(sessionId);
     } catch (e: unknown) {
       setError(String(e));
@@ -156,12 +146,6 @@ export default function App() {
 
   // The same for the list of changes, which is about the session that was open, not this one.
   useEffect(() => setShowChanges(false), [selectedId]);
-  /**
-   * Previews derived from live events, which are ahead of the database.
-   * A ref rather than state: refetches read it, but it never needs to trigger a render
-   * on its own, since the render always follows a setSessions in the same handler.
-   */
-  const livePreviews = useRef(new Map<string, string | null>());
 
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
@@ -172,40 +156,9 @@ export default function App() {
   const draftsRef = useRef<Record<string, string>>({});
   draftsRef.current = drafts;
 
-  const refreshSessions = useCallback(() => {
-    // Returned so a caller that needs the list to contain something can wait for it.
-    return listSessions()
-      // The fetched previews come from the lagging turns table, so anything already
-      // learned from live events wins until the database catches up.
-      .then((result) => setSessions(mergeLivePreviews(result.sessions, livePreviews.current)))
-      .catch((e: unknown) => setError(String(e)));
-  }, []);
-
-  useEffect(() => void refreshSessions(), [refreshSessions]);
-
-  // How many sessions may be resident at once, so the sidebar can say what the cap is.
-  // Asked once: it is a setting rather than a reading, and asking costs no process.
-  useEffect(() => {
-    runtimeStatus()
-      .then((status) => setMaxLoaded(status.maxLoadedSessions))
-      .catch(() => undefined);
-  }, []);
-
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {
-      // The sidebar preview comes from the turns table, which is flushed well after the
-      // fact, so a loaded session would keep showing an older reply. Its own events are
-      // already streaming here, so use them and skip the wait entirely. This applies to
-      // every loaded session, not just the one on screen.
-      const spoken = event.type === 'assistant.message' ? contentOf(event) : null;
-      if (spoken) {
-        const preview = toPreview(spoken);
-        livePreviews.current.set(sessionId, preview);
-
-        setSessions((current) =>
-          current.map((session) => (session.sessionId === sessionId ? { ...session, preview } : session)),
-        );
-      }
+      sessions.observe(sessionId, event);
 
       // Like the preview above, the queue belongs to whichever session owns it rather than
       // to the one on screen: a session left running keeps its queue while the reader is
@@ -237,28 +190,10 @@ export default function App() {
 
   useTauriEvent(() =>
     onSessionLoaded(({ sessionId, loaded }) => {
-      setSessions((current) =>
-        current.map((session) => (session.sessionId === sessionId ? { ...session, loaded } : session)),
-      );
+      sessions.observeLoaded(sessionId, loaded);
 
-      // A session entering the active group goes to its top; leaving drops it entirely.
-      // Sessions already active keep their position, so the list does not shuffle when
-      // messages are sent.
-      setActiveOrder((current) =>
-        loaded
-          ? current.includes(sessionId)
-            ? current
-            : [sessionId, ...current]
-          : current.filter((id) => id !== sessionId),
-      );
-
-      // Once unloaded the app no longer sees this session's events, so its own preview
-      // must stop overriding whatever the database reports.
-      if (!loaded) {
-        livePreviews.current.delete(sessionId);
-        // The queue lives in the session that was let go, so nothing is waiting any more.
-        queue.clear(sessionId);
-      }
+      // The queue lives in the session that was let go, so nothing is waiting any more.
+      if (!loaded) queue.clear(sessionId);
 
       // A session that is awake knows about a few commands the runtime at large does not,
       // and a server is already running to ask, so this costs nothing to take.
@@ -268,7 +203,7 @@ export default function App() {
 
   // The store changes on every turn of every running session, including ones started in
   // a terminal, so this keeps the sidebar current without polling.
-  useTauriEvent(() => onSessionsChanged(() => refreshSessions()), [refreshSessions]);
+  useTauriEvent(() => onSessionsChanged(() => sessions.refresh()), [sessions.refresh]);
 
   /**
    * A turn recorded what it changed while the list of changes was open.
@@ -308,9 +243,9 @@ export default function App() {
         setResuming(null);
         setPermissions([]);
         setElicitations([]);
-        refreshSessions();
+        sessions.refresh();
       }),
-    [refreshSessions],
+    [sessions.refresh],
   );
 
   useTauriEvent(() =>
@@ -467,7 +402,7 @@ export default function App() {
     // Echoed as typed, so the transcript says what was asked for as well as what came back.
     transcript.showSent(input ? `/${command.name} ${input}` : `/${command.name}`);
 
-    const wasCold = !sessions.find((s) => s.sessionId === sessionId)?.loaded;
+    const wasCold = !sessions.find(sessionId)?.loaded;
     setResuming(wasCold ? sessionId : null);
 
     try {
@@ -517,7 +452,7 @@ export default function App() {
     const sent = attachments[sessionId] ?? [];
     setAttachments((current) => ({ ...current, [sessionId]: [] }));
 
-    const wasCold = !sessions.find((s) => s.sessionId === sessionId)?.loaded;
+    const wasCold = !sessions.find(sessionId)?.loaded;
     setResuming(wasCold ? sessionId : null);
 
     // Show the prompt straight away when nothing is running; resuming a cold session takes
@@ -545,17 +480,16 @@ export default function App() {
 
   const sessionPermissions = permissions.filter((p) => p.sessionId === selectedId);
   const sessionElicitations = elicitations.filter((e) => e.sessionId === selectedId);
-  const ordered = useMemo(() => orderSessions(sessions, activeOrder), [sessions, activeOrder]);
 
   return (
     <div className="app">
       <Sidebar
-        sessions={ordered}
+        sessions={sessions.all}
         selectedId={selectedId}
         onSelect={open}
         onCreate={() => void handleCreate()}
         creating={creating}
-        maxLoaded={maxLoaded}
+        maxLoaded={sessions.maxLoaded}
       />
 
       <main className="main">
