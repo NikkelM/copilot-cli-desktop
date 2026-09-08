@@ -286,6 +286,16 @@ describe('a change shown on the tool that made it', () => {
     expect(screen.getByText('−1')).toBeTruthy();
   });
 
+  // Beside the file rather than at the right edge, where they read as part of its line
+  // instead of as a separate column that has to be traced back.
+  it('puts the counts next to the file they were made to', () => {
+    const { container } = show(edited());
+    const subject = container.querySelector('.tool-subject');
+
+    expect(subject?.querySelector('.tool-counts')).toBeTruthy();
+    expect(subject?.textContent).toBe('notes.txt+1−1');
+  });
+
   it('numbers the lines on the side they exist', async () => {
     const { container } = show(edited());
     await userEvent.click(screen.getByRole('button', { name: /notes\.txt/ }));
@@ -387,6 +397,52 @@ describe('what a row says about itself', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /Which\?/ }));
     expect(screen.getByText('2 options')).toBeTruthy();
+  });
+});
+
+/**
+ * A failure is the one outcome worth reading without opening anything: the row otherwise
+ * says only that something went wrong, and every one of them looks alike.
+ */
+describe('why a tool failed', () => {
+  const failed = (message: string) => [
+    event('tool.execution_start', { toolCallId: 't1', toolName: 'edit', arguments: { path: 'gone.txt' } }, 'e1'),
+    event('tool.execution_complete', { toolCallId: 't1', success: false, error: { message } }, 'e2'),
+  ];
+
+  it('says what went wrong on the row itself', () => {
+    show(failed('ENOENT: no such file or directory'));
+    expect(screen.getByText('ENOENT: no such file or directory')).toBeTruthy();
+  });
+
+  it('shows only the first line, and keeps the rest behind the expander', async () => {
+    const { container } = show(failed('Failed to apply the edit\n  at one\n  at two'));
+
+    expect(container.querySelector('.tool-error')?.textContent).toBe('Failed to apply the edit');
+    // The whole thing is still reachable, and the header carries it for a hover.
+    expect(container.querySelector('.tool-error')?.getAttribute('title')).toContain('at two');
+
+    await userEvent.click(screen.getByRole('button', { name: /gone\.txt/ }));
+    expect(screen.getByText(/at two/)).toBeTruthy();
+  });
+
+  it('says nothing extra on a row that succeeded', () => {
+    const { container } = show(shell('e1', 'ls', 't1'));
+    expect(container.querySelector('.tool-error')).toBeNull();
+  });
+});
+
+/**
+ * Tool calls are scaffolding around the conversation rather than part of it. At the spacing
+ * a message gets, half a dozen file edits fill the view.
+ */
+describe('how much room a run of tool calls takes', () => {
+  it('sets tool rows tighter than messages', () => {
+    const { container } = show([...shell('e1', 'ls', 't1'), event('user.message', { content: 'hello' }, 'e2')]);
+
+    const entries = [...container.querySelectorAll('.entry')];
+    expect(entries[0]?.className).toContain('tool-entry');
+    expect(entries[1]?.className).not.toContain('tool-entry');
   });
 });
 

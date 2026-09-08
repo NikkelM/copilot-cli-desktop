@@ -684,6 +684,17 @@ body {
   padding: 6px 0;
 }
 
+/* A run of tool calls is scaffolding around the conversation rather than part of it, so it
+   is set tight: at the spacing a message gets, half a dozen file edits fill the view. The
+   break is kept where the run starts, so it still reads as separate from what was said. */
+.entry.tool-entry {
+  padding: 4px 0 0;
+}
+
+.entry.tool-entry + .entry.tool-entry {
+  padding-top: 0;
+}
+
 .message {
   overflow-wrap: anywhere;
 }
@@ -1447,8 +1458,8 @@ body {
   font-size: 12px;
 }
 
-/* Takes the slack so the line count still sits at the right edge, while the subject
-   and any answer stay together on the left. */
+/* Takes the slack so the line count and the timer still sit at the right edge, while the
+   file, what it came to and any error stay together on the left. */
 .tool-subject {
   display: flex;
   align-items: baseline;
@@ -1460,6 +1471,19 @@ body {
 .tool-summary {
   min-width: 0;
   color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Why a tool failed, on the row. Shrinks faster than the file it failed on, so a long
+   error truncates at the edge rather than pushing the file out of view. */
+.tool-error {
+  min-width: 0;
+  flex-shrink: 4;
+  color: #f85149;
   font-family: ui-monospace, monospace;
   font-size: 12px;
   white-space: nowrap;
@@ -1895,7 +1919,7 @@ body {
   text-align: center;
 }
 
-/* How much the change came to, beside the row rather than inside it. */
+/* How much the change came to, beside the file it was made to. */
 .tool-counts {
   display: flex;
   gap: 6px;

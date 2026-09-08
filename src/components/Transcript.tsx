@@ -71,6 +71,12 @@ function Said({ at }: { at: string }) {
   );
 }
 
+/** The first line with anything on it, for a header that has room for one. */
+function firstLine(text: string | null): string | null {
+  const line = text?.split('\n').find((candidate) => candidate.trim() !== '');
+  return line ? line.trim() : null;
+}
+
 /** A single tool call, collapsed to one line until expanded. */
 function ToolRow({ entry }: { entry: ToolEntry }) {
   const [open, setOpen] = useState(false);
@@ -88,6 +94,11 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   const expandable = Boolean(entry.output) || Boolean(choices) || Boolean(entry.command) || Boolean(patch);
   const lines = entry.output ? entry.output.split('\n').length : 0;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 'es'}`;
+
+  // A failed tool's output is the error, and the header is where it is read. Only the
+  // first line: an error that runs to a stack trace would otherwise push the row's own
+  // content off the screen, and the rest is still there behind the expander.
+  const failure = entry.status === 'failed' ? firstLine(entry.output) : null;
 
   // Finding nothing is a result worth stating, and it is the one case with no output to
   // count, so a search says how it went rather than how much came back.
@@ -116,16 +127,24 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         <span className="tool-name">{entry.name}</span>
         <span className="tool-subject">
           <span className="tool-summary">{entry.summary}</span>
+          {/* What the change came to, in the shape a diff is always summarised. Beside the
+              file rather than at the right edge: it is read as part of the file's line. */}
+          {changed && (changed.added > 0 || changed.removed > 0) && (
+            <span className="tool-counts">
+              {changed.added > 0 && <span className="added">+{changed.added}</span>}
+              {changed.removed > 0 && <span className="removed">−{changed.removed}</span>}
+            </span>
+          )}
+          {/* Why it failed, on the row itself. A failure is the one outcome worth reading
+              without opening anything, and the row otherwise says only that it happened. */}
+          {failure && (
+            <span className="tool-error" title={entry.output ?? undefined}>
+              {failure}
+            </span>
+          )}
           {entry.answer && <span className="tool-answer">{entry.answer}</span>}
         </span>
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
-        {/* What the change came to, in the shape a diff is always summarised. */}
-        {changed && (changed.added > 0 || changed.removed > 0) && (
-          <span className="tool-counts">
-            {changed.added > 0 && <span className="added">+{changed.added}</span>}
-            {changed.removed > 0 && <span className="removed">−{changed.removed}</span>}
-          </span>
-        )}
         {/* Says how much is behind the row, and stays once it is opened: it describes the
             row rather than the fact that it is folded. Right-aligned, so it reads as a
             separate column without needing punctuation. */}
@@ -260,7 +279,7 @@ export function Transcript({
         {loadingOlder ? 'Loading earlier messages…' : hasOlder ? 'Scroll up for earlier messages' : 'Start of session'}
       </li>
       {entries.map((entry) => (
-        <li key={entry.key} className="entry">
+        <li key={entry.key} className={entry.kind === 'tool' ? 'entry tool-entry' : 'entry'}>
           <EntryRow entry={entry} />
         </li>
       ))}
