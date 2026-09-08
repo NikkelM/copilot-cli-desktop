@@ -1911,3 +1911,169 @@ body {
 .tool-counts .removed {
   color: #f85149;
 }
+
+/*
+ * What a session changed: a list of files, and the diff for any of them.
+ *
+ * Above the composer with the other panels rather than in a window of its own. It is read
+ * alongside the transcript - "what did that turn actually do" - and a dialogue would cover
+ * the thing it is being compared against.
+ */
+.changes {
+  display: flex;
+  flex-direction: column;
+  max-height: 55vh;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+
+.changes-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex: none;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.changes-title {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.changes-total {
+  display: flex;
+  gap: 6px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.changes-close {
+  margin-left: auto;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.changes-close:hover {
+  color: var(--text);
+}
+
+.changes-note {
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.changes-list {
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.changes-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 10px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.changes-row:hover,
+.changes-row.open {
+  background: var(--bg);
+}
+
+/* A fixed gutter, so the paths line up whatever happened to each file. */
+.changes-status {
+  flex: none;
+  width: 10px;
+  font-family: ui-monospace, monospace;
+  text-align: center;
+}
+
+.changes-status.created {
+  color: var(--success);
+}
+
+.changes-status.deleted {
+  color: #f85149;
+}
+
+.changes-status.modified {
+  color: var(--accent);
+}
+
+/* The end of a path identifies it, so it is the end that survives when there is no room. */
+.changes-path {
+  overflow: hidden;
+  direction: rtl;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changes-turns {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.changes-counts {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  /* Also pushed right, for the rows that have no turn count to push them. */
+  margin-left: auto;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+}
+
+.changes-turns + .changes-counts {
+  margin-left: 0;
+}
+
+.changes-counts .added,
+.changes-total .added {
+  color: var(--success);
+}
+
+.changes-counts .removed,
+.changes-total .removed {
+  color: #f85149;
+}
+
+/* Quiet beside the model picker until it is wanted, like the buttons beside the path. */
+.header-button {
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.header-button:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.header-button.on {
+  border-color: var(--accent);
+  color: var(--text);
+}

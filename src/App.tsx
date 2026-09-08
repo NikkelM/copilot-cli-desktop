@@ -13,6 +13,7 @@ import type {
 } from '../shared/protocol';
 
 import { toPreview } from '../shared/preview';
+import { Changes } from './components/Changes';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { ModelPicker } from './components/ModelPicker';
@@ -46,6 +47,7 @@ import {
 import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
 import { contentOf } from './lib/timeline';
+import { useChanges } from './lib/useChanges';
 import { useModel } from './lib/useModel';
 import { useCommands } from './lib/useCommands';
 import { dispatch } from './lib/slash';
@@ -76,6 +78,8 @@ export default function App() {
    * command. Split so the reminder stays short enough to read at a glance.
    */
   const [help, setHelp] = useState<'keys' | 'full' | null>(null);
+  /** Whether the list of files this session changed is showing. */
+  const [showChanges, setShowChanges] = useState(false);
   /**
    * The session being woken, if one is.
    *
@@ -115,6 +119,7 @@ export default function App() {
   const queue = useQueue();
   const model = useModel(selectedId, setError);
   const slash = useCommands(selectedId);
+  const changes = useChanges(selectedId);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
    * has been said, so it says it is working rather than appearing to have done nothing.
@@ -146,6 +151,9 @@ export default function App() {
   // Nor a help list open over a session nobody asked to read it in. Not remembered per
   // session: it is a reference, so wanting it back is a keypress away.
   useEffect(() => setHelp(null), [selectedId]);
+
+  // The same for the list of changes, which is about the session that was open, not this one.
+  useEffect(() => setShowChanges(false), [selectedId]);
   /**
    * Previews derived from live events, which are ahead of the database.
    * A ref rather than state: refetches read it, but it never needs to trigger a render
@@ -530,6 +538,21 @@ export default function App() {
                   onError={setError}
                 />
                 <div className="header-controls">
+                  {/* Reads files rather than starting a session, so it costs nothing until
+                      it is asked for - and then costs enough to be worth asking for. */}
+                  <button
+                    type="button"
+                    className={showChanges ? 'header-button on' : 'header-button'}
+                    onClick={() => {
+                      const next = !showChanges;
+                      setShowChanges(next);
+                      if (next) changes.load();
+                    }}
+                    aria-pressed={showChanges}
+                    title="What this session changed, and the diff for any of it"
+                  >
+                    Changes
+                  </button>
                   <ModelPicker
                     current={model.current}
                     models={model.models}
@@ -562,6 +585,18 @@ export default function App() {
                   CLI puts it and where someone typing is already looking. */}
               {help && (
                 <Shortcuts commands={help === 'full' ? slash.commands : undefined} onClose={() => setHelp(null)} />
+              )}
+
+              {showChanges && (
+                <Changes
+                  changes={changes.changes}
+                  loading={changes.loading}
+                  failed={changes.failed}
+                  diffs={changes.diffs}
+                  onDiff={changes.diff}
+                  cwd={selected.cwd}
+                  onClose={() => setShowChanges(false)}
+                />
               )}
 
               <Queue messages={queue.queues[selected.sessionId] ?? []} />
