@@ -330,11 +330,24 @@ describe('questions from the agent', () => {
 
 /**
  * A panel showing what a session changed has to know when the answer moves. The runtime
- * keeps that record itself now (#142), so every turn that ends is announced rather than only
- * the ones this app saw write something - it no longer watches the tools to know.
+ * keeps that record itself now (#142) and finishes writing it when the session goes idle -
+ * `assistant.turn_end` is one model round trip, and a turn that calls a tool ends and starts
+ * again several times before the work is done.
  */
 describe('SessionRuntime announcing what a turn changed', () => {
-  it('announces a turn ending', async () => {
+  it('announces a session going idle', async () => {
+    const onChangesRecorded = vi.fn();
+    const { runtime, sessions } = makeRuntime({ onChangesRecorded });
+    await runtime.send('a', 'make a file');
+
+    const session = sessions.get('a')!;
+    session.emit({ type: 'assistant.turn_start', data: {} });
+    session.emit({ type: 'session.idle', data: {} });
+
+    expect(onChangesRecorded).toHaveBeenCalledWith('a');
+  });
+
+  it('stays quiet between the round trips of one turn', async () => {
     const onChangesRecorded = vi.fn();
     const { runtime, sessions } = makeRuntime({ onChangesRecorded });
     await runtime.send('a', 'make a file');
@@ -342,16 +355,8 @@ describe('SessionRuntime announcing what a turn changed', () => {
     const session = sessions.get('a')!;
     session.emit({ type: 'assistant.turn_start', data: {} });
     session.emit({ type: 'assistant.turn_end', data: {} });
-
-    expect(onChangesRecorded).toHaveBeenCalledWith('a');
-  });
-
-  it('says nothing when no turn was running', async () => {
-    const onChangesRecorded = vi.fn();
-    const { runtime, sessions } = makeRuntime({ onChangesRecorded });
-    await runtime.send('a', 'just talk');
-
-    sessions.get('a')!.emit({ type: 'session.idle', data: {} });
+    session.emit({ type: 'assistant.turn_start', data: {} });
+    session.emit({ type: 'assistant.turn_end', data: {} });
 
     expect(onChangesRecorded).not.toHaveBeenCalled();
   });

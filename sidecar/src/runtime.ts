@@ -462,13 +462,14 @@ export class SessionRuntime {
     if (entry) {
       // Track turn boundaries so a session mid-turn is never evicted underneath itself.
       if (event.type === 'assistant.turn_start') entry.busy = true;
+      if (event.type === 'session.idle' || event.type === 'assistant.turn_end') entry.busy = false;
 
-      if (event.type === 'session.idle' || event.type === 'assistant.turn_end') {
-        // A turn that changed nothing still says so: the panel asks the runtime what it
-        // holds, and the answer is cheap enough that guessing when to ask is not worth it.
-        if (entry.busy) this.onChangesRecorded?.(sessionId);
-        entry.busy = false;
-      }
+      // `assistant.turn_end` is one model round trip, not the end of the work: a turn that
+      // calls a tool ends and starts again several times over. The runtime finishes writing
+      // its record of the whole thing when the session goes idle, so that is the moment the
+      // list is worth reading again - announcing the round trips instead showed the panel
+      // the state before the change it was announcing.
+      if (event.type === 'session.idle') this.onChangesRecorded?.(sessionId);
 
       this.touch(sessionId);
     }
