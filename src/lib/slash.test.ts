@@ -9,7 +9,7 @@ import {
   matchCommands,
   typedCommand,
 } from './slash';
-import { HELP } from './localCommands';
+import { CHANGES, HELP } from './localCommands';
 import type { SlashCommand } from '../../shared/protocol';
 
 function command(name: string, extra: Partial<SlashCommand> = {}): SlashCommand {
@@ -171,6 +171,15 @@ describe('dispatch', () => {
     const what = dispatch('/help', [...COMMANDS, HELP]);
 
     expect(what).toEqual({ kind: 'local', command: HELP, input: '' });
+  });
+
+  it('answers /changes itself too, which is a panel rather than a turn', () => {
+    expect(dispatch('/changes', [...COMMANDS, CHANGES])).toEqual({ kind: 'local', command: CHANGES, input: '' });
+  });
+
+  /** The CLI's word for looking at a diff, so someone arriving from it lands somewhere. */
+  it('takes the CLI /diff to the same place', () => {
+    expect(dispatch('/diff', [...COMMANDS, CHANGES])).toMatchObject({ kind: 'local', command: CHANGES });
   });
 
   it('sends anything without a leading slash as text', () => {

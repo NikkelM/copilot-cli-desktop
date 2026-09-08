@@ -24,6 +24,10 @@ const props = {
   onDiff: () => {},
   cwd: 'C:\\work\\repo',
   onClose: () => {},
+  onReview: () => {},
+  reviewedAt: null as string | null,
+  showAll: false,
+  onSpan: () => {},
 };
 
 describe('Changes', () => {
@@ -145,5 +149,69 @@ describe('Changes', () => {
   it('shows what went wrong when the read failed', () => {
     render(<Changes {...props} failed="no such session" />);
     expect(screen.getByText('no such session')).toBeTruthy();
+  });
+});
+
+describe('Changes, once reviewed', () => {
+  it('offers nothing to review when there is nothing listed', () => {
+    render(<Changes {...props} changes={[]} />);
+    expect(screen.queryByRole('button', { name: 'Seen this' })).toBeNull();
+  });
+
+  it('marks what is listed as seen', () => {
+    const onReview = vi.fn();
+    render(<Changes {...props} changes={[change()]} onReview={onReview} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Seen this' }));
+    expect(onReview).toHaveBeenCalled();
+  });
+
+  // Without it the count reads as the whole session, which is a different number.
+  it('says the count is only what is new', () => {
+    render(<Changes {...props} changes={[change()]} reviewedAt="2026-01-01T00:00:00.000Z" />);
+    expect(screen.getByText(/since you last reviewed/)).toBeTruthy();
+  });
+
+  it('does not say that when the whole session is on show', () => {
+    render(<Changes {...props} changes={[change()]} reviewedAt="2026-01-01T00:00:00.000Z" showAll />);
+    expect(screen.queryByText(/since you last reviewed/)).toBeNull();
+  });
+
+  it('offers no span to switch to before anything has been reviewed', () => {
+    render(<Changes {...props} changes={[change()]} />);
+    expect(screen.queryByRole('button', { name: /Whole session|Only what is new/ })).toBeNull();
+  });
+
+  it('switches to the whole session and back', () => {
+    const onSpan = vi.fn();
+    const { rerender } = render(
+      <Changes {...props} changes={[change()]} reviewedAt="2026-01-01T00:00:00.000Z" onSpan={onSpan} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Whole session' }));
+    expect(onSpan).toHaveBeenCalledWith(true);
+
+    rerender(<Changes {...props} changes={[change()]} reviewedAt="2026-01-01T00:00:00.000Z" showAll onSpan={onSpan} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Only what is new' }));
+    expect(onSpan).toHaveBeenCalledWith(false);
+  });
+
+  /**
+   * An empty list after a review means caught up, not that the session did nothing - and
+   * those two want opposite words.
+   */
+  it('says nothing is new rather than nothing was recorded', () => {
+    render(<Changes {...props} changes={[]} reviewedAt="2026-01-01T00:00:00.000Z" />);
+
+    expect(screen.getByText(/Nothing new since you reviewed this/)).toBeTruthy();
+    expect(screen.queryByText(/tools that name the file/)).toBeNull();
+  });
+
+  it('offers a way out of an empty list', () => {
+    const onSpan = vi.fn();
+    render(<Changes {...props} changes={[]} reviewedAt="2026-01-01T00:00:00.000Z" onSpan={onSpan} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the whole session' }));
+    expect(onSpan).toHaveBeenCalledWith(true);
   });
 });

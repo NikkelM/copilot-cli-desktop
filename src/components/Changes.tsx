@@ -16,6 +16,13 @@ interface ChangesProps {
   /** Shortens paths to the part that identifies them. */
   cwd: string | null;
   onClose: () => void;
+  /** Mark everything listed as seen, so next time only what is newer shows. */
+  onReview: () => void;
+  /** How far this session has been reviewed, or null if it never has. */
+  reviewedAt: string | null;
+  /** Whether the whole session is on show rather than only what is new. */
+  showAll: boolean;
+  onSpan: (all: boolean) => void;
 }
 
 const GLYPH: Record<SessionChange['status'], string> = {
@@ -32,7 +39,19 @@ const GLYPH: Record<SessionChange['status'], string> = {
  * enters them. That is the distinction the question is really asking about, and the one a
  * diff of the working directory cannot draw.
  */
-export function Changes({ changes, loading, failed, diffs, onDiff, cwd, onClose }: ChangesProps) {
+export function Changes({
+  changes,
+  loading,
+  failed,
+  diffs,
+  onDiff,
+  cwd,
+  onClose,
+  onReview,
+  reviewedAt,
+  showAll,
+  onSpan,
+}: ChangesProps) {
   const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,31 +72,58 @@ export function Changes({ changes, loading, failed, diffs, onDiff, cwd, onClose 
 
   const added = changes?.reduce((n, change) => n + change.linesAdded, 0) ?? 0;
   const removed = changes?.reduce((n, change) => n + change.linesRemoved, 0) ?? 0;
+  const since = reviewedAt !== null && !showAll;
 
   return (
     <div className="changes">
       <div className="changes-head">
         <span className="changes-title">
           {changes ? `${changes.length} ${changes.length === 1 ? 'file' : 'files'} changed` : 'Changes'}
+          {since && changes !== null && <span className="changes-span"> since you last reviewed</span>}
         </span>
         {changes && changes.length > 0 && (
           <span className="changes-total">
             <span className="added">+{added}</span> <span className="removed">−{removed}</span>
           </span>
         )}
-        <button type="button" className="changes-close" onClick={onClose} aria-label="Close changes">
-          ✕
-        </button>
+        <div className="changes-actions">
+          {reviewedAt !== null && (
+            <button type="button" className="changes-action" onClick={() => onSpan(!showAll)}>
+              {showAll ? 'Only what is new' : 'Whole session'}
+            </button>
+          )}
+          {changes && changes.length > 0 && (
+            <button
+              type="button"
+              className="changes-action primary"
+              onClick={onReview}
+              title="Mark these as seen, so opening this again shows only what is newer"
+            >
+              Seen this
+            </button>
+          )}
+          <button type="button" className="changes-close" onClick={onClose} aria-label="Close changes">
+            ✕
+          </button>
+        </div>
       </div>
 
       {failed && <p className="error">{failed}</p>}
       {loading && !changes && <p className="changes-note">Reading what this session changed.</p>}
-      {changes?.length === 0 && (
-        <p className="changes-note">
-          Nothing recorded. A session only leaves a record for tools that name the file they change, so work done
-          through the shell does not appear here.
-        </p>
-      )}
+      {changes?.length === 0 &&
+        (since ? (
+          <p className="changes-note">
+            Nothing new since you reviewed this.{' '}
+            <button type="button" className="changes-link" onClick={() => onSpan(true)}>
+              Show the whole session
+            </button>
+          </p>
+        ) : (
+          <p className="changes-note">
+            Nothing recorded. A session only leaves a record for tools that name the file they change, so work done
+            through the shell does not appear here.
+          </p>
+        ))}
 
       {changes && changes.length > 0 && (
         <ul className="changes-list">

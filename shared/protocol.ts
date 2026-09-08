@@ -329,10 +329,14 @@ export interface SidecarRequests {
    *
    * Costs no Copilot process: the snapshots are files, so a session that has never been
    * opened in this app can still answer.
+   *
+   * `since` narrows it to the turns after a moment, for "what has happened since I last
+   * looked at this". It is a snapshot timestamp rather than a wall clock reading, so it
+   * does not depend on the two sides agreeing about the time.
    */
-  'sessions.changes': { params: { sessionId: string }; result: { changes: SessionChange[] } };
-  /** The diff for one of those files. */
-  'sessions.diff': { params: { sessionId: string; path: string }; result: FileDiff };
+  'sessions.changes': { params: { sessionId: string; since?: string }; result: { changes: SessionChange[] } };
+  /** The diff for one of those files, over the same span the list was built with. */
+  'sessions.diff': { params: { sessionId: string; path: string; since?: string }; result: FileDiff };
   'git.state': { params: { cwd: string }; result: { state: TreeState | null } };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**

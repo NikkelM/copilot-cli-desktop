@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SlashCommand } from '../../shared/protocol';
+import { LOCAL_COMMANDS } from './localCommands';
 import { useCommands } from './useCommands';
 
 const listCommands = vi.fn();
@@ -18,6 +19,12 @@ function command(name: string): SlashCommand {
 /** What a client with no session knows, against what a loaded one adds to it. */
 const cold = [command('model'), command('review')];
 const live = [...cold, command('session'), command('usage')];
+
+/** Derived rather than counted, so adding a command the app answers itself is not a test change. */
+const withLocal = (runtime: number) => runtime + LOCAL_COMMANDS.length;
+
+/** The app's own commands, in the order the merge puts them. */
+const localNames = LOCAL_COMMANDS.map((c) => c.name).sort();
 
 beforeEach(() => {
   localStorage.clear();
@@ -36,7 +43,7 @@ describe('useCommands', () => {
     const { result } = renderHook(() => useCommands('s1'));
 
     act(() => result.current.open());
-    await waitFor(() => expect(result.current.commands).toHaveLength(3));
+    await waitFor(() => expect(result.current.commands).toHaveLength(withLocal(cold.length)));
 
     act(() => result.current.open());
     expect(listCommands).toHaveBeenCalledTimes(1);
@@ -45,12 +52,12 @@ describe('useCommands', () => {
   it('remembers what it was told, so the next run answers without asking', async () => {
     const { result, unmount } = renderHook(() => useCommands('s1'));
     act(() => result.current.open());
-    await waitFor(() => expect(result.current.commands).toHaveLength(3));
+    await waitFor(() => expect(result.current.commands).toHaveLength(withLocal(cold.length)));
     unmount();
 
     const second = renderHook(() => useCommands('s1'));
 
-    expect(second.result.current.commands).toHaveLength(3);
+    expect(second.result.current.commands).toHaveLength(withLocal(cold.length));
     act(() => second.result.current.open());
     expect(listCommands).toHaveBeenCalledTimes(1);
   });
@@ -79,19 +86,19 @@ describe('useCommands', () => {
     listCommands.mockResolvedValue(live);
     const { result } = renderHook(() => useCommands('s1'));
     act(() => result.current.observe(true, 's1'));
-    await waitFor(() => expect(result.current.commands).toHaveLength(5));
+    await waitFor(() => expect(result.current.commands).toHaveLength(withLocal(live.length)));
 
     listCommands.mockResolvedValue(cold);
     act(() => result.current.observe(true, 's2'));
 
     await waitFor(() => expect(listCommands).toHaveBeenCalledTimes(2));
-    expect(result.current.commands.map((c) => c.name)).toEqual(['help', 'model', 'review', 'session', 'usage']);
+    expect(result.current.commands.map((c) => c.name)).toEqual([...localNames, 'model', 'review', 'session', 'usage'].sort());
   });
 
   it('prefers the newer definition of a command it already knew', async () => {
     const { result } = renderHook(() => useCommands('s1'));
     act(() => result.current.open());
-    await waitFor(() => expect(result.current.commands).toHaveLength(3));
+    await waitFor(() => expect(result.current.commands).toHaveLength(withLocal(cold.length)));
 
     listCommands.mockResolvedValue([{ ...command('model'), description: 'now says something else' }]);
     act(() => result.current.observe(true, 's1'));
@@ -99,7 +106,7 @@ describe('useCommands', () => {
     await waitFor(() =>
       expect(result.current.commands.find((c) => c.name === 'model')?.description).toBe('now says something else'),
     );
-    expect(result.current.commands).toHaveLength(3);
+    expect(result.current.commands).toHaveLength(withLocal(cold.length));
   });
 
   it('ignores a remembered entry that is missing what the menu reads', () => {
@@ -107,7 +114,7 @@ describe('useCommands', () => {
 
     const { result } = renderHook(() => useCommands('s1'));
 
-    expect(result.current.commands.map((c) => c.name)).toEqual(['help']);
+    expect(result.current.commands.map((c) => c.name)).toEqual(localNames);
   });
 
   it('reports a refusal rather than showing an empty menu', async () => {
@@ -126,7 +133,7 @@ describe('useCommands', () => {
     it('offers them before anything has been asked for', () => {
       const { result } = renderHook(() => useCommands('s1'));
 
-      expect(result.current.commands.map((c) => c.name)).toEqual(['help']);
+      expect(result.current.commands.map((c) => c.name)).toEqual(localNames);
     });
 
     it('still asks the runtime, since ours are not an answer to the menu being opened', async () => {
@@ -140,7 +147,7 @@ describe('useCommands', () => {
     it('does not remember them, so a renamed one cannot outlive the build that named it', async () => {
       const { result } = renderHook(() => useCommands('s1'));
       act(() => result.current.open());
-      await waitFor(() => expect(result.current.commands).toHaveLength(3));
+      await waitFor(() => expect(result.current.commands).toHaveLength(withLocal(cold.length)));
 
       const stored: SlashCommand[] = JSON.parse(localStorage.getItem('copilot-desktop.commands') ?? '[]');
       expect(stored.map((c) => c.name)).toEqual(['model', 'review']);

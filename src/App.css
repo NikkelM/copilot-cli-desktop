@@ -1951,12 +1951,61 @@ body {
 }
 
 .changes-close {
-  margin-left: auto;
   border: none;
   background: none;
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
+}
+
+/* Everything that acts, held together on the right so the counts keep the title's side. */
+.changes-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.changes-action {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  padding: 2px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.changes-action:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.changes-action.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.changes-action.primary:hover {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+
+/* Which span is on show, said beside the count it qualifies rather than as a second line. */
+.changes-span {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Reads as part of the sentence it sits in, so it is a link rather than a button. */
+.changes-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
 }
 
 .changes-close:hover {

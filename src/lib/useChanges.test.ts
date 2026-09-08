@@ -11,10 +11,11 @@ const { getChanges, getDiff } = vi.hoisted(() => ({
 
 vi.mock('./sidecar', () => ({ getChanges, getDiff }));
 
-const change = { path: 'a.ts', status: 'modified', linesAdded: 1, linesRemoved: 0, turns: 1, changedAt: '', diffable: true };
+const change = { path: 'a.ts', status: 'modified', linesAdded: 1, linesRemoved: 0, turns: 1, changedAt: '2026-01-02T00:00:00.000Z', diffable: true };
 
 describe('useChanges', () => {
   beforeEach(() => {
+    localStorage.clear();
     getChanges.mockReset().mockResolvedValue({ changes: [change] });
     getDiff.mockReset().mockResolvedValue({ patch: '@@', stale: false });
   });
@@ -33,7 +34,7 @@ describe('useChanges', () => {
 
     act(() => result.current.load());
     await waitFor(() => expect(result.current.changes).toEqual([change]));
-    expect(getChanges).toHaveBeenCalledWith('s1');
+    expect(getChanges).toHaveBeenCalledWith('s1', undefined);
   });
 
   it('has nothing to read without a session', () => {
@@ -82,5 +83,114 @@ describe('useChanges', () => {
 
     act(() => result.current.diff('a.ts'));
     expect(getDiff).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useChanges, reviewing', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    getChanges.mockReset().mockResolvedValue({ changes: [change] });
+    getDiff.mockReset().mockResolvedValue({ patch: '@@', stale: false });
+  });
+
+  it('has no mark until one is set', () => {
+    const { result } = renderHook(() => useChanges('s1'));
+    expect(result.current.reviewedAt).toBeNull();
+  });
+
+  /**
+   * The newest turn on show, not the current time: a turn that lands while the panel is
+   * open would otherwise be marked as reviewed without having been seen.
+   */
+  it('marks up to the newest turn listed', async () => {
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => result.current.load());
+    await waitFor(() => expect(result.current.changes).not.toBeNull());
+
+    act(() => result.current.review());
+    expect(result.current.reviewedAt).toBe('2026-01-02T00:00:00.000Z');
+  });
+
+  it('asks only for what is newer once marked', async () => {
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => result.current.load());
+    await waitFor(() => expect(result.current.changes).not.toBeNull());
+    act(() => result.current.review());
+
+    await waitFor(() => expect(getChanges).toHaveBeenLastCalledWith('s1', '2026-01-02T00:00:00.000Z'));
+  });
+
+  it('remembers the mark for next time', async () => {
+    const first = renderHook(() => useChanges('s1'));
+
+    act(() => first.result.current.load());
+    await waitFor(() => expect(first.result.current.changes).not.toBeNull());
+    act(() => first.result.current.review());
+    first.unmount();
+
+    const second = renderHook(() => useChanges('s1'));
+    expect(second.result.current.reviewedAt).toBe('2026-01-02T00:00:00.000Z');
+  });
+
+  it('keeps each session mark to itself', async () => {
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => result.current.load());
+    await waitFor(() => expect(result.current.changes).not.toBeNull());
+    act(() => result.current.review());
+
+    const other = renderHook(() => useChanges('s2'));
+    expect(other.result.current.reviewedAt).toBeNull();
+  });
+
+  it('has nothing to mark when nothing is listed', async () => {
+    getChanges.mockResolvedValue({ changes: [] });
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => result.current.load());
+    await waitFor(() => expect(result.current.changes).toEqual([]));
+
+    act(() => result.current.review());
+    expect(result.current.reviewedAt).toBeNull();
+  });
+
+  it('shows the whole session again on request', async () => {
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => result.current.load());
+    await waitFor(() => expect(result.current.changes).not.toBeNull());
+    act(() => result.current.review());
+
+    act(() => result.current.setSpan(true));
+    expect(result.current.showAll).toBe(true);
+    await waitFor(() => expect(getChanges).toHaveBeenLastCalledWith('s1', undefined));
+  });
+
+  // A diff answering the whole session under a heading promising only what is new is worse
+  // than no diff, so the ones on hand go when the span moves.
+  it('drops diffs that answer the old span', async () => {
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => result.current.diff('a.ts'));
+    await waitFor(() => expect(result.current.diffs['a.ts']).toBeTruthy());
+
+    act(() => result.current.setSpan(true));
+    expect(result.current.diffs).toEqual({});
+  });
+
+  it('fetches diffs over the span on show', async () => {
+    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ s1: '2026-01-01T00:00:00.000Z' }));
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => result.current.diff('a.ts'));
+    await waitFor(() => expect(getDiff).toHaveBeenCalledWith('s1', 'a.ts', '2026-01-01T00:00:00.000Z'));
+  });
+
+  it('survives a stored mark that is not readable', () => {
+    localStorage.setItem('copilot-desktop.reviewed', 'not json');
+    const { result } = renderHook(() => useChanges('s1'));
+    expect(result.current.reviewedAt).toBeNull();
   });
 });

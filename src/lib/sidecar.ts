@@ -120,14 +120,16 @@ export function getTranscript(
  *
  * The same store the CLI reads for its own rewind, so a session worked on in either tool
  * gives the same answer in both.
+ *
+ * With `since`, only the turns after that snapshot timestamp are read.
  */
-export function getChanges(sessionId: string): Promise<{ changes: SessionChange[] }> {
-  return request<{ changes: SessionChange[] }>('sessions.changes', { sessionId });
+export function getChanges(sessionId: string, since?: string): Promise<{ changes: SessionChange[] }> {
+  return request<{ changes: SessionChange[] }>('sessions.changes', { sessionId, since });
 }
 
-/** The diff for one of those files, from what the session found to what it left. */
-export function getDiff(sessionId: string, path: string): Promise<FileDiff> {
-  return request<FileDiff>('sessions.diff', { sessionId, path });
+/** The diff for one of those files, over the same span the list was built with. */
+export function getDiff(sessionId: string, path: string, since?: string): Promise<FileDiff> {
+  return request<FileDiff>('sessions.diff', { sessionId, path, since });
 }
 
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */

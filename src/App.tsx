@@ -46,6 +46,7 @@ import {
 } from './lib/sidecar';
 import { orderSessions } from './lib/ordering';
 import { mergeLivePreviews } from './lib/livePreviews';
+import { CHANGES } from './lib/localCommands';
 import { contentOf } from './lib/timeline';
 import { useChanges } from './lib/useChanges';
 import { useModel } from './lib/useModel';
@@ -375,6 +376,12 @@ export default function App() {
     );
   }
 
+  /** Open the panel and read the list, from wherever the request came from. */
+  function openChanges() {
+    setShowChanges(true);
+    changes.load();
+  }
+
   async function handleSend(prompt: string) {
     if (!selectedId) return;
 
@@ -385,7 +392,10 @@ export default function App() {
     if (what.kind === 'local') {
       setDrafts((current) => ({ ...current, [selectedId]: '' }));
       setError(null);
-      setHelp('full');
+      // Which one it is decides what opens. There is no default: an unhandled local
+      // command would silently do whatever the last branch happened to do.
+      if (what.command.name === CHANGES.name) openChanges();
+      else setHelp('full');
       return;
     }
 
@@ -543,11 +553,7 @@ export default function App() {
                   <button
                     type="button"
                     className={showChanges ? 'header-button on' : 'header-button'}
-                    onClick={() => {
-                      const next = !showChanges;
-                      setShowChanges(next);
-                      if (next) changes.load();
-                    }}
+                    onClick={() => (showChanges ? setShowChanges(false) : openChanges())}
                     aria-pressed={showChanges}
                     title="What this session changed, and the diff for any of it"
                   >
@@ -596,6 +602,10 @@ export default function App() {
                   onDiff={changes.diff}
                   cwd={selected.cwd}
                   onClose={() => setShowChanges(false)}
+                  onReview={changes.review}
+                  reviewedAt={changes.reviewedAt}
+                  showAll={changes.showAll}
+                  onSpan={changes.setSpan}
                 />
               )}
 

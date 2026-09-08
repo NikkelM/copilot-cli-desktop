@@ -19,12 +19,29 @@ export const HELP: SlashCommand = {
 };
 
 /**
+ * Show what this session changed, which is a panel here rather than a scrollback dump.
+ *
+ * The CLI's nearest equivalent is `/diff`, which reviews the working directory - a
+ * different question, since it counts anything anyone changed. This one is scoped to the
+ * session's own edits. `/diff` is kept as an alias so the CLI's word finds it, because
+ * looking at a diff is what both are for.
+ *
+ * Free, like `/help`: the rewind snapshots are files, so nothing has to be running.
+ */
+export const CHANGES: SlashCommand = {
+  name: 'changes',
+  description: 'review what this session changed',
+  aliases: ['diff'],
+  allowDuringTurn: true,
+};
+
+/**
  * The commands this app answers itself.
  *
  * Folded into the runtime's list so they are offered by the menu alongside it - the reader
  * has no reason to care which side of the wire answers them.
  */
-export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP];
+export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES];
 
 /** Whether a command is one of ours, and so must not be sent to the runtime. */
 export function isLocal(name: string): boolean {

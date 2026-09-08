@@ -99,13 +99,13 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
     }
 
     case 'sessions.changes': {
-      const { sessionId } = request.params as { sessionId: string };
-      return { changes: sessionChanges(sessionId) };
+      const { sessionId, since } = request.params as { sessionId: string; since?: string };
+      return { changes: sessionChanges(sessionId, since) };
     }
 
     case 'sessions.diff': {
-      const { sessionId, path } = request.params as { sessionId: string; path: string };
-      return sessionDiff(sessionId, path);
+      const { sessionId, path, since } = request.params as { sessionId: string; path: string; since?: string };
+      return sessionDiff(sessionId, path, since);
     }
 
     case 'sessions.send': {

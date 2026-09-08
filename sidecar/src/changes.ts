@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 import { createTwoFilesPatch, diffLines } from 'diff';
 
@@ -34,11 +35,19 @@ interface Ends {
  *
  * Keyed by the store's own key rather than by path, which is what makes a file followable:
  * the key is a hash of the path and is stable across every snapshot in a session.
+ *
+ * `since` narrows the span to the turns after a moment, which is what makes "and what has
+ * happened since I last looked" the same question as "what did this session change" rather
+ * than a second one. Narrowing here rather than filtering the answer afterwards is what
+ * makes it honest: the preimage becomes the file as it stood at that moment, so the diff is
+ * the work done since and not the work of the whole session with the old rows hidden.
  */
-function follow(snapshots: RewindSnapshot[]): Map<string, Ends> {
+function follow(snapshots: RewindSnapshot[], since?: string): Map<string, Ends> {
   const ends = new Map<string, Ends>();
 
   for (const snapshot of snapshots) {
+    if (!after(snapshot.timestamp, since)) continue;
+
     for (const [key, change] of Object.entries(snapshot.files ?? {})) {
       const seen = ends.get(key);
       if (!seen) {
@@ -65,6 +74,45 @@ function follow(snapshots: RewindSnapshot[]): Map<string, Ends> {
   }
 
   return ends;
+}
+
+/**
+ * Whether a snapshot falls after a moment, erring towards showing it.
+ *
+ * A timestamp neither side can read is shown rather than hidden. Hiding is the answer that
+ * loses work silently, and a mark that cannot be compared is a bug in the mark, not a
+ * reason to tell someone their session changed nothing.
+ */
+function after(timestamp: string, since?: string): boolean {
+  if (!since) return true;
+
+  const at = Date.parse(timestamp);
+  const mark = Date.parse(since);
+  if (Number.isNaN(at) || Number.isNaN(mark)) return true;
+  return at > mark;
+}
+
+/**
+ * Files nobody means when they ask what a session changed.
+ *
+ * A pasted image, a downloaded attachment and a scratch file the runtime wrote all land in
+ * the temporary directory, and all get snapshotted like anything else. They are noise in
+ * the answer: nobody reviews `u2.png` in `AppData\Local\Temp`, and the CLI has usually
+ * deleted them by the time anyone looks, so the row cannot even offer a diff.
+ *
+ * The unix roots are listed alongside the platform's own because a temporary directory is
+ * only one of several by convention, and this is cheap enough to be generous about.
+ * `tmpdir()` is read per call rather than held, so it follows the environment.
+ */
+const TEMP_ROOTS = ['/tmp', '/var/tmp', '/var/folders', '/private/var/folders'];
+
+function transient(path: string): boolean {
+  const normalised = path.replace(/\\/g, '/').toLowerCase();
+
+  return [tmpdir(), ...TEMP_ROOTS].some((root) => {
+    const prefix = root.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '');
+    return normalised.startsWith(`${prefix}/`);
+  });
 }
 
 /**
@@ -177,12 +225,16 @@ const CONTEXT = 4;
  *
  * Files the session created and then deleted, or edited back to what they were, are left
  * out: the question is what the session changed, and the answer for those is nothing.
+ *
+ * With `since`, only the turns after that moment are read, so the answer is what has
+ * happened since someone last reviewed it rather than everything again.
  */
-export function sessionChanges(sessionId: string): SessionChange[] {
+export function sessionChanges(sessionId: string, since?: string): SessionChange[] {
   const changes: SessionChange[] = [];
 
-  for (const ends of follow(readRewind(sessionId)).values()) {
+  for (const ends of follow(readRewind(sessionId), since).values()) {
     if (unchanged(ends.first, ends.last)) continue;
+    if (transient(ends.path)) continue;
 
     changes.push({
       path: ends.path,
@@ -202,9 +254,12 @@ export function sessionChanges(sessionId: string): SessionChange[] {
  * Also says whether the file on disk still matches what the session left, because it often
  * will not - the user edits the same files - and a diff that silently stood for someone
  * else's work as well would be worse than no diff at all.
+ *
+ * `since` has to match the one the list was built with, or the row and the diff under it
+ * would be answering different questions.
  */
-export function sessionDiff(sessionId: string, path: string): FileDiff {
-  const ends = follow(readRewind(sessionId)).get(fileKey(path));
+export function sessionDiff(sessionId: string, path: string, since?: string): FileDiff {
+  const ends = follow(readRewind(sessionId), since).get(fileKey(path));
   if (!ends) return { patch: null, reason: 'untracked', stale: false };
 
   const before = contentsOf(sessionId, ends.first, ends.path);

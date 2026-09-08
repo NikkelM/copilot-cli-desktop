@@ -11,10 +11,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * has since pruned.
  */
 let home: string;
+/** The environment's idea of "temporary", restored after each test. */
+let temp: { TEMP?: string; TMP?: string; TMPDIR?: string };
 
-async function load() {
+/**
+ * Load the reader with the environment each test needs.
+ *
+ * The fixtures live under the real temporary directory, which is where a test's scratch
+ * belongs - and which the reader filters out as noise. So its idea of "temporary" is
+ * pointed somewhere the fixtures are not, except in the tests that are about the filtering.
+ */
+async function load(tempRoot = join(home, 'not-the-temp-dir')) {
   vi.resetModules();
   process.env.COPILOT_HOME = home;
+  process.env.TEMP = tempRoot;
+  process.env.TMP = tempRoot;
+  process.env.TMPDIR = tempRoot;
   return import('./changes.js');
 }
 
@@ -26,11 +38,16 @@ async function keys() {
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'ccd-changes-'));
+  temp = { TEMP: process.env.TEMP, TMP: process.env.TMP, TMPDIR: process.env.TMPDIR };
 });
 
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
   delete process.env.COPILOT_HOME;
+  for (const [key, value] of Object.entries(temp)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
 });
 
 const SESSION = 'session-1';
@@ -235,6 +252,140 @@ describe('what a session changed', () => {
 
     const { sessionChanges } = await load();
     expect(sessionChanges(SESSION)[0]).toMatchObject({ path: '/w/big.bin', diffable: false });
+  });
+});
+
+/**
+ * A pasted image and a downloaded attachment are snapshotted like anything else, and are
+ * noise in an answer about what a session changed. The CLI has usually deleted them by the
+ * time anyone looks, so the row cannot even offer a diff.
+ */
+describe('temporary files', () => {
+  it('leaves out a file in the temporary directory', async () => {
+    const scratch = join(home, 'scratch');
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: join(scratch, 'u2.png'), preimage: ABSENT, postimage: await blob('x\n') }] },
+    ]);
+
+    const { sessionChanges } = await load(scratch);
+    expect(sessionChanges(SESSION)).toEqual([]);
+  });
+
+  it('leaves out a file below it, not only one directly in it', async () => {
+    const scratch = join(home, 'scratch');
+    await writeStore([
+      {
+        at: '2026-01-01T00:00:00.000Z',
+        files: [{ path: join(scratch, 'deep', 'nested', 'x.ts'), preimage: ABSENT, postimage: await blob('x\n') }],
+      },
+    ]);
+
+    const { sessionChanges } = await load(scratch);
+    expect(sessionChanges(SESSION)).toEqual([]);
+  });
+
+  it('leaves out the unix temporary roots whatever the platform says', async () => {
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/tmp/scratch.ts', preimage: ABSENT, postimage: await blob('x\n') }] },
+      { at: '2026-01-02T00:00:00.000Z', files: [{ path: '/w/real.ts', preimage: ABSENT, postimage: await blob('x\n') }] },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION).map((change) => change.path)).toEqual(['/w/real.ts']);
+  });
+
+  /** A directory that merely starts with the same letters is a different directory. */
+  it('does not leave out a sibling whose name begins with the temporary path', async () => {
+    const scratch = join(home, 'scratch');
+    const sibling = `${scratch}-keep`;
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: join(sibling, 'x.ts'), preimage: ABSENT, postimage: await blob('x\n') }] },
+    ]);
+
+    const { sessionChanges } = await load(scratch);
+    expect(sessionChanges(SESSION)).toHaveLength(1);
+  });
+
+  /** Asked for by name it is still answered: the filtering is about what is worth listing. */
+  it('still diffs one if it is asked for directly', async () => {
+    const scratch = join(home, 'scratch');
+    const file = join(scratch, 'u2.txt');
+    await writeStore([{ at: '2026-01-01T00:00:00.000Z', files: [{ path: file, preimage: ABSENT, postimage: await blob('x\n') }] }]);
+
+    const { sessionDiff } = await load(scratch);
+    expect(sessionDiff(SESSION, file).patch).toContain('+x');
+  });
+});
+
+/**
+ * Reviewing narrows the span rather than hiding rows, so the preimage becomes the file as
+ * it stood when it was reviewed. Anything else would show the whole session's diff under a
+ * heading that promised only what was new.
+ */
+describe('what changed since a review', () => {
+  it('leaves out a file untouched since the mark', async () => {
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/w/old.ts', preimage: ABSENT, postimage: await blob('a\n') }] },
+      { at: '2026-01-03T00:00:00.000Z', files: [{ path: '/w/new.ts', preimage: ABSENT, postimage: await blob('b\n') }] },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION, '2026-01-02T00:00:00.000Z').map((c) => c.path)).toEqual(['/w/new.ts']);
+  });
+
+  it('excludes the marked turn itself, which is the one that was seen', async () => {
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/w/a.ts', preimage: ABSENT, postimage: await blob('a\n') }] },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION, '2026-01-01T00:00:00.000Z')).toEqual([]);
+  });
+
+  /** The point of narrowing the span rather than filtering the answer. */
+  it('counts only the lines that moved since, not the whole session', async () => {
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/w/a.ts', preimage: ABSENT, postimage: await blob('one\ntwo\n') }] },
+      {
+        at: '2026-01-03T00:00:00.000Z',
+        files: [{ path: '/w/a.ts', preimage: await blob('one\ntwo\n'), postimage: await blob('one\ntwo\nthree\n') }],
+      },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION)[0]).toMatchObject({ status: 'created', linesAdded: 3 });
+    expect(sessionChanges(SESSION, '2026-01-02T00:00:00.000Z')[0]).toMatchObject({
+      status: 'modified',
+      linesAdded: 1,
+      linesRemoved: 0,
+      turns: 1,
+    });
+  });
+
+  it('diffs over the same span, so the row and the diff agree', async () => {
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/w/a.ts', preimage: ABSENT, postimage: await blob('one\n') }] },
+      { at: '2026-01-03T00:00:00.000Z', files: [{ path: '/w/a.ts', preimage: await blob('one\n'), postimage: await blob('one\ntwo\n') }] },
+    ]);
+
+    const { sessionDiff } = await load();
+    const patch = sessionDiff(SESSION, '/w/a.ts', '2026-01-02T00:00:00.000Z').patch ?? '';
+    expect(patch).toContain('+two');
+    expect(patch).toContain(' one');
+    expect(patch).not.toContain('+one');
+  });
+
+  /**
+   * Hiding is the answer that loses work silently, so a mark that cannot be read shows
+   * everything rather than nothing.
+   */
+  it('shows everything when the mark is not a time', async () => {
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/w/a.ts', preimage: ABSENT, postimage: await blob('a\n') }] },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION, 'not a time')).toHaveLength(1);
   });
 });
 
