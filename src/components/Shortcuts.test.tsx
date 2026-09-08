@@ -26,32 +26,36 @@ describe('Shortcuts', () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  // Otherwise the same press would also reach the shortcut that stops a turn.
-  it('keeps that Escape to itself', async () => {
-    render(<Shortcuts onClose={() => {}} />);
-    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
-
-    document.dispatchEvent(escape);
-
-    expect(escape.defaultPrevented).toBe(true);
-  });
-
-  it('closes when the sheet around it is clicked', async () => {
+  /**
+   * A list of keys should not be something you have to learn a key to escape from, so
+   * carrying on with anything at all closes it.
+   */
+  it.each(['a', ' ', '{Backspace}', '{Enter}', '{ArrowDown}'])('closes on %s', async (key) => {
     const onClose = vi.fn();
     render(<Shortcuts onClose={onClose} />);
 
-    await userEvent.click(screen.getByRole('dialog'));
+    await userEvent.keyboard(key);
 
     expect(onClose).toHaveBeenCalled();
   });
 
-  // Clicking the list itself is not asking to dismiss it.
-  it('stays open when the list is clicked', async () => {
+  // Reaching for a combination is not carrying on. Observed in the CLI, whose help stays up
+  // while Ctrl is held.
+  it('stays open while a modifier is held on its own', async () => {
     const onClose = vi.fn();
     render(<Shortcuts onClose={onClose} />);
 
-    await userEvent.click(screen.getByText('Keyboard shortcuts'));
+    await userEvent.keyboard('{Control>}');
 
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  // It is drawn above the composer rather than over the window, so there is no backdrop to
+  // click and nothing to trap the keyboard.
+  it('is a list rather than a dialogue', () => {
+    render(<Shortcuts onClose={() => {}} />);
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('listbox', { name: 'Keyboard shortcuts' })).toBeTruthy();
   });
 });

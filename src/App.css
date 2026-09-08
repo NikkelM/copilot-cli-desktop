@@ -386,6 +386,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* The whole footer clears the transcript once, here, rather than each child bringing its
+     own top padding - which is how the menu ended up thirty pixels from the composer. */
+  padding-top: 12px;
   /* A grid item will not shrink below its content without this, so one long command in a
      prompt below would widen the whole pane and push the rest off the window. */
   min-width: 0;
@@ -801,70 +804,70 @@ body {
 }
 
 /*
- * A sheet over everything, for the rare thing that is not part of a session: the shortcut
- * list has nowhere else to live, since the window has no menu bar to hang it from.
+ * A list that opens above the composer: commands, and the shortcut list.
+ *
+ * Modelled on the CLI, which puts this here rather than in a dialogue. A sheet over the top
+ * used to hold the shortcuts, which meant taking the keyboard away in order to explain the
+ * keyboard - and left nowhere for a command list to go while someone was typing one.
  */
-.sheet {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(1, 4, 9, 0.6);
-}
-
-.sheet-body {
-  width: min(460px, 90vw);
-  max-height: 80vh;
+.menu {
+  margin: 0 0 8px;
+  padding: 4px 0;
+  max-height: 40vh;
   overflow-y: auto;
-  padding: 18px 20px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--bg-raised);
-  box-shadow: 0 16px 48px rgba(1, 4, 9, 0.7);
+  list-style: none;
 }
 
-.sheet-body h2 {
-  margin: 0 0 14px;
-  font-size: 15px;
-}
-
-.shortcuts {
-  margin: 0;
-}
-
-.shortcut {
+.menu-row {
   display: flex;
   align-items: baseline;
-  gap: 12px;
-  padding: 5px 0;
+  gap: 14px;
+  padding: 3px 12px 3px 8px;
+  cursor: pointer;
 }
 
-.shortcut dt {
+/* The marker is drawn in a fixed gutter so the names stay in one column whichever row the
+   cursor is on. */
+.menu-row::before {
+  content: '>';
   flex: none;
-  width: 88px;
+  width: 10px;
+  color: var(--accent);
+  font-family: ui-monospace, monospace;
+  visibility: hidden;
 }
 
-.shortcut dd {
-  margin: 0;
-  color: var(--text-muted);
+.menu-row.selected::before {
+  visibility: visible;
+}
+
+.menu-row.selected {
+  background: var(--bg-selected, rgba(110, 118, 129, 0.18));
+}
+
+.menu-label {
+  flex: none;
+  min-width: 130px;
+  color: var(--text);
+  font-family: ui-monospace, monospace;
   font-size: 12px;
 }
 
-.shortcut kbd {
-  padding: 2px 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg);
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-}
-
-.shortcut-note {
-  margin: 14px 0 0;
+/* One line, cut where it runs out of room: the description orients, and the full text is
+   never the reason to widen the window. */
+.menu-description {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--text-muted);
-  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
 }
 
 .markdown code {

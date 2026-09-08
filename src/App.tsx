@@ -398,8 +398,6 @@ export default function App() {
 
   return (
     <div className="app">
-      {help && <Shortcuts onClose={() => setHelp(false)} />}
-
       <Sidebar
         sessions={ordered}
         selectedId={selectedId}
@@ -468,6 +466,10 @@ export default function App() {
             />
 
             <div className="footer">
+              {/* Above the composer and below everything else, because that is where the
+                  CLI puts it and where someone typing is already looking. */}
+              {help && <Shortcuts onClose={() => setHelp(false)} />}
+
               <Queue messages={queue.queues[selected.sessionId] ?? []} />
 
               {sessionElicitations.map((pending) => (
