@@ -7,6 +7,7 @@ import type {
   ElicitationAction,
   ElicitationFieldValue,
   ElicitationResolvedNotification,
+  FileDiff,
   GetTranscriptResult,
   ListSessionsResult,
   ModelChoice,
@@ -19,6 +20,7 @@ import type {
   SendParams,
   SendResult,
   SessionEventNotification,
+  SessionChange,
   SessionLoadedNotification,
   SessionModel,
   SlashCommand,
@@ -111,6 +113,21 @@ export function getTranscript(
   before?: number,
 ): Promise<GetTranscriptResult> {
   return request<GetTranscriptResult>('sessions.transcript', { sessionId, limit, before });
+}
+
+/**
+ * What a session changed, from its rewind snapshots. Costs no Copilot process.
+ *
+ * The same store the CLI reads for its own rewind, so a session worked on in either tool
+ * gives the same answer in both.
+ */
+export function getChanges(sessionId: string): Promise<{ changes: SessionChange[] }> {
+  return request<{ changes: SessionChange[] }>('sessions.changes', { sessionId });
+}
+
+/** The diff for one of those files, from what the session found to what it left. */
+export function getDiff(sessionId: string, path: string): Promise<FileDiff> {
+  return request<FileDiff>('sessions.diff', { sessionId, path });
 }
 
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */

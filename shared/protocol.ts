@@ -270,6 +270,48 @@ export type CommandOutcome =
   /** An effect this app has no way to apply yet. `what` is the runtime's own name for it. */
   | { kind: 'unsupported'; what: string };
 
+/**
+ * A file a session changed, as its rewind snapshots record it.
+ *
+ * Only the agent's own work: the snapshots are written around the tool calls that changed
+ * the file, so an edit someone made alongside in an editor never enters them. That is what
+ * a git diff of the same directory cannot separate.
+ */
+export interface SessionChange {
+  /** As the tool that changed it named it, which is how the store keys it. */
+  path: string;
+  status: 'created' | 'modified' | 'deleted';
+  /** Across the whole session, not summed per turn - see the sidecar for why they differ. */
+  linesAdded: number;
+  linesRemoved: number;
+  /** How many turns touched it. */
+  turns: number;
+  /** ISO-8601 timestamp of the last turn that did. */
+  changedAt: string;
+  /** Whether both ends survive on disk, so asking for the diff will produce one. */
+  diffable: boolean;
+}
+
+/** The diff for one changed file, or why there is not one. */
+export interface FileDiff {
+  /** Unified diff from what the session found to what it left. */
+  patch: string | null;
+  /**
+   * `pruned` - the CLI cleans up backing blobs, and around a quarter of them are gone.
+   * `binary` - nothing a text diff would say anything useful about.
+   * `untracked` - no snapshot mentions this path.
+   */
+  reason?: 'pruned' | 'binary' | 'untracked';
+  /**
+   * The file on disk is no longer what the session left.
+   *
+   * Someone has edited it since, so the diff describes the session's work rather than the
+   * file's current state. Saying so is the alternative to quietly attributing their edit
+   * to the agent.
+   */
+  stale: boolean;
+}
+
 /** Requests the frontend may issue. */
 export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };
@@ -282,6 +324,15 @@ export interface SidecarRequests {
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'sessions.create': { params: { workingDirectory?: string }; result: { sessionId: string } };
+  /**
+   * What a session changed, read from its rewind snapshots.
+   *
+   * Costs no Copilot process: the snapshots are files, so a session that has never been
+   * opened in this app can still answer.
+   */
+  'sessions.changes': { params: { sessionId: string }; result: { changes: SessionChange[] } };
+  /** The diff for one of those files. */
+  'sessions.diff': { params: { sessionId: string; path: string }; result: FileDiff };
   'git.state': { params: { cwd: string }; result: { state: TreeState | null } };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**

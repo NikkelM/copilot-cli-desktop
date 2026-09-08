@@ -10,6 +10,7 @@
     "start": "node --no-warnings=ExperimentalWarning dist/sidecar/src/index.js"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^1.0.13"
+    "@github/copilot-sdk": "^1.0.13",
+    "diff": "^9.0.0"
   }
 }

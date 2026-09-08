@@ -27,6 +27,7 @@ import {
   NOTIFY_SESSIONS_CHANGED,
 } from '../../shared/protocol.js';
 import { type Channel, startDevChannel } from './devChannel.js';
+import { sessionChanges, sessionDiff } from './changes.js';
 import { lastModel, readTranscript } from './eventLog.js';
 import { treeStateOf } from './git.js';
 import { SessionRuntime } from './runtime.js';
@@ -95,6 +96,16 @@ async function dispatch(request: JsonRpcRequest): Promise<unknown> {
         before?: number;
       };
       return readTranscript(sessionId, limit, before);
+    }
+
+    case 'sessions.changes': {
+      const { sessionId } = request.params as { sessionId: string };
+      return { changes: sessionChanges(sessionId) };
+    }
+
+    case 'sessions.diff': {
+      const { sessionId, path } = request.params as { sessionId: string; path: string };
+      return sessionDiff(sessionId, path);
     }
 
     case 'sessions.send': {
