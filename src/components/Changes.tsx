@@ -60,14 +60,22 @@ export function Changes({
     return () => document.removeEventListener('keydown', escape);
   }, [onClose]);
 
-  function toggle(path: string) {
-    if (open === path) {
-      setOpen(null);
-      return;
-    }
+  /**
+   * Keep whatever is open answered.
+   *
+   * The list can be reread underneath the panel - a turn ends, or the span changes - which
+   * drops the diffs on hand, since they answered the question the old span asked. A row
+   * left open has to ask again rather than sit on "Reading the diff." for good. A row whose
+   * file has dropped off the list has nothing left to ask about, so it closes.
+   */
+  useEffect(() => {
+    if (!open) return;
+    if (changes && !changes.some((change) => change.path === open)) setOpen(null);
+    else onDiff(open);
+  }, [open, changes, onDiff]);
 
-    setOpen(path);
-    onDiff(path);
+  function toggle(path: string) {
+    setOpen(open === path ? null : path);
   }
 
   const added = changes?.reduce((n, change) => n + change.linesAdded, 0) ?? 0;

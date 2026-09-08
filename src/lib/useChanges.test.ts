@@ -84,6 +84,33 @@ describe('useChanges', () => {
     act(() => result.current.diff('a.ts'));
     expect(getDiff).toHaveBeenCalledTimes(1);
   });
+
+  it('does not fetch a diff it is already waiting for', () => {
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => {
+      result.current.diff('a.ts');
+      result.current.diff('a.ts');
+    });
+    expect(getDiff).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * A reread changes the question, so an answer to the old one has to be dropped. Filing
+   * it against the new span would show a diff for a span nobody asked about, and would
+   * stop the right one from ever being fetched.
+   */
+  it('drops a diff that was already on its way when the list was reread', async () => {
+    let answer = (_: unknown) => {};
+    getDiff.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const { result } = renderHook(() => useChanges('s1'));
+
+    act(() => result.current.diff('a.ts'));
+    act(() => result.current.load());
+    await act(async () => answer({ patch: 'stale', stale: false }));
+
+    expect(result.current.diffs['a.ts']).toBeUndefined();
+  });
 });
 
 describe('useChanges, reviewing', () => {

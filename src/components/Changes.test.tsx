@@ -84,6 +84,31 @@ describe('Changes', () => {
     expect(onDiff).toHaveBeenCalledWith('C:\\work\\repo\\src\\thing.ts');
   });
 
+  /**
+   * The list is reread underneath the panel when a turn ends or the span changes, which
+   * drops the diffs on hand. A row left open has to ask again rather than sit on
+   * "Reading the diff." for good.
+   */
+  it('asks again for an open row when the diffs are dropped', () => {
+    const onDiff = vi.fn();
+    const diff = { 'C:\\work\\repo\\src\\thing.ts': { patch: '@@', stale: false } } as never;
+    const { rerender } = render(<Changes {...props} changes={[change()]} diffs={diff} onDiff={onDiff} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /thing\.ts/ }));
+    onDiff.mockClear();
+
+    rerender(<Changes {...props} changes={[change({ linesAdded: 9 })]} diffs={{}} onDiff={onDiff} />);
+    expect(onDiff).toHaveBeenCalledWith('C:\\work\\repo\\src\\thing.ts');
+  });
+
+  it('closes an open row whose file has dropped off the list', () => {
+    const { rerender } = render(<Changes {...props} changes={[change()]} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /thing\.ts/ }));
+    rerender(<Changes {...props} changes={[change({ path: 'C:\\work\\repo\\other.ts' })]} />);
+    expect(screen.queryByText('Reading the diff.')).toBeNull();
+  });
+
   it('draws the diff once it arrives', () => {
     const { container } = render(
       <Changes

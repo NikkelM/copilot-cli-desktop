@@ -393,10 +393,26 @@ export default function App() {
     );
   }
 
+  /**
+   * Put the keyboard back where someone is going to type.
+   *
+   * A button in the header takes focus when it is clicked and has nowhere to give it back
+   * to, so the next keystroke goes to the button rather than into the message. Bumped
+   * rather than set, since returning focus twice to the same session is a real request.
+   */
+  const [focusAt, setFocusAt] = useState(0);
+  const toComposer = useCallback(() => setFocusAt((n) => n + 1), []);
+
   /** Open the panel and read the list, from wherever the request came from. */
   function openChanges() {
     setShowChanges(true);
     changes.load();
+    toComposer();
+  }
+
+  function closeChanges() {
+    setShowChanges(false);
+    toComposer();
   }
 
   async function handleSend(prompt: string) {
@@ -570,7 +586,7 @@ export default function App() {
                   <button
                     type="button"
                     className={showChanges ? 'header-button on' : 'header-button'}
-                    onClick={() => (showChanges ? setShowChanges(false) : openChanges())}
+                    onClick={() => (showChanges ? closeChanges() : openChanges())}
                     aria-pressed={showChanges}
                     title="What this session changed, and the diff for any of it"
                   >
@@ -618,7 +634,7 @@ export default function App() {
                   diffs={changes.diffs}
                   onDiff={changes.diff}
                   cwd={selected.cwd}
-                  onClose={() => setShowChanges(false)}
+                  onClose={closeChanges}
                   onReview={changes.review}
                   reviewedAt={changes.reviewedAt}
                   showAll={changes.showAll}
@@ -654,7 +670,9 @@ export default function App() {
                 onError={setError}
                 // A question or a permission request blocks the agent until answered, so
                 // it keeps the keyboard; the composer takes it back once nothing is waiting.
-                focusOn={sessionElicitations.length + sessionPermissions.length > 0 ? null : selectedId}
+                focusOn={
+                  sessionElicitations.length + sessionPermissions.length > 0 ? null : `${selectedId}:${focusAt}`
+                }
                 value={drafts[selected.sessionId] ?? ''}
                 onChange={(text) => setDrafts((current) => ({ ...current, [selected.sessionId]: text }))}
                 onSend={(prompt) => void handleSend(prompt)}

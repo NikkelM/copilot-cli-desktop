@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol';
 import { getChanges, getDiff } from './sidecar';
@@ -43,6 +43,15 @@ export function useChanges(sessionId: string | null) {
   const [diffs, setDiffs] = useState<Record<string, FileDiff>>({});
   const [reviewedAt, setReviewedAt] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  /**
+   * Which reading of the list the diffs on hand belong to.
+   *
+   * A diff already on its way when the list is reread answers the old span, so its reply
+   * has to be dropped rather than filed against the new one.
+   */
+  const asked = useRef(0);
+  /** Paths already on their way, so an open row cannot ask twice for the same answer. */
+  const asking = useRef(new Set<string>());
 
   const since = showAll ? undefined : (reviewedAt ?? undefined);
 
@@ -62,6 +71,8 @@ export function useChanges(sessionId: string | null) {
       setLoading(true);
       setFailed(null);
       // Diffs on hand answer the old span, so they cannot be shown against the new one.
+      asked.current += 1;
+      asking.current.clear();
       setDiffs({});
       getChanges(sessionId, from)
         .then((result) => setChanges(result.changes))
@@ -75,11 +86,17 @@ export function useChanges(sessionId: string | null) {
 
   const diff = useCallback(
     (path: string) => {
-      if (!sessionId || diffs[path]) return;
+      if (!sessionId || diffs[path] || asking.current.has(path)) return;
 
+      const span = asked.current;
+      asking.current.add(path);
       getDiff(sessionId, path, since)
-        .then((result) => setDiffs((current) => ({ ...current, [path]: result })))
-        .catch((error: unknown) => setFailed(String(error)));
+        .then((result) => {
+          if (span !== asked.current) return;
+          setDiffs((current) => ({ ...current, [path]: result }));
+        })
+        .catch((error: unknown) => span === asked.current && setFailed(String(error)))
+        .finally(() => asking.current.delete(path));
     },
     [sessionId, diffs, since],
   );

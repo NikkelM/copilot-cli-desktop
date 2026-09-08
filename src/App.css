@@ -2087,7 +2087,7 @@ body {
 }
 
 .changes-status.modified {
-  color: var(--accent);
+  color: #d29922;
 }
 
 /* The end of a path identifies it, so it is the end that survives when there is no room. */
