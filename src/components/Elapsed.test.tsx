@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { act } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { Elapsed } from './Elapsed';
+import { Elapsed, Expiry } from './Elapsed';
 
 const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
 
@@ -57,6 +57,47 @@ describe('Elapsed', () => {
 
   it('says nothing about something that never started', () => {
     const { container } = render(<Elapsed />);
+    expect(container.textContent).toBe('');
+  });
+});
+
+
+/**
+ * The countdown on a blocked agent (#70). Silent until the last minute, because a wait
+ * with four minutes left is a wait, not a deadline, and a clock running the whole time
+ * reads as pressure rather than warning.
+ */
+describe('Expiry', () => {
+  const inMs = (ms: number) => new Date(Date.now() + ms).toISOString();
+
+  it('says nothing while there is plenty of time', () => {
+    const { container } = render(<Expiry at={inMs(4 * 60_000)} />);
+    expect(container.textContent).toBe('');
+  });
+
+  it('says how long is left once it is close', () => {
+    render(<Expiry at={inMs(45_000)} />);
+    expect(screen.getByText('45s left')).toBeTruthy();
+  });
+
+  it('counts down', () => {
+    vi.useFakeTimers();
+    render(<Expiry at={inMs(50_000)} />);
+    expect(screen.getByText('50s left')).toBeTruthy();
+
+    act(() => void vi.advanceTimersByTime(20_000));
+
+    expect(screen.getByText('30s left')).toBeTruthy();
+  });
+
+  /** The request answers itself at this point, so saying "0s left" would be a lie. */
+  it('says so once the time has run out', () => {
+    render(<Expiry at={new Date(Date.now() - 1000).toISOString()} />);
+    expect(screen.getByText('expired')).toBeTruthy();
+  });
+
+  it('says nothing when there is no deadline', () => {
+    const { container } = render(<Expiry />);
     expect(container.textContent).toBe('');
   });
 });

@@ -52,7 +52,14 @@ export function OpenIn({
           <button
             type="button"
             onClick={() =>
-              openUrl(`vscode-insiders://file/${cwd.replace(/\\/g, '/')}?windowId=_blank`).catch(failed)
+              openUrl(
+                // Encoded, but with the separators and the drive colon put back: a folder
+                // called `C#` or `notes (old)` would otherwise be cut short at the `#` or
+                // read as a query string, while `C%3A/` is not a path VS Code recognises.
+                `vscode-insiders://file/${encodeURIComponent(cwd.replace(/\\/g, '/'))
+                  .replace(/%2F/g, '/')
+                  .replace(/%3A/g, ':')}?windowId=_blank`,
+              ).catch(failed)
             }
             title="Open in a new VS Code Insiders window"
           >

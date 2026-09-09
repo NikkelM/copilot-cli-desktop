@@ -16,3 +16,54 @@ export function messageOf(error: unknown): string {
   const bare = text.replace(/^(?:Error:\s*)?Request \S+ failed with message:\s*/, '').trim();
   return bare || text.trim() || String(error);
 }
+
+/**
+ * The handful of failures that have a plain meaning, said plainly.
+ *
+ * The runtime answers in its own terms, which are about its wire protocol and its store
+ * rather than about what happened. "First event must be session.start or session.resume"
+ * means the session's history is gone; nobody reading it would know that, and it does not
+ * suggest the one thing worth doing about it.
+ *
+ * Every pattern here was taken from the strings in the runtime binary rather than guessed
+ * at, because a wrong translation is worse than a technical sentence: it sends the reader
+ * after the wrong problem, and unlike the raw text it cannot be searched for.
+ */
+const PLAINLY: Array<{ when: RegExp; say: string }> = [
+  {
+    when: /first event must be session\.(start|resume)|cannot create session from empty events array/i,
+    say: 'This session has no history left to reopen. Its record in the session store is empty or was removed.',
+  },
+  {
+    when: /session file is corrupted|failed to parse resume replay events/i,
+    say: 'The history for this session is damaged and cannot be replayed.',
+  },
+  {
+    when: /session not found|failed to (load|read) session events/i,
+    say: 'This session is no longer in the session store, so there is nothing to reopen.',
+  },
+  {
+    when: /working directory not found|unable to read current working directory/i,
+    say: 'The working directory for this session no longer exists, so it cannot be opened there.',
+  },
+  {
+    when: /authentication (failed|required)|sign(ed)? in to (use )?github copilot|not signed in/i,
+    say: 'Copilot is not signed in. Sign in with the copilot command in a terminal, then try again.',
+  },
+  {
+    when: /enoent[^]*copilot(\.exe)?['"\s]|spawn copilot/i,
+    say: 'The Copilot CLI could not be started. Check that it is installed and on PATH.',
+  },
+];
+
+/**
+ * What went wrong, in words, with the technical account kept where it is still the best one.
+ *
+ * Anything unrecognised is returned as it arrived: an error nobody anticipated is still the
+ * only real evidence of what happened, and replacing it with a guess would lose the part
+ * that mattered.
+ */
+export function explain(error: unknown): string {
+  const message = messageOf(error);
+  return PLAINLY.find(({ when }) => when.test(message))?.say ?? message;
+}

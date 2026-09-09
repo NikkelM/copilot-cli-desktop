@@ -109,6 +109,32 @@ export const Markdown = memo(function Markdown({
               </div>
             );
           },
+          /**
+           * A picture named by URL, offered as a link rather than drawn.
+           *
+           * Opening a transcript should not reach out to whatever host a model happened to
+           * name: the request alone says a session is being read, and the reply can be
+           * anything. Nothing survives to be drawn safely either - react-markdown blanks
+           * every URL that is not http(s) or relative before this is called - so there is
+           * one rule rather than two, and following a picture is a decision.
+           */
+          img: ({ src, alt, title }) => {
+            const source = typeof src === 'string' ? src : '';
+
+            return (
+              <a
+                className="markdown-remote-image"
+                href={source}
+                title={title ?? source}
+                onClick={(event) => {
+                  event.preventDefault();
+                  if (/^https?:/i.test(source)) void openUrl(source);
+                }}
+              >
+                {alt || source || 'image'}
+              </a>
+            );
+          },
           a: ({ href, children }) => (
             <a
               href={href}

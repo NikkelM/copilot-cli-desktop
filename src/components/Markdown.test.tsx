@@ -65,9 +65,42 @@ describe('Markdown', () => {
 
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('iframe')).toBeNull();
-    expect(container.querySelector('img')?.getAttribute('onerror')).toBeNull();
+    // Not merely stripped of its handler: a remote image is not drawn at all, so a reply
+    // cannot make the window fetch anything from a host the model chose.
+    expect(container.querySelector('img')).toBeNull();
     // The text around it survives: refusing markup is not the same as dropping the reply.
     expect(container.textContent).toContain('after');
+  });
+
+  it('offers a remote image as a link rather than fetching it', async () => {
+    const { container } = render(<Markdown body="![a diagram](https://example.com/d.png)" />);
+
+    expect(container.querySelector('img')).toBeNull();
+    const link = screen.getByText('a diagram');
+    expect(link.getAttribute('href')).toBe('https://example.com/d.png');
+
+    // Only once someone asks for it, and to the browser rather than into this window.
+    expect(openUrl).not.toHaveBeenCalled();
+    await userEvent.click(link);
+    expect(openUrl).toHaveBeenCalledWith('https://example.com/d.png');
+  });
+
+  it('draws no image, whatever it is named by', () => {
+    const bodies = [
+      '![pixel](data:image/gif;base64,R0lGODlhAQABAAAAACw=)',
+      '![shot](./local.png)',
+      '<img src="https://example.com/d.png">',
+    ];
+
+    for (const body of bodies) {
+      const { container } = render(<Markdown body={body} />);
+      expect(container.querySelector('img'), body).toBeNull();
+    }
+  });
+
+  it('names a remote image by its address when it has no alt text', () => {
+    render(<Markdown body="![](https://example.com/d.png)" />);
+    expect(screen.getByText('https://example.com/d.png')).not.toBeNull();
   });
 
   it('renders maths rather than its source', () => {

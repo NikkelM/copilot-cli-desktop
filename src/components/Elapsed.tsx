@@ -1,5 +1,5 @@
 import { formatElapsed } from '../lib/time';
-import { useElapsed } from '../lib/useElapsed';
+import { useElapsed, useRemaining } from '../lib/useElapsed';
 
 /** Below this, a duration is noise: it appears, says "1s", and is gone. */
 const WORTH_SAYING_MS = 2000;
@@ -16,4 +16,30 @@ export function Elapsed({ since, until }: { since?: string; until?: string }) {
   if (ms === null || ms < WORTH_SAYING_MS) return null;
 
   return <span className="elapsed">{formatElapsed(ms)}</span>;
+}
+
+/**
+ * Only worth saying once it is close: a wait with four minutes left is not a deadline, it
+ * is a wait, and a countdown running the whole time reads as pressure rather than warning.
+ */
+const WORTH_WARNING_MS = 60_000;
+
+/**
+ * How long is left before a request lapses.
+ *
+ * A blocked agent is the one wait that ends badly if nobody notices it: after five minutes
+ * the request answers itself as "user not available" and the turn carries on without
+ * whatever was being asked for. Silent until the last minute, then insistent (#70).
+ */
+export function Expiry({ at }: { at?: string }) {
+  const ms = useRemaining(at);
+  if (ms === null || ms > WORTH_WARNING_MS) return null;
+
+  // Rounded up, unlike a duration counting the other way: "1s left" should stand until the
+  // second is actually gone, and flooring would skip it entirely.
+  return (
+    <span className="expiry" title="This request answers itself once the time runs out">
+      {ms === 0 ? 'expired' : `${formatElapsed(Math.ceil(ms / 1000) * 1000)} left`}
+    </span>
+  );
 }

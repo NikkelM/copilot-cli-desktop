@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { copyText } from './clipboard';
+
 /** How long the confirmation stays up. Long enough to read, short enough not to linger. */
 const CONFIRM_MS = 1200;
 
@@ -29,12 +31,9 @@ export function useCopy() {
       }, CONFIRM_MS);
     };
 
-    navigator.clipboard
-      .writeText(text)
-      .then(() => settle(true))
-      // Saying nothing would look the same as succeeding, which is the one thing worse
-      // than failing.
-      .catch(() => settle(false));
+    // Saying nothing would look the same as succeeding, which is the one thing worse
+    // than failing.
+    void copyText(text).then(settle);
   }, []);
 
   return { copied, failed, copy };
