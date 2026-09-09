@@ -1,0 +1,112 @@
+/**
+ * The methods the sidecar answers, and the lookup that routes to them.
+ *
+ * Separate from `index.ts` because that module starts a runtime, a store watcher and a
+ * reader on stdin the moment it is imported, which leaves the request surface of the whole
+ * app impossible to exercise except by running it.
+ */
+import type { JsonRpcRequest, SidecarHandlers } from '../../shared/protocol.js';
+import { sessionChanges, sessionDiff } from './changes.js';
+import { lastModel, readTranscript } from './eventLog.js';
+import { treeStateOf } from './git.js';
+import { previewImage } from './images.js';
+import { stashPaste } from './pastes.js';
+import type { SessionRuntime } from './runtime.js';
+import { existingSessions, findSessions, listSessions } from './sessionIndex.js';
+
+export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
+  return {
+    'sessions.list': () => {
+      // The sessions the runtime holds are listed even when the database would hide them:
+      // one just started has no title and no turns yet.
+      const sessions = listSessions(runtime.status().activeSessionIds).map((session) => ({
+        ...session,
+        loaded: runtime.isActive(session.sessionId),
+      }));
+      return { sessions };
+    },
+
+    'sessions.find': ({ prefix }) => {
+      const sessions = findSessions(prefix).map((session) => ({
+        ...session,
+        loaded: runtime.isActive(session.sessionId),
+      }));
+      return { sessions };
+    },
+
+    'sessions.exist': ({ sessionIds }) => ({ sessionIds: existingSessions(sessionIds) }),
+
+    'sessions.transcript': ({ sessionId, limit, before }) => readTranscript(sessionId, limit, before),
+
+    'sessions.changes': async ({ sessionId, since }) => {
+      await runtime.flushChanges(sessionId);
+      return { changes: sessionChanges(sessionId, since) };
+    },
+
+    'sessions.diff': async ({ sessionId, path, since }) => {
+      await runtime.flushChanges(sessionId);
+      return sessionDiff(sessionId, path, since);
+    },
+
+    'sessions.send': ({ sessionId, prompt, mode, attachments }) =>
+      runtime.send(sessionId, prompt, mode, attachments),
+
+    'sessions.abort': ({ sessionId }) => runtime.abort(sessionId),
+
+    'sessions.shell': ({ sessionId, requestId, command }) => runtime.shell(sessionId, requestId, command),
+
+    'sessions.cancelShell': ({ sessionId, requestId }) => runtime.cancelShell(sessionId, requestId),
+
+    'sessions.evict': ({ sessionId }) => runtime.evict(sessionId),
+
+    'sessions.resolvePermission': ({ requestId, choice }) => runtime.resolvePermission(requestId, choice),
+
+    'sessions.resolveElicitation': ({ requestId, action, content }) =>
+      runtime.resolveElicitation(requestId, action, content),
+
+    'sessions.create': ({ workingDirectory }) => runtime.create(workingDirectory),
+
+    'attachments.stash': (params) => ({ path: stashPaste(params) }),
+
+    'attachments.preview': ({ path }) => ({ dataUrl: previewImage(path) }),
+
+    'models.list': async () => ({ models: await runtime.models() }),
+
+    // Params are read defensively because a caller with nothing to say may send none at all,
+    // and the one field here is optional in the first place.
+    'commands.list': async (params) => ({ commands: await runtime.commands(params?.sessionId) }),
+
+    'commands.invoke': async ({ sessionId, name, input }) => ({
+      outcome: await runtime.invoke(sessionId, name, input),
+    }),
+
+    'commands.enqueue': async ({ sessionId, command, displayText }) => ({
+      queued: await runtime.enqueue(sessionId, command, displayText),
+    }),
+
+    'sessions.queue': async ({ sessionId }) => ({ items: await runtime.queue(sessionId) }),
+
+    'sessions.model': async ({ sessionId }) => ({ current: await lastModel(sessionId) }),
+
+    'sessions.setModel': ({ sessionId, model, reasoningEffort, contextTier }) =>
+      runtime.setModel(sessionId, model, reasoningEffort, contextTier),
+
+    'git.state': async ({ cwd }) => ({ state: await treeStateOf(cwd) }),
+
+    'runtime.status': () => runtime.status(),
+  };
+}
+
+/** Route one request to its handler. Errors are the caller's to turn into a reply. */
+export async function dispatch(handlers: SidecarHandlers, request: JsonRpcRequest): Promise<unknown> {
+  // Own properties only: the method arrives as text, and a plain lookup would answer
+  // "constructor" or "toString" with something inherited and then call it.
+  const handler = Object.hasOwn(handlers, request.method)
+    ? (handlers[request.method] as (params: unknown) => unknown)
+    : undefined;
+  if (!handler) throw new Error(`Unknown method: ${request.method}`);
+
+  // A handler that answers with nothing still owes the caller a reply, and a missing
+  // `result` is not the same thing as an empty one once it has been through JSON.
+  return (await handler(request.params)) ?? null;
+}

@@ -141,6 +141,52 @@ export interface Attachment {
   displayName?: string;
 }
 
+/**
+ * The largest pasted file the composer will take.
+ *
+ * Pasted content has no path, so it crosses the pipe as base64 and is written out the far
+ * side. Ten megabytes covers any screenshot with room to spare; past that the picker is
+ * the right gesture, because it hands over a path and copies nothing.
+ */
+export const MAX_PASTE_BYTES = 10 * 1024 * 1024;
+
+/** A pasted file on its way to disk, since only a path can be attached to a message. */
+export interface StashParams {
+  sessionId: string;
+  /** What the clipboard called it. Screenshots all arrive as `image.png`. */
+  name: string;
+  /** The bytes, base64. */
+  data: string;
+}
+
+/**
+ * The largest image the app will preview.
+ *
+ * A preview crosses the pipe as base64, so the cost is the file's size again by a third,
+ * paid to show a thumbnail. Four megabytes covers a screenshot or a photograph; a scan or
+ * a layered export is past the point where a hover is the right way to look at it.
+ */
+export const MAX_PREVIEW_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Extensions the app will preview, and what to call them in a data URL.
+ *
+ * A list rather than a lookup by content, because the point is to refuse anything unfamiliar:
+ * an attachment is whatever the reader picked, and the webview should only be handed types
+ * it can decode without running anything. SVG is left out for that reason - it is a document,
+ * not a bitmap.
+ */
+export const PREVIEWABLE: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif',
+  '.ico': 'image/x-icon',
+};
+
 export interface SendParams {
   sessionId: string;
   prompt: string;
@@ -184,6 +230,14 @@ export interface PendingPermission {
   sessionId: string;
   requestId: string;
   request: Record<string, unknown>;
+  /**
+   * When this lapses on its own, so the prompt can say how long is left (#70).
+   *
+   * A blocked agent is the one wait that ends badly if nobody notices it: the request is
+   * answered as "user not available" after five minutes and the turn carries on without
+   * whatever was being asked for.
+   */
+  expiresAt: string;
 }
 
 /** How the user answered a question from the agent. */
@@ -214,6 +268,8 @@ export interface PendingElicitation {
   /** `url` asks the user to visit a link rather than fill in a form. */
   mode: 'form' | 'url' | null;
   url: string | null;
+  /** When this lapses on its own, as a permission does. Giving up counts as declining. */
+  expiresAt: string;
 }
 
 export interface ResolveElicitationParams {
@@ -243,8 +299,6 @@ export interface SlashCommand {
   aliases: string[];
   /** What the argument is for, for commands that take one. */
   hint?: string;
-  /** The command will not do anything useful without an argument. */
-  required?: boolean;
   /** The values the argument accepts, when it is a choice rather than free text. */
   choices?: CommandChoice[];
   /** Whether it may run while a turn is in flight. */
@@ -271,8 +325,37 @@ export type CommandOutcome =
   | { kind: 'unsupported'; what: string };
 
 /**
- * A file a session changed, as its rewind snapshots record it.
+ * What a reader's own shell command produced.
  *
+ * The output is here as well as in the event log because the runtime emits the command as
+ * a tool call: the transcript will show it in its own time, and this is the answer to the
+ * request that started it.
+ */
+export interface ShellResult {
+  success: boolean;
+  /** Already stripped of terminal escapes, which this app cannot draw. */
+  output: string;
+  exitCode?: number;
+  error?: string;
+}
+
+/**
+ * Something waiting behind the turn a session is running.
+ *
+ * The runtime's own queue, not a copy kept here, so it also carries what this app did not
+ * put there: commands queued during a turn, model changes, and messages sent from a
+ * terminal attached to the same session.
+ */
+export interface QueuedItem {
+  /** Stable and opaque. What the runtime wants back to remove, edit or move the entry. */
+  id: string;
+  kind: 'message' | 'command' | 'other';
+  text: string;
+  /** Present for messages only, and the same id the `user.message` event carries. */
+  messageId?: string;
+}
+
+/**
  * Only the agent's own work: the snapshots are written around the tool calls that changed
  * the file, so an edit someone made alongside in an editor never enters them. That is what
  * a git diff of the same directory cannot separate.
@@ -306,9 +389,10 @@ export interface FileDiff {
    * `gone` - the file is not there any more, and no copy of it was kept.
    * `replaced` - the file is still there but is no longer that version, and no copy was kept.
    * `binary` - nothing a text diff would say anything useful about.
+   * `too-large` - comparing two versions this size would stall every session in the app.
    * `untracked` - no snapshot mentions this path.
    */
-  reason?: 'gone' | 'replaced' | 'binary' | 'untracked';
+  reason?: 'gone' | 'replaced' | 'binary' | 'too-large' | 'untracked';
   /**
    * The file on disk is no longer what the session left.
    *
@@ -324,9 +408,18 @@ export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };
   /** Sessions matching the start of an id, including the ones the list hides. */
   'sessions.find': { params: { prefix: string }; result: ListSessionsResult };
+  /** Which of the given sessions still exist on disk, so what the app remembers can be pruned. */
+  'sessions.exist': { params: { sessionIds: string[] }; result: { sessionIds: string[] } };
   'sessions.transcript': { params: GetTranscriptParams; result: GetTranscriptResult };
   'sessions.send': { params: SendParams; result: SendResult };
   'sessions.abort': { params: { sessionId: string }; result: void };
+  /**
+   * Run a shell command the reader typed, in the session's own shell.
+   *
+   * `requestId` is the caller's to choose and is the handle `sessions.cancelShell` needs.
+   */
+  'sessions.shell': { params: { sessionId: string; requestId: string; command: string }; result: ShellResult };
+  'sessions.cancelShell': { params: { sessionId: string; requestId: string }; result: void };
   'sessions.evict': { params: { sessionId: string }; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
@@ -359,12 +452,28 @@ export interface SidecarRequests {
     params: { sessionId: string; name: string; input?: string };
     result: { outcome: CommandOutcome };
   };
+  /** Queue a command behind the running turn. False when the session does not queue locally. */
+  'commands.enqueue': {
+    params: { sessionId: string; command: string; displayText?: string };
+    result: { queued: boolean };
+  };
+  /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
+  'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };
   'sessions.setModel': {
     params: { sessionId: string; model: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier };
     result: void;
   };
   'runtime.status': { params: void; result: RuntimeStatus };
+  /** Writes a pasted file beside the session's record, since a message can only carry a path. */
+  'attachments.stash': { params: StashParams; result: { path: string } };
+  /**
+   * An image as a data URL, for showing a file the webview cannot load itself.
+   *
+   * Null covers every reason there is nothing to show - gone, unreadable, too large, or not
+   * an image at all - because the caller does the same thing in all four cases.
+   */
+  'attachments.preview': { params: { path: string }; result: { dataUrl: string | null } };
 }
 
 export type SidecarMethod = keyof SidecarRequests;
@@ -419,6 +528,21 @@ export interface JsonRpcRequest<M extends SidecarMethod = SidecarMethod> {
   method: M;
   params?: SidecarRequests[M]['params'];
 }
+
+/**
+ * One handler per method, taking and returning what the table above says.
+ *
+ * The sidecar used to answer requests from a switch that cast `params` by hand in every
+ * branch, which restated all of these shapes a second time and let the two drift without a
+ * word from the compiler. Written this way, a method with no handler, a handler reading a
+ * parameter that is not sent, and a handler answering with the wrong shape are all build
+ * errors, and both sides of the boundary are checked against the same declaration.
+ */
+export type SidecarHandlers = {
+  [M in SidecarMethod]: (
+    params: SidecarRequests[M]['params'],
+  ) => SidecarRequests[M]['result'] | Promise<SidecarRequests[M]['result']>;
+};
 
 export interface JsonRpcResponse {
   jsonrpc: '2.0';

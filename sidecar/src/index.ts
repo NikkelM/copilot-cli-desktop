@@ -7,16 +7,7 @@
  */
 import { createInterface } from 'node:readline';
 
-import type {
-  Attachment,
-  ContextTier,
-  ElicitationAction,
-  ElicitationFieldValue,
-  JsonRpcRequest,
-  JsonRpcResponse,
-  PermissionChoice,
-  ReasoningEffort,
-} from '../../shared/protocol.js';
+import type { JsonRpcRequest, JsonRpcResponse } from '../../shared/protocol.js';
 import {
   NOTIFY_ELICITATION_REQUESTED,
   NOTIFY_ELICITATION_RESOLVED,
@@ -27,12 +18,9 @@ import {
   NOTIFY_SESSION_LOADED,
   NOTIFY_SESSIONS_CHANGED,
 } from '../../shared/protocol.js';
-import { type Channel, startDevChannel } from './devChannel.js';
-import { sessionChanges, sessionDiff } from './changes.js';
-import { lastModel, readTranscript } from './eventLog.js';
-import { treeStateOf } from './git.js';
+import type { Channel } from './devChannel.js';
+import { createHandlers, dispatch } from './dispatch.js';
 import { SessionRuntime } from './runtime.js';
-import { findSessions, listSessions } from './sessionIndex.js';
 import { watchSessionStore } from './storeWatcher.js';
 
 /** Anything written to stdout is protocol, so diagnostics must go to stderr. */
@@ -45,7 +33,28 @@ const stdio: Channel = {
   write: (payload) => process.stdout.write(`${JSON.stringify(payload)}\n`),
 };
 
-const dev = startDevChannel({ onRequest: (raw, channel) => handle(raw, channel), log });
+/**
+ * The dev channel, if this build has one.
+ *
+ * Loaded on demand, and only when the variable that turns it on is set, so that a packaged
+ * copy can leave the module out altogether - which `scripts/bundle-sidecar.mjs` does. A
+ * released app therefore contains no code that could open a socket, rather than code that
+ * declines to: the difference matters because the guard is an environment variable, and
+ * anything able to set one on this process would otherwise get an unauthenticated way to
+ * send prompts to any session.
+ *
+ * Until it resolves - and forever, in a build without it - broadcasting does nothing, which
+ * is what it does when the channel is off anyway.
+ */
+let broadcast: (payload: unknown) => void = () => undefined;
+
+if (process.env.COPILOT_DESKTOP_DEV_PORT) {
+  void import('./devChannel.js')
+    .then(({ startDevChannel }) => {
+      broadcast = startDevChannel({ onRequest: (raw, channel) => handle(raw, channel), log }).broadcast;
+    })
+    .catch(() => log('COPILOT_DESKTOP_DEV_PORT is set, but this build has no dev channel'));
+}
 
 /**
  * Notifications go to the shell and to any dev client, so a prompt sent over the dev
@@ -54,155 +63,23 @@ const dev = startDevChannel({ onRequest: (raw, channel) => handle(raw, channel),
 function notify(method: string, params: unknown): void {
   const payload = { jsonrpc: '2.0', method, params };
   stdio.write(payload);
-  dev.broadcast(payload);
+  broadcast(payload);
 }
 
 const runtime = new SessionRuntime({
   onEvent: (sessionId, event) => notify(NOTIFY_SESSION_EVENT, { sessionId, event }),
   onLoadedChange: (sessionId, loaded) => notify(NOTIFY_SESSION_LOADED, { sessionId, loaded }),
   onChangesRecorded: (sessionId) => notify(NOTIFY_SESSION_CHANGES, { sessionId }),
-  onPermissionRequest: (sessionId, requestId, request) =>
-    notify(NOTIFY_PERMISSION_REQUESTED, { sessionId, requestId, request }),
+  onPermissionRequest: (sessionId, requestId, request, expiresAt) =>
+    notify(NOTIFY_PERMISSION_REQUESTED, { sessionId, requestId, request, expiresAt }),
   onPermissionResolved: (sessionId, requestId) =>
     notify(NOTIFY_PERMISSION_RESOLVED, { sessionId, requestId }),
-  onElicitationRequest: (sessionId, requestId, context) =>
-    notify(NOTIFY_ELICITATION_REQUESTED, { sessionId, requestId, ...context }),
+  onElicitationRequest: (sessionId, requestId, context, expiresAt) =>
+    notify(NOTIFY_ELICITATION_REQUESTED, { sessionId, requestId, ...context, expiresAt }),
   onElicitationResolved: (requestId) => notify(NOTIFY_ELICITATION_RESOLVED, { requestId }),
 });
 
-async function dispatch(request: JsonRpcRequest): Promise<unknown> {
-  switch (request.method) {
-    case 'sessions.list': {
-      // The sessions the runtime holds are listed even when the database would hide them:
-      // one just started has no title and no turns yet.
-      const sessions = listSessions(runtime.status().activeSessionIds).map((session) => ({
-        ...session,
-        loaded: runtime.isActive(session.sessionId),
-      }));
-      return { sessions };
-    }
-
-    case 'sessions.find': {
-      const { prefix } = request.params as { prefix: string };
-      const sessions = findSessions(prefix).map((session) => ({
-        ...session,
-        loaded: runtime.isActive(session.sessionId),
-      }));
-      return { sessions };
-    }
-
-    case 'sessions.transcript': {
-      const { sessionId, limit, before } = request.params as {
-        sessionId: string;
-        limit?: number;
-        before?: number;
-      };
-      return readTranscript(sessionId, limit, before);
-    }
-
-    case 'sessions.changes': {
-      const { sessionId, since } = request.params as { sessionId: string; since?: string };
-      await runtime.flushChanges(sessionId);
-      return { changes: sessionChanges(sessionId, since) };
-    }
-
-    case 'sessions.diff': {
-      const { sessionId, path, since } = request.params as { sessionId: string; path: string; since?: string };
-      await runtime.flushChanges(sessionId);
-      return sessionDiff(sessionId, path, since);
-    }
-
-    case 'sessions.send': {
-      const { sessionId, prompt, mode, attachments } = request.params as {
-        sessionId: string;
-        prompt: string;
-        mode?: 'enqueue' | 'immediate';
-        attachments?: Attachment[];
-      };
-      return runtime.send(sessionId, prompt, mode, attachments);
-    }
-
-    case 'sessions.abort': {
-      const { sessionId } = request.params as { sessionId: string };
-      await runtime.abort(sessionId);
-      return null;
-    }
-
-    case 'sessions.evict': {
-      const { sessionId } = request.params as { sessionId: string };
-      await runtime.evict(sessionId);
-      return null;
-    }
-
-    case 'sessions.resolvePermission': {
-      const { requestId, choice } = request.params as {
-        requestId: string;
-        choice: PermissionChoice;
-      };
-      runtime.resolvePermission(requestId, choice);
-      return null;
-    }
-
-    case 'sessions.resolveElicitation': {
-      const { requestId, action, content } = request.params as {
-        requestId: string;
-        action: ElicitationAction;
-        content?: Record<string, ElicitationFieldValue>;
-      };
-      runtime.resolveElicitation(requestId, action, content);
-      return null;
-    }
-
-    case 'sessions.create': {
-      const { workingDirectory } = request.params as { workingDirectory: string };
-      return runtime.create(workingDirectory);
-    }
-
-    case 'models.list':
-      return { models: await runtime.models() };
-
-    case 'commands.list': {
-      const { sessionId } = (request.params ?? {}) as { sessionId?: string };
-      return { commands: await runtime.commands(sessionId) };
-    }
-
-    case 'commands.invoke': {
-      const { sessionId, name, input } = request.params as {
-        sessionId: string;
-        name: string;
-        input?: string;
-      };
-      return { outcome: await runtime.invoke(sessionId, name, input) };
-    }
-
-    case 'sessions.model': {
-      const { sessionId } = request.params as { sessionId: string };
-      return { current: await lastModel(sessionId) };
-    }
-
-    case 'sessions.setModel': {
-      const { sessionId, model, reasoningEffort, contextTier } = request.params as {
-        sessionId: string;
-        model: string;
-        reasoningEffort?: ReasoningEffort;
-        contextTier?: ContextTier;
-      };
-      await runtime.setModel(sessionId, model, reasoningEffort, contextTier);
-      return null;
-    }
-
-    case 'git.state': {
-      const { cwd } = request.params as { cwd: string };
-      return { state: await treeStateOf(cwd) };
-    }
-
-    case 'runtime.status':
-      return runtime.status();
-
-    default:
-      throw new Error(`Unknown method: ${request.method}`);
-  }
-}
+const handlers = createHandlers(runtime);
 
 /** Requests still running, so shutdown can wait for them to settle. */
 const inFlight = new Set<Promise<void>>();
@@ -222,7 +99,7 @@ function handle(line: string, channel: Channel): void {
 
   const reply = (response: JsonRpcResponse) => channel.write(response);
 
-  const task = dispatch(request)
+  const task = dispatch(handlers, request)
     .then((result) => reply({ jsonrpc: '2.0', id: request.id, result }))
     .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);

@@ -24,18 +24,36 @@ import type {
   SessionLoadedNotification,
   SessionChangesNotification,
   SessionModel,
+  ShellResult,
+  QueuedItem,
+  SidecarMethod,
+  SidecarRequests,
   SlashCommand,
+  StashParams,
   TreeState,
 } from '../../shared/protocol';
 
-/** Single entry point for every sidecar call, so transport details stay in one place. */
-async function request<T>(method: string, params?: unknown): Promise<T> {
-  return invoke<T>('sidecar_request', { method, params: params ?? null });
+/**
+ * Single entry point for every sidecar call, so transport details stay in one place.
+ *
+ * Typed against the shared table rather than against a bare string: the method name and its
+ * parameters cross a process boundary, where nothing checks them, so a rename on one side
+ * used to be found by running the app rather than by building it. The result type comes from
+ * the same table, which is why no call site below states one.
+ *
+ * The rest parameter is how a method that takes nothing is called with nothing: a plain
+ * optional argument would let every other call omit its parameters too.
+ */
+async function request<M extends SidecarMethod>(
+  method: M,
+  ...[params]: SidecarRequests[M]['params'] extends void ? [] : [SidecarRequests[M]['params']]
+): Promise<SidecarRequests[M]['result']> {
+  return invoke('sidecar_request', { method, params: params ?? null });
 }
 
 /** Reads the sidebar model from session-store.db. Spawns no Copilot process. */
 export function listSessions(): Promise<ListSessionsResult> {
-  return request<ListSessionsResult>('sessions.list');
+  return request('sessions.list');
 }
 
 /**
@@ -46,17 +64,22 @@ export function listSessions(): Promise<ListSessionsResult> {
  * roughly double its cost for results nobody normally looks at.
  */
 export function findSessions(prefix: string): Promise<ListSessionsResult> {
-  return request<ListSessionsResult>('sessions.find', { prefix });
+  return request('sessions.find', { prefix });
+}
+
+/** Which of these sessions still exist on disk. Reads directory entries; starts no process. */
+export function existingSessions(sessionIds: string[]): Promise<string[]> {
+  return request('sessions.exist', { sessionIds }).then((r) => r.sessionIds);
 }
 
 /** What the runtime is holding. Reports only; starts no process. */
 export function runtimeStatus(): Promise<RuntimeStatus> {
-  return request<RuntimeStatus>('runtime.status');
+  return request('runtime.status');
 }
 
 /** The models this account may use. Starts the shared server, so it is asked for lazily. */
 export async function listModels(): Promise<ModelChoice[]> {
-  const { models } = await request<{ models: ModelChoice[] }>('models.list');
+  const { models } = await request('models.list');
   return models;
 }
 
@@ -67,7 +90,7 @@ export async function listModels(): Promise<ModelChoice[]> {
  * few that only mean something inside a conversation. A cold one is never resumed for this.
  */
 export async function listCommands(sessionId?: string): Promise<SlashCommand[]> {
-  const { commands } = await request<{ commands: SlashCommand[] }>('commands.list', { sessionId });
+  const { commands } = await request('commands.list', { sessionId });
   return commands;
 }
 
@@ -77,7 +100,7 @@ export async function invokeCommand(
   name: string,
   input?: string,
 ): Promise<CommandOutcome> {
-  const { outcome } = await request<{ outcome: CommandOutcome }>('commands.invoke', {
+  const { outcome } = await request('commands.invoke', {
     sessionId,
     name,
     input,
@@ -85,9 +108,34 @@ export async function invokeCommand(
   return outcome;
 }
 
+/**
+ * Queue a command behind the running turn rather than refusing it.
+ *
+ * False means the session does not queue locally, which is the one case worth handling
+ * rather than assuming.
+ */
+export async function enqueueCommand(
+  sessionId: string,
+  command: string,
+  displayText?: string,
+): Promise<boolean> {
+  const { queued } = await request('commands.enqueue', {
+    sessionId,
+    command,
+    displayText,
+  });
+  return queued;
+}
+
+/** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
+export async function sessionQueue(sessionId: string): Promise<QueuedItem[]> {
+  const { items } = await request('sessions.queue', { sessionId });
+  return items;
+}
+
 /** What a session runs on, read from its log. Costs no Copilot process. */
 export async function sessionModel(sessionId: string): Promise<SessionModel | null> {
-  const { current } = await request<{ current: SessionModel | null }>('sessions.model', { sessionId });
+  const { current } = await request('sessions.model', { sessionId });
   return current;
 }
 
@@ -98,12 +146,12 @@ export function setSessionModel(
   reasoningEffort?: ReasoningEffort,
   contextTier?: ContextTier,
 ): Promise<void> {
-  return request<void>('sessions.setModel', { sessionId, model, reasoningEffort, contextTier });
+  return request('sessions.setModel', { sessionId, model, reasoningEffort, contextTier });
 }
 
 /** What git says about a directory now. Null when it is not in a repository. */
 export async function gitState(cwd: string): Promise<TreeState | null> {
-  const { state } = await request<{ state: TreeState | null }>('git.state', { cwd });
+  const { state } = await request('git.state', { cwd });
   return state;
 }
 
@@ -113,7 +161,7 @@ export function getTranscript(
   limit?: number,
   before?: number,
 ): Promise<GetTranscriptResult> {
-  return request<GetTranscriptResult>('sessions.transcript', { sessionId, limit, before });
+  return request('sessions.transcript', { sessionId, limit, before });
 }
 
 /**
@@ -125,26 +173,64 @@ export function getTranscript(
  * With `since`, only the turns after that snapshot timestamp are read.
  */
 export function getChanges(sessionId: string, since?: string): Promise<{ changes: SessionChange[] }> {
-  return request<{ changes: SessionChange[] }>('sessions.changes', { sessionId, since });
+  return request('sessions.changes', { sessionId, since });
 }
 
 /** The diff for one of those files, over the same span the list was built with. */
 export function getDiff(sessionId: string, path: string, since?: string): Promise<FileDiff> {
-  return request<FileDiff>('sessions.diff', { sessionId, path, since });
+  return request('sessions.diff', { sessionId, path, since });
 }
 
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */
 export function createSession(workingDirectory?: string): Promise<{ sessionId: string }> {
-  return request<{ sessionId: string }>('sessions.create', { workingDirectory });
+  return request('sessions.create', { workingDirectory });
 }
 
 /** Resumes the session if it is cold, then sends. This is the only call that costs memory. */
 export function sendMessage(params: SendParams): Promise<SendResult> {
-  return request<SendResult>('sessions.send', params);
+  return request('sessions.send', params);
+}
+
+/**
+ * Write a pasted file beside the session's record and hand back its path.
+ *
+ * Costs nothing: a disk write in the sidecar, not a Copilot process. Only paths can be
+ * attached to a message, and clipboard content has none.
+ */
+export async function stashPaste(params: StashParams): Promise<string> {
+  const { path } = await request('attachments.stash', params);
+  return path;
+}
+
+/**
+ * An image as a data URL, for a file the webview has no way to load itself.
+ *
+ * Null for anything that is not a readable image within the size limit, since a preview
+ * that does not appear is the entire consequence.
+ */
+export async function previewImage(path: string): Promise<string | null> {
+  const { dataUrl } = await request('attachments.preview', { path });
+  return dataUrl;
 }
 
 export function abortSession(sessionId: string): Promise<void> {
-  return request<void>('sessions.abort', { sessionId });
+  return request('sessions.abort', { sessionId });
+}
+
+/**
+ * Run a shell command the reader typed, in the session's own shell.
+ *
+ * The runtime emits it as a tool call, so the transcript shows it like any other and the
+ * agent has its output in context afterwards. The returned result is the answer to this
+ * request; `requestId` is the handle for cancelling it.
+ */
+export function runShell(sessionId: string, requestId: string, command: string): Promise<ShellResult> {
+  return request('sessions.shell', { sessionId, requestId, command });
+}
+
+/** Stop a shell command started by `runShell`. Does not touch the agent's turn. */
+export function cancelShell(sessionId: string, requestId: string): Promise<void> {
+  return request('sessions.cancelShell', { sessionId, requestId });
 }
 
 /** Answer a pending tool permission request, unblocking the agent. */
@@ -153,7 +239,7 @@ export function resolvePermission(
   requestId: string,
   choice: PermissionChoice,
 ): Promise<void> {
-  return request<void>('sessions.resolvePermission', { sessionId, requestId, choice });
+  return request('sessions.resolvePermission', { sessionId, requestId, choice });
 }
 
 /** Live session events forwarded from the sidecar. */
@@ -214,5 +300,5 @@ export function resolveElicitation(
   action: ElicitationAction,
   content?: Record<string, ElicitationFieldValue>,
 ): Promise<void> {
-  return request<void>('sessions.resolveElicitation', { requestId, action, content });
+  return request('sessions.resolveElicitation', { requestId, action, content });
 }
