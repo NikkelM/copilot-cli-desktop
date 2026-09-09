@@ -14,16 +14,30 @@ export class PendingRequests<T> {
    * @param prefix distinguishes ids between registries
    * @param timeoutMs how long to wait before giving up on the user
    * @param onTimeout the value to settle with when nobody answers
+   * @param onSettled told whenever a request stops waiting, however it stopped
+   *
+   * `onSettled` lives here rather than at each call site because one path settles from
+   * inside this class - giving up on the user - and a caller cannot announce what it did
+   * not do. Announcing it per call site meant that path announced nothing, and the UI went
+   * on offering a prompt whose answer had nowhere left to go.
    */
   constructor(
     private readonly prefix: string,
     private readonly timeoutMs: number,
     private readonly onTimeout: () => T,
+    private readonly onSettled?: (sessionId: string, requestId: string) => void,
   ) {}
 
-  /** Register a request and return its id along with the promise the agent waits on. */
-  add(sessionId: string): { requestId: string; answered: Promise<T> } {
+  /**
+   * Register a request and return its id along with the promise the agent waits on.
+   *
+   * `expiresAt` comes back because a blocked agent is the one wait that ends badly if it
+   * is not noticed, and only this class knows when it lapses. Reported rather than kept:
+   * the timer is authoritative, this is what to tell the reader about it.
+   */
+  add(sessionId: string): { requestId: string; expiresAt: string; answered: Promise<T> } {
     const requestId = `${this.prefix}-${this.nextId++}`;
+    const expiresAt = new Date(Date.now() + this.timeoutMs).toISOString();
 
     const answered = new Promise<T>((resolve) => {
       const timer = setTimeout(() => this.settle(requestId, this.onTimeout()), this.timeoutMs);
@@ -31,7 +45,7 @@ export class PendingRequests<T> {
       this.entries.set(requestId, { sessionId, resolve, timer });
     });
 
-    return { requestId, answered };
+    return { requestId, expiresAt, answered };
   }
 
   /** Answer a request. Ignored if it was already settled, so a double answer is harmless. */
@@ -42,6 +56,7 @@ export class PendingRequests<T> {
     clearTimeout(entry.timer);
     this.entries.delete(requestId);
     entry.resolve(value);
+    this.onSettled?.(entry.sessionId, requestId);
     return entry.sessionId;
   }
 

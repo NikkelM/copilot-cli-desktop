@@ -18,22 +18,14 @@ import type {
   ModelChoice,
   PermissionChoice,
   ReasoningEffort,
+  ShellResult,
+  QueuedItem,
   SlashCommand,
 } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
 
 import { resolveCliPath } from './paths.js';
-
-/**
- * Remove terminal colour and cursor sequences from command output.
- *
- * Commands that expect a terminal write them unasked, and this app draws HTML: left in,
- * the escape would appear as its own characters in the middle of the text it was meant to
- * colour. Matches the CSI and OSC forms, which is everything the CLI's own output uses.
- */
-function stripAnsi(text: string): string {
-  return text.replace(/\u001B\[[0-9;?]*[A-Za-z]|\u001B\][^\u0007\u001B]*(?:\u0007|\u001B\\)/g, '');
-}
+import { stripAnsi } from '../../shared/ansi.js';
 
 import { PendingRequests } from './pending.js';
 
@@ -51,6 +43,14 @@ interface UserInputResponse {
   answer: string;
   wasFreeform: boolean;
 }
+
+/**
+ * How much of a running tool's output is worth forwarding.
+ *
+ * Four times what the transcript will show, so ANSI escapes stripped on the way to the
+ * screen cannot leave it short of a full view.
+ */
+const MAX_PARTIAL_OUTPUT = 16_000;
 
 /** How a question was posed, which decides the shape of the answer. */
 export interface AskContext {
@@ -109,12 +109,27 @@ export interface RuntimeOptions {
    * refreshes when the answer moves and stays still the rest of the time.
    */
   onChangesRecorded?: (sessionId: string) => void;
-  /** Asks the UI to approve or deny a tool call. */
-  onPermissionRequest?: (sessionId: string, requestId: string, request: PermissionRequest) => void;
+  /**
+   * Asks the UI to approve or deny a tool call.
+   *
+   * xpiresAt is when the request lapses on its own: a blocked agent is the one wait that
+   * ends badly if nobody notices it, so the prompt can say how long is left (#70).
+   */
+  onPermissionRequest?: (
+    sessionId: string,
+    requestId: string,
+    request: PermissionRequest,
+    expiresAt: string,
+  ) => void;
   /** Tells the UI a pending request is no longer awaiting an answer. */
   onPermissionResolved?: (sessionId: string, requestId: string) => void;
-  /** Asks the UI to put a question from the agent to the user. */
-  onElicitationRequest?: (sessionId: string, requestId: string, context: AskContext) => void;
+  /** Asks the UI to put a question from the agent to the user. Lapses like a permission. */
+  onElicitationRequest?: (
+    sessionId: string,
+    requestId: string,
+    context: AskContext,
+    expiresAt: string,
+  ) => void;
   /** Tells the UI a question is no longer awaiting an answer. */
   onElicitationResolved?: (requestId: string) => void;
   /**
@@ -158,12 +173,14 @@ export class SessionRuntime {
     sessionId: string,
     requestId: string,
     request: PermissionRequest,
+    expiresAt: string,
   ) => void;
   private readonly onPermissionResolved?: (sessionId: string, requestId: string) => void;
   private readonly onElicitationRequest?: (
     sessionId: string,
     requestId: string,
     context: AskContext,
+    expiresAt: string,
   ) => void;
   private readonly onElicitationResolved?: (requestId: string) => void;
   private readonly createClient: () => Promise<CopilotClient>;
@@ -188,17 +205,29 @@ export class SessionRuntime {
     this.createClient = options.createClient ?? defaultClientFactory;
 
     const timeout = options.permissionTimeoutMs ?? 5 * 60_000;
-    this.permissions = new PendingRequests<PermissionRequestResult>('perm', timeout, () => ({
-      kind: 'user-not-available',
-    }));
+    const permissionResolved = (sessionId: string, requestId: string) =>
+      this.onPermissionResolved?.(sessionId, requestId);
+    const questionResolved = (_sessionId: string, requestId: string) => this.onElicitationResolved?.(requestId);
+
+    this.permissions = new PendingRequests<PermissionRequestResult>(
+      'perm',
+      timeout,
+      () => ({ kind: 'user-not-available' }),
+      permissionResolved,
+    );
     // Giving up on a question is a decline: the agent asked and nobody answered.
-    this.elicitations = new PendingRequests<ElicitationResult>('elicit', timeout, () => ({
-      action: 'decline',
-    }));
-    this.userInputs = new PendingRequests<UserInputResponse>('input', timeout, () => ({
-      answer: '',
-      wasFreeform: true,
-    }));
+    this.elicitations = new PendingRequests<ElicitationResult>(
+      'elicit',
+      timeout,
+      () => ({ action: 'decline' }),
+      questionResolved,
+    );
+    this.userInputs = new PendingRequests<UserInputResponse>(
+      'input',
+      timeout,
+      () => ({ answer: '', wasFreeform: true }),
+      questionResolved,
+    );
   }
 
   /** Whether the CLI executable could be located on this machine. */
@@ -357,8 +386,8 @@ export class SessionRuntime {
       return Promise.resolve({ kind: 'user-not-available' });
     }
 
-    const { requestId, answered } = this.permissions.add(sessionId);
-    this.onPermissionRequest(sessionId, requestId, request);
+    const { requestId, expiresAt, answered } = this.permissions.add(sessionId);
+    this.onPermissionRequest(sessionId, requestId, request, expiresAt);
     return answered;
   }
 
@@ -375,8 +404,7 @@ export class SessionRuntime {
   }
 
   private settlePermission(requestId: string, result: PermissionRequestResult): void {
-    const sessionId = this.permissions.settle(requestId, result);
-    if (sessionId) this.onPermissionResolved?.(sessionId, requestId);
+    this.permissions.settle(requestId, result);
   }
 
   /**
@@ -388,7 +416,7 @@ export class SessionRuntime {
   private askElicitation(sessionId: string, context: ElicitationContext): Promise<ElicitationResult> {
     if (!this.onElicitationRequest) return Promise.resolve({ action: 'decline' });
 
-    const { requestId, answered } = this.elicitations.add(sessionId);
+    const { requestId, expiresAt, answered } = this.elicitations.add(sessionId);
     this.onElicitationRequest(sessionId, requestId, {
       kind: 'form',
       message: context.message,
@@ -396,7 +424,7 @@ export class SessionRuntime {
       choices: [],
       mode: context.mode ?? null,
       url: context.url ?? null,
-    });
+    }, expiresAt);
     return answered;
   }
 
@@ -409,7 +437,7 @@ export class SessionRuntime {
   private askUserInput(sessionId: string, request: UserInputRequest): Promise<UserInputResponse> {
     if (!this.onElicitationRequest) return Promise.resolve({ answer: '', wasFreeform: true });
 
-    const { requestId, answered } = this.userInputs.add(sessionId);
+    const { requestId, expiresAt, answered } = this.userInputs.add(sessionId);
     this.onElicitationRequest(sessionId, requestId, {
       kind: 'input',
       message: request.question,
@@ -417,7 +445,7 @@ export class SessionRuntime {
       choices: request.choices ?? [],
       mode: null,
       url: null,
-    });
+    }, expiresAt);
     return answered;
   }
 
@@ -431,47 +459,53 @@ export class SessionRuntime {
       const given = content?.answer;
       const answer = action === 'accept' && given !== undefined ? String(given) : '';
       // The CLI expects a string either way; an empty answer reads as "no preference".
-      if (this.userInputs.settle(requestId, { answer, wasFreeform: true })) {
-        this.onElicitationResolved?.(requestId);
-      }
+      this.userInputs.settle(requestId, { answer, wasFreeform: true });
       return;
     }
 
     // Content is only meaningful on accept; sending it otherwise would imply an answer
     // the user did not give.
     const result: ElicitationResult = action === 'accept' ? { action, content } : { action };
-    if (this.elicitations.settle(requestId, result)) this.onElicitationResolved?.(requestId);
+    this.elicitations.settle(requestId, result);
   }
 
   /** Settle every request for a session, so tearing it down cannot leave the agent hanging. */
   private abandonPending(sessionId: string): void {
-    for (const requestId of this.permissions.abandon(sessionId, { kind: 'user-not-available' })) {
-      this.onPermissionResolved?.(sessionId, requestId);
-    }
-    for (const requestId of this.elicitations.abandon(sessionId, { action: 'cancel' })) {
-      this.onElicitationResolved?.(requestId);
-    }
-    for (const requestId of this.userInputs.abandon(sessionId, { answer: '', wasFreeform: true })) {
-      this.onElicitationResolved?.(requestId);
-    }
+    this.permissions.abandon(sessionId, { kind: 'user-not-available' });
+    this.elicitations.abandon(sessionId, { action: 'cancel' });
+    this.userInputs.abandon(sessionId, { answer: '', wasFreeform: true });
   }
 
   private handleEvent(sessionId: string, event: SessionEvent): void {
     const entry = this.loaded.get(sessionId);
 
     if (entry) {
-      // Track turn boundaries so a session mid-turn is never evicted underneath itself.
+      // `assistant.turn_end` is one model round trip, not the end of the work: a request
+      // that calls tools ends and starts a turn nine times over on average, leaving a gap
+      // of a few milliseconds between each. Reading those gaps as idleness meant a working
+      // session could be evicted underneath itself and a typed-ahead message could be
+      // spliced into the run it was meant to follow, so what counts as busy here is the
+      // whole request, which is what `session.idle` marks the end of.
       if (event.type === 'assistant.turn_start') entry.busy = true;
-      if (event.type === 'session.idle' || event.type === 'assistant.turn_end') entry.busy = false;
+      if (event.type === 'session.idle' || event.type === 'abort') entry.busy = false;
 
-      // `assistant.turn_end` is one model round trip, not the end of the work: a turn that
-      // calls a tool ends and starts again several times over. The runtime finishes writing
-      // its record of the whole thing when the session goes idle, so that is the moment the
-      // list is worth reading again - announcing the round trips instead showed the panel
-      // the state before the change it was announcing.
+      // The runtime finishes writing its record of the work when the session goes idle, so
+      // that is the moment the list is worth reading again - announcing the round trips
+      // instead showed the panel the state before the change it was announcing.
       if (event.type === 'session.idle') this.onChangesRecorded?.(sessionId);
 
       this.touch(sessionId);
+    }
+
+    // A running tool resends everything it has produced so far on every chunk, not the
+    // increment its name promises, so a build writing half a megabyte would ship half a
+    // megabyte down the pipe on each of its thousands of chunks. The UI shows the first
+    // few thousand characters and discards the rest, so the tail is carried at quadratic
+    // cost to be thrown away. Cut here, where it leaves the SDK.
+    if (event.type === 'tool.execution_partial_result' && event.data.partialOutput.length > MAX_PARTIAL_OUTPUT) {
+      const data = { ...event.data, partialOutput: event.data.partialOutput.slice(0, MAX_PARTIAL_OUTPUT) };
+      this.onEvent?.(sessionId, { ...event, data });
+      return;
     }
 
     this.onEvent?.(sessionId, event);
@@ -483,16 +517,34 @@ export class SessionRuntime {
     if (index !== -1) this.order.splice(index, 1);
     this.order.unshift(sessionId);
 
+    this.armIdleTimer(sessionId);
+  }
+
+  /**
+   * Start the countdown that releases a session nobody is using.
+   *
+   * A session that is working is not idle however long it has been quiet, since a shell
+   * command can run for many minutes without saying anything. The countdown starts again
+   * instead of evicting, so the session is released once its work ends rather than being
+   * pinned in memory by a timer that already fired.
+   */
+  private armIdleTimer(sessionId: string): void {
     const entry = this.loaded.get(sessionId);
     if (!entry) return;
 
     if (entry.idleTimer) clearTimeout(entry.idleTimer);
-    if (this.idleTimeoutMs > 0) {
-      entry.idleTimer = setTimeout(() => {
-        void this.evict(sessionId);
-      }, this.idleTimeoutMs);
-      entry.idleTimer.unref(); // Never keep the sidecar alive just to evict.
-    }
+    if (this.idleTimeoutMs <= 0) return;
+
+    entry.idleTimer = setTimeout(() => {
+      if (this.loaded.get(sessionId)?.busy) {
+        this.armIdleTimer(sessionId);
+        return;
+      }
+      // A disconnect that fails is not worth crashing the sidecar over: every other session
+      // would go down with it, to close one that is already beyond use.
+      void this.evict(sessionId).catch(() => undefined);
+    }, this.idleTimeoutMs);
+    entry.idleTimer.unref(); // Never keep the sidecar alive just to evict.
   }
 
   /** Disconnect least recently used sessions until the cap is satisfied. */
@@ -533,9 +585,15 @@ export class SessionRuntime {
    *
    * `disconnect()` is not destructive: the session can be resumed again later with its
    * history intact, which is what makes automatic eviction safe.
+   *
+   * Doing as it is told, including for a session mid-request: whether a working session
+   * should be let go is a question for the caller, and the two callers that reclaim memory
+   * on their own account both refuse to. Somebody asking for a session to be released has
+   * already decided.
    */
-  async evict(sessionId: string): Promise<void> {    const entry = this.loaded.get(sessionId);
-    if (!entry || entry.busy) return;
+  async evict(sessionId: string): Promise<void> {
+    const entry = this.loaded.get(sessionId);
+    if (!entry) return;
 
     if (entry.idleTimer) clearTimeout(entry.idleTimer);
     entry.unsubscribe();
@@ -574,16 +632,20 @@ export class SessionRuntime {
     const entry = this.loaded.get(sessionId);
     if (entry) entry.lastPrompt = prompt;
 
-    return {
-      messageId: await session.send({
-        prompt,
-        mode: queued ? 'enqueue' : 'immediate',
-        // Passed straight through: the runtime reads the files, so nothing here needs to
-        // open them, and a path is all it wants.
-        ...(attachments?.length ? { attachments } : {}),
-      }),
-      queued,
-    };
+    const messageId = await session.send({
+      prompt,
+      mode: queued ? 'enqueue' : 'immediate',
+      // Passed straight through: the runtime reads the files, so nothing here needs to
+      // open them, and a path is all it wants.
+      ...(attachments?.length ? { attachments } : {}),
+    });
+
+    // The work starts here rather than at the first `assistant.turn_start`, so that nothing
+    // in the moment before the runtime announces the turn can evict the session or mistake
+    // a second message for an interruption.
+    if (entry) entry.busy = true;
+
+    return { messageId, queued };
   }
 
   /**
@@ -661,13 +723,58 @@ export class SessionRuntime {
       description: command.description,
       aliases: command.aliases ?? [],
       ...(command.input?.hint ? { hint: command.input.hint } : {}),
-      ...(command.input?.required ? { required: true } : {}),
       ...(command.input?.choices?.length
         ? { choices: command.input.choices.map(({ name, description }) => ({ name, description })) }
         : {}),
       allowDuringTurn: command.allowDuringAgentExecution,
       ...(command.experimental ? { experimental: true } : {}),
     }));
+  }
+
+  /**
+   * What a session has waiting behind the turn it is running.
+   *
+   * Read from the runtime rather than tracked here. This app used to keep its own list,
+   * on the belief that the runtime offered no way to ask - it does, and a second copy of
+   * a queue can only ever disagree with the first. The runtime's also holds things this
+   * app never put there: commands queued during a turn, model changes, and messages sent
+   * from a terminal attached to the same session.
+   *
+   * A session that is not loaded has no queue, and asking must not be what loads it: the
+   * sidebar asks about every session, and resuming each one to be told it has nothing
+   * waiting is the cost this app exists to avoid.
+   */
+  async queue(sessionId: string): Promise<QueuedItem[]> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return [];
+
+    const { items } = await live.rpc.queue.pendingItems();
+    return items.map((item) => ({
+      id: item.id,
+      kind: item.kind === 'message' ? 'message' : item.kind === 'command' ? 'command' : 'other',
+      text: stripAnsi(item.displayText),
+      ...(item.messageId ? { messageId: item.messageId } : {}),
+    }));
+  }
+
+  /**
+   * Put a slash command in the queue behind the running turn.
+   *
+   * The runtime runs it itself when the queue drains: it emits no request for the host to
+   * run one, which was the open question in #147. Verified by enqueuing `/compact` during
+   * a turn - `pending_messages.modified` fires on the way in and again as it drains, and
+   * no `command.queued` ever arrives.
+   *
+   * `queued: false` means the session does not queue locally, which is the one case a
+   * caller has to handle rather than assume.
+   */
+  async enqueue(sessionId: string, command: string, displayText?: string): Promise<boolean> {
+    const session = await this.ensureSession(sessionId);
+    const { queued } = await session.rpc.commands.enqueue({
+      command,
+      ...(displayText ? { displayText } : {}),
+    });
+    return queued;
   }
 
   /**
@@ -738,19 +845,66 @@ export class SessionRuntime {
     });
   }
 
+  /**
+   * Run a shell command the reader asked for, in the session's own shell.
+   *
+   * Not `execFile` here: going through the runtime means the command is emitted as a tool
+   * call into the session, so its output lands in the event log, persists across restarts,
+   * and is in the agent's context afterwards. That last part is the point - `!git status`
+   * is worth having because the agent can then be asked about what it printed. A command
+   * run beside the session would give none of that (#134).
+   *
+   * The shell is the session's, which is PowerShell on Windows and bash elsewhere. Forcing
+   * a different one would hand the reader a different environment from the agent's.
+   *
+   * `requestId` is ours to choose and is the handle `cancelShell` needs, so the caller has
+   * to supply one it kept.
+   */
+  async shell(sessionId: string, requestId: string, command: string): Promise<ShellResult> {
+    const session = await this.ensureSession(sessionId);
+    const result = await session.rpc.shell.executeUserRequested({ requestId, command });
+
+    return {
+      success: result.success,
+      // The session's shell is a real terminal as far as the command is concerned, so its
+      // output carries colour sequences. This app draws HTML, where they read as letters.
+      output: stripAnsi(result.output),
+      ...(typeof result.exitCode === 'number' ? { exitCode: result.exitCode } : {}),
+      ...(result.error ? { error: stripAnsi(result.error) } : {}),
+    };
+  }
+
+  /**
+   * Stop a shell command started by `shell`.
+   *
+   * Separate from `abort`: a shell command is not the agent's turn, and stopping one should
+   * not stop the other.
+   */
+  async cancelShell(sessionId: string, requestId: string): Promise<void> {
+    const entry = this.loaded.get(sessionId);
+    // Nothing to cancel in a session that is not loaded, and resuming one to say so would
+    // start a process to address a command that cannot be running.
+    if (!entry) return;
+
+    await entry.session.rpc.shell.cancelUserRequested({ requestId });
+  }
+
   /** Stop the current turn without unloading the session. */
   async abort(sessionId: string): Promise<void> {
     // Anything waiting on the user belongs to the turn being stopped, so settle it too;
     // otherwise the promise the agent is blocked on would never resolve.
     this.abandonPending(sessionId);
-    await this.loaded.get(sessionId)?.session.abort();
+
+    const entry = this.loaded.get(sessionId);
+    // Stopped work is not work: a session left marked busy would never be released.
+    if (entry) entry.busy = false;
+
+    await entry?.session.abort();
   }
 
   /** Release every session and stop the shared server. */
   async shutdown(): Promise<void> {
     for (const sessionId of [...this.order]) {
-      const entry = this.loaded.get(sessionId);
-      if (entry) entry.busy = false; // Shutdown takes precedence over an in-flight turn.
       await this.evict(sessionId).catch(() => undefined);
     }
 

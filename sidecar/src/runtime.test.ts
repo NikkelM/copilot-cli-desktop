@@ -21,7 +21,31 @@ function makeSession(id: string) {
       for (const handler of [...handlers]) handler(event);
     },
     send: vi.fn(async (_options: { prompt: string; mode?: string }) => `msg-${id}`),
-    rpc: { history: { listRewindPoints: vi.fn(async () => ({ points: [] })) } },
+    rpc: {
+      history: { listRewindPoints: vi.fn(async () => ({ points: [] })) },
+      shell: {
+        executeUserRequested: vi.fn(async (_params: { requestId: string; command: string }) => ({
+          toolCallId: 'call-1',
+          success: true,
+          output: 'ok\u001B[0m',
+          exitCode: 0,
+        })),
+        cancelUserRequested: vi.fn(async (_params: { requestId: string }) => ({ cancelled: true })),
+      },
+      queue: {
+        pendingItems: vi.fn(async () => ({
+          items: [
+            { id: 'q1', messageId: 'm1', kind: 'message', displayText: 'do a thing\u001B[0m', agentMode: 'agent' },
+            { id: 'q2', kind: 'command', displayText: '/compact', agentMode: 'agent' },
+            { id: 'q3', kind: 'model-change', displayText: '/model gpt-5', agentMode: 'agent' },
+          ],
+          steeringMessages: [],
+        })),
+      },
+      commands: {
+        enqueue: vi.fn(async (_params: { command: string; displayText?: string }) => ({ queued: true })),
+      },
+    },
     abort: vi.fn(async function (this: { aborted: boolean }) {
       this.aborted = true;
     }),
@@ -65,6 +89,22 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
   });
 
   return { runtime, client, sessions, permissionHandlers, elicitationHandlers };
+}
+
+/**
+ * Send, then let the request finish.
+ *
+ * A session counts as busy from the moment a message is accepted until the runtime says it
+ * has gone idle, so a test about what happens between requests has to end one: a session
+ * left mid-request cannot be evicted, which is the whole point of the flag.
+ */
+async function sendAndFinish(
+  { runtime, sessions }: { runtime: SessionRuntime; sessions: Map<string, FakeSession> },
+  id: string,
+  prompt = 'x',
+): Promise<void> {
+  await runtime.send(id, prompt);
+  sessions.get(id)?.emit({ type: 'session.idle', data: {} });
 }
 
 describe('SessionRuntime', () => {
@@ -111,21 +151,23 @@ describe('SessionRuntime', () => {
   });
 
   it('evicts the least recently used session past the cap', async () => {
-    const { runtime, sessions } = makeRuntime({ maxLoadedSessions: 2 });
-    await runtime.send('a', 'x');
-    await runtime.send('b', 'x');
-    await runtime.send('c', 'x');
+    const harness = makeRuntime({ maxLoadedSessions: 2 });
+    const { runtime, sessions } = harness;
+    await sendAndFinish(harness, 'a');
+    await sendAndFinish(harness, 'b');
+    await sendAndFinish(harness, 'c');
 
     expect(sessions.get('a')?.disconnected).toBe(true);
     expect(runtime.status().activeSessionIds).toEqual(['c', 'b']);
   });
 
   it('evicts by recency of use, not order of loading', async () => {
-    const { runtime, sessions } = makeRuntime({ maxLoadedSessions: 2 });
-    await runtime.send('a', 'x');
-    await runtime.send('b', 'x');
-    await runtime.send('a', 'again'); // `b` is now the least recently used
-    await runtime.send('c', 'x');
+    const harness = makeRuntime({ maxLoadedSessions: 2 });
+    const { sessions } = harness;
+    await sendAndFinish(harness, 'a');
+    await sendAndFinish(harness, 'b');
+    await sendAndFinish(harness, 'a', 'again'); // `b` is now the least recently used
+    await sendAndFinish(harness, 'c');
 
     expect(sessions.get('b')?.disconnected).toBe(true);
     expect(sessions.get('a')?.disconnected).toBe(false);
@@ -133,7 +175,8 @@ describe('SessionRuntime', () => {
 
   // Disconnecting mid-turn would cut the agent off part way through its work.
   it('never evicts a session that is mid-turn', async () => {
-    const { runtime, sessions } = makeRuntime({ maxLoadedSessions: 1 });
+    const harness = makeRuntime({ maxLoadedSessions: 1 });
+    const { runtime, sessions } = harness;
     await runtime.send('busy', 'x');
     sessions.get('busy')?.emit({ type: 'assistant.turn_start', data: {} });
 
@@ -141,11 +184,38 @@ describe('SessionRuntime', () => {
     expect(sessions.get('busy')?.disconnected).toBe(false);
   });
 
-  it('allows eviction again once the turn ends', async () => {
+  /**
+   * The gap between the round trips of one request is not a moment of idleness, and a
+   * session evicted in it loses the work it was part way through. This is the case the
+   * test above missed for as long as `busy` was cleared on `assistant.turn_end`.
+   */
+  it('never evicts a session between the turns of one request', async () => {
+    const harness = makeRuntime({ maxLoadedSessions: 1 });
+    const { runtime, sessions } = harness;
+    await runtime.send('busy', 'x');
+    sessions.get('busy')?.emit({ type: 'assistant.turn_start', data: {} });
+    sessions.get('busy')?.emit({ type: 'assistant.turn_end', data: {} });
+
+    await runtime.send('other', 'x');
+    expect(sessions.get('busy')?.disconnected).toBe(false);
+  });
+
+  it('allows eviction again once the request has finished', async () => {
     const { runtime, sessions } = makeRuntime({ maxLoadedSessions: 1 });
     await runtime.send('busy', 'x');
     sessions.get('busy')?.emit({ type: 'assistant.turn_start', data: {} });
     sessions.get('busy')?.emit({ type: 'session.idle', data: {} });
+
+    await runtime.send('other', 'x');
+    expect(sessions.get('busy')?.disconnected).toBe(true);
+  });
+
+  // Reclaiming memory unasked is what has to wait for the work to finish. Being told to
+  // release a session is somebody having decided already.
+  it('releases a session mid-request when asked to directly', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('busy', 'x');
+    sessions.get('busy')?.emit({ type: 'assistant.turn_start', data: {} });
 
     await runtime.evict('busy');
     expect(sessions.get('busy')?.disconnected).toBe(true);
@@ -240,6 +310,38 @@ describe('permissions', () => {
     const pending = permissionHandlers.get('a')?.({ kind: 'shell' });
     await runtime.shutdown();
     await expect(pending).resolves.toEqual({ kind: 'user-not-available' });
+  });
+
+  /**
+   * Giving up on the user unblocks the agent, but the prompt is still on screen: without
+   * being told, the UI goes on offering buttons whose answer has nowhere left to go.
+   */
+  it('tells the UI when it gives up waiting for an answer', async () => {
+    const onPermissionResolved = vi.fn();
+    const { runtime, permissionHandlers } = makeRuntime({
+      onPermissionRequest: vi.fn(),
+      onPermissionResolved,
+      permissionTimeoutMs: 5,
+    });
+    await runtime.send('a', 'x');
+
+    await expect(permissionHandlers.get('a')?.({ kind: 'shell' })).resolves.toEqual({
+      kind: 'user-not-available',
+    });
+    expect(onPermissionResolved).toHaveBeenCalledWith('a', expect.stringMatching(/^perm-/));
+  });
+
+  it('tells the UI when it gives up waiting for an answer to a question', async () => {
+    const onElicitationResolved = vi.fn();
+    const { runtime, elicitationHandlers } = makeRuntime({
+      onElicitationRequest: vi.fn(),
+      onElicitationResolved,
+      permissionTimeoutMs: 5,
+    });
+    await runtime.send('a', 'x');
+
+    await elicitationHandlers.get('a')?.({ message: 'pick one' });
+    expect(onElicitationResolved).toHaveBeenCalledWith(expect.stringMatching(/^(elicit|input)-/));
   });
 });
 
@@ -403,7 +505,8 @@ describe('SessionRuntime flushing what it holds', () => {
  */
 describe('SessionRuntime queueing behind a running turn', () => {
   const busy = (session: FakeSession) => session.emit({ type: 'assistant.turn_start', data: {} });
-  const done = (session: FakeSession) => session.emit({ type: 'assistant.turn_end', data: {} });
+  const done = (session: FakeSession) => session.emit({ type: 'session.idle', data: {} });
+  const roundTrip = (session: FakeSession) => session.emit({ type: 'assistant.turn_end', data: {} });
   const modeOf = (session: FakeSession, call = 0) =>
     (session.send.mock.calls[call]?.[0] as { mode?: string } | undefined)?.mode;
 
@@ -426,7 +529,7 @@ describe('SessionRuntime queueing behind a running turn', () => {
     expect(modeOf(sessions.get('a')!, 1)).toBe('enqueue');
   });
 
-  it('stops queueing once the turn has ended', async () => {
+  it('stops queueing once the request has finished', async () => {
     const { runtime, sessions } = makeRuntime();
     await runtime.send('a', 'first');
     busy(sessions.get('a')!);
@@ -435,11 +538,46 @@ describe('SessionRuntime queueing behind a running turn', () => {
     expect((await runtime.send('a', 'second')).queued).toBe(false);
   });
 
+  /**
+   * A request that calls tools ends and starts a turn many times over. Sending immediately
+   * in one of those gaps interrupts the run the message was meant to follow, which is the
+   * opposite of what typing ahead is for.
+   */
+  it('keeps queueing between the turns of one request', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'first');
+    busy(sessions.get('a')!);
+    roundTrip(sessions.get('a')!);
+
+    expect((await runtime.send('a', 'second')).queued).toBe(true);
+    expect(modeOf(sessions.get('a')!, 1)).toBe('enqueue');
+  });
+
+  // Stopping the turn is the reader saying they want it to end, so the next message is not
+  // typed ahead of anything.
+  it('stops queueing once the turn is aborted', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'first');
+    busy(sessions.get('a')!);
+    await runtime.abort('a');
+
+    expect((await runtime.send('a', 'second')).queued).toBe(false);
+  });
+
+  // A message accepted but not yet announced as a turn is still work in flight.
+  it('queues behind a request whose first turn has not started', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.send('a', 'first');
+
+    expect((await runtime.send('a', 'second')).queued).toBe(true);
+  });
+
   // Another session being mid-turn says nothing about this one.
   it('judges each session on its own', async () => {
-    const { runtime, sessions } = makeRuntime();
+    const harness = makeRuntime();
+    const { runtime, sessions } = harness;
     await runtime.send('a', 'x');
-    await runtime.send('b', 'x');
+    await sendAndFinish(harness, 'b');
     busy(sessions.get('a')!);
 
     expect((await runtime.send('b', 'y')).queued).toBe(false);
@@ -460,5 +598,158 @@ describe('SessionRuntime queueing behind a running turn', () => {
   it('hands back the id the session gave the message', async () => {
     const { runtime } = makeRuntime();
     expect((await runtime.send('a', 'hello')).messageId).toBe('msg-a');
+  });
+});
+
+/**
+ * A shell command the reader typed. It goes through the runtime rather than being run
+ * beside it, so it is emitted as a tool call and its output reaches the agent's context -
+ * verified against the real runtime, which answers a question about it afterwards (#134).
+ */
+describe('running a shell command for the reader', () => {
+  it('runs it in the session, resuming one that is cold', async () => {
+    const { runtime, sessions } = makeRuntime();
+
+    const result = await runtime.shell('s1', 'req-1', 'git status');
+
+    expect(sessions.get('s1')!.rpc.shell.executeUserRequested).toHaveBeenCalledWith({
+      requestId: 'req-1',
+      command: 'git status',
+    });
+    expect(result.success).toBe(true);
+    expect(result.exitCode).toBe(0);
+  });
+
+  /** The session's shell is a terminal as far as the command knows; this app draws HTML. */
+  it('strips the terminal escapes out of the output', async () => {
+    const { runtime } = makeRuntime();
+    expect((await runtime.shell('s1', 'req-1', 'ls')).output).toBe('ok');
+  });
+
+  it('cancels by the handle the caller chose', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.shell('s1', 'req-1', 'sleep 60');
+
+    await runtime.cancelShell('s1', 'req-1');
+    expect(sessions.get('s1')!.rpc.shell.cancelUserRequested).toHaveBeenCalledWith({ requestId: 'req-1' });
+  });
+
+  /** Waking a session to cancel a command that cannot be running would cost a process. */
+  it('does not resume a cold session to cancel nothing', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.cancelShell('never-loaded', 'req-1');
+    expect(client.resumeSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('reading the queue the runtime owns', () => {
+  it('reports what a loaded session has waiting', async () => {
+    const { runtime } = makeRuntime();
+    // Loaded by sending; a session that was never woken has no queue to read.
+    await runtime.send('s1', 'hello');
+
+    const items = await runtime.queue('s1');
+
+    expect(items.map((item) => item.id)).toEqual(['q1', 'q2', 'q3']);
+    expect(items[0]).toMatchObject({ kind: 'message', messageId: 'm1' });
+    expect(items[1]).toMatchObject({ kind: 'command', text: '/compact' });
+  });
+
+  /** Anything that is neither is still waiting, and dropping it would undercount the queue. */
+  it('keeps an item it does not have a name for', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    expect((await runtime.queue('s1'))[2]).toMatchObject({ kind: 'other', text: '/model gpt-5' });
+  });
+
+  it('strips the terminal escapes out of what it will draw', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    expect((await runtime.queue('s1'))[0]!.text).toBe('do a thing');
+  });
+
+  /**
+   * The sidebar asks about every session. Waking each one to be told it has nothing waiting
+   * is exactly the cost this app exists to avoid.
+   */
+  it('does not resume a cold session to ask what it has waiting', async () => {
+    const { runtime, client } = makeRuntime();
+
+    expect(await runtime.queue('s1')).toEqual([]);
+    expect(client.resumeSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('queueing a command behind a running turn', () => {
+  it('enqueues it, with the text to show for it', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    expect(await runtime.enqueue('s1', '/compact', '/compact')).toBe(true);
+    expect(sessions.get('s1')!.rpc.commands.enqueue).toHaveBeenCalledWith({
+      command: '/compact',
+      displayText: '/compact',
+    });
+  });
+
+  // A session that does not queue locally says so, and the caller has to handle it.
+  it('reports a session that will not queue', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.commands.enqueue.mockResolvedValueOnce({ queued: false });
+
+    expect(await runtime.enqueue('s1', '/compact')).toBe(false);
+  });
+});
+
+/**
+ * A running tool resends its whole output on every chunk, so an unbounded forward is
+ * quadratic in the pipe. The transcript keeps 4000 characters of it either way.
+ */
+describe('output from a tool that is still running', () => {
+  it('forwards a short chunk untouched', async () => {
+    const seen: { type: string; data: { partialOutput: string } }[] = [];
+    const { runtime, sessions } = makeRuntime({
+      onEvent: (_id, event) => seen.push(event as never),
+    });
+
+    await runtime.send('s1', 'x');
+    sessions.get('s1')!.emit({ type: 'tool.execution_partial_result', data: { toolCallId: 't1', partialOutput: 'line 1' } });
+
+    expect(seen.at(-1)!.data.partialOutput).toBe('line 1');
+  });
+
+  it('cuts a chunk far longer than anything that will be shown', async () => {
+    const seen: { type: string; data: { partialOutput: string } }[] = [];
+    const { runtime, sessions } = makeRuntime({
+      onEvent: (_id, event) => seen.push(event as never),
+    });
+
+    await runtime.send('s1', 'x');
+    sessions
+      .get('s1')!
+      .emit({ type: 'tool.execution_partial_result', data: { toolCallId: 't1', partialOutput: 'x'.repeat(200_000) } });
+
+    const forwarded = seen.at(-1)!.data.partialOutput;
+    expect(forwarded.length).toBe(16_000);
+    // Cut from the start, matching what a finished tool's output shows.
+    expect(forwarded.startsWith('xxx')).toBe(true);
+  });
+
+  it('leaves the toolCallId alone so the row can still be found', async () => {
+    const seen: { data: { toolCallId: string } }[] = [];
+    const { runtime, sessions } = makeRuntime({
+      onEvent: (_id, event) => seen.push(event as never),
+    });
+
+    await runtime.send('s1', 'x');
+    sessions
+      .get('s1')!
+      .emit({ type: 'tool.execution_partial_result', data: { toolCallId: 't1', partialOutput: 'y'.repeat(20_000) } });
+
+    expect(seen.at(-1)!.data.toolCallId).toBe('t1');
   });
 });

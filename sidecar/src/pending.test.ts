@@ -57,3 +57,33 @@ describe('PendingRequests', () => {
     expect(first.requestId.startsWith('perm-')).toBe(true);
   });
 });
+
+
+/**
+ * When a request lapses, reported so the prompt can warn before it does (#70). Only this
+ * class knows the deadline, since only it owns the timer.
+ */
+describe('when a request lapses', () => {
+  it('reports the deadline it was registered with', () => {
+    const pending = new PendingRequests<string>('perm', 5000, () => 'gave up');
+    const before = Date.now();
+
+    const { expiresAt } = pending.add('session-a');
+
+    const at = new Date(expiresAt).getTime();
+    expect(at).toBeGreaterThanOrEqual(before + 5000);
+    expect(at).toBeLessThanOrEqual(Date.now() + 5000);
+  });
+
+  it('gives each request its own deadline', async () => {
+    vi.useFakeTimers();
+    const pending = new PendingRequests<string>('perm', 5000, () => 'gave up');
+
+    const first = pending.add('session-a');
+    vi.advanceTimersByTime(2000);
+    const second = pending.add('session-a');
+
+    expect(new Date(second.expiresAt).getTime() - new Date(first.expiresAt).getTime()).toBe(2000);
+    vi.useRealTimers();
+  });
+});

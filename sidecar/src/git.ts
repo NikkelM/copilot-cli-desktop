@@ -1,3 +1,10 @@
+/**
+ * What state a working directory is in, by asking git directly.
+ *
+ * Deliberately overlaps the SDK's `session.workspaces.diff` with `mode: 'unstaged'` and
+ * `'branch'` (#143). The same reason as everywhere else here: the sidebar's branch line has
+ * to be right for a session nobody has opened, and the SDK cannot answer without loading it.
+ */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 

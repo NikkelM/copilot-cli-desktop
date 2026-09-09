@@ -74,6 +74,10 @@ function makeStore() {
     removeLog(sessionId: string) {
       rmSync(join(home, 'session-state', sessionId, 'events.jsonl'), { force: true });
     },
+    /** Leave the log in place with nothing in it, as a start that wrote no events does. */
+    emptyLog(sessionId: string) {
+      writeFileSync(join(home, 'session-state', sessionId, 'events.jsonl'), '');
+    },
     /** Take away a session's log, as deleting it outside the app would. */
     removeState(sessionId: string) {
       rmSync(join(home, 'session-state', sessionId), { recursive: true, force: true });
@@ -168,6 +172,30 @@ describe('listSessions', () => {
     const { listSessions } = await loadIndex();
     expect(listSessions().map((s) => s.sessionId)).toEqual([]);
     expect(listSessions(['fresh']).map((s) => s.sessionId)).toEqual(['fresh']);
+  });
+
+  /**
+   * The exemption above is for a log not written yet, not for a session that has gone. One
+   * whose directory was deleted while the runtime held it used to stay in the list forever,
+   * failing every time it was opened (#141).
+   */
+  it('drops a held session whose state directory has gone', async () => {
+    store.addSession('vanished', { summary: 'Was here' });
+    store.addTurn('vanished', 0, 'hi', 'hello', '2026-09-05 10:00:00');
+    store.removeState('vanished');
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions(['vanished']).map((s) => s.sessionId)).toEqual([]);
+  });
+
+  /** Resuming one of these fails with "Cannot create session from empty events array". */
+  it('treats an empty log as no log at all', async () => {
+    store.addSession('blank', { summary: 'Looks real' });
+    store.addTurn('blank', 0, 'hi', 'hello', '2026-09-05 10:00:00');
+    store.emptyLog('blank');
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions().map((s) => s.sessionId)).toEqual([]);
   });
   it('hides a session whose log has gone', async () => {
     store.addSession('kept', { summary: 'Still here' });
@@ -410,5 +438,37 @@ describe('lastActivity', () => {
   it('returns null when neither source knows anything', async () => {
     const { lastActivity } = await loadIndex();
     expect(lastActivity('missing', null)).toBeNull();
+  });
+});
+
+describe('existingSessions', () => {
+  it('keeps the ones whose state directory is still there', async () => {
+    store.addSession('alive');
+    store.addSession('deleted');
+    store.removeState('deleted');
+
+    const { existingSessions } = await loadIndex();
+    expect(existingSessions(['alive', 'deleted'])).toEqual(['alive']);
+  });
+
+  /**
+   * A session that has not had a turn yet has no log, and a session started and abandoned
+   * has an empty one. Both are hidden from the list, and neither has been deleted, so what
+   * the app remembers about them must survive.
+   */
+  it('counts a session with no usable log as still there', async () => {
+    store.addSession('fresh');
+    store.removeLog('fresh');
+    store.addSession('blank');
+    store.emptyLog('blank');
+
+    const { existingSessions } = await loadIndex();
+    expect(existingSessions(['fresh', 'blank'])).toEqual(['fresh', 'blank']);
+  });
+
+  it('has nothing to say about an id it was never given', async () => {
+    const { existingSessions } = await loadIndex();
+    expect(existingSessions([])).toEqual([]);
+    expect(existingSessions(['never-existed'])).toEqual([]);
   });
 });

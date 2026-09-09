@@ -1,3 +1,11 @@
+/**
+ * Which sessions exist, read straight from the session directory.
+ *
+ * Deliberately overlaps the SDK's `sessions.list` and `sessions.getMetadata` (#143). Every
+ * SDK equivalent needs the server running and the session loaded, which is precisely what
+ * this app exists not to do: the sidebar lists two hundred sessions and shows each one's
+ * last message with zero Copilot processes. That is the whole bargain, so this stays.
+ */
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -127,9 +135,18 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
       // restoring a machine without it, leaves a row describing a session that cannot be
       // opened. Listing it promises something the transcript then cannot deliver.
       //
-      // A session the runtime is holding is exempt: its log is written on the first turn,
-      // so one just started has none yet and would otherwise be hidden as though deleted.
-      .filter(({ row, log }) => held.has(row.id) || log !== undefined)
+      // An empty log counts as none. That is what a start which wrote nothing leaves, and
+      // resuming it fails with "Cannot create session from empty events array" - a row that
+      // can only ever produce an error is not worth offering.
+      //
+      // A session the runtime is holding is exempt, but only while its state directory is
+      // still there: its log is written on the first turn, so one just started has none yet
+      // and would otherwise be hidden as though deleted. A held session whose directory has
+      // gone is not that case, and used to sit in the list failing forever (#141).
+      .filter(
+        ({ row, log }) =>
+          (log !== undefined && log.size > 0) || (held.has(row.id) && existsSync(sessionStateDir(row.id))),
+      )
       .map(({ row, log }) => ({
         sessionId: row.id,
         title: readSessionName(row.id) ?? row.summary,
@@ -147,6 +164,18 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
   } finally {
     db.close();
   }
+}
+
+/**
+ * Which of these sessions still exist on disk.
+ *
+ * The state directory is what defines a session, so its absence is the one unambiguous
+ * answer to "is this gone". The list is not: a session can be missing from it for reasons
+ * that have nothing to do with deletion, and treating that as gone would throw away what
+ * the app remembers about a session that is still there (#152).
+ */
+export function existingSessions(ids: readonly string[]): string[] {
+  return ids.filter((id) => existsSync(sessionStateDir(id)));
 }
 
 /** How many hidden sessions one lookup will return, so a short prefix cannot flood the list. */
@@ -184,7 +213,9 @@ export function findSessions(prefix: string): SessionSummary[] {
 
     return rows
       .map((row) => ({ row, log: statSync(sessionEventLog(row.id), { throwIfNoEntry: false }) }))
-      .filter(({ log }) => log !== undefined)
+      // Same rule as the list: a session with no log, or an empty one, cannot be opened, so
+      // handing one back to someone who quoted its id would only fail later.
+      .filter(({ log }) => log !== undefined && log.size > 0)
       .map(({ row, log }) => ({
         sessionId: row.id,
         title: readSessionName(row.id) ?? row.summary,

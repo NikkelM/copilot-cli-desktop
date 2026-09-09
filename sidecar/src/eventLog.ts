@@ -1,3 +1,11 @@
+/**
+ * A session's transcript, read from its log file a window at a time.
+ *
+ * Deliberately overlaps the SDK's `session.eventLog.read` and `sessions.readPersistedEvents`
+ * (#143). Both need the session loaded; this reads history for a session nobody has opened,
+ * which is what lets browsing cost nothing. It also reads from the end backwards, because
+ * the interesting part of a hundred-megabyte log is always its last page.
+ */
 import { existsSync } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
 
