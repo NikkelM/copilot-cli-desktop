@@ -1,4 +1,7 @@
 import type { PendingPermission, PermissionChoice } from '../../shared/protocol';
+import { parsePatch } from '../lib/patch';
+import { Diff } from './Diff';
+import { Expiry } from './Elapsed';
 import { relativise } from '../lib/paths';
 
 interface PermissionPromptProps {
@@ -29,10 +32,11 @@ export function PermissionPrompt({ pending, cwd, onResolve }: PermissionPromptPr
         <span className="permission-kind">{kind}</span>
         <span className="permission-intent">{intention ?? 'Copilot wants to run a tool'}</span>
         {subject && <span className="permission-subject">{subject}</span>}
+        <Expiry at={pending.expiresAt} />
       </header>
 
       {kind === 'write' ? (
-        <Diff text={str(request, 'diff') ?? ''} />
+        <WriteDiff patch={str(request, 'diff') ?? ''} />
       ) : (
         <pre className="permission-detail">{detail(request, kind)}</pre>
       )}
@@ -103,29 +107,16 @@ function detail(request: Record<string, unknown>, kind: string): string {
   }
 }
 
-/** Git plumbing that carries no meaning for someone deciding whether to approve. */
-const NOISE = /^(diff --git |index |--- |\+\+\+ |new file mode |deleted file mode |similarity index |rename )/;
-
-/** Render a unified diff with the plumbing stripped and the changes coloured. */
-function Diff({ text }: { text: string }) {
-  const lines = text.split('\n').filter((line) => !NOISE.test(line));
+/**
+ * The write being asked about, drawn the way an edit is drawn everywhere else.
+ *
+ * This used to split the text and colour it here, which meant the one place a change is
+ * shown before it happens was the one place without line numbers or a mark on the part of
+ * the line that actually differs (#69).
+ */
+function WriteDiff({ patch }: { patch: string }) {
+  const lines = parsePatch(patch);
   if (lines.length === 0) return <pre className="permission-detail">(no diff)</pre>;
 
-  return (
-    <pre className="permission-detail">
-      {lines.map((line, index) => (
-        <span key={index} className={`diff-line ${lineClass(line)}`}>
-          {line}
-          {'\n'}
-        </span>
-      ))}
-    </pre>
-  );
-}
-
-function lineClass(line: string): string {
-  if (line.startsWith('@@')) return 'hunk';
-  if (line.startsWith('+')) return 'added';
-  if (line.startsWith('-')) return 'removed';
-  return '';
+  return <Diff lines={lines} />;
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol';
+import { fileBadge } from '../lib/fileBadge';
 import { parsePatch } from '../lib/patch';
 import { relativise } from '../lib/paths';
 import { Diff } from './Diff';
@@ -30,6 +31,22 @@ const GLYPH: Record<SessionChange['status'], string> = {
   modified: '~',
   deleted: '−',
 };
+
+/**
+ * The file's type, beside the mark saying what happened to it.
+ *
+ * Always rendered, blank when the type is unknown, so the paths of a list of mixed types
+ * still line up. Here the badge sits beside the status mark rather than replacing it: a
+ * created file and a deleted one are the whole point of this list.
+ */
+function FileBadge({ path }: { path: string }) {
+  const badge = fileBadge(path);
+  return (
+    <span className="changes-badge" data-tone={badge?.tone}>
+      {badge?.label ?? ''}
+    </span>
+  );
+}
 
 /**
  * Everything this session changed, and the diff for any of it.
@@ -145,6 +162,7 @@ export function Changes({
                 title={change.path}
               >
                 <span className={`changes-status ${change.status}`}>{GLYPH[change.status]}</span>
+                <FileBadge path={change.path} />
                 <span className="changes-path">{relativise(change.path, cwd)}</span>
                 {change.turns > 1 && <span className="changes-turns">{change.turns} turns</span>}
                 <span className="changes-counts">
@@ -167,6 +185,7 @@ const WHY: Record<NonNullable<FileDiff['reason']>, string> = {
   gone: 'This file is not on disk any more, and no copy of its contents was kept.',
   replaced: 'The file on disk is no longer the version the session left, and no copy of that version was kept.',
   binary: 'Not a text file.',
+  'too-large': 'Too large to compare. Diffing a file this size would hold up every session in the app.',
   untracked: 'No snapshot mentions this file.',
 };
 

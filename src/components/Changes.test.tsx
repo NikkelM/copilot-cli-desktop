@@ -240,3 +240,32 @@ describe('Changes, once reviewed', () => {
     expect(onSpan).toHaveBeenCalledWith(true);
   });
 });
+
+describe('the file type beside a change', () => {
+  it('marks a file with its type', () => {
+    const { container } = render(<Changes {...props} changes={[change({ path: 'C:\\work\\repo\\src\\App.tsx' })]} />);
+    const badge = container.querySelector('.changes-badge');
+
+    expect(badge?.textContent).toBe('TX');
+    expect(badge?.getAttribute('data-tone')).toBe('blue');
+  });
+
+  // Beside the mark rather than instead of it: whether a file was created, changed or
+  // deleted is the whole point of this list.
+  it('leaves the created, modified and deleted mark alone', () => {
+    const { container } = render(<Changes {...props} changes={[change({ path: 'a.ts', status: 'created' })]} />);
+
+    expect(container.querySelector('.changes-status.created')?.textContent).toBe('+');
+    expect(container.querySelector('.changes-badge')?.textContent).toBe('TS');
+  });
+
+  // Blank rather than absent, so a list of mixed types still has its paths in one column.
+  it('keeps the column for a file whose type it does not know', () => {
+    const { container } = render(<Changes {...props} changes={[change({ path: 'notes.txt' })]} />);
+    const badge = container.querySelector('.changes-badge');
+
+    expect(badge).toBeTruthy();
+    expect(badge?.textContent).toBe('');
+    expect(badge?.getAttribute('data-tone')).toBeNull();
+  });
+});

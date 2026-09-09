@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol';
-import { getChanges, getDiff } from './sidecar';
+import { existingSessions, getChanges, getDiff } from './sidecar';
 
 /** Where each session's review mark is kept, by session id. */
 const REVIEWED = 'copilot-desktop.reviewed';
@@ -22,6 +22,36 @@ function readMarks(): Record<string, string> {
     return {};
   }
 }
+
+/**
+ * Drop marks for sessions that no longer exist.
+ *
+ * Nothing else removes an entry, so without this the map grows for the life of the install
+ * and keeps state about sessions that are gone (#152). Deleting a session from the app is
+ * not built yet (#63), and a session can also be deleted from the CLI or by hand, so the
+ * check is against what is on disk rather than against a deletion we performed.
+ *
+ * Absence from the sidebar is deliberately not the test: a session can be missing from the
+ * list for reasons that have nothing to do with deletion, and acting on that would throw
+ * away the mark of a session that is still there.
+ */
+async function pruneMarks(): Promise<void> {
+  const marks = readMarks();
+  const ids = Object.keys(marks);
+  if (ids.length === 0) return;
+
+  const alive = new Set(await existingSessions(ids));
+  if (alive.size === ids.length) return;
+
+  // Reread rather than filtering the copy above: the reader may have marked something as
+  // seen while the sidecar was answering, and that entry is newer than anything here.
+  const current = readMarks();
+  const kept = Object.fromEntries(Object.entries(current).filter(([id]) => alive.has(id) || !(id in marks)));
+  localStorage.setItem(REVIEWED, JSON.stringify(kept));
+}
+
+/** Whether the prune has already run. It answers about the whole install, so once is enough. */
+let pruned = false;
 
 /**
  * What a session changed, asked for only when someone wants to know.
@@ -55,8 +85,20 @@ export function useChanges(sessionId: string | null) {
 
   const since = showAll ? undefined : (reviewedAt ?? undefined);
 
+  useEffect(() => {
+    if (pruned) return;
+    pruned = true;
+    // A failed prune leaves the map as it was, which is what it was anyway. Next launch retries.
+    void pruneMarks().catch(() => {});
+  }, []);
+
   // Another session changed other files. Holding the last one's would say something false.
   useEffect(() => {
+    // Anything still in flight answers about the session being left, so it is disowned
+    // here as well as in `read`: the panel need not have asked again for a late reply to
+    // arrive and file one session's files under another's name.
+    asked.current += 1;
+    asking.current.clear();
     setChanges(null);
     setDiffs({});
     setFailed(null);
@@ -72,12 +114,15 @@ export function useChanges(sessionId: string | null) {
       setFailed(null);
       // Diffs on hand answer the old span, so they cannot be shown against the new one.
       asked.current += 1;
+      const span = asked.current;
       asking.current.clear();
       setDiffs({});
       getChanges(sessionId, from)
-        .then((result) => setChanges(result.changes))
-        .catch((error: unknown) => setFailed(String(error)))
-        .finally(() => setLoading(false));
+        .then((result) => span === asked.current && setChanges(result.changes))
+        .catch((error: unknown) => span === asked.current && setFailed(String(error)))
+        .finally(() => {
+          if (span === asked.current) setLoading(false);
+        });
     },
     [sessionId],
   );

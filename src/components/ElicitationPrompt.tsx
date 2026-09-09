@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 
 import type { ElicitationFieldValue, PendingElicitation } from '../../shared/protocol';
+import { Expiry } from './Elapsed';
 import {
   formOf,
   initialValues,
@@ -139,6 +140,7 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
         <header className="elicitation-header">
           <span className="elicitation-badge">question</span>
           <span>{pending.message}</span>
+          <Expiry at={pending.expiresAt} />
         </header>
         <a className="elicitation-url" href={pending.url} target="_blank" rel="noreferrer">
           {pending.url}
@@ -153,6 +155,7 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
       <header className="elicitation-header">
         <span className="elicitation-badge">question</span>
         <span>{pending.message}</span>
+        <Expiry at={pending.expiresAt} />
       </header>
 
       <div className="elicitation-fields">

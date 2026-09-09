@@ -12,6 +12,7 @@ const pending = (over: Partial<PendingElicitation> = {}): PendingElicitation => 
   choices: [],
   mode: null,
   url: null,
+  expiresAt: '2026-01-01T00:05:00.000Z',
   ...over,
 });
 

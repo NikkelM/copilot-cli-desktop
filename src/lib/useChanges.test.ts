@@ -4,12 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useChanges } from './useChanges';
 
-const { getChanges, getDiff } = vi.hoisted(() => ({
+const { getChanges, getDiff, existingSessions } = vi.hoisted(() => ({
   getChanges: vi.fn(),
   getDiff: vi.fn(),
+  existingSessions: vi.fn(),
 }));
 
-vi.mock('./sidecar', () => ({ getChanges, getDiff }));
+vi.mock('./sidecar', () => ({ getChanges, getDiff, existingSessions }));
 
 const change = { path: 'a.ts', status: 'modified', linesAdded: 1, linesRemoved: 0, turns: 1, changedAt: '2026-01-02T00:00:00.000Z', diffable: true };
 
@@ -18,6 +19,7 @@ describe('useChanges', () => {
     localStorage.clear();
     getChanges.mockReset().mockResolvedValue({ changes: [change] });
     getDiff.mockReset().mockResolvedValue({ patch: '@@', stale: false });
+    existingSessions.mockReset().mockImplementation((ids: string[]) => Promise.resolve(ids));
   });
 
   /**
@@ -118,6 +120,7 @@ describe('useChanges, reviewing', () => {
     localStorage.clear();
     getChanges.mockReset().mockResolvedValue({ changes: [change] });
     getDiff.mockReset().mockResolvedValue({ patch: '@@', stale: false });
+    existingSessions.mockReset().mockImplementation((ids: string[]) => Promise.resolve(ids));
   });
 
   it('has no mark until one is set', () => {
@@ -219,5 +222,85 @@ describe('useChanges, reviewing', () => {
     localStorage.setItem('copilot-desktop.reviewed', 'not json');
     const { result } = renderHook(() => useChanges('s1'));
     expect(result.current.reviewedAt).toBeNull();
+  });
+});
+
+/**
+ * Nothing else removes a mark, so the map would grow for the life of the install (#152).
+ * The module runs the prune once, so each test reloads it to get a fresh run.
+ */
+describe('useChanges, pruning marks for sessions that are gone', () => {
+  const marks = () => JSON.parse(localStorage.getItem('copilot-desktop.reviewed') ?? '{}');
+
+  beforeEach(() => {
+    vi.resetModules();
+    localStorage.clear();
+    getChanges.mockReset().mockResolvedValue({ changes: [change] });
+    getDiff.mockReset().mockResolvedValue({ patch: '@@', stale: false });
+    existingSessions.mockReset().mockImplementation((ids: string[]) => Promise.resolve(ids));
+  });
+
+  it('drops the mark of a session that no longer exists', async () => {
+    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ gone: 'a', here: 'b' }));
+    existingSessions.mockResolvedValue(['here']);
+
+    const { useChanges: fresh } = await import('./useChanges');
+    renderHook(() => fresh('here'));
+
+    await waitFor(() => expect(marks()).toEqual({ here: 'b' }));
+    expect(existingSessions).toHaveBeenCalledWith(['gone', 'here']);
+  });
+
+  it('leaves the store alone when every session is still there', async () => {
+    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ s1: 'a' }));
+
+    const { useChanges: fresh } = await import('./useChanges');
+    renderHook(() => fresh('s1'));
+
+    await waitFor(() => expect(existingSessions).toHaveBeenCalled());
+    expect(marks()).toEqual({ s1: 'a' });
+  });
+
+  it('asks nothing when there is nothing to prune', async () => {
+    const { useChanges: fresh } = await import('./useChanges');
+    renderHook(() => fresh('s1'));
+
+    await Promise.resolve();
+    expect(existingSessions).not.toHaveBeenCalled();
+  });
+
+  /** A mark set while the sidecar was answering is newer than the reading being pruned. */
+  it('keeps a mark made while the check was in flight', async () => {
+    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ gone: 'a' }));
+    existingSessions.mockImplementation(async () => {
+      localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ gone: 'a', fresh: 'c' }));
+      return [];
+    });
+
+    const { useChanges: fresh } = await import('./useChanges');
+    renderHook(() => fresh('s1'));
+
+    await waitFor(() => expect(marks()).toEqual({ fresh: 'c' }));
+  });
+
+  it('runs the check once however many times the hook mounts', async () => {
+    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ s1: 'a' }));
+
+    const { useChanges: fresh } = await import('./useChanges');
+    renderHook(() => fresh('s1'));
+    renderHook(() => fresh('s1'));
+
+    await waitFor(() => expect(existingSessions).toHaveBeenCalledTimes(1));
+  });
+
+  it('survives the check failing', async () => {
+    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ s1: 'a' }));
+    existingSessions.mockRejectedValue(new Error('sidecar is down'));
+
+    const { useChanges: fresh } = await import('./useChanges');
+    renderHook(() => fresh('s1'));
+
+    await waitFor(() => expect(existingSessions).toHaveBeenCalled());
+    expect(marks()).toEqual({ s1: 'a' });
   });
 });

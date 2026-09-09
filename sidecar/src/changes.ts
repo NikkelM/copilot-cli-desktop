@@ -1,3 +1,11 @@
+/**
+ * What a session changed, and what changed since it was last reviewed.
+ *
+ * Deliberately overlaps the SDK's `session.workspaces.diff` with `mode: 'session'` (#143).
+ * The SDK's answer is the whole session with no `since` and no per-turn attribution, so the
+ * one thing this panel is for - only what changed since I last looked - could not be built
+ * on it. Both read the same store, so the two agree about everything they both cover.
+ */
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
@@ -180,6 +188,10 @@ function count(sessionId: string, ends: Ends): { linesAdded: number; linesRemove
   if (ends.first.kind === 'absent') return { linesAdded: lineCount(after), linesRemoved: 0, diffable: true };
   if (ends.last.kind === 'absent') return { linesAdded: 0, linesRemoved: lineCount(before), diffable: true };
 
+  // Counting the lines of a file this size is cheap; comparing two of them is not, so the
+  // row falls back to what the turns recorded rather than making the panel wait.
+  if (tooLarge(before, after)) return { linesAdded: ends.added, linesRemoved: ends.removed, diffable: false };
+
   let linesAdded = 0;
   let linesRemoved = 0;
   for (const part of diffLines(before.toString('utf8'), after.toString('utf8'))) {
@@ -207,6 +219,22 @@ function lineCount(content: Buffer): number {
  */
 function binary(content: Buffer): boolean {
   return content.subarray(0, 8000).includes(0);
+}
+
+/**
+ * The most either version of a file may be before it is described rather than compared.
+ *
+ * Comparing two texts costs roughly the square of their size. Measured with the library
+ * this uses: 121 KiB takes 28ms, 613 KiB takes 340ms, 1.2 MiB takes 1.3s and 2.5 MiB takes
+ * 5.4s. The sidecar is single threaded, so a lock file or a generated bundle among the
+ * changes would stall every other session in the app - opening a panel that is supposed to
+ * cost nothing would become the most expensive thing the app does. The files this turns
+ * away are the ones nobody reads a diff of anyway; source is a fraction of the limit.
+ */
+const MAX_DIFF_BYTES = 256 * 1024;
+
+function tooLarge(before: Buffer, after: Buffer): boolean {
+  return before.length > MAX_DIFF_BYTES || after.length > MAX_DIFF_BYTES;
 }
 
 /** A unified diff between two versions of one file, or null when there is no drawing it. */
@@ -279,6 +307,7 @@ export function sessionDiff(sessionId: string, path: string, since?: string): Fi
   const before = contentsOf(sessionId, ends.first, ends.path);
   const after = contentsOf(sessionId, ends.last, ends.path);
   if (!before || !after) return { patch: null, reason: lost(ends.path), stale: false };
+  if (tooLarge(before, after)) return { patch: null, reason: 'too-large', stale: false };
 
   const patch = diffOf(ends.path, before, after);
   if (!patch) return { patch: null, reason: 'binary', stale: false };

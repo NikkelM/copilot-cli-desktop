@@ -15,6 +15,7 @@ const question: PendingElicitation = {
   choices: ['PostgreSQL', 'MySQL', 'SQLite'],
   mode: null,
   url: null,
+  expiresAt: '2026-01-01T00:05:00.000Z',
 };
 
 function ask() {

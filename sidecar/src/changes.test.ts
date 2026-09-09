@@ -466,6 +466,33 @@ describe('the diff for one file', () => {
     expect(sessionDiff(SESSION, '/w/f.bin')).toMatchObject({ patch: null, reason: 'binary' });
   });
 
+  /**
+   * Comparing two texts costs about the square of their size, and the sidecar is single
+   * threaded: a lock file among the changes would hold up every session in the app.
+   */
+  it('refuses to diff a file too large to compare quickly', async () => {
+    const big = `${'x'.repeat(400 * 1024)}\n`;
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/w/lock.json', preimage: await blob('small\n'), postimage: await blob(big) }] },
+    ]);
+
+    const { sessionChanges, sessionDiff } = await load();
+    expect(sessionDiff(SESSION, '/w/lock.json')).toMatchObject({ patch: null, reason: 'too-large' });
+    // The row still says what the turns recorded, the way an unreadable one does.
+    expect(sessionChanges(SESSION)[0]).toMatchObject({ path: '/w/lock.json', diffable: false });
+  });
+
+  // Counting the lines of one version is a byte scan, which stays cheap at any size.
+  it('still counts the lines of a large file it created', async () => {
+    const big = `${'x\n'.repeat(200 * 1024)}`;
+    await writeStore([
+      { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/w/generated.ts', preimage: ABSENT, postimage: await blob(big) }] },
+    ]);
+
+    const { sessionChanges } = await load();
+    expect(sessionChanges(SESSION)[0]).toMatchObject({ linesAdded: 200 * 1024, diffable: true });
+  });
+
   it('produces hunks the viewer can parse', async () => {
     await writeStore([
       { at: '2026-01-01T00:00:00.000Z', files: [{ path: '/w/f.ts', preimage: await blob('one\ntwo\nthree\n'), postimage: await blob('one\ntwo changed\nthree\n') }] },
