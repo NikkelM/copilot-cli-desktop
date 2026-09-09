@@ -97,11 +97,6 @@ export function commandText(command: SlashCommand): string {
   return command.hint ? `/${command.name} ` : `/${command.name}`;
 }
 
-/** Whether a command has everything it needs to run. */
-export function isReady(command: SlashCommand, input: string | null): boolean {
-  return !command.required || (input ?? '').trim().length > 0;
-}
-
 /** What is to be done with what was submitted. */
 export type Dispatch =
   /** One this app answers itself, without a session and without the runtime. */

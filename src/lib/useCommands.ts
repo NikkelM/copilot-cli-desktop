@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { listCommands } from './sidecar';
-import { LOCAL_COMMANDS, isLocal } from './localCommands';
+import { LOCAL_COMMANDS, isLocal, withLocalChoices } from './localCommands';
 import type { SlashCommand } from '../../shared/protocol';
 
 /**
@@ -55,7 +55,7 @@ function remembered(): SlashCommand[] {
 function merge(known: SlashCommand[], found: SlashCommand[]): SlashCommand[] {
   const byName = new Map(known.map((command) => [command.name, command]));
   for (const command of found) byName.set(command.name, command);
-  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return withLocalChoices([...byName.values()].sort((a, b) => a.name.localeCompare(b.name)));
 }
 
 /**

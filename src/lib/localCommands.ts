@@ -1,4 +1,4 @@
-import type { SlashCommand } from '../../shared/protocol';
+import type { CommandChoice, SlashCommand } from '../../shared/protocol';
 
 /**
  * Show every key and every command, as the CLI's own `/help` does.
@@ -46,4 +46,33 @@ export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES];
 /** Whether a command is one of ours, and so must not be sent to the runtime. */
 export function isLocal(name: string): boolean {
   return LOCAL_COMMANDS.some((command) => command.name === name);
+}
+
+/**
+ * Arguments this app answers for commands the runtime owns.
+ *
+ * `/session id` is the terminal's own: the runtime's `/session` offers
+ * info|checkpoints|files|plan|rename and answers `id` with a usage line, while the CLI adds
+ * it and handles it locally (#129). This app holds the id too, so it answers it as well -
+ * and the menu has to offer it, or the only way to find it is to already know.
+ */
+const LOCAL_CHOICES: Readonly<Record<string, readonly CommandChoice[]>> = {
+  session: [{ name: 'id', description: 'copy this session id to the clipboard' }],
+};
+
+/**
+ * Add the arguments this app answers to the commands the runtime described.
+ *
+ * By name rather than by appending, so folding a list that has already been through here -
+ * a remembered one, say - does not offer the same choice twice.
+ */
+export function withLocalChoices(commands: SlashCommand[]): SlashCommand[] {
+  return commands.map((command) => {
+    const extra = LOCAL_CHOICES[command.name];
+    if (!extra) return command;
+
+    const known = command.choices ?? [];
+    const missing = extra.filter((choice) => !known.some((each) => each.name === choice.name));
+    return missing.length === 0 ? command : { ...command, choices: [...known, ...missing] };
+  });
 }
