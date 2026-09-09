@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 
@@ -10,15 +10,28 @@ import type { SlashCommand } from '../../shared/protocol';
 const box = () => screen.getByRole('textbox') as HTMLTextAreaElement;
 
 /** Stands in for the app, which keeps a draft per session. */
-function Host({ session, onSend }: { session: string; onSend: (prompt: string) => void }) {
+function Host({
+  session,
+  onSend,
+  history = [],
+  stashed = false,
+}: {
+  session: string;
+  onSend: (prompt: string) => void;
+  history?: string[];
+  stashed?: boolean;
+}) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   return (
     <Composer
       disabled={false}
       busy={false}
+      busySince={null}
       resuming={false}
       attached={[]}
       onAttach={() => {}}
+      onPasteFiles={() => {}}
+      stashed={stashed}
       onError={() => {}}
       focusOn={session}
       value={drafts[session] ?? ''}
@@ -28,15 +41,16 @@ function Host({ session, onSend }: { session: string; onSend: (prompt: string) =
         onSend(prompt);
       }}
       onAbort={() => {}}
+      history={history}
       commands={[]}
       onCommandsNeeded={() => {}}
     />
   );
 }
 
-function hosted(session = 'a') {
+function hosted(session = 'a', history?: string[]) {
   const onSend = vi.fn();
-  const view = render(<Host session={session} onSend={onSend} />);
+  const view = render(<Host session={session} onSend={onSend} history={history} />);
   return { onSend, view, user: userEvent.setup() };
 }
 
@@ -46,15 +60,19 @@ function bare(props: Partial<Parameters<typeof Composer>[0]> = {}) {
     <Composer
       disabled={false}
       busy={false}
+      busySince={null}
       resuming={false}
       attached={[]}
       onAttach={() => {}}
+      onPasteFiles={() => {}}
+      stashed={false}
       onError={() => {}}
       focusOn="s1"
       value=""
       onChange={() => {}}
       onSend={onSend}
       onAbort={() => {}}
+      history={[]}
       commands={[]}
       onCommandsNeeded={() => {}}
       {...props}
@@ -68,7 +86,6 @@ describe('Composer', () => {
     bare();
     expect(document.activeElement).toBe(box());
   });
-
   it('takes focus again when a different session is chosen', () => {
     const { view } = bare({ focusOn: 's1' });
     box().blur();
@@ -77,15 +94,19 @@ describe('Composer', () => {
       <Composer
         disabled={false}
         busy={false}
+        busySince={null}
       resuming={false}
       attached={[]}
       onAttach={() => {}}
+      onPasteFiles={() => {}}
+      stashed={false}
       onError={() => {}}
         focusOn="s2"
         value=""
         onChange={() => {}}
         onSend={() => {}}
         onAbort={() => {}}
+        history={[]}
         commands={[]}
         onCommandsNeeded={() => {}}
       />,
@@ -187,15 +208,19 @@ describe('the slash command menu', () => {
         <Composer
           disabled={false}
           busy={false}
+          busySince={null}
           resuming={false}
           attached={[]}
           onAttach={() => {}}
+          onPasteFiles={() => {}}
+          stashed={false}
           onError={() => {}}
           focusOn="s1"
           value={value}
           onChange={setValue}
           onSend={onSend}
           onAbort={() => {}}
+          history={[]}
           commands={COMMANDS}
           onCommandsNeeded={() => {}}
           {...props}
@@ -310,15 +335,19 @@ describe('while a cold session wakes', () => {
       <Composer
         disabled={false}
         busy={false}
+        busySince={null}
         resuming={true}
         attached={[]}
         onAttach={() => {}}
+        onPasteFiles={() => {}}
+        stashed={false}
         onError={() => {}}
         focusOn="s1"
         value="hello"
         onChange={() => {}}
         onSend={() => {}}
         onAbort={() => {}}
+        history={[]}
         commands={[]}
         onCommandsNeeded={() => {}}
         {...props}
@@ -335,7 +364,7 @@ describe('while a cold session wakes', () => {
     const onSend = vi.fn();
     composer({ onSend });
 
-    await userEvent.click(screen.getByRole('button', { name: /Waking/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
 
     expect(onSend).not.toHaveBeenCalled();
   });
@@ -365,15 +394,19 @@ describe('the waking state belongs to one session', () => {
       <Composer
         disabled={false}
         busy={false}
+        busySince={null}
         resuming={false}
         attached={[]}
         onAttach={() => {}}
+        onPasteFiles={() => {}}
+        stashed={false}
         onError={() => {}}
         focusOn="s2"
         value="hello"
         onChange={() => {}}
         onSend={() => {}}
         onAbort={() => {}}
+        history={[]}
         commands={[]}
         onCommandsNeeded={() => {}}
       />,
@@ -381,5 +414,410 @@ describe('the waking state belongs to one session', () => {
 
     expect(screen.queryByText('Waking this session up')).toBeNull();
     expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
+  });
+});
+
+/**
+ * The buttons live in the box rather than in a row under it (#148), so the composer is the
+ * last thing in the pane. Icons say nothing on their own, so every one of them is named.
+ */
+describe('the buttons in the box', () => {
+  it('names each one, since none of them carries text', () => {
+    bare({ value: 'hello' });
+
+    expect(screen.getByRole('button', { name: 'Attach files' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Send' })).toBeTruthy();
+  });
+
+  /**
+   * Both, not one or the other. Send stays live so a message typed during a turn goes on
+   * the queue rather than being refused, and it says so rather than still reading "Send".
+   */
+  it('offers both stopping and queueing while the agent works', () => {
+    bare({ busy: true, value: 'next thing' });
+
+    expect(screen.getByRole('button', { name: 'Stop this turn' })).toBeTruthy();
+    const send = screen.getByRole('button', { name: 'Queue this behind the turn' });
+    expect(send).toHaveProperty('disabled', false);
+  });
+
+  it('offers nothing to stop when nothing is running', () => {
+    bare({ value: 'hello' });
+    expect(screen.queryByRole('button', { name: 'Stop this turn' })).toBeNull();
+  });
+
+  it('will not send an empty message', () => {
+    bare({ value: '   ' });
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveProperty('disabled', true);
+  });
+
+  it('will not send while the session is still waking', () => {
+    bare({ resuming: true, value: 'hello' });
+    expect(screen.getByRole('button', { name: 'Send' })).toHaveProperty('disabled', true);
+  });
+
+  it('draws the chips above the box, so several files grow it upwards', () => {
+    const { view } = bare({
+      attached: [{ type: 'file', path: '/tmp/a.png', displayName: 'a.png' }],
+    });
+
+    const chips = view.container.querySelector('.attachments');
+    const input = view.container.querySelector('.composer-input');
+    expect(chips).not.toBeNull();
+    expect(input).not.toBeNull();
+    // Node.DOCUMENT_POSITION_FOLLOWING: the box comes after the chips.
+    expect(chips!.compareDocumentPosition(input!) & 4).toBeTruthy();
+  });
+});
+
+/**
+ * Up and down reach for what was already sent, but only once the caret has nowhere left to
+ * go: a multi-line message has to stay editable with the same keys (#135).
+ */
+describe('stepping back through what was sent', () => {
+  it('puts the last prompt in the box', async () => {
+    const { user } = hosted('a', ['second', 'first']);
+
+    await user.keyboard('{ArrowUp}');
+    expect(box().value).toBe('second');
+  });
+
+  it('keeps going back, and stops at the oldest', async () => {
+    const { user } = hosted('a', ['second', 'first']);
+
+    await user.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}');
+    expect(box().value).toBe('first');
+  });
+
+  it('gives back what was being written when the walk started', async () => {
+    const { user } = hosted('a', ['second', 'first']);
+
+    await user.type(box(), 'half a thought');
+    await user.keyboard('{ArrowUp}{ArrowUp}');
+    expect(box().value).toBe('first');
+
+    await user.keyboard('{ArrowDown}{ArrowDown}');
+    expect(box().value).toBe('half a thought');
+  });
+
+  it('leaves the arrows alone inside a message that spans lines', async () => {
+    const { user } = hosted('a', ['old']);
+
+    await user.type(box(), 'one{Shift>}{Enter}{/Shift}two');
+    // The caret is on the second line, so up belongs to the text.
+    await user.keyboard('{ArrowUp}');
+    expect(box().value).toBe('one\ntwo');
+  });
+
+  it('does nothing when there is nothing to go back to', async () => {
+    const { user } = hosted('a', []);
+
+    await user.type(box(), 'draft');
+    await user.keyboard('{ArrowUp}');
+    expect(box().value).toBe('draft');
+  });
+
+  it('stops browsing once the recalled prompt is edited', async () => {
+    const { user } = hosted('a', ['second', 'first']);
+
+    await user.keyboard('{ArrowUp}');
+    await user.type(box(), '!');
+    // Down would restore the draft if the walk were still live; it is a fresh message now.
+    await user.keyboard('{ArrowDown}');
+    expect(box().value).toBe('second!');
+  });
+});
+
+/** What readline gives and a textarea does not (#135). */
+describe('deleting to the start or end of a line', () => {
+  it('cuts back to the start of the line with ctrl+u', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), 'one{Shift>}{Enter}{/Shift}two');
+    await user.keyboard('{Control>}u{/Control}');
+    expect(box().value).toBe('one\n');
+  });
+
+  it('cuts forward to the end of the line with ctrl+k', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), 'keep this');
+    box().setSelectionRange(4, 4);
+    await user.keyboard('{Control>}k{/Control}');
+    expect(box().value).toBe('keep');
+  });
+
+  it('leaves the rest of the message alone', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), 'first{Shift>}{Enter}{/Shift}second');
+    box().setSelectionRange(9, 9);
+    await user.keyboard('{Control>}k{/Control}');
+    expect(box().value).toBe('first\nsec');
+  });
+});
+
+
+
+/**
+ * How long the turn has been going, next to the button that stops it (#70). Long work
+ * otherwise gives no sign of whether it is progressing or hung.
+ */
+describe('the clock on a running turn', () => {
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+
+  it('says how long the agent has been working', () => {
+    bare({ busy: true, busySince: ago(95_000) });
+    expect(screen.getByText('1m 35s')).toBeTruthy();
+  });
+
+  it('says nothing when nothing is running', () => {
+    bare({ busy: false, busySince: ago(95_000) });
+    expect(screen.queryByText('1m 35s')).toBeNull();
+  });
+
+  /** A turn that has just started needs no clock; it would appear, say "1s", and go. */
+  it('waits until the wait is worth mentioning', () => {
+    bare({ busy: true, busySince: ago(500) });
+    expect(screen.queryByText(/\ds/)).toBeNull();
+  });
+});
+
+/**
+ * The `!` prefix, which the CLI treats as a mode rather than a one-shot marker. It is kept
+ * in the draft rather than beside it, so switching sessions cannot return the text without
+ * the mode and send a command line to the agent (#134).
+ */
+describe('Composer, shell mode', () => {
+  it('takes the marker out of the box and shows the mode instead', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), '!');
+    expect(box().value).toBe('');
+    expect(screen.getByText('shell')).toBeTruthy();
+  });
+
+  it('says nothing about a mode that is not on', () => {
+    hosted();
+    expect(screen.queryByText('shell')).toBeNull();
+  });
+
+  it('sends the command with its marker, so the app can tell it apart', async () => {
+    const { onSend, user } = hosted();
+
+    await user.type(box(), '!git status{Enter}');
+    expect(onSend).toHaveBeenCalledWith('!git status');
+  });
+
+  it('does not send a marker on its own', async () => {
+    const { onSend, user } = hosted();
+
+    await user.type(box(), '!{Enter}');
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('leaves the mode on Escape and keeps what was typed', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), '!git status');
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByText('shell')).toBeNull();
+    expect(box().value).toBe('git status');
+  });
+
+  /** The marker is not in the box, so the key that would delete it has to be answered. */
+  it('leaves the mode on backspace at the start', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), '!');
+    await user.keyboard('{Backspace}');
+
+    expect(screen.queryByText('shell')).toBeNull();
+    expect(box().value).toBe('');
+  });
+
+  it('keeps the mode when backspacing over the command itself', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), '!ls');
+    await user.keyboard('{Backspace}');
+
+    expect(screen.getByText('shell')).toBeTruthy();
+    expect(box().value).toBe('l');
+  });
+
+  /** A shell command is not a prompt, so the prompts already sent are not what Up offers. */
+  it('offers no prompt history in shell mode', async () => {
+    const { user } = hosted('a', ['a previous prompt']);
+
+    await user.type(box(), '!');
+    await user.keyboard('{ArrowUp}');
+
+    expect(box().value).toBe('');
+  });
+
+  it('cuts to the start of the line without eating the marker', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), '!git status');
+    await user.keyboard('{Control>}u{/Control}');
+
+    expect(screen.getByText('shell')).toBeTruthy();
+    expect(box().value).toBe('');
+  });
+
+  it('calls the send button what it will do', async () => {
+    const { user } = hosted();
+
+    await user.type(box(), '!ls');
+    expect(screen.getByRole('button', { name: 'Run in the shell' })).toBeTruthy();
+  });
+
+  /** A shell command is not the agent's work, so it does not wait behind it. */
+  it('offers to run rather than to queue while the agent works', () => {
+    bare({ busy: true, value: '!ls' });
+    expect(screen.getByRole('button', { name: 'Run in the shell' })).toBeTruthy();
+  });
+});
+
+describe('pasting into the box', () => {
+  /** React reads clipboardData off the native event, so the shape is what matters here. */
+  const paste = (files: File[], text = '') =>
+    fireEvent.paste(box(), { clipboardData: { files, getData: () => text } });
+
+  it('hands pasted files up rather than dropping them', () => {
+    const onPasteFiles = vi.fn();
+    bare({ onPasteFiles });
+    const shot = new File(['pixels'], 'image.png');
+
+    paste([shot]);
+
+    expect(onPasteFiles).toHaveBeenCalledWith([shot]);
+  });
+
+  it('leaves a text paste to the box, which is what pasting usually means', () => {
+    const onPasteFiles = vi.fn();
+    bare({ onPasteFiles });
+
+    const event = paste([], 'some text');
+
+    expect(onPasteFiles).not.toHaveBeenCalled();
+    // Not prevented, so the browser puts the text in at the caret as it always has.
+    expect(event).toBe(true);
+  });
+
+  it('takes every file in one paste', () => {
+    const onPasteFiles = vi.fn();
+    bare({ onPasteFiles });
+
+    paste([new File(['a'], 'a.png'), new File(['b'], 'b.png')]);
+
+    expect(onPasteFiles.mock.calls[0]?.[0]).toHaveLength(2);
+  });
+});
+
+describe('a stashed prompt', () => {
+  /** A stash leaves no other mark, and the box it was taken from is where it is missed. */
+  it('says so in the empty box', () => {
+    render(<Host session="a" onSend={vi.fn()} stashed />);
+
+    expect(box().placeholder).toContain('stashed');
+  });
+
+  it('says nothing when there is none', () => {
+    render(<Host session="a" onSend={vi.fn()} />);
+
+    expect(box().placeholder).not.toContain('stashed');
+  });
+});
+
+describe('searching back through what was sent', () => {
+  const history = ['fix the parser', 'add a test for the parser', 'run the build'];
+  const row = () => screen.queryByRole('status');
+
+  async function searching() {
+    const view = hosted('a', history);
+    await view.user.click(box());
+    await view.user.keyboard('{Control>}r{/Control}');
+    return view;
+  }
+
+  it('opens on ctrl+r with the prompt a shell shows', async () => {
+    await searching();
+
+    expect(row()?.textContent).toContain("(reverse-i-search)`':");
+  });
+
+  it('shows the newest prompt containing what is typed', async () => {
+    const { user } = await searching();
+    await user.keyboard('run');
+
+    expect(row()?.textContent).toContain('run the build');
+  });
+
+  it('leaves the typed characters out of the box, since they are the search', async () => {
+    const { user } = await searching();
+    await user.keyboard('run');
+
+    expect(box().value).toBe('');
+  });
+
+  it('says the search failed without dropping the match it had', async () => {
+    const { user } = await searching();
+    await user.keyboard('runz');
+
+    expect(row()?.textContent).toContain('(failed reverse-i-search)');
+    expect(row()?.textContent).toContain('run the build');
+  });
+
+  it('steps back another match on a second ctrl+r', async () => {
+    const { user } = await searching();
+    await user.keyboard('parser');
+    await user.keyboard('{Control>}r{/Control}');
+
+    expect(row()?.textContent).toContain('add a test for the parser');
+  });
+
+  it('takes the match into the box on Enter without sending it', async () => {
+    const { user, onSend } = await searching();
+    await user.keyboard('run');
+    await user.keyboard('{Enter}');
+
+    expect(box().value).toBe('run the build');
+    expect(onSend).not.toHaveBeenCalled();
+    expect(row()).toBeNull();
+  });
+
+  it('abandons the search on Escape, leaving what was being written', async () => {
+    const view = hosted('a', history);
+    await view.user.click(box());
+    await view.user.keyboard('half a thought');
+    await view.user.keyboard('{Control>}r{/Control}');
+    await view.user.keyboard('run');
+    await view.user.keyboard('{Escape}');
+
+    expect(row()).toBeNull();
+    expect(box().value).toBe('half a thought');
+  });
+
+  it('backspace takes back a character of the search rather than of the message', async () => {
+    const view = hosted('a', history);
+    await view.user.click(box());
+    await view.user.keyboard('keep me');
+    await view.user.keyboard('{Control>}r{/Control}');
+    await view.user.keyboard('runz{Backspace}');
+
+    expect(row()?.textContent).not.toContain('failed');
+    expect(box().value).toBe('keep me');
+  });
+
+  it('does not open in shell mode, where a prompt is not what is wanted', async () => {
+    const view = hosted('a', history);
+    await view.user.click(box());
+    await view.user.keyboard('!ls');
+    await view.user.keyboard('{Control>}r{/Control}');
+
+    expect(row()).toBeNull();
   });
 });
