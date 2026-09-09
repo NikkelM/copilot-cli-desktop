@@ -9,7 +9,19 @@ import type { Attachment } from '../../shared/protocol';
 const open = vi.fn();
 vi.mock('@tauri-apps/plugin-dialog', () => ({ open: (...args: unknown[]) => open(...args) }));
 
-beforeEach(() => open.mockReset());
+const revealItemInDir = vi.fn();
+vi.mock('@tauri-apps/plugin-opener', () => ({
+  revealItemInDir: (...args: unknown[]) => revealItemInDir(...args),
+}));
+
+const previewImage = vi.fn();
+vi.mock('../lib/sidecar', () => ({ previewImage: (...args: unknown[]) => previewImage(...args) }));
+
+beforeEach(() => {
+  open.mockReset();
+  revealItemInDir.mockReset().mockResolvedValue(undefined);
+  previewImage.mockReset().mockResolvedValue('data:image/png;base64,AAA');
+});
 
 /**
  * The picker is opened from a button that lives with the composer's other buttons, so this
@@ -104,7 +116,7 @@ describe('Attachments', () => {
     show([file('C:\\work\\shot.png')]);
 
     expect(screen.getByText('shot.png')).toBeTruthy();
-    expect(screen.getByTitle('C:\\work\\shot.png')).toBeTruthy();
+    expect(screen.getByTitle('Show C:\\work\\shot.png in its folder')).toBeTruthy();
   });
 
   // Picking the wrong file should not mean sending it.
@@ -123,4 +135,67 @@ describe('Attachments', () => {
    * inside the mock. Worth another look; not worth a test that fails for a reason unrelated
    * to what it is checking.
    */
+});
+
+describe('looking at what is attached', () => {
+  // The folder rather than the file: opening it hands it to whatever claims the extension.
+  it('reveals the file in its folder when clicked', async () => {
+    show([file('C:\\work\\shot.png')]);
+
+    await userEvent.click(screen.getByText('shot.png'));
+
+    expect(revealItemInDir).toHaveBeenCalledWith('C:\\work\\shot.png');
+  });
+
+  it('shows the picture on hover', async () => {
+    show([file('C:\\work\\shot.png')]);
+
+    await userEvent.hover(screen.getByText('shot.png'));
+
+    const preview = await screen.findByRole('img');
+    expect(preview.getAttribute('src')).toBe('data:image/png;base64,AAA');
+  });
+
+  it('takes it away again on leaving', async () => {
+    show([file('C:\\work\\shot.png')]);
+
+    await userEvent.hover(screen.getByText('shot.png'));
+    await screen.findByRole('img');
+    await userEvent.unhover(screen.getByText('shot.png'));
+
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+
+  /** Reading the file is the sidecar's disk, so moving along a row should not re-read it. */
+  it('reads each file once however often it is hovered', async () => {
+    show([file('C:\\work\\shot.png')]);
+
+    await userEvent.hover(screen.getByText('shot.png'));
+    await screen.findByRole('img');
+    await userEvent.unhover(screen.getByText('shot.png'));
+    await userEvent.hover(screen.getByText('shot.png'));
+
+    expect(previewImage).toHaveBeenCalledTimes(1);
+  });
+
+  // Deciding here saves a round trip that could only ever answer no.
+  it('does not ask about a file that is not an image', async () => {
+    show([file('C:\\work\\notes.log')]);
+
+    await userEvent.hover(screen.getByText('notes.log'));
+
+    expect(previewImage).not.toHaveBeenCalled();
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+
+  // Too large, unreadable, or not really a PNG. A missing preview is the whole consequence.
+  it('shows nothing when there is nothing to show', async () => {
+    previewImage.mockResolvedValue(null);
+    show([file('C:\\work\\shot.png')]);
+
+    await userEvent.hover(screen.getByText('shot.png'));
+
+    await vi.waitFor(() => expect(previewImage).toHaveBeenCalled());
+    expect(screen.queryByRole('img')).toBeNull();
+  });
 });

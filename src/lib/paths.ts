@@ -1,4 +1,15 @@
 /**
+ * The last part of a path, whichever way its separators lean.
+ *
+ * Both separators, because a path can come from the clipboard, from a picker or from the
+ * sidecar, and only one of those three is guaranteed to have been through Node.
+ */
+export function nameOf(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] ?? path;
+}
+
+/**
  * Show paths relative to the session's working directory.
  * Absolute paths are mostly repeated prefix, which crowds out the part that matters.
  */

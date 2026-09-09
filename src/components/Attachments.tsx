@@ -1,7 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
-import type { Attachment } from '../../shared/protocol';
+import { nameOf } from '../lib/paths';
+import { previewImage } from '../lib/sidecar';
+import { PREVIEWABLE, type Attachment } from '../../shared/protocol';
 
 /**
  * Files riding along with the next message.
@@ -13,6 +16,10 @@ import type { Attachment } from '../../shared/protocol';
  * Shown before sending, and removable: picking the wrong file should not mean sending it.
  * The button that opens the picker lives with the other buttons rather than here, so a
  * message with several files attached grows upwards instead of pushing Send off the line.
+ *
+ * A name is a poor way to identify a picture, so hovering an image shows it. Clicking any
+ * chip reveals the file in its folder rather than opening it, which would hand it to
+ * whatever application claims the extension - rarely what was wanted, and not undoable.
  */
 export function Attachments({
   attached,
@@ -29,6 +36,16 @@ export function Attachments({
   onFocusBack: () => void;
   onError: (message: string) => void;
 }) {
+  /**
+   * The chip being hovered, and where to put its preview.
+   *
+   * Held here rather than in each chip so only one preview can be open, and so a preview
+   * cannot outlive the chip that opened it.
+   */
+  const [hovered, setHovered] = useState<{ path: string; top: number; left: number } | null>(null);
+  /** Bytes already fetched, so moving along a row of chips asks the sidecar once each. */
+  const [previews, setPreviews] = useState<Record<string, string | null>>({});
+
   useEffect(() => {
     onPicker(() => {
       open({ multiple: true, title: 'Attach to this message' })
@@ -52,11 +69,35 @@ export function Attachments({
 
   if (attached.length === 0) return null;
 
+  const enter = (file: Attachment, chip: HTMLElement) => {
+    if (!isPreviewable(file.path)) return;
+
+    const box = chip.getBoundingClientRect();
+    // Anchored to the chip's top edge: the composer sits at the bottom of the window, so a
+    // preview below it would be off the screen.
+    setHovered({ path: file.path, top: box.top, left: box.left });
+
+    if (!(file.path in previews)) {
+      previewImage(file.path)
+        .catch(() => null)
+        .then((dataUrl) => setPreviews((current) => ({ ...current, [file.path]: dataUrl })));
+    }
+  };
+
   return (
     <div className="attachments">
       {attached.map((file) => (
-        <span className="attachment" key={file.path} title={file.path}>
-          {file.displayName ?? file.path}
+        <span className="attachment" key={file.path}>
+          <button
+            type="button"
+            className="attachment-name"
+            title={`Show ${file.path} in its folder`}
+            onClick={() => revealItemInDir(file.path).catch((e: unknown) => onError(String(e)))}
+            onMouseEnter={(event) => enter(file, event.currentTarget)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            {file.displayName ?? file.path}
+          </button>
           <button
             type="button"
             onClick={() => onChange(attached.filter((other) => other.path !== file.path))}
@@ -66,12 +107,20 @@ export function Attachments({
           </button>
         </span>
       ))}
+      {hovered && previews[hovered.path] && (
+        <img
+          className="attachment-preview"
+          style={{ top: hovered.top, left: hovered.left }}
+          src={previews[hovered.path] ?? undefined}
+          alt={nameOf(hovered.path)}
+        />
+      )}
     </div>
   );
 }
 
-/** The last part of a path, whichever way its separators lean. */
-function nameOf(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts[parts.length - 1] ?? path;
+/** Whether the file is one the sidecar would hand back, decided before asking it. */
+function isPreviewable(path: string): boolean {
+  const dot = path.lastIndexOf('.');
+  return dot > 0 && path.slice(dot).toLowerCase() in PREVIEWABLE;
 }
