@@ -1,100 +1,130 @@
 // @vitest-environment jsdom
-import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { QueuedItem } from '../../shared/protocol';
 
 import { useQueue } from './useQueue';
 
-const message = (id: string, prompt = `prompt ${id}`) => ({ id, prompt });
+const { sessionQueue } = vi.hoisted(() => ({ sessionQueue: vi.fn() }));
+
+vi.mock('./sidecar', () => ({ sessionQueue }));
+
+const item = (id: string, text = id): QueuedItem => ({ id, kind: 'message', text, messageId: `m-${id}` });
 
 describe('useQueue', () => {
-  it('has nothing waiting to begin with', () => {
-    const { result } = renderHook(() => useQueue());
-    expect(result.current.queues['s1']).toBeUndefined();
+  beforeEach(() => {
+    sessionQueue.mockReset().mockResolvedValue([]);
   });
 
-  it('keeps queued messages in the order they were written', () => {
+  it('starts with nothing waiting', () => {
     const { result } = renderHook(() => useQueue());
-
-    act(() => result.current.add('s1', message('a')));
-    act(() => result.current.add('s1', message('b')));
-
-    expect(result.current.queues['s1'].map((m) => m.id)).toEqual(['a', 'b']);
+    expect(result.current.queues).toEqual({});
   });
 
-  // Two sessions can both be running with something behind them.
-  it('keeps each session\u2019s queue to itself', () => {
+  // The runtime says only that its queue changed, so the answer has to be asked for.
+  it('reads the runtime queue when asked', async () => {
+    sessionQueue.mockResolvedValue([item('a'), item('b')]);
     const { result } = renderHook(() => useQueue());
 
-    act(() => result.current.add('s1', message('a')));
-    act(() => result.current.add('s2', message('b')));
+    act(() => result.current.refresh('s1'));
 
-    expect(result.current.queues['s1'].map((m) => m.id)).toEqual(['a']);
-    expect(result.current.queues['s2'].map((m) => m.id)).toEqual(['b']);
+    await waitFor(() => expect(result.current.queues.s1).toHaveLength(2));
+    expect(result.current.queues.s1?.map((q) => q.text)).toEqual(['a', 'b']);
+    expect(sessionQueue).toHaveBeenCalledWith('s1');
   });
 
-  it('drops a message once the runtime takes it', () => {
+  it('keeps each session apart', async () => {
+    sessionQueue.mockImplementation((id: string) => Promise.resolve(id === 's1' ? [item('a')] : [item('b')]));
     const { result } = renderHook(() => useQueue());
-    act(() => result.current.add('s1', message('a')));
-    act(() => result.current.add('s1', message('b')));
 
-    act(() => result.current.taken('s1', 'a'));
+    act(() => {
+      result.current.refresh('s1');
+      result.current.refresh('s2');
+    });
 
-    expect(result.current.queues['s1'].map((m) => m.id)).toEqual(['b']);
+    await waitFor(() => expect(result.current.queues.s2).toHaveLength(1));
+    expect(result.current.queues.s1?.[0]?.text).toBe('a');
+    expect(result.current.queues.s2?.[0]?.text).toBe('b');
   });
 
-  // Every message arrives as a user.message, queued or not, so most ids mean nothing here.
-  it('ignores an id it never queued', () => {
-    const { result } = renderHook(() => useQueue());
-    act(() => result.current.add('s1', message('a')));
+  /**
+   * A turn taking three queued messages announces three changes in quick succession. Each
+   * read is a round trip, and without ordering they land in whatever order they finish in,
+   * leaving the queue showing a state it has already moved past.
+   */
+  it('ignores an answer overtaken by a later read', async () => {
+    let resolveFirst: (items: QueuedItem[]) => void = () => {};
+    sessionQueue
+      .mockImplementationOnce(() => new Promise<QueuedItem[]>((r) => (resolveFirst = r)))
+      .mockImplementationOnce(() => Promise.resolve([item('c')]));
 
+    const { result } = renderHook(() => useQueue());
+
+    act(() => result.current.refresh('s1'));
+    act(() => result.current.refresh('s1'));
+    await waitFor(() => expect(result.current.queues.s1?.[0]?.text).toBe('c'));
+
+    // The first read finishes last, carrying the state before the second.
+    await act(async () => resolveFirst([item('a'), item('b')]));
+    expect(result.current.queues.s1?.map((q) => q.text)).toEqual(['c']);
+  });
+
+  it('empties a queue the runtime says is empty', async () => {
+    sessionQueue.mockResolvedValueOnce([item('a')]).mockResolvedValueOnce([]);
+    const { result } = renderHook(() => useQueue());
+
+    act(() => result.current.refresh('s1'));
+    await waitFor(() => expect(result.current.queues.s1).toHaveLength(1));
+
+    act(() => result.current.refresh('s1'));
+    await waitFor(() => expect(result.current.queues.s1).toEqual([]));
+  });
+
+  /**
+   * The sidebar rerenders on the queue, and a session left running announces a change on
+   * every message it takes. Answering "still nothing" with a new array would rerender for
+   * every one of them.
+   */
+  it('does not churn when nothing was waiting and nothing is', async () => {
+    const { result } = renderHook(() => useQueue());
+
+    act(() => result.current.refresh('s1'));
+    await waitFor(() => expect(sessionQueue).toHaveBeenCalled());
     const before = result.current.queues;
-    act(() => result.current.taken('s1', 'never-queued'));
 
+    act(() => result.current.refresh('s1'));
+    await waitFor(() => expect(sessionQueue).toHaveBeenCalledTimes(2));
     expect(result.current.queues).toBe(before);
   });
 
-  it('does not take a message off another session\u2019s queue', () => {
+  // The session is gone before an answer could come back, and the queue went with it.
+  it('forgets a session without asking', async () => {
+    sessionQueue.mockResolvedValue([item('a')]);
     const { result } = renderHook(() => useQueue());
-    act(() => result.current.add('s1', message('a')));
 
-    act(() => result.current.taken('s2', 'a'));
+    act(() => result.current.refresh('s1'));
+    await waitFor(() => expect(result.current.queues.s1).toHaveLength(1));
 
-    expect(result.current.queues['s1'].map((m) => m.id)).toEqual(['a']);
-  });
-
-  // Stopping a turn discards what was behind it, so nothing shown is still coming.
-  it('empties a queue that will never be sent', () => {
-    const { result } = renderHook(() => useQueue());
-    act(() => result.current.add('s1', message('a')));
-    act(() => result.current.add('s2', message('b')));
-
+    sessionQueue.mockClear();
     act(() => result.current.clear('s1'));
 
-    expect(result.current.queues['s1']).toEqual([]);
-    expect(result.current.queues['s2'].map((m) => m.id)).toEqual(['b']);
+    expect(result.current.queues.s1).toEqual([]);
+    expect(sessionQueue).not.toHaveBeenCalled();
   });
 
-  // Clearing happens on every unload and every stop, most of them with nothing waiting.
-  it('changes nothing when there was nothing to clear', () => {
+  /**
+   * A read that fails is a session going away, which happens whenever one is let go. Saying
+   * so in the error bar would bury a real message under that noise.
+   */
+  it('empties rather than reporting a queue it cannot read', async () => {
+    sessionQueue.mockResolvedValueOnce([item('a')]).mockRejectedValueOnce(new Error('gone'));
     const { result } = renderHook(() => useQueue());
-    const before = result.current.queues;
 
-    act(() => result.current.clear('s1'));
+    act(() => result.current.refresh('s1'));
+    await waitFor(() => expect(result.current.queues.s1).toHaveLength(1));
 
-    expect(result.current.queues).toBe(before);
-  });
-
-  // The handlers are given to a subscription that is registered once and would otherwise
-  // hold the first render's copies forever.
-  it('keeps one identity for its handlers across renders', () => {
-    const { result, rerender } = renderHook(() => useQueue());
-    const { add, taken, clear } = result.current;
-
-    act(() => result.current.add('s1', message('a')));
-    rerender();
-
-    expect(result.current.add).toBe(add);
-    expect(result.current.taken).toBe(taken);
-    expect(result.current.clear).toBe(clear);
+    act(() => result.current.refresh('s1'));
+    await waitFor(() => expect(result.current.queues.s1).toEqual([]));
   });
 });

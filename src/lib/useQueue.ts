@@ -1,53 +1,68 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
-/** A message waiting for the turn in front of it to finish. */
-export interface QueuedMessage {
-  /** The id the runtime gave it, which the `user.message` event carries when it is taken. */
-  id: string;
-  prompt: string;
-}
+import type { QueuedItem } from '../../shared/protocol';
+
+import { sessionQueue } from './sidecar';
 
 /**
  * What each session has waiting behind the turn it is running.
  *
- * Kept here rather than read from the runtime because the runtime does not offer it: the
- * `pending_messages.modified` event says only that the queue changed, with no payload, and
- * the session exposes no way to ask. What it does give is an id when a message is accepted
- * and the same id on the `user.message` event when it is finally taken, which is enough to
- * follow a message exactly rather than by matching its text.
+ * Read from the runtime, not kept here. This app used to track it by hand, on the stated
+ * belief that the runtime offered no way to ask - it does, and a second copy of a queue can
+ * only ever disagree with the first. Reading it also picks up everything this app did not
+ * put there: commands queued during a turn, model changes, and messages sent from a
+ * terminal attached to the same session.
+ *
+ * `pending_messages.modified` carries no payload, which is what made the runtime queue look
+ * unreadable. It is a prompt to ask again, and asking is cheap: an unloaded session answers
+ * with nothing without being resumed.
  */
 export function useQueue() {
-  const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
-
-  /** Record a message the runtime accepted but has not started yet. */
-  const add = useCallback((sessionId: string, message: QueuedMessage) => {
-    setQueues((current) => ({ ...current, [sessionId]: [...(current[sessionId] ?? []), message] }));
-  }, []);
+  const [queues, setQueues] = useState<Record<string, QueuedItem[]>>({});
 
   /**
-   * Drop a message that has left the queue for the conversation.
+   * Reads already in flight, per session.
    *
-   * Every message arrives this way, queued or not, so an id that was never queued is
-   * expected and means nothing needs to change.
+   * The runtime announces every change, and a turn taking three queued messages announces
+   * three in quick succession. Without this each would start its own read and they would
+   * land in whatever order the round trips finished in, leaving the queue showing a state
+   * it had already moved past.
    */
-  const taken = useCallback((sessionId: string, messageId: string) => {
-    setQueues((current) => {
-      const waiting = current[sessionId];
-      if (!waiting?.some((message) => message.id === messageId)) return current;
+  const reading = useRef(new Map<string, number>());
 
-      return { ...current, [sessionId]: waiting.filter((message) => message.id !== messageId) };
-    });
+  const refresh = useCallback((sessionId: string) => {
+    const at = (reading.current.get(sessionId) ?? 0) + 1;
+    reading.current.set(sessionId, at);
+
+    sessionQueue(sessionId)
+      .then((items) => {
+        // A later read has already been asked for, so this answer is the older one.
+        if (reading.current.get(sessionId) !== at) return;
+        setQueues((current) => {
+          const previous = current[sessionId];
+          // Both empty is the common answer, and replacing one empty list with another
+          // would rerender the sidebar on every announcement.
+          if (!previous?.length && !items.length) return current;
+          return { ...current, [sessionId]: items };
+        });
+      })
+      // A queue that cannot be read is a queue nobody can act on, and saying so in the
+      // error bar would bury a real message under the noise of a session going away.
+      .catch(() =>
+        setQueues((current) => (current[sessionId]?.length ? { ...current, [sessionId]: [] } : current)),
+      );
   }, []);
 
   /**
-   * Forget everything a session had waiting.
+   * Forget what a session had waiting, without asking.
    *
-   * Stopping a turn discards the queue behind it, and so does letting the session go, so
-   * anything still shown would be waiting for something that will never happen.
+   * For a session being let go: it is gone before the answer could come back, and the
+   * runtime that held the queue went with it.
    */
   const clear = useCallback((sessionId: string) => {
+    reading.current.delete(sessionId);
     setQueues((current) => (current[sessionId]?.length ? { ...current, [sessionId]: [] } : current));
   }, []);
 
-  return { queues, add, taken, clear };
+  return { queues, refresh, clear };
 }
