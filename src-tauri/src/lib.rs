@@ -70,6 +70,44 @@ type Link = Arc<Mutex<Option<ChildStdin>>>;
 const SIDECAR_STOPPED: &str = "the runtime stopped; restart the app";
 /// Told to a request that arrives while a replacement is starting.
 const SIDECAR_RESTARTING: &str = "the runtime is restarting; try again";
+/// Told to a request the sidecar never answered.
+const SIDECAR_SILENT: &str = "the runtime did not answer; it may still be working";
+
+/**
+ * How long to wait for a reply before giving up on it.
+ *
+ * A sidecar that dies answers everything waiting, so this is not about a runtime that goes
+ * away - it is about one that stays up and loses a request. That should not happen, and
+ * every path in the sidecar is meant to answer, but the cost of being wrong is a caller
+ * blocked for as long as the app runs, on a channel nothing will ever send to: a spinner
+ * that never stops and no way back short of a restart.
+ *
+ * Deliberately far longer than any request should take, because its job is to break a hang
+ * rather than to enforce a deadline. The slowest by a distance is the first message to a
+ * cold session, which starts a Copilot process and replays the conversation into it; that
+ * is seconds, not minutes. Anything past this is a bug, and saying so beats waiting.
+ */
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+
+/**
+ * Wait for a reply, or conclude that none is coming.
+ *
+ * Split out from the request itself so both endings can be tested: a channel that answers,
+ * and one that never does. `RecvTimeoutError` does not distinguish a sender that hung up
+ * from one that is merely slow, so the two are told apart here - a dropped sender means the
+ * sidecar went away, which is the sweep having already run.
+ */
+fn await_reply(
+    rx: &std::sync::mpsc::Receiver<Result<Value, String>>,
+    timeout: Duration,
+) -> Result<Value, String> {
+    use std::sync::mpsc::RecvTimeoutError;
+    match rx.recv_timeout(timeout) {
+        Ok(reply) => reply,
+        Err(RecvTimeoutError::Timeout) => Err(SIDECAR_SILENT.to_string()),
+        Err(RecvTimeoutError::Disconnected) => Err(SIDECAR_STOPPED.to_string()),
+    }
+}
 
 /// How many times to replace a sidecar that dies before concluding it will not stay up.
 const MAX_RESTARTS: u32 = 3;
@@ -108,8 +146,6 @@ fn fail_all(pending: &Pending, message: &str) {
 #[derive(Clone)]
 struct Supervisor {
     script: PathBuf,
-    /// Where the sidecar should keep what belongs to this app, rather than to the CLI.
-    data: Option<PathBuf>,
     app: tauri::AppHandle,
     pending: Pending,
     link: Link,
@@ -142,10 +178,6 @@ impl Supervisor {
             // Piped rather than inherited: an installed app has no console to inherit, so
             // everything the sidecar said about why it was failing went nowhere.
             .stderr(Stdio::piped());
-
-        if let Some(data) = &self.data {
-            command.env("COPILOT_DESKTOP_DATA", data);
-        }
 
         // Without this every sidecar start flashes a console window on Windows, and a
         // sidecar that dies and is replaced flashes one per attempt - which looks like the
@@ -272,14 +304,9 @@ struct Sidecar {
 }
 
 impl Sidecar {
-    fn spawn(
-        script: PathBuf,
-        data: Option<PathBuf>,
-        app: tauri::AppHandle,
-    ) -> Result<Self, String> {
+    fn spawn(script: PathBuf, app: tauri::AppHandle) -> Result<Self, String> {
         let supervisor = Supervisor {
             script,
-            data,
             app,
             pending: Arc::new(Mutex::new(HashMap::new())),
             link: Arc::new(Mutex::new(None)),
@@ -331,7 +358,17 @@ impl Sidecar {
             return Err(error);
         }
 
-        rx.recv().map_err(|_| SIDECAR_STOPPED.to_string())?
+        let reply = await_reply(&rx, REQUEST_TIMEOUT);
+
+        // A reply that never came leaves its sender in the map, where it would sit for the
+        // life of the app. Taking the entry back also means a late reply finds nothing to
+        // send to and is dropped, rather than being matched to a caller that gave up.
+        if reply.as_ref().err().is_some_and(|e| e == SIDECAR_SILENT) {
+            self.pending.lock().unwrap().remove(&id);
+            log(&format!("no reply to {method} (id {id}) within {REQUEST_TIMEOUT:?}"));
+        }
+
+        reply
     }
 }
 
@@ -431,21 +468,29 @@ async fn sidecar_request(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Registered before anything else, which is what the plugin requires: a second
+        // launch has to be turned away before it can start a sidecar of its own. Two of
+        // them would run two Copilot servers with no idea of each other, doubling the
+        // memory this app exists to keep down, and racing over the same stored settings.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Restores the size, position and maximised state the window was left in. The
+        // plugin clamps a restored position to a monitor that still exists, which doing
+        // this by hand would have to get right for an unplugged screen or a resolution
+        // change; the saved coordinates otherwise point off every display there is.
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             open_log(app.handle());
 
-            // Its own directory, not the CLI's. Uninstalling this app is scoped to the
-            // directories Tauri owns, so anything written outside them would outlive it.
-            let data = app.path().app_local_data_dir().ok().map(readable_path);
-            if let Some(dir) = &data {
-                log(&format!("sidecar data: {}", dir.display()));
-            }
-
             app.manage(Sidecar::spawn(
                 sidecar_script(app.handle()),
-                data,
                 app.handle().clone(),
             )?);
             Ok(())
@@ -557,6 +602,42 @@ mod tests {
         assert_eq!(
             next_attempt(MAX_RESTARTS, HEALTHY - Duration::from_millis(1)),
             None
+        );
+    }
+
+    #[test]
+    fn a_reply_is_handed_back_as_it_arrived() {
+        let (tx, rx) = channel();
+        tx.send(Ok(json!({ "ok": true }))).unwrap();
+        assert_eq!(await_reply(&rx, INSTANTLY), Ok(json!({ "ok": true })));
+
+        let (tx, rx) = channel();
+        tx.send(Err("no".to_string())).unwrap();
+        assert_eq!(await_reply(&rx, INSTANTLY), Err("no".to_string()));
+    }
+
+    /// The hole this closes: a sidecar that stays up but loses a request used to block its
+    /// caller forever, which shows as a spinner that never stops.
+    #[test]
+    fn a_request_that_is_never_answered_gives_up_rather_than_waiting_forever() {
+        let (tx, rx) = channel::<Result<Value, String>>();
+
+        assert_eq!(await_reply(&rx, INSTANTLY), Err(SIDECAR_SILENT.to_string()));
+
+        // Held to the end so the channel is open throughout: a dropped sender would have
+        // ended the wait for the wrong reason and the test would pass without proving it.
+        drop(tx);
+    }
+
+    // Which is the sweep having already answered everything, so the caller is told the
+    // runtime went rather than that it stayed quiet.
+    #[test]
+    fn a_sidecar_that_went_away_says_so_instead() {
+        let (tx, rx) = channel::<Result<Value, String>>();
+        drop(tx);
+        assert_eq!(
+            await_reply(&rx, Duration::from_secs(30)),
+            Err(SIDECAR_STOPPED.to_string())
         );
     }
 }

@@ -122,7 +122,7 @@ Environment overrides, mostly for testing:
 | `COPILOT_CLI_PATH` | Use a specific CLI executable |
 | `COPILOT_DESKTOP_NODE` | Node binary used to launch the sidecar |
 | `COPILOT_DESKTOP_SIDECAR` | Path to the built sidecar entrypoint |
-| `COPILOT_DESKTOP_DEV_PORT` | Enable the dev channel described below |
+| `COPILOT_DESKTOP_DEV_PORT` | Enable the dev channel described below (development builds only) |
 
 ### Driving the app during development
 
@@ -139,7 +139,10 @@ node scripts/drive.mjs runtime.status
 node scripts/drive.mjs sessions.send '{"sessionId":"<id>","prompt":"hello"}' 30000
 ```
 
-The channel binds to `127.0.0.1` only and never listens unless the variable is set.
+The channel binds to `127.0.0.1` only and never listens unless the variable is set. It
+exists only in a development tree: `scripts/bundle-sidecar.mjs` leaves the module out of a
+packaged app, so an installed copy has no socket code in it at all and logs that it has none
+if the variable is set anyway.
 
 `scripts/Capture-Window.ps1` captures the window to a PNG for visual checks. It reads
 the window's own buffer with `PrintWindow`, so it never captures anything else on the

@@ -134,8 +134,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
+          # The same list the upload step collected, which is the one a dry run exercises.
+          # Read into an array rather than left to word splitting: the product name has a
+          # space in it, so each installer path would otherwise arrive as three arguments
+          # and the release would be created with none of them.
+          mapfile -t installers <<< "${{ steps.artifacts.outputs.paths }}"
           gh release create "v${{ inputs.tag }}" \
             --title "v${{ inputs.tag }}" \
             --notes-file RELEASE_NOTES.md \
             --draft \
-            $(find src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*-setup.exe' \))
+            "${installers[@]}"

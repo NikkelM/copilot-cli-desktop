@@ -19,7 +19,9 @@ export interface DevChannelOptions {
  * sees. Because requests here are handled by the app's own sidecar, its notifications
  * reach the UI exactly as they would for a real interaction.
  *
- * Never listens unless the variable is set, and only ever binds to loopback.
+ * Never listens unless the variable is set, and only ever binds to loopback. This file is
+ * left out of a packaged app entirely - see `scripts/bundle-sidecar.mjs` - so a release has
+ * no socket code in it at all, which is why `index.ts` imports it on demand.
  */
 export function startDevChannel(options: DevChannelOptions): { broadcast: (payload: unknown) => void } {
   const configured = process.env.COPILOT_DESKTOP_DEV_PORT;
