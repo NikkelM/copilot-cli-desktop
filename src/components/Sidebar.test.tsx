@@ -31,7 +31,7 @@ const sessions = [
 ];
 
 const show = (query?: string) => {
-  render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}} creating={false} />);
+  render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}} creating={false} activity={{}} />);
   return query ? userEvent.type(screen.getByRole('searchbox'), query) : Promise.resolve();
 };
 
@@ -105,7 +105,7 @@ describe('Sidebar finding a session the list hides', () => {
     findSessions.mockResolvedValue({ sessions: [hidden] });
     const onSelect = vi.fn();
     render(
-      <Sidebar sessions={sessions} selectedId={null} onSelect={onSelect} onCreate={() => {}} creating={false} />,
+      <Sidebar sessions={sessions} selectedId={null} onSelect={onSelect} onCreate={() => {}} creating={false} activity={{}} />,
     );
     await userEvent.type(screen.getByRole('searchbox'), '0bd2d807');
 
@@ -156,6 +156,7 @@ describe('Sidebar grouping', () => {
         onSelect={() => {}}
         onCreate={() => {}}
         creating={false}
+        activity={{}}
         {...props}
       />,
     );
@@ -201,10 +202,150 @@ describe('Sidebar grouping', () => {
         onSelect={() => {}}
         onCreate={() => {}}
         creating={false}
+        activity={{}}
       />,
     );
 
     expect(screen.queryByText('In memory')).toBeNull();
     expect(screen.queryByText('Not loaded')).toBeNull();
+  });
+});
+
+/** Folding a group away (#124), which is the only way a list of two hundred stays usable. */
+describe('folding a group', () => {
+  const grouped = [
+    session({ sessionId: 'a', title: 'Working', loaded: true }),
+    session({ sessionId: 'c', title: 'Cold one' }),
+    session({ sessionId: 'd', title: 'Cold two' }),
+  ];
+
+  const show = (props: Record<string, unknown> = {}) =>
+    render(
+      <Sidebar
+        sessions={grouped}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        creating={false}
+        activity={{}}
+        {...props}
+      />,
+    );
+
+  beforeEach(() => localStorage.clear());
+
+  it('hides the sessions in a group that is folded', async () => {
+    show();
+    await userEvent.click(screen.getByText('Not loaded'));
+
+    expect(screen.queryByText('Cold one')).toBeNull();
+    expect(screen.queryByText('Cold two')).toBeNull();
+    // Only that group folds, not the list.
+    expect(screen.getByText('Working')).toBeTruthy();
+  });
+
+  it('shows them again when it is unfolded', async () => {
+    show();
+    await userEvent.click(screen.getByText('Not loaded'));
+    await userEvent.click(screen.getByText('Not loaded'));
+
+    expect(screen.getByText('Cold one')).toBeTruthy();
+  });
+
+  /** Folded, the count is the only thing left saying the sessions are still there. */
+  it('says how many are folded away', async () => {
+    show();
+    await userEvent.click(screen.getByText('Not loaded'));
+
+    expect(screen.getByText('2')).toBeTruthy();
+  });
+
+  it('says whether it is open, for a reader who cannot see the caret', async () => {
+    show();
+    const heading = screen.getByText('Not loaded');
+    expect(heading.getAttribute('aria-expanded')).toBe('true');
+
+    await userEvent.click(heading);
+    expect(heading.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  /**
+   * The reason to fold is a long list, which is still long on the next launch. Folding it
+   * again every time would be the same work over.
+   */
+  it('is remembered across a restart', async () => {
+    const first = show();
+    await userEvent.click(screen.getByText('Not loaded'));
+    first.unmount();
+
+    show();
+    expect(screen.queryByText('Cold one')).toBeNull();
+  });
+
+  /** Losing sight of the open session for the sake of a tidier list is a bad trade. */
+  it('keeps showing the selected session even when its group is folded', async () => {
+    show({ selectedId: 'c' });
+    await userEvent.click(screen.getByText('Not loaded'));
+
+    expect(screen.getByText('Cold one')).toBeTruthy();
+    expect(screen.queryByText('Cold two')).toBeNull();
+  });
+});
+
+
+/**
+ * What a loaded session is doing (#115). The dot said one thing - resident - which is the
+ * least interesting answer; what a reader wants to know is which session needs them.
+ */
+describe('the state a row reports', () => {
+  const loaded = [session({ sessionId: 'a', title: 'Working one', loaded: true })];
+
+  const withActivity = (activity: Record<string, { state: 'idle' | 'queued' | 'working' | 'blocked'; queued: number }>) =>
+    render(
+      <Sidebar
+        sessions={loaded}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        creating={false}
+        activity={activity}
+      />,
+    );
+
+  it('says a session is loaded when nothing else is happening', () => {
+    const { container } = withActivity({});
+    expect(container.querySelector('.activity-idle')).not.toBeNull();
+    expect(screen.getByLabelText('Loaded in memory')).toBeTruthy();
+  });
+
+  it('says a session is working', () => {
+    const { container } = withActivity({ a: { state: 'working', queued: 0 } });
+    expect(container.querySelector('.activity-working')).not.toBeNull();
+  });
+
+  /** The state that asks for something, so it is named in words and not only coloured. */
+  it('says a session is blocked on a decision', () => {
+    withActivity({ a: { state: 'blocked', queued: 0 } });
+    expect(screen.getByLabelText(/blocked/)).toBeTruthy();
+  });
+
+  it('counts what is waiting behind a turn', () => {
+    withActivity({ a: { state: 'working', queued: 2 } });
+    expect(screen.getByLabelText('Working. 2 messages waiting')).toBeTruthy();
+  });
+
+  /** A session on disk costs nothing and is doing nothing, so it carries no mark at all. */
+  it('marks nothing on a session that is not loaded', () => {
+    const { container } = render(
+      <Sidebar
+        sessions={[session({ sessionId: 'a', title: 'Cold', loaded: false })]}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        creating={false}
+        activity={{ a: { state: 'working', queued: 0 } }}
+      />,
+    );
+    expect(container.querySelector('.mark')).toBeNull();
   });
 });

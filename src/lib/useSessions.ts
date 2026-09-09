@@ -27,6 +27,8 @@ export function useSessions(onError: (message: string) => void) {
   /** Session ids in activation order, most recent first. Fixes the active group's order. */
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
   const [maxLoaded, setMaxLoaded] = useState<number | undefined>(undefined);
+  /** Sessions with a turn running, whichever one is on screen. */
+  const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set());
 
   /**
    * Previews derived from live events, which are ahead of the database.
@@ -63,6 +65,23 @@ export function useSessions(onError: (message: string) => void) {
    * session, not just the one on screen.
    */
   const observe = useCallback((sessionId: string, event: TranscriptEvent) => {
+    // Which sessions have a turn running, for the sidebar to say so (#115). Tracked here
+    // rather than in the app because this is the one place that sees every session's
+    // events; the app's own `busy` covers only the session on screen.
+    if (event.type === 'assistant.turn_start') {
+      setWorking((current) => (current.has(sessionId) ? current : new Set(current).add(sessionId)));
+    }
+    // Not `assistant.turn_end`, which is one model round trip: a request that calls tools
+    // ends and starts a turn many times over, and the gaps are not idleness.
+    if (event.type === 'session.idle' || event.type === 'abort') {
+      setWorking((current) => {
+        if (!current.has(sessionId)) return current;
+        const next = new Set(current);
+        next.delete(sessionId);
+        return next;
+      });
+    }
+
     const spoken = event.type === 'assistant.message' ? contentOf(event) : null;
     if (!spoken) return;
 
@@ -94,6 +113,15 @@ export function useSessions(onError: (message: string) => void) {
     // Once unloaded the app no longer sees this session's events, so its own preview
     // must stop overriding whatever the database reports.
     if (!loaded) livePreviews.current.delete(sessionId);
+    // A session let go cannot still be mid-turn, and it will send no idle event to say so.
+    if (!loaded) {
+      setWorking((current) => {
+        if (!current.has(sessionId)) return current;
+        const next = new Set(current);
+        next.delete(sessionId);
+        return next;
+      });
+    }
   }, []);
 
   const all = useMemo(() => orderSessions(sessions, activeOrder), [sessions, activeOrder]);
@@ -103,5 +131,5 @@ export function useSessions(onError: (message: string) => void) {
     [all],
   );
 
-  return { all, find, maxLoaded, refresh, observe, observeLoaded };
+  return { all, find, maxLoaded, working, refresh, observe, observeLoaded };
 }

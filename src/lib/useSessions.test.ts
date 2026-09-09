@@ -144,3 +144,64 @@ describe('useSessions', () => {
     });
   });
 });
+
+
+/**
+ * Which sessions have a turn running (#115). Tracked here because this is the one place
+ * that sees every session's events; the app's own busy flag covers only the open one.
+ */
+describe('what each session is doing', () => {
+  const fired = (type: string): TranscriptEvent =>
+    ({ type, timestamp: '2026-01-02T00:00:01.000Z', data: {} }) as TranscriptEvent;
+
+  it('starts with nothing running', async () => {
+    const { result } = await listed();
+    expect([...result.current.working]).toEqual([]);
+  });
+
+  it('takes a turn starting', async () => {
+    const { result } = await listed();
+    act(() => result.current.observe('s1', fired('assistant.turn_start')));
+    expect([...result.current.working]).toEqual(['s1']);
+  });
+
+  it('takes a session going idle', async () => {
+    const { result } = await listed();
+    act(() => result.current.observe('s1', fired('assistant.turn_start')));
+    act(() => result.current.observe('s1', fired('session.idle')));
+    expect([...result.current.working]).toEqual([]);
+  });
+
+  it('takes a turn being stopped', async () => {
+    const { result } = await listed();
+    act(() => result.current.observe('s1', fired('assistant.turn_start')));
+    act(() => result.current.observe('s1', fired('abort')));
+    expect([...result.current.working]).toEqual([]);
+  });
+
+  /**
+   * A request calling tools ends and starts turns many times over, and the gaps between
+   * them are not idleness. Only session.idle means the request is finished.
+   */
+  it('stays running across the turn ends inside one request', async () => {
+    const { result } = await listed();
+    act(() => result.current.observe('s1', fired('assistant.turn_start')));
+    act(() => result.current.observe('s1', fired('assistant.turn_end')));
+    expect([...result.current.working]).toEqual(['s1']);
+  });
+
+  it('forgets a session let go mid-turn, which will send no idle event', async () => {
+    const { result } = await listed();
+    act(() => result.current.observe('s1', fired('assistant.turn_start')));
+    act(() => result.current.observeLoaded('s1', false));
+    expect([...result.current.working]).toEqual([]);
+  });
+
+  it('keeps sessions apart', async () => {
+    const { result } = await listed();
+    act(() => result.current.observe('s1', fired('assistant.turn_start')));
+    act(() => result.current.observe('s2', fired('assistant.turn_start')));
+    act(() => result.current.observe('s1', fired('session.idle')));
+    expect([...result.current.working]).toEqual(['s2']);
+  });
+});

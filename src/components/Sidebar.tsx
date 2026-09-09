@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { findSessions } from '../lib/sidecar';
+import { describeActivity, type ActivityMark } from '../lib/activity';
 import { useRelative } from '../lib/useRelative';
 
 import type { SessionSummary } from '../../shared/protocol';
@@ -18,6 +19,8 @@ interface SidebarProps {
   creating: boolean;
   /** How many sessions may be resident at once; zero or absent means no cap. */
   maxLoaded?: number;
+  /** What each session is doing, keyed by id. Absent means resident and idle (#115). */
+  activity: Record<string, ActivityMark>;
 }
 
 /**
@@ -40,6 +43,43 @@ const ID_PREFIX = 6;
 
 /** Ids are hex and dashes, so anything else in the query rules out this being one. */
 const LOOKS_LIKE_ID = /^[0-9a-f-]+$/i;
+
+/** Where a folded group is remembered, so the sidebar opens as it was left. */
+const FOLDED = 'copilot-desktop.folded';
+
+function readFolded(): Record<string, boolean> {
+  try {
+    const stored = localStorage.getItem(FOLDED);
+    return stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
+  } catch {
+    // A store that cannot be read is one nobody can fix from here. Everything open is the
+    // state the app had before this existed, so it is the safe answer.
+    return {};
+  }
+}
+
+/**
+ * Which groups are folded, remembered across restarts.
+ *
+ * Worth remembering because the reason to fold is a list of two hundred, which is still
+ * two hundred on the next launch. Folding it every time would be the same work again.
+ */
+function useFolded() {
+  const [folded, setFolded] = useState<Record<string, boolean>>(readFolded);
+
+  const toggle = (key: string) =>
+    setFolded((current) => {
+      const next = { ...current, [key]: !current[key] };
+      try {
+        localStorage.setItem(FOLDED, JSON.stringify(next));
+      } catch {
+        // Folding still works for this run; only remembering it does not.
+      }
+      return next;
+    });
+
+  return { folded, toggle };
+}
 
 /**
  * Sessions the list left out, found by id when the reader asks for one directly.
@@ -79,7 +119,7 @@ function useHiddenMatches(query: string, enabled: boolean): SessionSummary[] {
 }
 
 /** Sessions ordered by last use. Rendering and filtering this list never loads a session. */
-export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, maxLoaded }: SidebarProps) {
+export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, maxLoaded, activity }: SidebarProps) {
   const [query, setQuery] = useState('');
 
   // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
@@ -100,10 +140,25 @@ export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, ma
   }, [sessions, query]);
 
   const hidden = useHiddenMatches(query, matches.length === 0);
+  const { folded, toggle } = useFolded();
 
-  // The list is already ordered with the loaded ones first, so the boundary is simply how
-  // many of them there are.
-  const loadedCount = useMemo(() => matches.filter((session) => session.loaded).length, [matches]);
+  /**
+   * The list, split into the groups the sidebar draws.
+   *
+   * The two have always been groups in everything but name, and were drawn as headings
+   * spliced into the middle of a flat list by index. Made explicit so they can fold, and
+   * so a third group is a row in this array rather than another index comparison.
+   */
+  const groups = useMemo(() => {
+    const loaded = matches.filter((session) => session.loaded);
+    const cold = matches.filter((session) => !session.loaded);
+
+    return [
+      { key: 'loaded', label: 'In memory', sessions: loaded },
+      // Only named when there is something above it to tell it apart from.
+      { key: 'cold', label: loaded.length > 0 ? 'Not loaded' : null, sessions: cold },
+    ].filter((group) => group.sessions.length > 0);
+  }, [matches]);
 
   return (
     <nav className="sidebar">
@@ -137,33 +192,65 @@ export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, ma
         <p className="no-matches">No sessions match that filter.</p>
       ) : (
         <ul className="session-list">
-          {matches.map((session, index) => (
-            <li key={session.sessionId}>
-              {/* The loaded ones are the only sessions that cost anything, which is the
-                  whole idea of the app, and they sat at the top marked by a four-pixel dot
-                  that explained neither why they were there nor what they were. */}
-              {index === loadedCount && loadedCount > 0 && <p className="group">Not loaded</p>}
-              {index === 0 && loadedCount > 0 && (
-                <p className="group">
-                  In memory
-                  {/* The plain count, not "1 of 2": the cap is not a total, and reading it
-                      as one made a session that had gone to sleep look deleted. The cap
-                      only matters at it, where the next session opened evicts one. */}
-                  <span
-                    className="group-count"
-                    title={
-                      maxLoaded
-                        ? `${loadedCount} of at most ${maxLoaded} sessions resident. The rest cost nothing until used.`
-                        : `${loadedCount} sessions resident. The rest cost nothing until used.`
-                    }
+          {groups.map((group) => {
+            const shut = group.label !== null && (folded[group.key] ?? false);
+            // A folded group holding the open session still shows it, or the reader loses
+            // where they are for the sake of a tidier list.
+            const shown = shut ? group.sessions.filter((s) => s.sessionId === selectedId) : group.sessions;
+
+            return (
+              <li key={group.key}>
+                {group.label !== null && (
+                  <button
+                    type="button"
+                    className="group"
+                    aria-expanded={!shut}
+                    onClick={() => toggle(group.key)}
+                    title={shut ? `Show the ${group.sessions.length} sessions in this group` : 'Fold this group away'}
                   >
-                    {maxLoaded && loadedCount >= maxLoaded ? `${loadedCount} · full` : loadedCount}
-                  </span>
-                </p>
-              )}
-              <Row session={session} selectedId={selectedId} onSelect={onSelect} />
-            </li>
-          ))}
+                    <span className="group-fold" aria-hidden="true">
+                      {shut ? '▸' : '▾'}
+                    </span>
+                    {group.label}
+                    {/* The count is what stops folding from hiding the fact that something
+                        is there. The resident group carries it either way, because how many
+                        sessions cost memory is the number this app exists to keep down. */}
+                    {group.key === 'loaded' ? (
+                      <span
+                        className="group-count"
+                        title={
+                          maxLoaded
+                            ? `${group.sessions.length} of at most ${maxLoaded} sessions resident. The rest cost nothing until used.`
+                            : `${group.sessions.length} ${group.sessions.length === 1 ? 'session' : 'sessions'} resident. The rest cost nothing until used.`
+                        }
+                      >
+                        {maxLoaded && group.sessions.length >= maxLoaded
+                          ? `${group.sessions.length} · full`
+                          : group.sessions.length}
+                      </span>
+                    ) : (
+                      shut && <span className="group-count">{group.sessions.length}</span>
+                    )}
+                  </button>
+                )}
+
+                {shown.length > 0 && (
+                  <ul className="session-list">
+                    {shown.map((session) => (
+                      <li key={session.sessionId}>
+                        <Row
+                          session={session}
+                          selectedId={selectedId}
+                          onSelect={onSelect}
+                          activity={activity[session.sessionId]}
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
 
           {hidden.length > 0 && (
             <li>
@@ -175,7 +262,7 @@ export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, ma
               <ul className="session-list">
                 {hidden.map((session) => (
                   <li key={session.sessionId}>
-                    <Row session={session} selectedId={selectedId} onSelect={onSelect} />
+                    <Row session={session} selectedId={selectedId} onSelect={onSelect} activity={activity[session.sessionId]} />
                   </li>
                 ))}
               </ul>
@@ -192,11 +279,15 @@ function Row({
   session,
   selectedId,
   onSelect,
+  activity,
 }: {
   session: SessionSummary;
   selectedId: string | null;
   onSelect: (sessionId: string, session?: SessionSummary) => void;
+  activity?: ActivityMark;
 }) {
+  const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
+
   return (
     <button
       type="button"
@@ -205,7 +296,11 @@ function Row({
     >
       <span className="session-title">
         {session.title ?? 'Untitled session'}
-        {session.loaded && <span className="dot" title="Loaded in memory" />}
+        {/* Shape first, colour second: five states is more than a hue can carry, and a
+            reader who cannot separate hues gets none of it at all. */}
+        {session.loaded && (
+          <span className={`activity activity-${mark.state}`} role="img" aria-label={describeActivity(mark)} />
+        )}
       </span>
       <span className="session-meta">
         <Touched at={session.updatedAt} />
