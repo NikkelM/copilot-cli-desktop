@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,9 +17,11 @@ let temp: { TEMP?: string; TMP?: string; TMPDIR?: string };
 /**
  * Load the reader with the environment each test needs.
  *
- * The fixtures live under the real temporary directory, which is where a test's scratch
- * belongs - and which the reader filters out as noise. So its idea of "temporary" is
- * pointed somewhere the fixtures are not, except in the tests that are about the filtering.
+ * The fixtures cannot live under the real temporary directory, which is where a test's
+ * scratch would otherwise belong: the reader filters that out as noise, and it consults the
+ * conventional unix roots as well as the environment's own, so on Linux no variable can
+ * move them off `/tmp`. They go under the home directory instead, and the environment's idea
+ * of "temporary" is pointed somewhere they are not, except in the tests about the filtering.
  */
 async function load(tempRoot = join(home, 'not-the-temp-dir')) {
   vi.resetModules();
@@ -37,7 +39,7 @@ async function keys() {
 }
 
 beforeEach(() => {
-  home = mkdtempSync(join(tmpdir(), 'ccd-changes-'));
+  home = mkdtempSync(join(homedir(), '.ccd-changes-'));
   temp = { TEMP: process.env.TEMP, TMP: process.env.TMP, TMPDIR: process.env.TMPDIR };
 });
 
@@ -273,6 +275,22 @@ describe('temporary files', () => {
     ]);
 
     const { sessionChanges } = await load(scratch);
+    expect(sessionChanges(SESSION)).toEqual([]);
+  });
+
+  // Why the fixtures in this file live outside the temporary directory: the conventional
+  // unix roots are consulted whatever the environment says, so on Linux a fixture under
+  // /tmp is filtered out of every test here while Windows sees nothing wrong. Matching is
+  // pure string work, so this reads the same on either platform.
+  it('leaves out a file under a conventional unix root, wherever the environment points', async () => {
+    await writeStore([
+      {
+        at: '2026-01-01T00:00:00.000Z',
+        files: [{ path: '/tmp/ccd-scratch/u2.png', preimage: ABSENT, postimage: await blob('x\n') }],
+      },
+    ]);
+
+    const { sessionChanges } = await load();
     expect(sessionChanges(SESSION)).toEqual([]);
   });
 
