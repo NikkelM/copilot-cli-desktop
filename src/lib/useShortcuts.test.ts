@@ -250,6 +250,84 @@ describe('useShortcuts', () => {
 
     expect(on).not.toHaveBeenCalled();
   });
+
+  /** ctrl+t, which the CLI answers wherever the cursor happens to be. */
+  describe('showing or hiding reasoning', () => {
+    it('reports the toggle', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('t', { ctrlKey: true });
+
+      expect(on).toHaveBeenCalledExactlyOnceWith('reasoning');
+    });
+
+    // It changes what is on screen rather than what is being written, so the composer
+    // holding the keyboard - which it does whenever a session is open - must not shadow it.
+    it('fires while a message is being typed', () => {
+      renderHook(() => useShortcuts(on));
+      const field = document.createElement('textarea');
+      field.value = 'half a message';
+      document.body.append(field);
+
+      press('t', { ctrlKey: true }, field);
+
+      expect(on).toHaveBeenCalledExactlyOnceWith('reasoning');
+    });
+
+    it('leaves a plain t to be typed', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('t');
+
+      expect(on).not.toHaveBeenCalled();
+    });
+
+    // ctrl+shift+t reopens a closed tab in a browser, and is not this.
+    it('ignores the shifted form', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('t', { ctrlKey: true, shiftKey: true });
+
+      expect(on).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('stashing the prompt', () => {
+    // Only useful while typing, which is where it has to work.
+    it('fires while a message is being typed', () => {
+      renderHook(() => useShortcuts(on));
+      const field = document.createElement('textarea');
+      field.value = 'half a message';
+      document.body.append(field);
+
+      press('s', { ctrlKey: true }, field);
+
+      expect(on).toHaveBeenCalledExactlyOnceWith('stash');
+    });
+
+    // The webview would otherwise offer to save the page, which this app has no notion of.
+    it('takes the key off the webview', () => {
+      renderHook(() => useShortcuts(on));
+
+      expect(press('s', { ctrlKey: true }).defaultPrevented).toBe(true);
+    });
+
+    it('leaves a plain s to be typed', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('s');
+
+      expect(on).not.toHaveBeenCalled();
+    });
+
+    it('ignores the shifted form', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('s', { ctrlKey: true, shiftKey: true });
+
+      expect(on).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('BINDINGS', () => {
@@ -257,7 +335,7 @@ describe('BINDINGS', () => {
   // described, and nothing described as this hook's may do nothing.
   it('describes every shortcut the hook can report', () => {
     const mine = BINDINGS.map((binding) => binding.id).filter(Boolean);
-    expect(mine.sort()).toEqual(['escape-twice', 'help', 'interrupt']);
+    expect(mine.sort()).toEqual(['escape-twice', 'help', 'interrupt', 'reasoning', 'stash']);
   });
 
   // The rest are the composer's and the menu's. They are listed because the reader does not

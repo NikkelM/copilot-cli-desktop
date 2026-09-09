@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 /** How long a second Escape still counts as part of the first. */
 const DOUBLE_ESCAPE_MS = 800;
 
-export type Shortcut = 'interrupt' | 'escape-twice' | 'help';
+export type Shortcut = 'interrupt' | 'escape-twice' | 'help' | 'reasoning' | 'stash';
 
 export interface Binding {
   /**
@@ -26,11 +26,14 @@ export interface Binding {
  * be described here without working. Unlike the CLI there is no status line to put a hint
  * in, which makes the list the only way to find them.
  *
- * Two things are deliberately absent. Ordinary text editing, because the CLI documents
- * ctrl+a and ctrl+k only for want of a terminal that provides them, and a text box already
- * has what this platform uses. And plain navigation - arrows, Tab, a single Escape - which
- * is what a list on screen already invites; a reference that spends its rows on them buries
- * the keys nothing else would reveal.
+ * Two things are deliberately absent. Ordinary text editing, because a text box already has
+ * what this platform uses - the CLI documents ctrl+a and ctrl+e only for want of a terminal
+ * that provides them. And plain navigation - Tab, a single Escape - which is what a list on
+ * screen already invites; a reference that spends its rows on them buries the keys nothing
+ * else would reveal.
+ *
+ * The arrows are listed even so, because stepping through history is not what an arrow does
+ * anywhere else, and ctrl+u and ctrl+k because readline gives them and a textarea does not.
  *
  * Worded and ordered as the CLI words and orders its own, down to the lower case, so the two
  * read as one tool.
@@ -41,7 +44,13 @@ export const BINDINGS: readonly Binding[] = [
   { keys: '/', what: 'commands' },
   { id: 'interrupt', keys: 'ctrl+c', what: 'cancel' },
   { id: 'escape-twice', keys: 'esc esc', what: 'clear input or interrupt' },
+  { id: 'reasoning', keys: 'ctrl+t', what: 'show or hide reasoning' },
+  { id: 'stash', keys: 'ctrl+s', what: 'stash or pop the prompt' },
   { keys: 'shift+enter', what: 'insert newline' },
+  { keys: 'up/down', what: 'previous or next prompt' },
+  { keys: 'ctrl+r', what: 'reverse search history' },
+  { keys: 'ctrl+u', what: 'delete to start of line' },
+  { keys: 'ctrl+k', what: 'delete to end of line' },
 ];
 
 /** Whether a key press belongs to whatever is being typed into. */
@@ -126,6 +135,22 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
           event.preventDefault();
           handler.current('interrupt');
         }
+        return;
+      }
+
+      // Fired even while typing, since it changes what is on screen rather than what is
+      // being written, and a terminal answers it wherever the cursor is.
+      if (event.key === 't' && event.ctrlKey && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        handler.current('reasoning');
+        return;
+      }
+
+      // Only useful while typing, so it has to fire there. Prevented in any case: the
+      // webview would otherwise offer to save the page, which is not a thing this app has.
+      if (event.key === 's' && event.ctrlKey && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        handler.current('stash');
         return;
       }
 

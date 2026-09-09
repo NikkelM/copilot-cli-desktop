@@ -264,3 +264,87 @@ describe('useTranscript keeping what a stopped turn had said', () => {
     expect(result.current.abandoned?.get('a1')).toBeUndefined();
   });
 });
+
+/**
+ * The rows the hook puts there itself, none of which a replay will ever bring back.
+ *
+ * Separate from the stopped-turn remains because these are the ordinary case: a prompt
+ * shown before the runtime has echoed it, a send that then failed, and the output of a
+ * slash command, which is returned to whoever ran it and written down nowhere.
+ */
+describe('useTranscript showing what no event will bring', () => {
+  beforeEach(() => {
+    getTranscript.mockReset().mockResolvedValue({ events: [], nextBefore: null });
+  });
+
+  it('takes back a prompt whose send failed', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    let id = '';
+    act(() => {
+      id = result.current.showSent('never sent');
+    });
+    act(() => result.current.remove(id));
+
+    expect(result.current.events).toEqual([]);
+  });
+
+  it('puts a command\u2019s output in the transcript', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    act(() => result.current.showLocal('local.usage', { total: 12 }));
+
+    expect(result.current.events[0]).toMatchObject({ type: 'local.usage', data: { total: 12 }, local: true });
+  });
+});
+
+describe('useTranscript when there is nothing to read', () => {
+  beforeEach(() => {
+    getTranscript.mockReset().mockResolvedValue({ events: [], nextBefore: null });
+  });
+
+  it('reads nothing without a session, since browsing one costs a disk read', () => {
+    renderHook(() => useTranscript(null, () => {}));
+
+    expect(getTranscript).not.toHaveBeenCalled();
+  });
+
+  it('empties what the last session left behind before the new one arrives', async () => {
+    getTranscript.mockResolvedValue({ events: [reply('from the log', 'e1')], nextBefore: null });
+    const { result, rerender } = renderHook(({ id }: { id: string }) => useTranscript(id, () => {}), {
+      initialProps: { id: 's1' },
+    });
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+
+    const pending = deferred();
+    getTranscript.mockReturnValue(pending.promise);
+    rerender({ id: 's2' });
+
+    expect(result.current.events).toEqual([]);
+    await act(async () => pending.settle({ events: [], nextBefore: null }));
+  });
+
+  it('does not ask again once it is at the start of the log', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalledTimes(1));
+
+    act(() => result.current.loadOlder());
+
+    expect(getTranscript).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops saying it is loading when the older page fails to arrive', async () => {
+    getTranscript.mockResolvedValue({ events: [reply('from the log', 'e1')], nextBefore: 40 });
+    const failed = vi.fn();
+    const { result } = renderHook(() => useTranscript('s1', failed));
+    await waitFor(() => expect(result.current.hasOlder).toBe(true));
+
+    getTranscript.mockRejectedValue(new Error('log truncated'));
+    act(() => result.current.loadOlder());
+
+    await waitFor(() => expect(failed).toHaveBeenCalledWith(expect.stringContaining('log truncated')));
+    expect(result.current.loadingOlder).toBe(false);
+  });
+});

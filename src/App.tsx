@@ -1,12 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type {
   Attachment,
-  ElicitationAction,
-  ElicitationFieldValue,
-  PendingElicitation,
-  PendingPermission,
-  PermissionChoice,
   SessionSummary,
   SlashCommand,
   TranscriptEvent,
@@ -27,46 +22,55 @@ import {
   abortSession,
   createSession,
 
-  onElicitationRequested,
-  onElicitationResolved,
-  onPermissionRequested,
-  onPermissionResolved,
   onSessionEvent,
   onSessionChanges,
   onSessionLoaded,
   onSessionsChanged,
   onSidecarRestarted,
   onSidecarStopped,
-  resolveElicitation,
-  resolvePermission,
   invokeCommand,
+  enqueueCommand,
+  runShell,
   sendMessage,
 } from './lib/sidecar';
 import { CHANGES } from './lib/localCommands';
-import { messageOf } from './lib/errors';
+import { copyText } from './lib/clipboard';
+import { explain, messageOf } from './lib/errors';
+import { activityOf } from './lib/activity';
+import { stashFiles } from './lib/paste';
+import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
+import { useDrafts } from './lib/useDrafts';
 import { useModel } from './lib/useModel';
 import { useCommands } from './lib/useCommands';
 import { dispatch } from './lib/slash';
+import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
 import { useSessions } from './lib/useSessions';
 import { useShortcuts } from './lib/useShortcuts';
+import { useTaskbar } from './lib/useTaskbar';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
 import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
+/** Where showing the model's thinking is remembered, so ctrl+t survives a restart. */
+const REASONING = 'copilot-desktop.reasoning';
+
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Whether the model's thinking is shown. Off is a preference, not a session's state. */
+  const [reasoning, setReasoning] = useState(() => localStorage.getItem(REASONING) !== 'false');
   /**
-   * Unsent text, per session. An unsent message belongs to the session it was written
-   * for: kept in the composer it would follow the user to whichever session they opened
-   * next, and be sent there instead.
+   * Unsent text and the one prompt each session may have set aside, which are two states
+   * of the same writing and so have one owner.
    */
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const drafts = useDrafts();
   /** Files waiting to go with a draft, kept per session for the same reason the text is. */
   const [attachments, setAttachments] = useState<Record<string, Attachment[]>>({});
   const [busy, setBusy] = useState(false);
+  /** When the running turn began, for the clock beside the stop button (#70). */
+  const [busySince, setBusySince] = useState<string | null>(null);
   /** Whether the shortcut list is up. There is nothing else in the app that names them. */
   /**
    * Which help is showing, if any.
@@ -88,8 +92,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   /** Set when the sidecar exits: nothing works afterwards, so it outranks any other message. */
   const [stopped, setStopped] = useState<string | null>(null);
-  const [permissions, setPermissions] = useState<PendingPermission[]>([]);
-  const [elicitations, setElicitations] = useState<PendingElicitation[]>([]);
   /**
    * A session opened by id that the list does not carry.
    *
@@ -113,6 +115,7 @@ export default function App() {
   const model = useModel(selectedId, setError);
   const slash = useCommands(selectedId);
   const changes = useChanges(selectedId);
+  const prompts = usePrompts(selectedId, setError);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
    * has been said, so it says it is working rather than appearing to have done nothing.
@@ -131,15 +134,39 @@ export default function App() {
       await sessions.refresh();
       setSelectedId(sessionId);
     } catch (e: unknown) {
-      setError(String(e));
+      setError(explain(e));
     } finally {
       setCreating(false);
     }
   }
 
+  /**
+   * Attach files pasted into the composer.
+   *
+   * The session is named rather than read from state because the write is asynchronous:
+   * pasting and then moving to another session would otherwise attach the screenshot to
+   * whichever one happened to be open when the bytes finished landing.
+   */
+  async function handlePaste(sessionId: string, files: File[]) {
+    try {
+      const { attached, tooLarge } = await stashFiles(sessionId, files);
+      if (attached.length > 0) {
+        setAttachments((current) => ({ ...current, [sessionId]: [...(current[sessionId] ?? []), ...attached] }));
+      }
+      if (tooLarge.length > 0) {
+        setError(`Too large to paste: ${tooLarge.join(', ')}. Attach with + instead, which sends the path.`);
+      }
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
+  }
+
   // Selecting a session cannot leave the composer disabled by a turn that was running in
   // whichever session was open before.
-  useEffect(() => setBusy(false), [selectedId]);
+  useEffect(() => {
+    setBusy(false);
+    setBusySince(null);
+  }, [selectedId]);
 
   // Nor a help list open over a session nobody asked to read it in. Not remembered per
   // session: it is a reference, so wanting it back is a keypress away.
@@ -154,33 +181,41 @@ export default function App() {
   /** Read by a shortcut handler registered once, which would otherwise hold the first render's answer. */
   const busyRef = useRef(false);
   busyRef.current = busy;
-  const draftsRef = useRef<Record<string, string>>({});
-  draftsRef.current = drafts;
 
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {
       sessions.observe(sessionId, event);
 
-      // Like the preview above, the queue belongs to whichever session owns it rather than
-      // to the one on screen: a session left running keeps its queue while the reader is
-      // elsewhere, and it must be right when they come back.
-      if (event.type === 'user.message') {
-        const messageId = (event.data as { messageId?: string } | undefined)?.messageId;
-        if (messageId) queue.taken(sessionId, messageId);
-      }
-      // Stopping a turn discards everything behind it, so what was waiting will never run.
+      // The queue belongs to whichever session owns it rather than to the one on screen: a
+      // session left running keeps its queue while the reader is elsewhere, and it must be
+      // right when they come back. The runtime says only that its queue changed, so this is
+      // a prompt to read it again rather than something to apply.
+      if (event.type === 'pending_messages.modified') queue.refresh(sessionId);
+      // Stopping a turn discards everything behind it, and the runtime does not always
+      // announce that as a queue change.
       if (event.type === 'abort') queue.clear(sessionId);
 
       if (sessionId !== selectedRef.current) return;
 
       if (event.type === 'assistant.turn_start') {
         setBusy(true);
+        // The first turn of the request, not each round trip: a request calling tools starts
+        // a turn many times over, and restarting the clock in those gaps would report the
+        // last hop rather than how long the reader has been waiting (#70).
+        setBusySince((current) => current ?? event.timestamp ?? new Date().toISOString());
       }
-      if (event.type === 'session.idle' || event.type === 'assistant.turn_end') setBusy(false);
+      // Not `assistant.turn_end`, which is one model round trip: a request that calls tools
+      // ends and starts a turn many times over, and clearing the flag in those gaps offered
+      // a Send button for a session that was still working.
+      if (event.type === 'session.idle' || event.type === 'abort') {
+        setBusy(false);
+        setBusySince(null);
+      }
       if (event.type === 'session.error') setError(describeError(event));
       // The agent working is what changes the working tree, so this is the moment the
-      // branch line is worth asking about again.
-      if (event.type === 'assistant.turn_end') tree.refresh();
+      // branch line is worth asking about again. Once per request rather than once per
+      // round trip: this spawns git, and nine of them per message bought nothing.
+      if (event.type === 'session.idle') tree.refresh();
       // Every resume reports the model as well as every switch, including one made from a
       // terminal, so the header follows rather than trusting what it read from the log.
       model.observe(event);
@@ -229,8 +264,7 @@ export default function App() {
       setStopped(reason);
       setBusy(false);
       setResuming(null);
-      setPermissions([]);
-      setElicitations([]);
+      prompts.clear();
     }),
   );
 
@@ -242,46 +276,16 @@ export default function App() {
         setError(null);
         setBusy(false);
         setResuming(null);
-        setPermissions([]);
-        setElicitations([]);
+        prompts.clear();
         sessions.refresh();
       }),
     [sessions.refresh],
   );
 
-  useTauriEvent(() =>
-    onPermissionRequested((pending) => {
-      setPermissions((current) =>
-        // Guard against the same request arriving twice.
-        current.some((p) => p.requestId === pending.requestId) ? current : [...current, pending],
-      );
-    }),
-  );
-
-  useTauriEvent(() =>
-    onPermissionResolved(({ requestId }) => {
-      setPermissions((current) => current.filter((p) => p.requestId !== requestId));
-    }),
-  );
-
-  useTauriEvent(() =>
-    onElicitationRequested((pending) => {
-      setElicitations((current) =>
-        current.some((e) => e.requestId === pending.requestId) ? current : [...current, pending],
-      );
-    }),
-  );
-
-  useTauriEvent(() =>
-    onElicitationResolved(({ requestId }) => {
-      setElicitations((current) => current.filter((e) => e.requestId !== requestId));
-    }),
-  );
-
   /** Stop the turn, saying so rather than leaving the press looking unnoticed. */
   const interrupt = useCallback(() => {
     const forSession = selectedRef.current;
-    if (forSession) abortSession(forSession).catch((e: unknown) => setError(String(e)));
+    if (forSession) abortSession(forSession).catch((e: unknown) => setError(explain(e)));
   }, []);
 
   useShortcuts(
@@ -292,42 +296,35 @@ export default function App() {
           return;
         }
 
+        if (shortcut === 'reasoning') {
+          setReasoning((showing) => {
+            localStorage.setItem(REASONING, String(!showing));
+            return !showing;
+          });
+          return;
+        }
+
         if (shortcut === 'interrupt') {
           interrupt();
+          return;
+        }
+
+        if (shortcut === 'stash') {
+          if (selectedRef.current) drafts.swap(selectedRef.current);
           return;
         }
 
         // Escape twice means "undo what I was about to do": stopping the turn while one is
         // running, and otherwise throwing away what was written but not sent.
         if (busyRef.current) interrupt();
-        else if (selectedRef.current) setDrafts((current) => ({ ...current, [selectedRef.current!]: '' }));
+        else if (selectedRef.current) drafts.clear(selectedRef.current);
       },
-      [interrupt],
+      [interrupt, drafts],
     ),
     // The composer's own text, rather than what a key event can be asked about the field it
     // landed in: this is where it is actually kept.
-    useCallback(() => draftsRef.current[selectedRef.current ?? ''] ?? '', []),
+    useCallback(() => drafts.written(selectedRef.current), [drafts]),
   );
-
-  function handleElicitation(
-    pending: PendingElicitation,
-    action: ElicitationAction,
-    content?: Record<string, ElicitationFieldValue>,
-  ) {
-    // Drop it immediately so the form cannot be submitted twice.
-    setElicitations((current) => current.filter((e) => e.requestId !== pending.requestId));
-    void resolveElicitation(pending.requestId, action, content).catch((e: unknown) =>
-      setError(String(e)),
-    );
-  }
-
-  function handlePermission(pending: PendingPermission, choice: PermissionChoice) {
-    // Drop it immediately so the prompt cannot be answered twice.
-    setPermissions((current) => current.filter((p) => p.requestId !== pending.requestId));
-    void resolvePermission(pending.sessionId, pending.requestId, choice).catch((e: unknown) =>
-      setError(String(e)),
-    );
-  }
 
   /**
    * Put the keyboard back where someone is going to type.
@@ -354,12 +351,20 @@ export default function App() {
   async function handleSend(prompt: string) {
     if (!selectedId) return;
 
+    // A leading `!` is a shell command, which the runtime runs in the session's own shell.
+    // Checked before the slash dispatch, since `!/usr/bin/env` is a path, not a command.
+    if (prompt.startsWith('!')) {
+      const command = prompt.slice(1).trim();
+      if (command) return runShellCommand(selectedId, command);
+      return;
+    }
+
     // A leading slash naming a command is a command, not a message. Anything else that
     // starts with one - a path, a fraction, a sentence - is text, and is sent as text.
     const what = dispatch(prompt, slash.commands);
 
     if (what.kind === 'local') {
-      setDrafts((current) => ({ ...current, [selectedId]: '' }));
+      drafts.clear(selectedId);
       setError(null);
       // Which one it is decides what opens. There is no default: an unhandled local
       // command would silently do whatever the last branch happened to do.
@@ -372,7 +377,7 @@ export default function App() {
 
     if (what.kind === 'unknown') {
       const near = what.near.map((each) => `/${each.name}`);
-      setDrafts((current) => ({ ...current, [selectedId]: '' }));
+      drafts.clear(selectedId);
       setError(null);
       transcript.showLocal('command.failed', {
         text:
@@ -399,18 +404,52 @@ export default function App() {
   async function runCommand(sessionId: string, command: SlashCommand, input: string) {
     setError(null);
 
-    // The draft is left alone: the command is fine, only the timing is wrong, so it stays
-    // in the composer ready to send again once the turn ends.
-    if (busy && !command.allowDuringTurn) {
-      transcript.showLocal('command.failed', {
-        text: `/${command.name} cannot run while the agent is working. Stop the turn first.`,
+    // `/session id` is the terminal's own rather than the runtime's: the runtime's
+    // `/session` offers info|checkpoints|files|plan|rename and answers `id` with a usage
+    // line, while the CLI adds `id` and handles it locally. This app holds the id too, so
+    // it is ours to answer - and answering it here keeps it free, since nothing has to
+    // wake up to read something already on screen (#129).
+    if (command.name === 'session' && input.trim() === 'id') {
+      drafts.clear(sessionId);
+      transcript.showSent(`/${command.name} ${input.trim()}`);
+      const copied = await copyText(sessionId);
+      transcript.showLocal('command.output', {
+        text: copied ? `${sessionId}\n\nCopied to the clipboard.` : `${sessionId}\n\nCould not reach the clipboard.`,
       });
       return;
     }
 
-    setDrafts((current) => ({ ...current, [sessionId]: '' }));
+    const typed = input ? `/${command.name} ${input}` : `/${command.name}`;
+
+    /**
+     * A command the runtime will not run mid-turn joins the queue behind it.
+     *
+     * `allowDuringTurn` says whether a command may jump the turn, not whether it may be
+     * asked for. Refusing it was this app's own rule and not the runtime's: the CLI queues
+     * it, and 14 of the 32 commands - `/review` and `/compact` among them - do not carry
+     * the flag, so nearly half were being turned away for no reason (#147).
+     *
+     * Nothing is echoed here. The queue row is the record of what is waiting, and the
+     * runtime writes the conversation's own record when it finally runs.
+     */
+    if (busy && !command.allowDuringTurn) {
+      drafts.clear(sessionId);
+      try {
+        const queued = await enqueueCommand(sessionId, typed, typed);
+        if (!queued) {
+          transcript.showLocal('command.failed', {
+            text: `/${command.name} could not be queued for this session. Stop the turn and run it again.`,
+          });
+        }
+      } catch (e: unknown) {
+        transcript.showLocal('command.failed', { text: messageOf(e) });
+      }
+      return;
+    }
+
+    drafts.clear(sessionId);
     // Echoed as typed, so the transcript says what was asked for as well as what came back.
-    transcript.showSent(input ? `/${command.name} ${input}` : `/${command.name}`);
+    transcript.showSent(typed);
 
     const wasCold = !sessions.find(sessionId)?.loaded;
     setResuming(wasCold ? sessionId : null);
@@ -458,9 +497,38 @@ export default function App() {
    * prompt writes something longer than the transcript should carry, and has already put
    * the command that produced it there. Null means it is shown somewhere already.
    */
+  /**
+   * Run a shell command the reader typed, rather than sending it to the agent.
+   *
+   * Goes through the runtime rather than being run beside it, so the command is emitted as
+   * a tool call: the transcript shows it like any other, its output persists in the event
+   * log, and the agent has it in context afterwards. That last part is what makes it worth
+   * having - `!git status` is useful because the agent can then be asked about it (#134).
+   *
+   * It does not queue. A shell command is not the agent's work and there is nothing for it
+   * to wait behind, which is also what the CLI does.
+   */
+  async function runShellCommand(sessionId: string, command: string) {
+    setError(null);
+    // Back to a bare marker rather than empty: shell mode is a mode, and one command is
+    // rarely the only one.
+    drafts.write(sessionId, '!');
+
+    const wasCold = !sessions.find(sessionId)?.loaded;
+    setResuming(wasCold ? sessionId : null);
+
+    try {
+      await runShell(sessionId, `desktop-shell-${Date.now()}`, command);
+    } catch (e: unknown) {
+      transcript.showLocal('command.failed', { text: `Could not run \`${command}\`: ${explain(e)}` });
+    } finally {
+      setResuming(null);
+    }
+  }
+
   async function send(sessionId: string, prompt: string, display: string | null) {
     setError(null);
-    setDrafts((current) => ({ ...current, [sessionId]: '' }));
+    drafts.clear(sessionId);
     // Taken before the send so a file picked while it is in flight belongs to the next
     // message rather than this one.
     const sent = attachments[sessionId] ?? [];
@@ -474,26 +542,55 @@ export default function App() {
     // a turn is running the message will queue, and showing it in the conversation would
     // claim the agent had already been given it.
     const expectQueued = busy;
-    if (!expectQueued && display !== null) transcript.showSent(display);
+    const shown = !expectQueued && display !== null ? transcript.showSent(display) : null;
     setBusy(true);
 
     try {
-      const { messageId, queued } = await sendMessage({ sessionId, prompt, attachments: sent });
+      const { queued } = await sendMessage({ sessionId, prompt, attachments: sent });
 
       // The runtime decides, and a turn can end while the message is on its way, so the
-      // guess above is reconciled with what actually happened.
-      if (queued) queue.add(sessionId, { id: messageId, prompt: display ?? prompt });
-      else if (expectQueued && display !== null) transcript.showSent(display);
+      // guess above is reconciled with what actually happened. Nothing is recorded for a
+      // queued message: the runtime announces its own queue, and this app reads it.
+      if (!queued && expectQueued && display !== null) transcript.showSent(display);
     } catch (e: unknown) {
-      setError(String(e));
+      setError(explain(e));
       setBusy(false);
+
+      // Nothing was sent, so nothing should be left saying it was, and the message itself
+      // is the reader's: it goes back to the composer with its attachments rather than
+      // being lost to an error they may want to read first. Anything typed in the meantime
+      // wins, since taking that away to restore an older draft would be the worse theft.
+      if (shown) transcript.remove(shown);
+      if (display !== null) {
+        drafts.suggest(sessionId, display);
+      }
+      if (sent.length) {
+        setAttachments((current) => ({ ...current, [sessionId]: [...sent, ...(current[sessionId] ?? [])] }));
+      }
     } finally {
       setResuming(null);
     }
   }
 
-  const sessionPermissions = permissions.filter((p) => p.sessionId === selectedId);
-  const sessionElicitations = elicitations.filter((e) => e.sessionId === selectedId);
+  // Derived rather than kept: the transcript already knows what was sent, and a second
+  // record of it could only ever disagree with the first.
+  const history = useMemo(() => promptHistory(transcript.events), [transcript.events]);
+
+  // What each session is doing, for the sidebar. Joined here because the three sources sit
+  // apart - the runtime reports turns, the prompts hold unanswered questions, the queue is
+  // its own.
+  const activity = useMemo(
+    () =>
+      activityOf(
+        sessions.working,
+        prompts.permissions,
+        prompts.elicitations,
+        Object.fromEntries(Object.entries(queue.queues).map(([id, waiting]) => [id, waiting.length])),
+      ),
+    [sessions.working, prompts.permissions, prompts.elicitations, queue.queues],
+  );
+
+  useTaskbar(sessions.working.size > 0);
 
   return (
     <div className="app">
@@ -504,6 +601,7 @@ export default function App() {
         onCreate={() => void handleCreate()}
         creating={creating}
         maxLoaded={sessions.maxLoaded}
+        activity={activity}
       />
 
       <main className="main">
@@ -565,6 +663,7 @@ export default function App() {
               hasOlder={transcript.hasOlder}
               loadingOlder={transcript.loadingOlder}
               onLoadOlder={transcript.loadOlder}
+              reasoning={reasoning}
             />
 
             <div className="footer">
@@ -590,41 +689,43 @@ export default function App() {
                 />
               )}
 
-              <Queue messages={queue.queues[selected.sessionId] ?? []} />
+              <Queue items={queue.queues[selected.sessionId] ?? []} />
 
-              {sessionElicitations.map((pending) => (
+              {prompts.mine.elicitations.map((pending) => (
                 <ElicitationPrompt
                   key={pending.requestId}
                   pending={pending}
-                  onResolve={(action, content) => handleElicitation(pending, action, content)}
+                  onResolve={(action, content) => prompts.answerElicitation(pending, action, content)}
                 />
               ))}
 
-              {sessionPermissions.map((pending) => (
+              {prompts.mine.permissions.map((pending) => (
                 <PermissionPrompt
                   key={pending.requestId}
                   pending={pending}
                   cwd={selected.cwd}
-                  onResolve={(choice) => handlePermission(pending, choice)}
+                  onResolve={(choice) => prompts.answerPermission(pending, choice)}
                 />
               ))}
 
               <Composer
                 disabled={!selectedId}
                 busy={busy}
+                busySince={busySince}
                 resuming={resuming === selected.sessionId}
                 attached={attachments[selected.sessionId] ?? []}
                 onAttach={(files) => setAttachments((current) => ({ ...current, [selected.sessionId]: files }))}
+                onPasteFiles={(files) => void handlePaste(selected.sessionId, files)}
                 onError={setError}
                 // A question or a permission request blocks the agent until answered, so
                 // it keeps the keyboard; the composer takes it back once nothing is waiting.
-                focusOn={
-                  sessionElicitations.length + sessionPermissions.length > 0 ? null : `${selectedId}:${focusAt}`
-                }
-                value={drafts[selected.sessionId] ?? ''}
-                onChange={(text) => setDrafts((current) => ({ ...current, [selected.sessionId]: text }))}
+                focusOn={prompts.blocked ? null : `${selectedId}:${focusAt}`}
+                value={drafts.textOf(selected.sessionId)}
+                onChange={(text) => drafts.write(selected.sessionId, text)}
+                stashed={drafts.hasStash(selected.sessionId)}
                 onSend={(prompt) => void handleSend(prompt)}
                 onAbort={interrupt}
+                history={history}
                 commands={slash.commands}
                 onCommandsNeeded={slash.open}
               />
@@ -637,6 +738,11 @@ export default function App() {
             ) : (
               <p>Select a session. Browsing costs no Copilot process.</p>
             )}
+            {/* Offered whichever of the two is showing: a list that would not load is a
+                reason to start a session, not a reason to hide the way to. */}
+            <button type="button" className="new-session" onClick={handleCreate} disabled={creating}>
+              {creating ? 'Starting…' : 'Start a new session'}
+            </button>
           </div>
         )}
       </main>
@@ -646,5 +752,5 @@ export default function App() {
 
 function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
-  return typeof data?.message === 'string' ? data.message : 'Session error';
+  return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }

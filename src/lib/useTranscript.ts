@@ -77,7 +77,8 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
   }, [sessionId]);
 
   /** Fetch the page before the events already held and prepend it. */
-  const loadOlder = useCallback(() => {    if (!sessionId || olderCursor === null) return;
+  const loadOlder = useCallback(() => {
+    if (!sessionId || olderCursor === null) return;
 
     setLoadingOlder(true);
     getTranscript(sessionId, PAGE_EVENTS, olderCursor)
@@ -126,19 +127,33 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
   /**
    * Show a prompt before the runtime has echoed it back. Resuming a cold session takes
    * seconds, and a prompt that appears only after that looks like it was not sent.
+   *
+   * Hands back the row's id so a send that then fails can take it away again.
    */
   const showSent = useCallback((prompt: string) => {
+    const id = crypto.randomUUID();
     setLive((current) => [
       ...current,
       {
         type: 'user.message',
         data: { content: prompt },
-        id: crypto.randomUUID(),
+        id,
         // Stamped here so it is not the one untimed row until the runtime echoes it back.
         timestamp: new Date().toISOString(),
         local: true,
       },
     ]);
+    return id;
+  }, []);
+
+  /**
+   * Take back a row this session put there itself.
+   *
+   * Only ever used to undo an optimistic prompt whose send failed: a row the runtime sent
+   * is a record of something that happened, and is not ours to remove.
+   */
+  const remove = useCallback((id: string) => {
+    setLive((current) => current.filter((event) => event.id !== id));
   }, []);
 
   /**
@@ -165,6 +180,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     push,
     showSent,
     showLocal,
+    remove,
     abandoned: abandoned.current.get(sessionId ?? ''),
   };
 }
