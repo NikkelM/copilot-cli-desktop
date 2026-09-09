@@ -1,4 +1,5 @@
 import type { TranscriptEvent } from '../../shared/protocol';
+import { stripAnsi } from '../../shared/ansi';
 import { relativise } from './paths';
 
 /** Longest tool output kept for the expanded view. */
@@ -86,6 +87,14 @@ export interface ToolEntry {
    * is still there.
    */
   patch?: string;
+  /**
+   * The file a file tool named, kept apart from the summary.
+   *
+   * The summary is whatever reads best and is not always the path - a tool that describes
+   * itself wins over one that names a file - so the badge reads this instead of trying to
+   * find an extension in a sentence.
+   */
+  path?: string;
   /** A search, whose result is counted in matches rather than lines. */
   search?: boolean;
   /** When it began, so a long-running call can say how long it has been going. */
@@ -155,8 +164,17 @@ const DISPLAY_NAMES: Record<string, string> = {
   ask_user: 'Asking user',
   powershell: 'Shell',
   bash: 'Shell',
+  // What the runtime calls a command the reader asked for themselves, rather than one the
+  // agent chose. Named the same as the agent's own shell calls, since it is the same shell.
+  local_shell: 'Shell',
   grep: 'Search',
   rg: 'Search',
+  // The file tools, in the CLI's own words. It calls a view "Read" whether or not a range
+  // was given, and names str_replace and edit alike, since they are one tool under two names.
+  view: 'Read',
+  create: 'Create',
+  edit: 'Edit',
+  str_replace: 'Edit',
 };
 
 function displayName(name: string, data: Record<string, unknown>): string {
@@ -218,7 +236,10 @@ function pathList(value: unknown, cwd: string | null): string | null {
 }
 
 function clip(value: string): string {
-  const trimmed = value.trim();
+  // A tool that ran in a shell reports what the shell wrote, escapes included. Stripped
+  // here rather than where the command was issued, so a log replayed from disk - which
+  // nothing else touches on the way in - reads the same as one watched live.
+  const trimmed = stripAnsi(value).trim();
   return trimmed.length > MAX_OUTPUT ? `${trimmed.slice(0, MAX_OUTPUT)}…` : trimmed;
 }
 
@@ -226,7 +247,7 @@ function clip(value: string): string {
 const MAX_HEADER = 140;
 
 function clipLine(value: string): string {
-  const flat = value.replace(/\s+/g, ' ').trim();
+  const flat = stripAnsi(value).replace(/\s+/g, ' ').trim();
   return flat.length > MAX_HEADER ? `${flat.slice(0, MAX_HEADER - 1)}…` : flat;
 }
 
@@ -331,7 +352,11 @@ export function toEntries(
         break;
       }
 
-      case 'tool.execution_start': {
+      // A command the reader typed themselves announces itself under its own name rather
+      // than as an execution start, but it is the same tool call and completes the same
+      // way, so it opens the same row (#134).
+      case 'tool.execution_start':
+      case 'tool.user_requested': {
         const name = text(data, 'toolName') ?? text(data, 'mcpToolName') ?? 'tool';
         // The command, path or query lives in the tool arguments; shellToolInfo carries
         // path metadata rather than anything worth summarising.
@@ -366,17 +391,34 @@ export function toEntries(
               kind: 'tool',
               key,
               name: label,
-              summary: clipLine(summarise(args, cwd)),
+              // A command the reader typed is its own summary. The runtime's description
+              // for one is "Execute shell command: <the command>", which says the same
+              // thing twice and pushes the part that matters off the end of the line.
+              summary: clipLine(command && name === 'local_shell' ? command : summarise(args, cwd)),
               output: null,
               status: 'running',
               startedAt: event.timestamp,
               command,
+              path: typeof args?.path === 'string' && args.path.trim() ? args.path : undefined,
               search: search || undefined,
             };
 
         const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
         if (id) pending.set(id, entry);
         entries.push(entry);
+        break;
+      }
+
+      /**
+       * What a running tool has produced so far, so a slow command reads as progress
+       * rather than as a hang. Ephemeral, so it only ever arrives live.
+       *
+       * The payload is cumulative, so it is assigned rather than appended.
+       */
+      case 'tool.execution_partial_result': {
+        const running = typeof data.toolCallId === 'string' ? pending.get(data.toolCallId) : undefined;
+        const soFar = data.partialOutput;
+        if (running && typeof soFar === 'string' && soFar !== '') running.output = clip(soFar);
         break;
       }
 
@@ -393,7 +435,7 @@ export function toEntries(
             ? clip(result.content)
             : ''
           : typeof error?.message === 'string'
-            ? error.message
+            ? clip(error.message)
             : 'Tool failed';
 
         // A file tool reports the change it made as a unified diff, which is worth far
@@ -535,6 +577,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
     a.answer === other.answer &&
     a.command === other.command &&
     a.patch === other.patch &&
+    a.path === other.path &&
     a.search === other.search &&
     a.startedAt === other.startedAt &&
     a.endedAt === other.endedAt &&

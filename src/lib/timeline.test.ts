@@ -161,3 +161,53 @@ describe('thinking arriving live', () => {
     expect(live).toHaveLength(1);
   });
 });
+
+/**
+ * A running tool's output. The runtime resends everything produced so far each time, so
+ * the newest event replaces the one before it rather than being folded into it.
+ */
+describe('a running tool reporting what it has produced', () => {
+  const chunk = (toolCallId: string, partialOutput: string): TimelineEvent => ({
+    type: 'tool.execution_partial_result',
+    data: { toolCallId, partialOutput },
+  });
+
+  it('keeps one event rather than one per chunk', () => {
+    let live: TimelineEvent[] = [];
+    for (const soFar of ['line 1', 'line 1\nline 2', 'line 1\nline 2\nline 3']) {
+      live = appendLive(live, chunk('t1', soFar));
+    }
+
+    expect(live).toHaveLength(1);
+  });
+
+  /**
+   * The payload is cumulative despite being called `partialOutput`, and despite the SDK
+   * documenting it as "incremental output chunk". Verified against the runtime: a
+   * twelve-second command sent thirteen of these, each carrying all the output so far.
+   * Folding them the way message deltas are folded would repeat every line.
+   */
+  it('shows the latest output rather than every chunk joined together', () => {
+    let live = appendLive([], chunk('t1', 'line 1'));
+    live = appendLive(live, chunk('t1', 'line 1\nline 2'));
+
+    expect(live[0]!.data).toMatchObject({ partialOutput: 'line 1\nline 2' });
+  });
+
+  it('keeps two tools running at once apart', () => {
+    let live = appendLive([], chunk('t1', 'from one'));
+    live = appendLive(live, chunk('t2', 'from two'));
+
+    expect(live).toHaveLength(2);
+  });
+
+  // It sits where the tool started, so its output is read as part of that tool's row and
+  // not after whatever the agent said while it was running.
+  it('stays where it was rather than jumping to the end', () => {
+    let live = appendLive([], chunk('t1', 'first'));
+    live = appendLive(live, { type: 'assistant.message', data: { content: 'meanwhile' } });
+    live = appendLive(live, chunk('t1', 'first\nsecond'));
+
+    expect(live.map((e) => e.type)).toEqual(['tool.execution_partial_result', 'assistant.message']);
+  });
+});

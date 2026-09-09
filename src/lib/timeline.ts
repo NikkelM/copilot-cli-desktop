@@ -23,6 +23,11 @@ function deltaOf(event: TranscriptEvent): string {
   return typeof data?.deltaContent === 'string' ? data.deltaContent : '';
 }
 
+function toolCallIdOf(event: TranscriptEvent): string | null {
+  const data = event.data as { toolCallId?: unknown } | null;
+  return typeof data?.toolCallId === 'string' ? data.toolCallId : null;
+}
+
 /**
  * Add an event arriving from a live session to the events seen since it was selected.
  *
@@ -82,6 +87,31 @@ export function appendLive(current: TimelineEvent[], event: TimelineEvent): Time
     }
   }
 
+  /**
+   * A running tool's output, which arrives repeatedly while it runs.
+   *
+   * Replaced rather than folded, because `partialOutput` is the whole output so far and
+   * not the increment its name and the SDK's own documentation promise. Appending would
+   * repeat every line as many times as it was sent. Verified against the runtime: a
+   * twelve-second command sent thirteen of these, each one carrying all of it.
+   *
+   * Replacing also keeps a chatty command from costing quadratic memory, since otherwise
+   * every chunk would leave behind a copy of everything before it.
+   */
+  if (event.type === 'tool.execution_partial_result') {
+    const toolCallId = toolCallIdOf(event);
+    const index = toolCallId
+      ? current.findIndex(
+          (entry) => entry.type === 'tool.execution_partial_result' && toolCallIdOf(entry) === toolCallId,
+        )
+      : -1;
+    if (index !== -1) {
+      const next = [...current];
+      next[index] = event;
+      return next;
+    }
+  }
+
   return [...current, event];
 }
 
@@ -92,7 +122,16 @@ export function appendLive(current: TimelineEvent[], event: TimelineEvent): Time
  * is a request whose answer describes the log at the moment it was issued, so folding it
  * into one list lets a slow reply overwrite events that arrived while it was in flight -
  * including the user's own prompt, which then vanished until the session was reopened.
+ *
+ * Which leaves the other side of that seam: an event delivered while the replay was in
+ * flight can also have been written to the log in time to come back in the same answer.
+ * Both copies describe one thing that happened once, so the live one is dropped. Events
+ * the app invented itself carry ids nothing else can produce, so they always survive.
  */
 export function timelineOf(history: TimelineEvent[], live: TimelineEvent[]): TimelineEvent[] {
-  return live.length === 0 ? history : [...history, ...live];
+  if (live.length === 0) return history;
+  if (history.length === 0) return live;
+
+  const known = new Set(history.map((event) => event.id));
+  return [...history, ...live.filter((event) => !event.id || !known.has(event.id))];
 }

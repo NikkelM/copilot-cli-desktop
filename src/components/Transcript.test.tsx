@@ -26,6 +26,7 @@ function show(events: TranscriptEvent[]) {
       hasOlder={true}
       loadingOlder={false}
       onLoadOlder={() => {}}
+      reasoning
     />,
   );
 }
@@ -95,6 +96,7 @@ describe('Transcript', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
+      reasoning
       />,
     );
 
@@ -143,6 +145,7 @@ describe('following a reply as it is written', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
+      reasoning
       />
     );
 
@@ -362,6 +365,63 @@ describe('how a change is drawn', () => {
  * Hiding it meant the one moment you might want to check it against what you were reading
  * was the moment it vanished.
  */
+describe('the file type a row wears', () => {
+  const fileTool = (tool: string, path: string, success: boolean) => [
+    event('tool.execution_start', { toolCallId: 'f1', toolName: tool, arguments: { path } }, 'a'),
+    event('tool.execution_complete', { toolCallId: 'f1', success, result: { content: 'done' } }, 'b'),
+  ];
+
+  it('marks a settled file row with its type instead of a tick', () => {
+    const { container } = show(fileTool('edit', 'src/App.tsx', true));
+    const badge = container.querySelector('.tool-badge');
+
+    expect(badge?.textContent).toBe('TX');
+    expect(badge?.getAttribute('data-tone')).toBe('blue');
+  });
+
+  // The badge sits in the glyph's own column rather than beside it, so a row with one and
+  // a row without still line up. It is not also a `.tool-status`: those are coloured by
+  // outcome, and a badge answering to them would be painted green by the rule that let it
+  // appear at all.
+  it('puts the badge where the glyph would have been, without answering to the status', () => {
+    const { container } = show(fileTool('view', 'main.rs', true));
+
+    expect(container.querySelector('.tool-status')).toBeNull();
+    expect(container.querySelector('.tool-badge')?.textContent).toBe('RS');
+  });
+
+  it('keeps the tick for a file whose type it does not know', () => {
+    const { container } = show(fileTool('create', 'notes.txt', true));
+
+    expect(container.querySelector('.tool-badge')).toBeNull();
+    expect(container.querySelector('.tool-status')?.textContent).toBe('✓');
+  });
+
+  it('keeps the tick for a tool that names no file', () => {
+    const { container } = show(shell('s', 'ls', 'c1'));
+
+    expect(container.querySelector('.tool-badge')).toBeNull();
+    expect(container.querySelector('.tool-status')?.textContent).toBe('✓');
+  });
+
+  // A failure has something to report, and reporting it beats naming the file's language.
+  it('gives way to a failure', () => {
+    const { container } = show(fileTool('edit', 'src/App.tsx', false));
+
+    expect(container.querySelector('.tool-badge')).toBeNull();
+    expect(container.querySelector('.tool-status')?.textContent).toBe('✕');
+  });
+
+  it('gives way to a call that is still running', () => {
+    const { container } = show([
+      event('tool.execution_start', { toolCallId: 'f1', toolName: 'edit', arguments: { path: 'a.ts' } }, 'a'),
+    ]);
+
+    expect(container.querySelector('.tool-badge')).toBeNull();
+    expect(container.querySelector('.tool-status')?.textContent).toBe('·');
+  });
+});
+
 describe('what a row says about itself', () => {
   it('keeps the line count when the row is opened', async () => {
     show(shell('e1', 'ls', 't1'));
@@ -527,5 +587,42 @@ describe('how long a tool call took', () => {
     ]);
 
     expect(screen.queryByText(/\ds/)).toBeNull();
+  });
+});
+
+/** ctrl+t, which the CLI offers because thinking is usually longer than the answer (#72). */
+describe('showing or hiding the model thinking', () => {
+  const thought = [
+    event('assistant.reasoning', { reasoningId: 'r1', content: 'weighing two approaches' }, 'e1'),
+    event('assistant.message', { messageId: 'm1', content: 'the second one' }, 'e2'),
+  ];
+
+  const withReasoning = (reasoning: boolean) =>
+    render(
+      <Transcript
+        events={thought}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        reasoning={reasoning}
+      />,
+    );
+
+  it('shows it when it is on', () => {
+    withReasoning(true);
+    expect(screen.getByText('Thinking')).toBeTruthy();
+  });
+
+  it('leaves it out entirely when it is off', () => {
+    withReasoning(false);
+    expect(screen.queryByText('Thinking')).toBeNull();
+  });
+
+  // Turning off the thinking must not take the answer it produced with it.
+  it('keeps the reply either way', () => {
+    withReasoning(false);
+    expect(screen.getByText('the second one')).toBeTruthy();
   });
 });

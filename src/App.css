@@ -6,10 +6,38 @@
   --text-muted: #8b949e;
   --accent: #2f81f7;
   --success: #3fb950;
+  /** Red, for a failure or a destructive action. */
+  --danger: #f85149;
+  /** Amber, for anything modified or waiting. Already the colour a changed file is marked in. */
+  --warning: #d29922;
+  /** Cyan, which only the file-type badges use. Named for the CLI's own name for it. */
+  --cyan: #39c5cf;
+
+  /*
+   * One type scale (#139).
+   *
+   * Every size in the app is a multiple of --font-base, so raising that raises all of them
+   * together. The relationships between them are deliberate - a timestamp is smaller than
+   * the line it dates, and by how much matters - so there is one number to change rather
+   * than ninety, and a setting has one thing to set.
+   *
+   * The multipliers are what the sizes already were against a 14px base, kept rather than
+   * rounded into a tidier ratio: this raises the scale, it does not redesign it.
+   */
+  --font-base: 16px;
+  --font-xs: calc(var(--font-base) * 0.715);
+  --font-sm: calc(var(--font-base) * 0.785);
+  --font-md: calc(var(--font-base) * 0.858);
+  --font-lg: calc(var(--font-base) * 0.93);
+  --font-xl: var(--font-base);
+  --font-2xl: calc(var(--font-base) * 1.072);
+  --font-3xl: calc(var(--font-base) * 1.215);
+  --font-4xl: calc(var(--font-base) * 1.286);
+  --font-5xl: calc(var(--font-base) * 1.43);
 
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-  font-size: 14px;
+  font-size: var(--font-base);
 }
 
 * {
@@ -50,7 +78,7 @@ body {
   border-radius: 10px;
   background: var(--bg);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .search {
@@ -66,7 +94,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-lg);
 }
 
 .search input:focus {
@@ -77,7 +105,7 @@ body {
 .no-matches {
   padding: 16px 14px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-lg);
 }
 
 .session-list {
@@ -121,7 +149,14 @@ body {
   overflow-wrap: anywhere;
 }
 
-.dot {
+/**
+ * What a loaded session is doing (#115).
+ *
+ * Every state is the same 6px box so the title never shifts, and each is told apart by
+ * shape as well as colour: a hue is a poor carrier for four states and no carrier at all
+ * for a reader who cannot separate them.
+ */
+.activity {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -129,9 +164,41 @@ body {
   flex-shrink: 0;
 }
 
+/** Resident and waiting on a prompt: the dot this replaced, unchanged. */
+.activity-idle {
+  background: var(--success);
+}
+
+/**
+ * Working reads as motion, since it is the one state that resolves on its own. A ring
+ * rather than a disc, so it is a different shape and not only a different brightness, and
+ * the same breathe the composer uses while a session wakes: one kind of waiting, one motion.
+ */
+.activity-working {
+  background: none;
+  border: 2px solid var(--accent);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+/** Messages behind the current turn. Hollow, because nothing is asked of the reader. */
+.activity-queued {
+  background: none;
+  border: 1px solid var(--text-muted);
+}
+
+/**
+ * Blocked on a decision, which is the one state that asks for something. Square, so it is
+ * the only one in the list that is not round, and warning-coloured to say why.
+ */
+.activity-blocked {
+  border-radius: 1px;
+  background: var(--warning);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 25%, transparent);
+}
+
 .session-meta {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .session-preview {
@@ -141,7 +208,7 @@ body {
   line-clamp: 2;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .main {
@@ -181,7 +248,7 @@ body {
 
 .main-header h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--font-4xl);
 }
 
 .header-controls {
@@ -207,7 +274,7 @@ body {
   background: none;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -254,7 +321,7 @@ body {
 .model-menu .error {
   margin: 0;
   padding: 8px;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .model-row {
@@ -284,7 +351,7 @@ body {
   border: none;
   background: none;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-md);
   text-align: left;
   cursor: pointer;
 }
@@ -295,7 +362,7 @@ body {
 
 .model-note {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
 }
 
 /* What the model being looked at costs, above the list rather than repeated on every row. */
@@ -310,7 +377,7 @@ body {
 .model-prices-head {
   margin: 0 0 4px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -324,7 +391,7 @@ body {
   justify-content: space-between;
   gap: 12px;
   margin: 0;
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .model-price-label {
@@ -347,7 +414,7 @@ body {
 .model-line-label {
   min-width: 46px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -358,7 +425,7 @@ body {
   border-radius: 8px;
   background: none;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
   cursor: pointer;
 }
 
@@ -377,8 +444,9 @@ body {
   flex-direction: column;
   gap: 10px;
   /* The whole footer clears the transcript once, here, rather than each child bringing its
-     own top padding - which is how the menu ended up thirty pixels from the composer. */
-  padding-top: 12px;
+     own top padding - which is how the menu ended up thirty pixels from the composer, and
+     the queue nearer the last reply than the box it is waiting on (#122). */
+  padding-top: 16px;
   /* A grid item will not shrink below its content without this, so one long command in a
      prompt below would widen the whole pane and push the rest off the window. */
   min-width: 0;
@@ -402,7 +470,7 @@ body {
   align-items: baseline;
   gap: 10px;
   margin-bottom: 12px;
-  font-size: 14px;
+  font-size: var(--font-xl);
 }
 
 .elicitation-badge {
@@ -411,7 +479,7 @@ body {
   border-radius: 10px;
   background: var(--accent);
   color: #fff;
-  font-size: 11px;
+  font-size: var(--font-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -430,7 +498,7 @@ body {
 }
 
 .elicitation-label {
-  font-size: 13px;
+  font-size: var(--font-lg);
   font-weight: 500;
 }
 
@@ -440,7 +508,7 @@ body {
 
 .elicitation-help {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .elicitation-choices {
@@ -453,7 +521,7 @@ body {
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 13px;
+  font-size: var(--font-lg);
   cursor: pointer;
 }
 
@@ -464,7 +532,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-lg);
 }
 
 .elicitation-input:focus {
@@ -487,7 +555,7 @@ body {
   margin-bottom: 12px;
   color: var(--accent);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   overflow-wrap: anywhere;
 }
 
@@ -504,7 +572,7 @@ body {
   background: var(--accent);
   color: #fff;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-lg);
   cursor: pointer;
 }
 
@@ -534,7 +602,7 @@ body {
   gap: 10px;
   margin-bottom: 8px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--font-lg);
 }
 
 .permission-intent {
@@ -546,22 +614,10 @@ body {
   min-width: 0;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.diff-line.added {
-  color: #7ee787;
-}
-
-.diff-line.removed {
-  color: #f85149;
-}
-
-.diff-line.hunk {
-  color: #a371f7;
 }
 
 .permission-kind {
@@ -569,7 +625,7 @@ body {
   border-radius: 10px;
   background: #9e6a03;
   color: #fff;
-  font-size: 11px;
+  font-size: var(--font-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -581,18 +637,26 @@ body {
   border-radius: 6px;
   background: var(--bg);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   white-space: pre-wrap;
   overflow: auto;
   overflow-wrap: anywhere;
 }
 
+/* Here the diff is the whole of what is being asked about rather than something tucked under
+   a tool row, so it loses the indent and takes the frame the detail box would have had. */
+.permission .tool-diff {
+  max-height: 220px;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 .permission-warning {
   margin: 0 0 8px;
   color: #e3b341;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
-
 .permission-actions {
   display: flex;
   justify-content: flex-end;
@@ -606,7 +670,7 @@ body {
   background: var(--accent);
   color: #fff;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--font-lg);
   cursor: pointer;
 }
 
@@ -617,14 +681,14 @@ body {
 
 .permission-actions button.danger {
   background: transparent;
-  color: #f85149;
-  border-color: #f85149;
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
 .cwd {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   font-family: ui-monospace, monospace;
 }
 
@@ -660,7 +724,7 @@ body {
   border-radius: 6px;
   background: var(--bg-raised);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-lg);
 }
 
 .transcript {
@@ -676,7 +740,7 @@ body {
 .history-edge {
   padding: 10px 0 14px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   text-align: center;
 }
 
@@ -709,10 +773,11 @@ body {
  *
  * The widths are named once because two things depend on each: the room to leave, and how
  * far a code block's own copy button has to step aside to avoid landing under the reply's.
+ * Both are multiples of the type scale, so the lane grows with the text it makes room for.
  */
 .message {
-  --time-lane: 46px;
-  --meta-lane: 104px;
+  --time-lane: calc(var(--font-base) * 3.3);
+  --meta-lane: calc(var(--font-base) * 7.45);
 }
 
 .message.user > .markdown {
@@ -759,28 +824,28 @@ body {
 .markdown h1 {
   padding-bottom: 5px;
   border-bottom: 1px solid var(--border);
-  font-size: 20px;
+  font-size: var(--font-5xl);
 }
 
 .markdown h2 {
   padding-bottom: 4px;
   border-bottom: 1px solid var(--border);
-  font-size: 17px;
+  font-size: var(--font-3xl);
 }
 
 .markdown h3 {
-  font-size: 15px;
+  font-size: var(--font-2xl);
 }
 
 .markdown h4 {
-  font-size: 14px;
+  font-size: var(--font-xl);
 }
 
 /* Below the fourth level size stops being a useful signal, so these lean on colour and
    letterspacing instead of shrinking into illegibility. */
 .markdown h5,
 .markdown h6 {
-  font-size: 13px;
+  font-size: var(--font-lg);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -878,7 +943,7 @@ body {
   min-width: 130px;
   color: var(--text);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 /* One line, cut where it runs out of room: the description orients, and the full text is
@@ -891,7 +956,7 @@ body {
   text-overflow: ellipsis;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .markdown code {
@@ -899,7 +964,7 @@ body {
   border-radius: 4px;
   background: rgba(110, 118, 129, 0.25);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .markdown pre {
@@ -1020,7 +1085,7 @@ body {
 .markdown table {
   margin: 0 0 10px;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--font-lg);
 }
 
 .markdown th,
@@ -1044,6 +1109,12 @@ body {
   max-width: 100%;
 }
 
+/* A picture the reply named but nothing has fetched, so it reads as the address it is. */
+.markdown-remote-image::before {
+  content: '🖼 ';
+  opacity: 0.7;
+}
+
 /* The user's own turns are the anchors when scanning back, so they get a distinct block. */
 .message.user {
   margin: 6px 0;
@@ -1058,7 +1129,6 @@ body {
  * rather than something to read now.
  */
 .queue {
-  margin-bottom: 10px;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1068,7 +1138,7 @@ body {
 .queue-head {
   margin: 0 0 6px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -1084,14 +1154,14 @@ body {
   gap: 8px;
   align-items: baseline;
   padding: 3px 0;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .queue-position {
   flex: none;
   min-width: 32px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -1106,6 +1176,12 @@ body {
   color: var(--text-muted);
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* A queued command is not a message. Set in the same face the composer gives a command. */
+.queue-text.command {
+  font-family: ui-monospace, monospace;
+  color: var(--accent);
 }
 
 /*
@@ -1134,7 +1210,7 @@ body {
   align-items: center;
   gap: 6px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
 }
 
 .message-meta time {
@@ -1147,7 +1223,7 @@ body {
   border-radius: 4px;
   background: var(--bg-raised);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   cursor: pointer;
@@ -1182,28 +1258,12 @@ body {
 }
 
 /* What is going with the message, shown before it goes. */
-/* Above the buttons, so several files grow the composer upwards rather than sideways. */
+/* Above the box, so several files grow the composer upwards rather than sideways. */
 .attachments {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 8px 0 0;
-}
-
-.attach {
-  padding: 4px 12px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.attach:hover {
-  color: var(--text);
-  border-color: var(--text-muted);
 }
 
 .attachment {
@@ -1213,20 +1273,53 @@ body {
   padding: 2px 4px 2px 8px;
   border-radius: 10px;
   background: rgba(110, 118, 129, 0.25);
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .attachment button {
   border: none;
   background: none;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-lg);
   line-height: 1;
   cursor: pointer;
 }
 
 .attachment button:hover {
   color: var(--text);
+}
+
+/* The name is a button so it can reveal the file, but it should still read as the label. */
+.attachment-name {
+  padding: 0;
+  color: var(--text) !important;
+  font-size: inherit !important;
+  font-family: inherit;
+}
+
+.attachment-name:hover {
+  text-decoration: underline;
+}
+
+/*
+ * A hovered image, shown above its chip.
+ *
+ * Above because the composer is the bottom of the window and there is nothing below it.
+ * Ignores the mouse, so moving towards the picture cannot take the pointer off the chip
+ * that is holding it open.
+ */
+.attachment-preview {
+  position: fixed;
+  transform: translateY(calc(-100% - 8px));
+  z-index: 20;
+  max-width: 360px;
+  max-height: 360px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
 }
 
 /* A diagram, drawn. Given room, since a flowchart is wider than a paragraph. */
@@ -1254,7 +1347,7 @@ body {
   background: var(--bg);
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   overflow: auto;
 }
 
@@ -1271,7 +1364,7 @@ body {
   border-radius: 5px;
   background: none;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -1291,9 +1384,29 @@ body {
   margin: 0;
   padding: 10px 14px 4px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+/* The heading is a button now, and a button brings a look this does not want. */
+button.group {
+  width: 100%;
+  border: none;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+button.group:hover {
+  color: var(--text);
+}
+
+/* Fixed width so the label does not shift sideways as the group folds. */
+.group-fold {
+  width: 9px;
+  font-size: 9px;
 }
 
 .group-count {
@@ -1312,7 +1425,7 @@ body {
 .waking {
   margin-right: auto;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   animation: breathe 1.4s ease-in-out infinite;
 }
 
@@ -1327,21 +1440,34 @@ body {
   flex: none;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--font-sm);
+}
+
+/*
+ * How long is left before a request answers itself. The opposite of quiet: it only appears
+ * in the last minute, and by then it is the most useful thing in the header.
+ */
+.expiry {
+  flex: none;
+  margin-left: auto;
+  color: var(--warning);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  font-weight: 600;
 }
 
 /* Said before the turn was stopped, and no more than that. */
 .message-partial {
   margin: 2px 0 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-style: italic;
 }
 
 .message.failed {
-  color: #f85149;
+  color: var(--danger);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 /*
@@ -1353,7 +1479,7 @@ body {
   align-items: center;
   gap: 10px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -1382,7 +1508,7 @@ body {
 .message.command .plain {
   margin: 0;
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   white-space: pre-wrap;
   overflow-x: auto;
 }
@@ -1416,10 +1542,50 @@ body {
 }
 
 .tool-status {
-  width: 12px;
+  width: 18px;
   flex-shrink: 0;
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
+}
+
+/*
+ * The file type, worn where a settled file row would otherwise show a tick.
+ *
+ * Bold and a size down, so two letters in the glyph's column read as a label rather than
+ * as the start of the tool's name. Deliberately not a `.tool-status` as well: the status
+ * rules colour by outcome, and a badge that also answered to them would be repainted
+ * green by the very rule that let it appear.
+ */
+.tool-badge {
+  width: 18px;
+  flex-shrink: 0;
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  font-weight: 700;
+}
+
+.tool-badge[data-tone='blue'] {
+  color: var(--accent);
+}
+
+.tool-badge[data-tone='yellow'] {
+  color: var(--warning);
+}
+
+.tool-badge[data-tone='green'] {
+  color: var(--success);
+}
+
+.tool-badge[data-tone='gray'] {
+  color: var(--text-muted);
+}
+
+.tool-badge[data-tone='red'] {
+  color: var(--danger);
+}
+
+.tool-badge[data-tone='cyan'] {
+  color: var(--cyan);
 }
 
 .tool.ok .tool-status {
@@ -1427,7 +1593,7 @@ body {
 }
 
 .tool.failed .tool-status {
-  color: #f85149;
+  color: var(--danger);
 }
 
 .tool.running .tool-status {
@@ -1435,27 +1601,31 @@ body {
 }
 
 .tool.cancelled .tool-status {
-  color: #d29922;
+  color: var(--warning);
 }
 
 .tool-note {
   flex-shrink: 0;
-  color: #d29922;
-  font-size: 11px;
+  color: var(--warning);
+  font-size: var(--font-sm);
 }
 
 .tool-lines {
   flex-shrink: 0;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
+/* Uncoloured, the way the CLI leaves it: the icon carries the outcome, and a row whose
+   name is green reads as a claim about how it went rather than as what it did. Bold so it
+   still separates from the file or command beside it. */
 .tool-name {
   flex-shrink: 0;
-  color: #7ee787;
+  color: var(--text);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
+  font-weight: 600;
 }
 
 /* Takes the slack so the line count and the timer still sit at the right edge, while the
@@ -1472,7 +1642,7 @@ body {
   min-width: 0;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1483,9 +1653,9 @@ body {
 .tool-error {
   min-width: 0;
   flex-shrink: 4;
-  color: #f85149;
+  color: var(--danger);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1500,7 +1670,7 @@ body {
   background: rgba(63, 185, 80, 0.15);
   color: var(--success);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   max-width: 40%;
   white-space: nowrap;
   overflow: hidden;
@@ -1522,7 +1692,7 @@ body {
   padding: 1px 0;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .tool-choices li.chosen {
@@ -1531,7 +1701,7 @@ body {
 
 .choice-mark {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--font-xs);
 }
 
 .choice-label {
@@ -1542,7 +1712,7 @@ body {
 .choice-note {
   flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   font-style: italic;
 }
 
@@ -1553,7 +1723,7 @@ body {
   border-left: 1px solid var(--border);
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   white-space: pre-wrap;
   overflow: auto;
   overflow-wrap: anywhere;
@@ -1563,15 +1733,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 12px;
 }
 
 .composer textarea {
   width: 100%;
   padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg-raised);
+  border: none;
+  background: transparent;
   color: var(--text);
   font: inherit;
   resize: vertical;
@@ -1583,9 +1751,25 @@ body {
   margin-bottom: 0;
 }
 
-/* Holds the ghost against the box, since a textarea cannot show text it does not own. */
+/*
+ * The box: the text, and the buttons that act on it.
+ *
+ * One bordered element rather than a bordered textarea with a row of buttons underneath,
+ * so the composer is the last thing in the pane rather than the second to last. The border
+ * moves here and the textarea gives its own up, which is also what lets the two share a
+ * focus ring.
+ */
 .composer-input {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+
+.composer-input:focus-within {
+  border-color: var(--accent);
 }
 
 /*
@@ -1610,50 +1794,144 @@ body {
   color: var(--text-muted);
 }
 
-.composer textarea:focus {
-  outline: none;
-  border-color: var(--accent);
+/*
+ * The shell mode badge, standing in for the `!` that put the composer into it.
+ *
+ * Above the box rather than inside it, so the text starts in the same place in both modes
+ * and a command does not shift sideways the moment the marker is typed. Amber because the
+ * mode changes where Enter sends what is written, which is worth noticing.
+ */
+.composer-mode {
+  align-self: flex-start;
+  margin: 6px 0 -4px 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--warning);
+  font-family: ui-monospace, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
 }
 
-/* One row: Attach on the left, the rest on the right, so nothing wraps to a line of its own. */
+/*
+ * The reverse search line, drawn where a shell draws it: over the prompt, not in it.
+ *
+ * Monospaced and worded exactly as the CLI words it, so the reader recognises the state
+ * rather than reading it. Turns amber when the last key found nothing, which is the only
+ * signal that the match still on screen is now stale.
+ */
+.reverse-search {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  font-family: ui-monospace, monospace;
+  font-size: 0.8125rem;
+}
+
+.reverse-search-label {
+  flex: none;
+  color: var(--text-muted);
+  white-space: pre;
+}
+
+.reverse-search.failed .reverse-search-label {
+  color: var(--warning);
+}
+
+/* One line however long the prompt was: the search is for finding it, not for reading it. */
+.reverse-search-match {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reverse-search-match mark {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: inherit;
+  border-radius: 2px;
+}
+
+/* A command line, not prose: the columns are what make an argument list readable. */
+.composer textarea.shell {
+  font-family: ui-monospace, monospace;
+}
+
+.composer textarea:focus {
+  outline: none;
+}
+
+/* Right-aligned inside the box, with anything the app has to say about the wait pushed to
+   the left by the .waking rule's own margin. */
 .composer-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-top: 8px;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0 6px 6px;
 }
 
-.composer-actions .attach {
-  margin-right: auto;
-}
-
-.composer button {
-  padding: 6px 16px;
-  border: 1px solid var(--border);
+/*
+ * Icon buttons: square, quiet, and the same size whichever one is showing.
+ *
+ * Only Send is filled. Attach and Stop are things done to the message rather than the
+ * thing the box is for, and three filled buttons in a row would say they were equals.
+ */
+.composer-actions button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
-  font: inherit;
+  background: none;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
-.composer button.secondary {
-  background: var(--bg-raised);
+.composer-actions button:hover:not(:disabled) {
+  border-color: var(--border);
   color: var(--text);
 }
 
-.composer button:disabled {
+.composer-actions button.send {
+  background: var(--accent);
+  color: #fff;
+}
+
+.composer-actions button.send:hover:not(:disabled) {
+  border-color: transparent;
+  color: #fff;
+}
+
+.composer-actions button:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
+/* Two things now: what is going on, and the one action worth offering from here. Rows are
+   held together by align-content, or each would be centred in half the pane. */
 .placeholder {
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 14px;
   /* .main defines four rows; without spanning them the placeholder lands in the first
      auto row and collapses to the top instead of centring. */
   grid-row: 1 / -1;
   color: var(--text-muted);
+}
+
+/* The sidebar's copy is pushed to the right of its header; this one is centred. */
+.placeholder .new-session {
+  margin-left: 0;
+  padding: 6px 14px;
+  font-size: inherit;
 }
 
 .empty,
@@ -1662,16 +1940,16 @@ body {
 }
 
 .error {
-  color: #f85149;
+  color: var(--danger);
   font-family: ui-monospace, monospace;
 }
 
 .fatal {
   margin: 0;
   padding: 24px;
-  color: #f85149;
+  color: var(--danger);
   font-family: ui-monospace, monospace;
-  font-size: 13px;
+  font-size: var(--font-lg);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -1685,7 +1963,7 @@ body {
   border-left: 1px solid var(--border);
   color: var(--text);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
   white-space: pre-wrap;
   overflow: auto;
   overflow-wrap: anywhere;
@@ -1716,7 +1994,7 @@ body {
   border-radius: 4px;
   background: var(--bg-raised);
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .markdown mark {
@@ -1776,7 +2054,7 @@ body {
   background: none;
   color: var(--text-muted);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-md);
   text-align: left;
   cursor: pointer;
 }
@@ -1787,7 +2065,7 @@ body {
 
 .reasoning-caret {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--font-xs);
 }
 
 .reasoning-label {
@@ -1797,7 +2075,7 @@ body {
 .reasoning-count {
   margin-left: auto;
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 /* Set apart from the reply: this is how the answer was reached, not the answer. */
@@ -1806,7 +2084,7 @@ body {
   padding: 8px 12px;
   border-left: 2px solid var(--border);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--font-lg);
 }
 
 /* Starting a session is the one thing in the sidebar that costs a process, so it is
@@ -1819,7 +2097,7 @@ body {
   background: var(--bg-raised);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
 }
 
@@ -1844,7 +2122,7 @@ body {
   width: 100%;
   border-collapse: collapse;
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 /* Line numbers are why a patch beats two blobs of text: they say where to look. */
@@ -1896,7 +2174,7 @@ body {
 
 .tool-diff tr.removed .gutter,
 .tool-diff tr.removed .mark {
-  color: #f85149;
+  color: var(--danger);
 }
 
 .tool-diff tr.removed .code {
@@ -1915,7 +2193,7 @@ body {
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   text-align: center;
 }
 
@@ -1925,7 +2203,7 @@ body {
   gap: 6px;
   flex-shrink: 0;
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .tool-counts .added {
@@ -1933,7 +2211,7 @@ body {
 }
 
 .tool-counts .removed {
-  color: #f85149;
+  color: var(--danger);
 }
 
 /*
@@ -1963,7 +2241,7 @@ body {
 }
 
 .changes-title {
-  font-size: 12px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 
@@ -1971,14 +2249,14 @@ body {
   display: flex;
   gap: 6px;
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .changes-close {
   border: none;
   background: none;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
   cursor: pointer;
 }
 
@@ -1996,7 +2274,7 @@ body {
   background: none;
   padding: 2px 8px;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -2040,7 +2318,7 @@ body {
   margin: 0;
   padding: 8px 10px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-md);
 }
 
 .changes-list {
@@ -2060,7 +2338,7 @@ body {
   background: none;
   color: var(--text);
   font-family: inherit;
-  font-size: 12px;
+  font-size: var(--font-md);
   text-align: left;
   cursor: pointer;
 }
@@ -2083,11 +2361,45 @@ body {
 }
 
 .changes-status.deleted {
-  color: #f85149;
+  color: var(--danger);
 }
 
 .changes-status.modified {
-  color: #d29922;
+  color: var(--warning);
+}
+
+/* Beside the status mark rather than instead of it, and always present so the paths of a
+   list of mixed types still line up. */
+.changes-badge {
+  flex: none;
+  width: 18px;
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  font-weight: 700;
+}
+
+.changes-badge[data-tone='blue'] {
+  color: var(--accent);
+}
+
+.changes-badge[data-tone='yellow'] {
+  color: var(--warning);
+}
+
+.changes-badge[data-tone='green'] {
+  color: var(--success);
+}
+
+.changes-badge[data-tone='gray'] {
+  color: var(--text-muted);
+}
+
+.changes-badge[data-tone='red'] {
+  color: var(--danger);
+}
+
+.changes-badge[data-tone='cyan'] {
+  color: var(--cyan);
 }
 
 /* The end of a path identifies it, so it is the end that survives when there is no room. */
@@ -2103,7 +2415,7 @@ body {
   flex: none;
   margin-left: auto;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .changes-counts {
@@ -2113,7 +2425,7 @@ body {
   /* Also pushed right, for the rows that have no turn count to push them. */
   margin-left: auto;
   font-family: ui-monospace, monospace;
-  font-size: 11px;
+  font-size: var(--font-sm);
 }
 
 .changes-turns + .changes-counts {
@@ -2127,7 +2439,7 @@ body {
 
 .changes-counts .removed,
 .changes-total .removed {
-  color: #f85149;
+  color: var(--danger);
 }
 
 /* Quiet beside the model picker until it is wanted, like the buttons beside the path. */
@@ -2137,7 +2449,7 @@ body {
   border-radius: 5px;
   background: none;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 

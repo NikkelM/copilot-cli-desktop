@@ -355,6 +355,22 @@ describe('ask_user rows', () => {
     );
     expect(entries[0]).toMatchObject({ name: 'Fetching web content' });
   });
+
+  // The three busiest tools after the shell, and the ones the CLI names rather than
+  // showing the tool's own name. Without this a transcript reads "Shell", "Search",
+  // "edit", "view", which looks like two different kinds of thing.
+  it.each([
+    ['view', 'Read'],
+    ['create', 'Create'],
+    ['edit', 'Edit'],
+    ['str_replace', 'Edit'],
+  ])('calls the %s tool %s, as the CLI does', (toolName, expected) => {
+    const entries = toEntries(
+      [event('tool.execution_start', { toolCallId: 't1', toolName, arguments: { path: 'notes.txt' } })],
+      null,
+    );
+    expect(entries[0]).toMatchObject({ name: expected, summary: 'notes.txt' });
+  });
 });
 
 // React keys rows by this, and ToolRow holds its expanded state locally. If a key moves
@@ -417,8 +433,29 @@ describe('sameEntry', () => {
     command: 'echo hi',
     search: true,
     patch: 'diff --git a/x b/x',
+    path: 'src/a.ts',
     startedAt: '2026-09-05T12:00:00.000Z',
     endedAt: '2026-09-05T12:01:19.000Z',
+  };
+
+  // Everything a message row can draw, for the same reason.
+  const message: MessageEntry = {
+    kind: 'message',
+    key: 'm1',
+    variant: 'assistant',
+    body: 'hello',
+    at: '2026-09-05T12:00:00.000Z',
+    preformatted: true,
+    streaming: true,
+    partial: true,
+  };
+
+  // And everything a reasoning row can draw.
+  const reasoning: ReasoningEntry = {
+    kind: 'reasoning',
+    key: 'r1',
+    body: 'thinking',
+    streaming: true,
   };
 
   it('treats a rebuilt but identical entry as unchanged', () => {
@@ -442,6 +479,7 @@ describe('sameEntry', () => {
       command: 'echo bye',
       search: undefined,
       patch: undefined,
+      path: 'src/b.tsx',
       startedAt: '2026-09-05T12:00:01.000Z',
       endedAt: undefined,
     };
@@ -459,6 +497,9 @@ describe('sameEntry', () => {
    * The sweep above only sees fields the sample happens to carry, and twice now a field
    * has been added without one. This asks the builder itself what it produces, so a new
    * field fails here as soon as anything sets it.
+   *
+   * Every kind of entry, not just tools: a field added to a message or a reasoning row is
+   * every bit as able to go undrawn, and for a while this only ever built tools.
    */
   it('compares every field toEntries can produce', () => {
     const built = [
@@ -488,11 +529,40 @@ describe('sameEntry', () => {
         ],
         null,
       ),
+      // An edit that carries a patch, and one that was refused: the failed and cancelled
+      // paths set fields the successful one never reaches.
+      ...toEntries(
+        [
+          event('tool.execution_start', {
+            toolCallId: 'e1',
+            toolName: 'edit',
+            arguments: { path: 'a.ts', old_str: 'one', new_str: 'two' },
+          }),
+          event('tool.execution_complete', { toolCallId: 'e1', success: false, result: { content: 'no match' } }),
+        ],
+        null,
+      ),
+      // A prompt, a reply, and the thinking that came with it.
+      ...toEntries(
+        [
+          event('user.message', { content: 'hi' }),
+          event('assistant.reasoning', { reasoningId: 'g1', content: 'weighing it up' }),
+          event('assistant.message', { content: 'hello' }),
+        ],
+        null,
+      ),
     ];
 
-    const produced = new Set(built.flatMap((entry) => Object.keys(entry)));
-    const accounted = new Set([...Object.keys(tool), 'kind']);
-    expect([...produced].filter((field) => !accounted.has(field)), 'add it to the entry above').toEqual([]);
+    const samples: Record<string, object> = { tool, message, reasoning };
+    expect(new Set(built.map((entry) => entry.kind))).toEqual(new Set(Object.keys(samples)));
+
+    for (const entry of built) {
+      const accounted = new Set([...Object.keys(samples[entry.kind]!), 'kind']);
+      expect(
+        Object.keys(entry).filter((field) => !accounted.has(field)),
+        `${entry.kind}: add it to the sample above and to sameEntry`,
+      ).toEqual([]);
+    }
   });
 
   it('separates a message from a tool that shares its key', () => {
@@ -782,3 +852,150 @@ describe('a stopped turn', () => {
       ]);
     });
   });
+
+/**
+ * A command the reader typed with `!`. Verified against the runtime: it announces itself
+ * as `tool.user_requested` with `toolName: "local_shell"` and completes as an ordinary
+ * `tool.execution_complete` carrying `isUserRequested` (#134).
+ */
+describe('toEntries, a shell command the reader ran', () => {
+  const started = event('tool.user_requested', {
+    toolCallId: 'u1',
+    toolName: 'local_shell',
+    arguments: { command: 'git status', description: 'Execute shell command: git status' },
+  });
+
+  it('opens a row of its own rather than an unnamed orphan', () => {
+    const entries = toEntries([started], CWD);
+    expect(entries[0]).toMatchObject({ kind: 'tool', name: 'Shell', summary: 'git status', status: 'running' });
+  });
+
+  it('closes the row it opened, so the command and its output are one thing', () => {
+    const entries = toEntries(
+      [started, event('tool.execution_complete', { toolCallId: 'u1', isUserRequested: true, success: true, result: { content: 'clean' } })],
+      CWD,
+    );
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ status: 'ok', output: 'clean' });
+  });
+
+  /** The runtime's description restates the command, which would push it off the line. */
+  it('prefers the command to the description the runtime wrote around it', () => {
+    const entries = toEntries([started], CWD);
+    expect((entries[0] as ToolEntry).summary).not.toContain('Execute shell command');
+  });
+
+  it('leaves an agent tool call summarised by its description', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', {
+          toolCallId: 't1',
+          toolName: 'powershell',
+          arguments: { command: 'git status', description: 'Check the working tree' },
+        }),
+      ],
+      CWD,
+    );
+    expect((entries[0] as ToolEntry).summary).toBe('Check the working tree');
+  });
+
+  it('reports a failed command as failed', () => {
+    const entries = toEntries(
+      [started, event('tool.execution_complete', { toolCallId: 'u1', success: false, error: { message: 'not a repo' } })],
+      CWD,
+    );
+    expect(entries[0]).toMatchObject({ status: 'failed', output: 'not a repo' });
+  });
+});
+
+/** Command output arrives with the colours a terminal would have shown, which this app cannot draw. */
+describe('toEntries, terminal escapes in tool output', () => {
+  it('strips them from what a tool printed', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'git status' } }),
+        event('tool.execution_complete', {
+          toolCallId: 't1',
+          success: true,
+          result: { content: '\u001B[32mclean\u001B[0m' },
+        }),
+      ],
+      CWD,
+    );
+    expect((entries[0] as ToolEntry).output).toBe('clean');
+  });
+
+  it('strips them from what a failed tool reported', () => {
+    const entries = toEntries(
+      [
+        event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'nope' } }),
+        event('tool.execution_complete', {
+          toolCallId: 't1',
+          success: false,
+          error: { message: "\u001B[31;1mThe term 'nope' is not recognized\u001B[0m" },
+        }),
+      ],
+      CWD,
+    );
+    expect((entries[0] as ToolEntry).output).toBe("The term 'nope' is not recognized");
+  });
+
+  it('strips them from a row header too', () => {
+    const entries = toEntries(
+      [
+        event('tool.user_requested', {
+          toolCallId: 'u1',
+          toolName: 'local_shell',
+          arguments: { command: '\u001B[1mgit status\u001B[0m' },
+        }),
+      ],
+      CWD,
+    );
+    expect((entries[0] as ToolEntry).summary).toBe('git status');
+  });
+});
+
+/**
+ * A long command sat with an empty row until it finished, which reads as a hang. The
+ * runtime reports its output while it runs, so the row can say what it has produced.
+ */
+describe('toEntries, a tool reporting output while it runs', () => {
+  const started = event('tool.execution_start', {
+    toolCallId: 't1',
+    toolName: 'powershell',
+    arguments: { command: 'npm test' },
+  });
+
+  const chunk = (partialOutput: string) => event('tool.execution_partial_result', { toolCallId: 't1', partialOutput });
+
+  it('shows what the tool has produced so far', () => {
+    const entries = toEntries([started, chunk('line 1\nline 2')], CWD);
+    expect(entries[0]).toMatchObject({ status: 'running', output: 'line 1\nline 2' });
+  });
+
+  /** The payload is everything so far, so the newest one is the whole answer. */
+  it('replaces the earlier output rather than repeating it', () => {
+    const entries = toEntries([started, chunk('line 1'), chunk('line 1\nline 2')], CWD);
+    expect((entries[0] as ToolEntry).output).toBe('line 1\nline 2');
+  });
+
+  it('lets the finished result stand rather than leaving the last chunk in place', () => {
+    const entries = toEntries(
+      [
+        started,
+        chunk('line 1'),
+        event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'line 1\nline 2\ndone' } }),
+      ],
+      CWD,
+    );
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ status: 'ok', output: 'line 1\nline 2\ndone' });
+  });
+
+  // Ephemeral events can outlive the row they described, for instance when history is
+  // replayed underneath them.
+  it('ignores output for a tool that is not running', () => {
+    expect(toEntries([chunk('orphaned')], CWD)).toHaveLength(0);
+  });
+});

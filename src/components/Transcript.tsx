@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
+import { fileBadge } from '../lib/fileBadge';
 import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
 import { CopyButton } from './CopyButton';
@@ -100,6 +101,12 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   // content off the screen, and the rest is still there behind the expander.
   const failure = entry.status === 'failed' ? firstLine(entry.output) : null;
 
+  // A file row wears its file type where a finished, unremarkable row would show a tick,
+  // which is what the CLI does and costs nothing: a green tick beside a green +2 -5 says
+  // the same thing twice. Only when settled and successful - the other three states have
+  // something to report, and reporting it is worth more than naming the file's language.
+  const badge = entry.status === 'ok' && entry.path ? fileBadge(entry.path) : null;
+
   // Finding nothing is a result worth stating, and it is the one case with no output to
   // count, so a search says how it went rather than how much came back.
   const count = choices
@@ -123,7 +130,13 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         disabled={!expandable}
         title={entry.status === 'cancelled' ? 'Interrupted before it finished' : undefined}
       >
-        <span className="tool-status">{STATUS_GLYPH[entry.status]}</span>
+        {badge ? (
+          <span className="tool-badge" data-tone={badge.tone}>
+            {badge.label}
+          </span>
+        ) : (
+          <span className="tool-status">{STATUS_GLYPH[entry.status]}</span>
+        )}
         <span className="tool-name">{entry.name}</span>
         <span className="tool-subject">
           <span className="tool-summary">{entry.summary}</span>
@@ -200,6 +213,8 @@ interface TranscriptProps {
   hasOlder: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
+  /** Whether the model's thinking is shown at all, which ctrl+t turns off (#72). */
+  reasoning: boolean;
 }
 
 export function Transcript({
@@ -210,8 +225,12 @@ export function Transcript({
   hasOlder,
   loadingOlder,
   onLoadOlder,
+  reasoning,
 }: TranscriptProps) {
-  const entries = toEntries(events, cwd, abandoned);
+  const all = toEntries(events, cwd, abandoned);
+  // Dropped rather than hidden with CSS: thinking is usually longer than the answer it
+  // produced, and the point of turning it off is to stop paying to lay it out.
+  const entries = reasoning ? all : all.filter((entry) => entry.kind !== 'reasoning');
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
   /** Scroll height before older events were prepended, so the view can be held still. */
