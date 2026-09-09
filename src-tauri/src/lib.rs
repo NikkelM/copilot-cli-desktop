@@ -365,7 +365,9 @@ impl Sidecar {
         // send to and is dropped, rather than being matched to a caller that gave up.
         if reply.as_ref().err().is_some_and(|e| e == SIDECAR_SILENT) {
             self.pending.lock().unwrap().remove(&id);
-            log(&format!("no reply to {method} (id {id}) within {REQUEST_TIMEOUT:?}"));
+            log(&format!(
+                "no reply to {method} (id {id}) within {REQUEST_TIMEOUT:?}"
+            ));
         }
 
         reply
