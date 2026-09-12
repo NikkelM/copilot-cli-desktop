@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { existsSync } from 'node:fs';
 
 /** Root of the Copilot CLI's own state directory. Override for testing against a fixture. */
@@ -18,6 +18,25 @@ export function sessionEventLog(sessionId: string): string {
   return join(sessionStateDir(sessionId), 'events.jsonl');
 }
 
+/** Name of the CLI binary itself, not a shell wrapper: the SDK spawns this without a shell. */
+const cliBinary = process.platform === 'win32' ? 'copilot.exe' : 'copilot';
+
+/**
+ * The executable a terminal on this machine would run.
+ * Covers every installer that puts the real binary on PATH - winget, scoop, a manual copy - without naming any of them, and keeps the app on the same CLI the user sees.
+ *
+ * npm installs are deliberately not served here: on Windows npm writes a `.cmd` shim rather than an `.exe`, so this misses them and the package candidates below pick them up instead.
+ */
+function onPath(): string | null {
+  for (const entry of (process.env.PATH ?? '').split(delimiter)) {
+    if (!entry) continue;
+    const candidate = join(entry, cliBinary);
+    if (existsSync(candidate)) return candidate;
+  }
+
+  return null;
+}
+
 /**
  * Locate the Copilot CLI executable that the SDK should drive.
  * The SDK spawns this once and hosts every session inside it.
@@ -26,6 +45,9 @@ export function resolveCliPath(): string | null {
   if (process.env.COPILOT_CLI_PATH && existsSync(process.env.COPILOT_CLI_PATH)) {
     return process.env.COPILOT_CLI_PATH;
   }
+
+  const onPathCandidate = onPath();
+  if (onPathCandidate) return onPathCandidate;
 
   const platformPackage =
     process.platform === 'win32'
