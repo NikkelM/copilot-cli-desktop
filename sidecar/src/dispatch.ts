@@ -106,6 +106,14 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
       disabled: await runtime.setSkillEnabled(sessionId, name, enabled),
     }),
 
+    'directories.list': ({ sessionId }) => ({ directories: runtime.directories(sessionId) }),
+
+    'directories.add': async ({ sessionId, path }) => ({
+      directories: await runtime.addDirectory(sessionId, path),
+    }),
+
+    'directories.remove': ({ sessionId, path }) => runtime.removeDirectory(sessionId, path),
+
     'sessions.model': async ({ sessionId }) => ({ current: await lastModel(sessionId) }),
 
     'sessions.context': async ({ sessionId }) => ({ usage: await runtime.contextUsage(sessionId) }),

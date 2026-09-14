@@ -37,6 +37,7 @@ import { stripAnsi } from '../../shared/ansi.js';
 import { lastMode } from './eventLog.js';
 
 import { PendingRequests } from './pending.js';
+import { addDirectory, extraDirectories, removeDirectory } from './directories.js';
 import { disabledSkills, setSkillDisabled } from './skills.js';
 
 /**
@@ -452,6 +453,10 @@ export class SessionRuntime {
       // resumes constantly - a session evicted under the cap comes back through here. The
       // reader's choices are re-applied on the way in so they hold (#22).
       disabledSkills: disabledSkills(sessionId),
+      // Not persisted by the runtime either, and said so outright: applied on creation and
+      // cold resume and forgotten in between. Re-supplied here so a directory granted to a
+      // session is still granted after the cap evicts it (#25).
+      additionalDirectories: extraDirectories(sessionId),
       // As on creation (#162): the resume this app performs constantly is exactly the moment
       // an in-memory token would already have been thrown away.
       mcpOAuthTokenStorage: 'persistent',
@@ -1007,6 +1012,44 @@ export class SessionRuntime {
   /** The skills this session has switched off, whether or not it is loaded. */
   disabledSkills(sessionId: string): string[] {
     return disabledSkills(sessionId);
+  }
+
+  /** The extra directories this session may reach, whether or not it is loaded. */
+  directories(sessionId: string): string[] {
+    return extraDirectories(sessionId);
+  }
+
+  /**
+   * Give a session another directory to work in.
+   *
+   * Costs no resume. A cold session picks the directory up when it is next started, and a
+   * loaded one is told at once through `permissions.paths.add`, which grants access and
+   * loads any skills and agents stored under it - the same thing supplying the directory
+   * at resume would have done.
+   */
+  async addDirectory(sessionId: string, path: string): Promise<string[]> {
+    const directories = addDirectory(sessionId, path);
+
+    const loaded = this.loaded.get(sessionId);
+    if (loaded) await loaded.session.rpc.permissions.paths.add({ path });
+
+    return directories;
+  }
+
+  /**
+   * Take a directory back off a session.
+   *
+   * A loaded session keeps its access until it is next started: the runtime can add a
+   * directory to a live path manager but has no matching remove, so the only way to
+   * withdraw one is to leave it out of the next resume. The caller is told which case it
+   * got so it can say so rather than showing a change that has not happened yet.
+   */
+  removeDirectory(sessionId: string, path: string): { directories: string[]; untilRestart: boolean } {
+    const before = extraDirectories(sessionId);
+    const directories = removeDirectory(sessionId, path);
+    const removed = directories.length !== before.length;
+
+    return { directories, untilRestart: removed && this.loaded.has(sessionId) };
   }
 
   /**
