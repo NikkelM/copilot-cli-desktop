@@ -16,6 +16,7 @@ import type {
   PendingPermission,
   PermissionChoice,
   PermissionResolvedNotification,
+  SessionEnvironment,
   ReasoningEffort,
   RuntimeStatus,
   SendParams,
@@ -176,6 +177,16 @@ export function selectAgent(sessionId: string, name: string): Promise<void> {
 /** Return a session to the default agent. Resumes it if it is cold. */
 export function deselectAgent(sessionId: string): Promise<void> {
   return request('agents.deselect', { sessionId });
+}
+
+/**
+ * What a session in this directory would load: instructions, plugins and extensions.
+ *
+ * Answered from disk and the server, never from a session, so this works for one the app
+ * has never opened and costs no resume.
+ */
+export function describeEnvironment(cwd?: string): Promise<SessionEnvironment> {
+  return request('environment.describe', { cwd });
 }
 
 /** What git says about a directory now. Null when it is not in a repository. */
