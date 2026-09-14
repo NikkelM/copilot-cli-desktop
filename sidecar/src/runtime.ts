@@ -300,6 +300,10 @@ export class SessionRuntime {
       // creation is the only chance to get a complete record: capture starts with the
       // first turn and cannot be reconstructed later.
       enableFileChangeTracking: true,
+      // Off by default, which left every session here without the reader's agents, skills
+      // and instructions while the same session in a terminal had all three (#161). What
+      // is set explicitly above still wins over anything discovered.
+      enableConfigDiscovery: true,
       streaming: true,
     });
 
@@ -338,6 +342,9 @@ export class SessionRuntime {
       // session that has run untracked turns keeps them untracked: the runtime cannot
       // reconstruct what it did not watch, and says so rather than guessing.
       enableFileChangeTracking: true,
+      // As on creation (#161): a resumed session has to see the same agents, skills and
+      // instructions the CLI would give it, or it quietly behaves like a different one.
+      enableConfigDiscovery: true,
       streaming: true,
     });
 

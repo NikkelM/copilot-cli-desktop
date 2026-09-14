@@ -109,6 +109,11 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
         return session;
       },
     ),
+    createSession: vi.fn(async (_config: Record<string, unknown>) => {
+      const session = { ...makeSession('made'), sessionId: 'made' };
+      sessions.set('made', session);
+      return session;
+    }),
   };
 
   const runtime = new SessionRuntime({
@@ -869,5 +874,33 @@ describe('custom agents', () => {
     await runtime.selectAgent('cold', 'deep-audit');
 
     expect(client.resumeSession).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The reader's own configuration reaches the session.
+ *
+ * Off by default in the SDK, which left every session here without the agents, skills and
+ * instructions the same session had in a terminal (#161). The failure is silent - a session
+ * just behaves slightly differently - so nothing but a test would notice it coming back off.
+ */
+describe('config discovery', () => {
+  it('lets a new session find what the reader has configured', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+
+    expect(client.createSession).toHaveBeenCalledWith(expect.objectContaining({ enableConfigDiscovery: true }));
+  });
+
+  it('lets a resumed session find it too', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.send('s1', 'x');
+
+    expect(client.resumeSession).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ enableConfigDiscovery: true }),
+    );
   });
 });
