@@ -45,6 +45,7 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useEnvironment } from './lib/useEnvironment';
+import { useDirectories } from './lib/useDirectories';
 import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
 import { useAgent } from './lib/useAgent';
@@ -138,6 +139,7 @@ export default function App() {
   const changes = useChanges(selectedId);
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
+  const directories = useDirectories(selectedId);
   const prompts = usePrompts(selectedId, setError);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
@@ -763,11 +765,16 @@ export default function App() {
                 <Environment
                   environment={environment.environment}
                   loading={environment.loading}
-                  failed={environment.failed ?? skills.failed}
+                  failed={environment.failed ?? skills.failed ?? directories.failed}
                   onReload={() => void environment.load()}
                   onClose={closeEnvironment}
                   disabledSkills={skills.disabled}
                   onToggleSkill={selectedId ? (name, enabled) => void skills.toggle(name, enabled) : undefined}
+                  cwd={selected.cwd}
+                  directories={directories.directories}
+                  pendingDirectories={directories.pending}
+                  onAddDirectory={selectedId ? (path) => void directories.add(path) : undefined}
+                  onRemoveDirectory={selectedId ? (path) => void directories.remove(path) : undefined}
                 />
               )}
 

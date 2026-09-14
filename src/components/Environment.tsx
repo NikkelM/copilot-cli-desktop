@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { open as pickFolder } from '@tauri-apps/plugin-dialog';
 
 import type { ExtensionSummary, InstructionSource, SessionEnvironment } from '../../shared/protocol';
 import { Markdown } from './Markdown';
@@ -14,6 +15,15 @@ interface EnvironmentProps {
   disabledSkills?: string[];
   /** Absent when there is no session to switch anything for, which leaves the list readable but fixed. */
   onToggleSkill?: (name: string, enabled: boolean) => void;
+  /** The directory this session works in, which is always reachable and cannot be withdrawn. */
+  cwd?: string | null;
+  /** Directories granted on top of it. Empty when the panel is open on no session. */
+  directories?: string[];
+  /** Granted directories withdrawn from a session that still holds them until it restarts. */
+  pendingDirectories?: string[];
+  /** Absent when there is no session to grant anything to, which leaves the list readable but fixed. */
+  onAddDirectory?: (path: string) => void;
+  onRemoveDirectory?: (path: string) => void;
 }
 
 /** Where a source came from, in the words someone would use to go and find it. */
@@ -60,8 +70,14 @@ export function Environment({
   onClose,
   disabledSkills = [],
   onToggleSkill,
+  cwd = null,
+  directories = [],
+  pendingDirectories = [],
+  onAddDirectory,
+  onRemoveDirectory,
 }: EnvironmentProps) {
   const [open, setOpen] = useState<string | null>(null);
+  const [pickerFailed, setPickerFailed] = useState<string | null>(null);
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
@@ -95,10 +111,78 @@ export function Environment({
       </div>
 
       {failed && <p className="error">{failed}</p>}
+      {pickerFailed && <p className="error">{pickerFailed}</p>}
       {loading && !environment && <p className="changes-note">Reading what this session would load.</p>}
 
       {environment && (
         <div className="environment-body">
+          {/* First, because it is the frame the rest is read in: which instructions and
+              skills apply is decided by which directories the session can see. */}
+          <section className="environment-section">
+            <h3 className="environment-heading">Directories</h3>
+            {!onAddDirectory && <p className="changes-note">Open a session to give it another directory.</p>}
+            <ul className="environment-list">
+              {cwd && (
+                <li className="environment-item">
+                  <span className="environment-dot on" aria-hidden />
+                  <span className="environment-name" title={cwd}>
+                    {cwd}
+                  </span>
+                  <span className="environment-meta">Working directory</span>
+                </li>
+              )}
+              {directories.map((path) => (
+                <li key={path} className="environment-item">
+                  <span className="environment-dot on" aria-hidden />
+                  <span className="environment-name" title={path}>
+                    {path}
+                  </span>
+                  <span className="environment-meta">Added</span>
+                  {onRemoveDirectory && (
+                    <button
+                      type="button"
+                      className="environment-toggle"
+                      onClick={() => onRemoveDirectory(path)}
+                      title={`Stop this session reaching ${path}`}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {/* The runtime grants a directory to a live session but has no way to take one
+                back, so saying it is gone would be untrue until the session next starts. */}
+            {pendingDirectories.length > 0 && (
+              <p className="changes-note">
+                {pendingDirectories.length === 1 ? 'One directory stays' : `${pendingDirectories.length} directories stay`}{' '}
+                reachable until this session next starts.
+              </p>
+            )}
+            {onAddDirectory && (
+              <>
+                <button
+                  type="button"
+                  className="changes-action"
+                  onClick={() => {
+                    setPickerFailed(null);
+                    pickFolder({ directory: true, title: 'Give this session another directory' })
+                      .then((picked) => {
+                        if (typeof picked === 'string') onAddDirectory(picked);
+                      })
+                      .catch((error: unknown) => setPickerFailed(String(error)));
+                  }}
+                >
+                  Add directory
+                </button>
+                <p className="changes-note">
+                  An added directory brings its own <code>.github/skills</code> and <code>.github/agents</code> into
+                  the session, so adding one is a matter of trust as much as of access.
+                </p>
+              </>
+            )}
+          </section>
+
           <section className="environment-section">
             <h3 className="environment-heading">Instructions</h3>
             {instructions.length === 0 ? (
