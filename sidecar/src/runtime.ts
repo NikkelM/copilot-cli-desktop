@@ -869,6 +869,7 @@ export class SessionRuntime {
         enabled: skill.enabled !== false,
         ...(skill.path ? { path: skill.path } : {}),
       })),
+      skillErrors: skills.errors ?? [],
       extensionMode: extensions.mode,
     };
   }

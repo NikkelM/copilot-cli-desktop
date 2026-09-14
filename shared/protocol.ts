@@ -419,6 +419,13 @@ export interface SessionEnvironment {
   extensions: ExtensionSummary[];
   skills: SkillSummary[];
   /**
+   * Skills that were found but could not be read, as the runtime described them.
+   *
+   * Worth reporting rather than dropping: a malformed SKILL.md simply goes missing from the
+   * list otherwise, which reads as never having been installed.
+   */
+  skillErrors: string[];
+  /**
    * Whether extensions are loaded at all, and whether the agent may manage them.
    * Worth showing, because an empty list means something different under `disabled`.
    */

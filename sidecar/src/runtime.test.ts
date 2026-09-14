@@ -1091,6 +1091,29 @@ describe('environment', () => {
     return rpc;
   }
 
+  it('passes on the skills the runtime could not read', async () => {
+    const parts = makeRuntime();
+    const rpc = withEnvironment(parts);
+    (rpc.skills as { discover: unknown }).discover = vi.fn(async () => ({
+      skills: [],
+      errors: ['pdf: SKILL.md has no description'],
+    }));
+
+    const environment = await parts.runtime.environment('C:\\repo');
+
+    expect(environment.skillErrors).toEqual(['pdf: SKILL.md has no description']);
+  });
+
+  // Older runtimes omit the field rather than sending an empty list.
+  it('treats absent failures as none', async () => {
+    const parts = makeRuntime();
+    const rpc = withEnvironment(parts);
+    (rpc.skills as { discover: unknown }).discover = vi.fn(async () => ({ skills: [] }));
+
+    const environment = await parts.runtime.environment('C:\\repo');
+
+    expect(environment.skillErrors).toEqual([]);
+  });
   it('gathers instructions, plugins and extensions together', async () => {
     const parts = makeRuntime();
     withEnvironment(parts);

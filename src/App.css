@@ -2622,6 +2622,12 @@ button.group:hover {
   list-style: none;
 }
 
+/* Skills that would not load, kept apart from the ones that did so the list above stays a
+   list of what is in force. */
+.environment-errors .environment-meta {
+  color: var(--danger);
+}
+
 .environment-item {
   display: flex;
   align-items: baseline;

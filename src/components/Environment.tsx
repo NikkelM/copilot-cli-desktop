@@ -73,6 +73,7 @@ export function Environment({
   const plugins = environment?.plugins ?? [];
   const extensions = environment?.extensions ?? [];
   const skills = environment?.skills ?? [];
+  const skillErrors = environment?.skillErrors ?? [];
   const off = new Set(disabledSkills);
 
   return (
@@ -201,6 +202,19 @@ export function Environment({
                   })}
                 </ul>
               </>
+            )}
+            {/* A skill that could not be read is simply absent from the list above, which
+                reads as never having been installed. Saying so is the only way to tell the
+                difference between a skill that is missing and one that is broken. */}
+            {skillErrors.length > 0 && (
+              <ul className="environment-list environment-errors">
+                {skillErrors.map((message) => (
+                  <li key={message} className="environment-item">
+                    <span className="environment-dot off" aria-hidden />
+                    <span className="environment-meta">{message}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </section>
 

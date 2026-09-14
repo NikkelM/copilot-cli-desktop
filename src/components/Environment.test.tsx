@@ -20,6 +20,7 @@ const environment = (over: Partial<SessionEnvironment> = {}): SessionEnvironment
   plugins: [{ name: 'project-planning', marketplace: 'awesome-copilot', version: '1.0.0', enabled: true }],
   extensions: [],
   skills: [],
+  skillErrors: [],
   extensionMode: 'load_and_augment',
   ...over,
 });
@@ -283,5 +284,53 @@ describe('skills a session would load', () => {
     render(<Environment {...props} environment={environment({ skills: [] })} />);
 
     expect(screen.getByText('No skills found for this directory.')).toBeTruthy();
+  });
+});
+
+describe('skills that would not load', () => {
+  const errorsIn = (container: HTMLElement) =>
+    [...container.querySelectorAll('.environment-errors .environment-meta')].map((n) => n.textContent);
+
+  it('reports a skill the runtime could not read', () => {
+    const { container } = render(
+      <Environment
+        environment={environment({ skillErrors: ['pdf: SKILL.md has no description'] })}
+        loading={false}
+        failed={null}
+        onReload={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(errorsIn(container)).toEqual(['pdf: SKILL.md has no description']);
+  });
+
+  // A broken skill is the reason to look, so it has to show even when nothing else loaded.
+  it('reports failures even when no skill loaded at all', () => {
+    const { container } = render(
+      <Environment
+        environment={environment({ skills: [], skillErrors: ['pdf: unreadable'] })}
+        loading={false}
+        failed={null}
+        onReload={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(errorsIn(container)).toEqual(['pdf: unreadable']);
+  });
+
+  it('says nothing when every skill loaded', () => {
+    const { container } = render(
+      <Environment
+        environment={environment({ skillErrors: [] })}
+        loading={false}
+        failed={null}
+        onReload={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(container.querySelector('.environment-errors')).toBeNull();
   });
 });
