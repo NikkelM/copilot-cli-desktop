@@ -169,8 +169,8 @@ impl Supervisor {
 
         let mut command = Command::new(&node);
         command
-            // node:sqlite is stable in behaviour but still flagged experimental; the
-            // warning would otherwise be printed on every launch.
+            // Node 24, which package.json asks for, loads node:sqlite quietly. This is kept
+            // because the app runs on whatever node is installed, and 22 warns on every launch.
             .arg("--no-warnings=ExperimentalWarning")
             .arg(&self.script)
             .stdin(Stdio::piped())
