@@ -21,12 +21,6 @@
   --cyan: #39c5cf;
   /** Purple, for plan mode, where the agent is thinking rather than doing. */
   --plan: #a371f7;
-  /**
-   * Purple, for work in progress. The CLI's own spinner colour, kept exactly: the status
-   * line is the one place this app is deliberately imitating it. Close to --plan and
-   * separate on purpose - one says what the agent may do, the other that it is doing it.
-   */
-  --working: #b346c1;
 
   /*
    * One type scale (#139).
@@ -2203,18 +2197,20 @@ button.group:hover {
  * What the agent is doing, and how long it has been at it. Left-aligned, which puts it in
  * the reading path rather than in the far corner, and next to the mode when there is one.
  *
- * Centred, with a line-height pinned on the row so the description and the monospace clock
- * sit in boxes of the same height. That is what centring lacked the first time: left to
- * their own metrics the two fonts made two different line boxes, so centring them centred
- * nothing. Aligning on the baseline fixed the text and broke the spinner instead, since a
- * ring has no baseline to share and was left centring against whichever font happened to
- * be tallest. One shared box settles all three.
+ * Two alignments at once, which is what this row kept failing on. The description and the
+ * clock are set in different fonts and share nothing but a baseline, so they align on it.
+ * The ring has no baseline at all and wants centring. Those disagree only because centring
+ * measures against the flex line, and the line is as tall as the tallest thing in it, which
+ * is the monospace clock - so the ring was centring on the clock while sitting beside the
+ * description. Giving the row the height of one line of its own text removes the argument:
+ * the line is now the description's box, and centring in it is centring on the description.
  */
 .composer-working {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   min-width: 0;
+  height: calc(var(--font-sm) * 1.5);
   color: var(--text-muted);
   font-size: var(--font-sm);
   line-height: 1.5;
@@ -2240,15 +2236,21 @@ button.group:hover {
  * A turning ring rather than a pulse, because the point is that something is still moving:
  * a breathing dot reads the same whether the work is progressing or wedged.
  *
- * Purple is the CLI's own colour for this, and a ring is a shape rather than something to
- * read, so it can carry a hue the text next to it could not.
+ * In the accent, not the purple the CLI uses. Purple is already plan mode here, and a second
+ * purple on the same row that meant something else was a colour to decode rather than read.
+ *
+ * Having no text, it has no baseline either, so it is centred rather than sat on one. That
+ * works now only because the row is held to the height of one line of its text: centring
+ * measures against the flex line, and left to itself that line took its height from the
+ * monospace clock.
  */
 .composer-spinner {
   flex: none;
+  align-self: center;
   width: 9px;
   height: 9px;
-  border: 1.5px solid color-mix(in srgb, var(--working) 35%, transparent);
-  border-top-color: var(--working);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
