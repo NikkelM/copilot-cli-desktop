@@ -51,6 +51,9 @@ function makeSession(id: string) {
         select: vi.fn(async (_params: { name: string }) => ({})),
         deselect: vi.fn(async () => undefined),
       },
+      options: {
+        update: vi.fn(async (_params: { disabledSkills?: string[] }) => ({ success: true })),
+      },
     },
     abort: vi.fn(async function (this: { aborted: boolean }) {
       this.aborted = true;
@@ -972,6 +975,62 @@ describe('plugin skills', () => {
   });
 });
 
+/**
+ * The runtime's own per-session skill disable is forgotten on the next resume - measured by
+ * disabling, disconnecting, resuming and finding the skill back on. This app resumes
+ * constantly, so the choice is kept here and re-applied on the way in (#22).
+ */
+describe('skills a session has switched off', () => {
+  it('starts a session with nothing switched off', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.send('s1', 'x');
+
+    expect(client.resumeSession).toHaveBeenCalledWith('s1', expect.objectContaining({ disabledSkills: [] }));
+  });
+
+  it('hands the choice back to a session being resumed', async () => {
+    const { runtime, client } = makeRuntime();
+    await runtime.setSkillEnabled('s-resume', 'agent-creator', false);
+
+    await runtime.send('s-resume', 'x');
+
+    expect(client.resumeSession).toHaveBeenCalledWith(
+      's-resume',
+      expect.objectContaining({ disabledSkills: ['agent-creator'] }),
+    );
+  });
+
+  it('reports what a session has switched off without loading it', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.setSkillEnabled('s-cold', 'agent-creator', false);
+
+    expect(runtime.disabledSkills('s-cold')).toEqual(['agent-creator']);
+    expect(client.resumeSession).not.toHaveBeenCalled();
+  });
+
+  // A loaded session would otherwise keep the skill until something evicted it.
+  it('tells a session that is already loaded', async () => {
+    const { runtime, client } = makeRuntime();
+    await runtime.send('s-live', 'x');
+    const session = await client.resumeSession.mock.results[0].value;
+
+    await runtime.setSkillEnabled('s-live', 'agent-creator', false);
+
+    expect(session.rpc.options.update).toHaveBeenCalledWith({ disabledSkills: ['agent-creator'] });
+  });
+
+  it('switches one back on', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.setSkillEnabled('s-back', 'agent-creator', false);
+
+    await runtime.setSkillEnabled('s-back', 'agent-creator', true);
+
+    expect(runtime.disabledSkills('s-back')).toEqual([]);
+  });
+});
+
 describe('environment', () => {
   /** Give the client fake the three server surfaces the environment is assembled from. */
   function withEnvironment(runtimeParts: ReturnType<typeof makeRuntime>) {
@@ -1003,6 +1062,30 @@ describe('environment', () => {
           },
         ],
         mode: 'load_and_augment',
+      })),
+    };
+    rpc.skills = {
+      discover: vi.fn(async (_params: { projectPaths?: string[] }) => ({
+        skills: [
+          {
+            name: 'agent-creator',
+            commandName: 'agent-creator',
+            description: 'Build a custom agent',
+            source: 'personal-copilot',
+            userInvocable: true,
+            enabled: true,
+            path: 'C:\\Users\\x\\.copilot\\skills\\agent-creator\\SKILL.md',
+          },
+          {
+            name: 'context-map',
+            commandName: 'context-engineering:context-map',
+            description: 'Map the files a task touches',
+            source: 'plugin',
+            userInvocable: true,
+            enabled: false,
+          },
+        ],
+        errors: [],
       })),
     };
     return rpc;
@@ -1039,6 +1122,44 @@ describe('environment', () => {
     const { extensions } = await parts.runtime.environment('C:\\repo');
 
     expect(extensions[0]).toMatchObject({ id: 'plugin:awesome-copilot/thing', plugin: 'awesome-copilot' });
+  });
+
+  it('lists the skills a session here would be offered', async () => {
+    const parts = makeRuntime();
+    withEnvironment(parts);
+
+    const { skills } = await parts.runtime.environment('C:\\repo');
+
+    expect(skills).toEqual([
+      {
+        name: 'agent-creator',
+        commandName: 'agent-creator',
+        description: 'Build a custom agent',
+        source: 'personal-copilot',
+        userInvocable: true,
+        enabled: true,
+        path: 'C:\\Users\\x\\.copilot\\skills\\agent-creator\\SKILL.md',
+      },
+      {
+        name: 'context-map',
+        commandName: 'context-engineering:context-map',
+        description: 'Map the files a task touches',
+        source: 'plugin',
+        userInvocable: true,
+        enabled: false,
+      },
+    ]);
+  });
+
+  // Discovery is per project, as instructions are: a repository can carry its own skills.
+  it('looks for skills in the working directory', async () => {
+    const parts = makeRuntime();
+    const rpc = withEnvironment(parts);
+
+    await parts.runtime.environment('C:\\repo');
+
+    const discover = (rpc.skills as { discover: ReturnType<typeof vi.fn> }).discover;
+    expect(discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
   });
 
   it('keeps a plugin the reader has disabled, saying so', async () => {

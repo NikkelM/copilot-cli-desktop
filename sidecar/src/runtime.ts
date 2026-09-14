@@ -31,6 +31,7 @@ import { copilotHome, resolveCliPath } from './paths.js';
 import { stripAnsi } from '../../shared/ansi.js';
 
 import { PendingRequests } from './pending.js';
+import { disabledSkills, setSkillDisabled } from './skills.js';
 
 /**
  * The legacy ask_user shapes. Declared here because the package root does not re-export
@@ -383,6 +384,10 @@ export class SessionRuntime {
       enableConfigDiscovery: true,
       // As on creation (#163): without these a resumed session is missing most of its skills.
       pluginDirectories,
+      // The runtime's own per-session disable does not survive a resume, and this app
+      // resumes constantly - a session evicted under the cap comes back through here. The
+      // reader's choices are re-applied on the way in so they hold (#22).
+      disabledSkills: disabledSkills(sessionId),
       streaming: true,
     });
 
@@ -814,21 +819,22 @@ export class SessionRuntime {
   /**
    * What a session in this directory would load, without loading one.
    *
-   * All three parts come off the server surface, so this answers for a session the app has
+   * Every part comes off the server surface, so this answers for a session the app has
    * never opened, and for no session at all. The alternative is a session's own
    * `instructions.getSources`, which was measured to agree exactly and costs a resume to ask.
    *
-   * Gathered together because the panel wants all of it at once, and three round trips to
-   * fill one panel is three chances for it to render half-empty.
+   * Gathered together because the panel wants all of it at once, and a round trip per
+   * section is a chance for it to render half-empty.
    */
   async environment(cwd?: string): Promise<SessionEnvironment> {
     const client = await this.ensureClient();
     const projectPaths = cwd ? { projectPaths: [cwd] } : {};
 
-    const [instructions, plugins, extensions] = await Promise.all([
+    const [instructions, plugins, extensions, skills] = await Promise.all([
       client.rpc.instructions.discover(projectPaths),
       client.rpc.plugins.list(),
       client.rpc.extensions.discover(),
+      client.rpc.skills.discover(projectPaths),
     ]);
 
     return {
@@ -854,6 +860,15 @@ export class SessionRuntime {
         enabled: extension.enabled !== false,
         ...(extension.plugin ? { plugin: extension.plugin.name } : {}),
       })),
+      skills: (skills.skills ?? []).map((skill) => ({
+        name: skill.name,
+        ...(skill.commandName ? { commandName: skill.commandName } : {}),
+        description: skill.description,
+        source: skill.source,
+        userInvocable: skill.userInvocable !== false,
+        enabled: skill.enabled !== false,
+        ...(skill.path ? { path: skill.path } : {}),
+      })),
       extensionMode: extensions.mode,
     };
   }
@@ -870,6 +885,28 @@ export class SessionRuntime {
 
     if (name === null) await session.rpc.agent.deselect();
     else await session.rpc.agent.select({ name });
+  }
+
+  /**
+   * Switch a skill on or off for one session.
+   *
+   * Costs no resume. The choice is this app's to keep, and a cold session picks it up when
+   * it is next started; only a session already loaded needs telling, and that one is told
+   * through `options.update` rather than the runtime's own `skills.disable`, because that
+   * one is forgotten on the next resume while this is re-applied on every one.
+   */
+  async setSkillEnabled(sessionId: string, name: string, enabled: boolean): Promise<string[]> {
+    const disabled = setSkillDisabled(sessionId, name, !enabled);
+
+    const loaded = this.loaded.get(sessionId);
+    if (loaded) await loaded.session.rpc.options.update({ disabledSkills: disabled });
+
+    return disabled;
+  }
+
+  /** The skills this session has switched off, whether or not it is loaded. */
+  disabledSkills(sessionId: string): string[] {
+    return disabledSkills(sessionId);
   }
 
   /**

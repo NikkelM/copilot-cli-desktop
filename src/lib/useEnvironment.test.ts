@@ -24,6 +24,7 @@ const environment: SessionEnvironment = {
   ],
   plugins: [{ name: 'project-planning', marketplace: 'awesome-copilot', version: '1.0.0', enabled: true }],
   extensions: [],
+  skills: [],
   extensionMode: 'load_and_augment',
 };
 

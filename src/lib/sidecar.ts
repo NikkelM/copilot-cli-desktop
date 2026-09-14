@@ -189,6 +189,16 @@ export function describeEnvironment(cwd?: string): Promise<SessionEnvironment> {
   return request('environment.describe', { cwd });
 }
 
+/** The skills this session has switched off. Read from the app's own record, so it costs no process. */
+export function disabledSkills(sessionId: string): Promise<{ disabled: string[] }> {
+  return request('skills.disabled', { sessionId });
+}
+
+/** Switch one skill on or off for one session, and get back everything that is now off. */
+export function setSkillEnabled(sessionId: string, name: string, enabled: boolean): Promise<{ disabled: string[] }> {
+  return request('skills.set', { sessionId, name, enabled });
+}
+
 /** What git says about a directory now. Null when it is not in a repository. */
 export async function gitState(cwd: string): Promise<TreeState | null> {
   const { state } = await request('git.state', { cwd });

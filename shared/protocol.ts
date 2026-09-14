@@ -385,6 +385,28 @@ export interface ExtensionSummary {
 }
 
 /**
+ * A skill the runtime would offer, and whether this session is using it.
+ *
+ * `enabled` is the runtime's global answer; `disabled` is this app's per-session one, kept
+ * here rather than asked of the session because a session-scoped disable does not survive
+ * a resume (measured), and this app disconnects idle sessions on purpose.
+ */
+export interface SkillSummary {
+  name: string;
+  /** What typing it as a slash command looks like, without the leading `/`. */
+  commandName?: string;
+  description: string;
+  /** Where it was found: project, personal-copilot, personal-agents, plugin, builtin, custom. */
+  source: string;
+  /** Whether it can be typed as a slash command, as against only the agent reaching for it. */
+  userInvocable: boolean;
+  /** Whether the runtime has it on at all, which a per-session choice cannot override. */
+  enabled: boolean;
+  /** The SKILL.md it was read from, for the skills that have one. */
+  path?: string;
+}
+
+/**
  * What a session in a given directory would load, short of loading it.
  *
  * Answered from the sessionless server surface, so opening this costs no session. The
@@ -395,6 +417,7 @@ export interface SessionEnvironment {
   instructions: InstructionSource[];
   plugins: PluginSummary[];
   extensions: ExtensionSummary[];
+  skills: SkillSummary[];
   /**
    * Whether extensions are loaded at all, and whether the agent may manage them.
    * Worth showing, because an empty list means something different under `disabled`.
@@ -574,13 +597,26 @@ export interface SidecarRequests {
   /** Return a session to the default agent, resuming it if it is cold. */
   'agents.deselect': { params: { sessionId: string }; result: void };
   /**
-   * What a session in this directory would load: its instructions, plugins and extensions.
+   * What a session in this directory would load: its instructions, plugins, extensions and skills.
    *
    * Asked of the server for the same reason `agents.list` is. Every part of this is
    * discoverable without a session, so answering it never resumes one, and the panel works
    * on a session the app has never opened.
    */
   'environment.describe': { params: { cwd?: string }; result: SessionEnvironment };
+  /**
+   * The skills a session has switched off, and the means to switch one.
+   *
+   * Both cost no process. The set belongs to the app rather than to the runtime, whose own
+   * per-session disable is forgotten on the next resume; this one is re-applied on every
+   * resume, so it holds for a session that is evicted and started again.
+   */
+  'skills.disabled': { params: { sessionId: string }; result: { disabled: string[] } };
+  /** Switch one skill on or off for one session. Tells a loaded session; leaves a cold one cold. */
+  'skills.set': {
+    params: { sessionId: string; name: string; enabled: boolean };
+    result: { disabled: string[] };
+  };
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };

@@ -98,6 +98,12 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'environment.describe': (params) => runtime.environment(params?.cwd),
 
+    'skills.disabled': ({ sessionId }) => ({ disabled: runtime.disabledSkills(sessionId) }),
+
+    'skills.set': async ({ sessionId, name, enabled }) => ({
+      disabled: await runtime.setSkillEnabled(sessionId, name, enabled),
+    }),
+
     'sessions.model': async ({ sessionId }) => ({ current: await lastModel(sessionId) }),
 
     'sessions.setModel': ({ sessionId, model, reasoningEffort, contextTier }) =>
