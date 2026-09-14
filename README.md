@@ -22,6 +22,27 @@ session). Measured on Windows with 8 sessions open, only 2 of them doing work:
 
 Idle sessions dominate that cost while contributing nothing.
 
+Those columns count only the Copilot processes on each side, which is the part that
+grows with the number of sessions. The app also pays a fixed cost for its own window
+that the plain CLI does not: about 509 MB working set / 518 MB commit across a Tauri
+shell and six WebView2 processes. That figure is flat. It is the same whether the
+sidebar lists two sessions or two hundred, and it is why the app is only worth running
+past roughly three concurrent sessions.
+
+A whole-tree measurement of both sides running side by side, with ten plain-CLI
+sessions open for comparison. These were started from an installed binary rather than
+through `npx`, so there is one resident process per session instead of the three-process
+chain above:
+
+| | Plain CLI, 10 sessions | This app, everything included |
+|---|---|---|
+| Processes | 11 | 9 |
+| Working set | 3,276 MB | 733 MB |
+| Commit charge | 10,800 MB | 918 MB |
+
+The app column there was measured against a development build, whose renderer still
+holds unminified modules and sourcemaps, so a packaged build should come in under it.
+
 ## How it works
 
 The CLI ships a version-matched TypeScript SDK (`@github/copilot-sdk`) that speaks
@@ -59,8 +80,10 @@ sidecar/        Node process; owns the SDK and all Copilot state
 src-tauri/      Tauri v2 shell; spawns the sidecar, bridges JSON-RPC to the UI
 ```
 
-Tauri reuses the system WebView2/WebKit instead of bundling Chromium, which keeps
-the shell itself at roughly 40 MB rather than ~250 MB.
+Tauri reuses the system WebView2/WebKit instead of bundling Chromium, which keeps the
+binary small: the release executable is 6.5 MB, against the ~150 MB an equivalent
+Electron bundle would ship. That is a download-size win, not a memory one. The web
+engine still has to run, and its cost is the fixed UI figure in the table above.
 
 The sidecar is Node rather than Rust because the SDK is TypeScript and ships
 alongside the installed CLI, keeping SDK and CLI versions in lockstep.
