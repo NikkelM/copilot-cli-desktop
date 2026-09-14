@@ -129,6 +129,15 @@ export interface SessionModel {
 }
 
 /**
+ * How a session is working, mirroring the SDK's own union.
+ *
+ * `interactive` is the ordinary back-and-forth and is what a session runs in unless told
+ * otherwise. `plan` has the agent write a plan and stop for approval before acting on it.
+ * `autopilot` has it work towards a goal without stopping to check in.
+ */
+export type SessionMode = 'interactive' | 'plan' | 'autopilot';
+
+/**
  * How full a loaded session's context window is.
  *
  * Only ever known for a session the runtime already holds. The figures are not written to
@@ -474,7 +483,7 @@ export type CommandOutcome =
   /** The command wants a prompt sent to the agent on the user's behalf. */
   | { kind: 'prompt'; prompt: string; notice?: string }
   /** It did its work itself; the message, when there is one, is the confirmation. */
-  | { kind: 'done'; message?: string }
+  | { kind: 'done'; message?: string; mode?: SessionMode }
   /** An effect this app has no way to apply yet. `what` is the runtime's own name for it. */
   | { kind: 'unsupported'; what: string };
 

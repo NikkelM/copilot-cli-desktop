@@ -7,6 +7,8 @@ import { SessionRuntime, type RuntimeOptions } from './runtime.js';
 
 /** Tied to the SDK's own signature so a shape change fails the build rather than the fake. */
 type ContextAttribution = Awaited<ReturnType<CopilotSession['rpc']['metadata']['getContextAttribution']>>;
+/** The same, for the command result whose `mode` follow-up was being dropped (#167). */
+type InvokeResult = Awaited<ReturnType<CopilotSession['rpc']['commands']['invoke']>>;
 
 /**
  * A stand-in for a resumed session.
@@ -50,6 +52,11 @@ function makeSession(id: string) {
       },
       commands: {
         enqueue: vi.fn(async (_params: { command: string; displayText?: string }) => ({ queued: true })),
+        invoke: vi.fn(async (_params: { name: string; input?: string }): Promise<InvokeResult> => ({ kind: 'completed' })),
+      },
+      mode: {
+        get: vi.fn(async () => 'interactive' as const),
+        set: vi.fn(async (_params: { mode: string }) => ({ status: 'unchanged', modelChanged: false })),
       },
       agent: {
         select: vi.fn(async (_params: { name: string }) => ({})),
@@ -842,6 +849,47 @@ describe('how full a session window is', () => {
     sessions.get('s1')!.rpc.metadata.getContextAttribution.mockResolvedValueOnce({});
 
     expect(await runtime.contextUsage('s1')).toBeNull();
+  });
+});
+
+/**
+ * A command that reports a mode is asking the host to apply it.
+ *
+ * `/plan` and `/autopilot` are runtime commands, so they reach the session and return
+ * `completed` - but the switch itself is the host's to perform. Dropping it made both
+ * commands run, report success and change nothing, which is indistinguishable from a
+ * command this app does not support except that it does not say so (#167).
+ */
+describe('a command that changes the mode', () => {
+  it('applies the mode the command asked for', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    const session = sessions.get('s1')!;
+    session.rpc.commands.invoke.mockResolvedValueOnce({ kind: 'completed', mode: 'plan' });
+
+    await runtime.invoke('s1', 'plan');
+
+    expect(session.rpc.mode.set).toHaveBeenCalledWith({ mode: 'plan' });
+  });
+
+  it('reports the mode back, so the switch is not silent', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    sessions.get('s1')!.rpc.commands.invoke.mockResolvedValueOnce({ kind: 'completed', mode: 'autopilot' });
+
+    expect(await runtime.invoke('s1', 'autopilot')).toEqual({ kind: 'done', mode: 'autopilot' });
+  });
+
+  // Most commands complete without touching the mode, and switching to a default would put
+  // every one of them through a mode change the reader never asked for.
+  it('leaves the mode alone when the command says nothing about it', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    const session = sessions.get('s1')!;
+    session.rpc.commands.invoke.mockResolvedValueOnce({ kind: 'completed', message: 'done' });
+
+    expect(await runtime.invoke('s1', 'compact')).toEqual({ kind: 'done', message: 'done' });
+    expect(session.rpc.mode.set).not.toHaveBeenCalled();
   });
 });
 

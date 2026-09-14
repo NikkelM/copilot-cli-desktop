@@ -1033,8 +1033,20 @@ export class SessionRuntime {
           ...(result.notice ? { notice: result.notice } : {}),
         };
 
-      case 'completed':
-        return { kind: 'done', ...(result.message ? { message: result.message } : {}) };
+      case 'completed': {
+        // `/plan` and `/autopilot` do not switch the mode themselves. They report the mode
+        // the host is then to apply, and dropping that meant both commands ran, reported
+        // themselves completed, and left the session in the mode it started in - a command
+        // that silently did nothing, which is the one outcome the default branch below
+        // exists to avoid (#167).
+        if (result.mode) await session.rpc.mode.set({ mode: result.mode });
+
+        return {
+          kind: 'done',
+          ...(result.message ? { message: result.message } : {}),
+          ...(result.mode ? { mode: result.mode } : {}),
+        };
+      }
 
       // Not output so much as a row the runtime wants added, but the difference does not
       // survive into anything this app draws.
