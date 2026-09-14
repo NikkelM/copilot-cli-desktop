@@ -40,6 +40,7 @@ import { CHANGES, ENVIRONMENT } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
 import { activityOf } from './lib/activity';
+import { intentOf } from './lib/timeline';
 import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
@@ -79,6 +80,13 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   /** When the running turn began, for the clock beside the stop button (#70). */
   const [busySince, setBusySince] = useState<string | null>(null);
+  /**
+   * What the agent last said it was doing, for the status line under the composer.
+   *
+   * Transient: the runtime revises it as the work changes shape, and never writes it to the
+   * log, so there is nothing to read back for a session that was not being watched.
+   */
+  const [intent, setIntent] = useState<string | null>(null);
   /** Whether the shortcut list is up. There is nothing else in the app that names them. */
   /**
    * Which help is showing, if any.
@@ -181,6 +189,7 @@ export default function App() {
   useEffect(() => {
     setBusy(false);
     setBusySince(null);
+    setIntent(null);
   }, [selectedId]);
 
   // Nor a help list open over a session nobody asked to read it in. Not remembered per
@@ -228,7 +237,12 @@ export default function App() {
       if (event.type === 'session.idle' || event.type === 'abort') {
         setBusy(false);
         setBusySince(null);
+        setIntent(null);
       }
+      // What the agent is up to, which it revises through a turn as the work changes shape.
+      // Ephemeral, so this is the only chance to see it: it is never written to the log.
+      const said = intentOf(event);
+      if (said) setIntent(said);
       if (event.type === 'session.error') setError(describeError(event));
       // The agent working is what changes the working tree, so this is the moment the
       // branch line is worth asking about again. Once per request rather than once per
@@ -811,6 +825,7 @@ export default function App() {
                 onCommandsNeeded={slash.open}
                 mode={mode.mode}
                 onCycleMode={mode.cycle}
+                intent={intent}
               />
             </div>
           </>

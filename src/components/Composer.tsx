@@ -69,6 +69,8 @@ interface ComposerProps {
   mode: SessionMode;
   /** Advance to the next mode, which Shift+Tab asks for. */
   onCycleMode: () => void;
+  /** What the agent says it is doing right now, when it has said. */
+  intent: string | null;
 }
 
 /** Where the line the caret sits on ends: the next newline, or the end of the text. */
@@ -103,6 +105,7 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
   onCommandsNeeded,
   mode,
   onCycleMode,
+  intent,
 }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   /** The picker lives with the chips; the button that opens it lives with the buttons. */
@@ -424,7 +427,7 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
   }
 
   return (
-    <div className="composer">
+    <div className={`composer mode-${mode}`}>
       {/* Chips sit above everything else, so a message with several files attached grows
           upwards instead of pushing the box down the pane. */}
       <Attachments
@@ -523,23 +526,6 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
             one is named as well as drawn: an icon on its own says nothing to a reader who
             cannot see it, and little to one seeing it for the first time. */}
         <div className="composer-actions">
-          {/* Which mode the session is in, and the only sign that Shift+Tab does anything.
-              A button rather than a label because it is the same action by another route,
-              and a reader who never finds the shortcut should not be shut out of it. */}
-          <button
-            type="button"
-            className={`composer-agent-mode mode-${mode}`}
-            onClick={onCycleMode}
-            title={`${MODE_LABELS[mode].hint}. Shift+Tab for the next mode.`}
-            aria-label={`Mode: ${MODE_LABELS[mode].label}. Shift+Tab for the next mode.`}
-          >
-            {MODE_LABELS[mode].label}
-          </button>
-
-          {/* How long this has been going, next to the button that stops it. Long work
-              otherwise gives no sign of whether it is progressing or hung (#70). */}
-          {busy && <Elapsed since={busySince ?? undefined} />}
-
           <button
             type="button"
             className="attach"
@@ -570,6 +556,44 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
             <SendIcon />
           </button>
         </div>
+
+        {/* The status line the CLI puts under its prompt: what mode the session is in on
+            one side, what it is doing on the other. Absent entirely when there is neither
+            to report, which is most of the time - a line that is always there is a line
+            nobody reads, and an empty one only shortens the transcript above it. */}
+        {(mode !== 'interactive' || busy) && (
+          <div className="composer-status">
+            {/* Only when the session is somewhere other than interactive. That is where a
+                session spends most of its life, and saying so every time would bury the two
+                modes that actually change what the agent may do unasked. A button rather
+                than a label because it is the same action Shift+Tab performs, which also
+                remains the only way back in. */}
+            {mode !== 'interactive' && (
+              <button
+                type="button"
+                className={`composer-agent-mode mode-${mode}`}
+                onClick={onCycleMode}
+                title={`${MODE_LABELS[mode].hint}. Shift+Tab for the next mode.`}
+                aria-label={`Mode: ${MODE_LABELS[mode].label}. Shift+Tab for the next mode.`}
+              >
+                {MODE_LABELS[mode].label}
+              </button>
+            )}
+
+            {/* What the agent says it is doing, which it revises as the work turns into
+                something else. It says nothing at the start of a turn and nothing at all on
+                some of them, so "Working" stands in rather than leaving the line empty.
+                Elapsed sits with it because together they answer one question: is this
+                progressing, and how long has it been (#70). */}
+            {busy && (
+              <span className="composer-working">
+                <span className="composer-spinner" aria-hidden="true" />
+                <span className="composer-intent">{intent ?? 'Working'}</span>
+                <Elapsed since={busySince ?? undefined} />
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

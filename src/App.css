@@ -12,6 +12,8 @@
   --warning: #d29922;
   /** Cyan, which only the file-type badges use. Named for the CLI's own name for it. */
   --cyan: #39c5cf;
+  /** Purple, for plan mode, where the agent is thinking rather than doing. */
+  --plan: #a371f7;
 
   /*
    * One type scale (#139).
@@ -2121,8 +2123,7 @@ button.group:hover {
 }
 
 /* Beside the text rather than under it, and pinned to the first row so they stay put as the
-   box grows. Only the elapsed time joins them: it is short enough not to crowd the box, and
-   it belongs next to the button that stops the work it is counting. */
+   box grows. */
 .composer-actions {
   grid-column: 2;
   align-self: start;
@@ -2134,21 +2135,34 @@ button.group:hover {
 }
 
 /*
- * The mode, pushed to the left so it reads as state rather than as another action.
+ * The status line, under the box and across its full width, as the CLI draws it.
  *
- * Lowercase and unadorned in interactive, which is where a session spends most of its
- * life and where a loud badge would just be noise. The other two earn a colour: they
- * change what the agent will do without asking, which is worth noticing from across
- * the room.
+ * The mode sits on the left and what the agent is doing on the right, which keeps the one
+ * thing the reader sets away from the one thing that changes on its own. It held the bottom
+ * of the composer rather than a corner of the button row because a badge tucked in beside
+ * the send arrow was small enough to miss entirely.
+ */
+.composer-status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 0 8px 4px 10px;
+}
+
+/*
+ * The mode, lowercase and unadorned in interactive, which is where a session spends most of
+ * its life and where a loud badge would just be noise. The other two earn a colour: they
+ * change what the agent will do without asking, which is worth noticing from across the room.
  */
 .composer-agent-mode {
-  margin-right: auto;
-  padding: 2px 8px;
+  padding: 1px 7px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: none;
-  color: var(--muted);
-  font-size: 11px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
   font-family: inherit;
   letter-spacing: 0.02em;
   cursor: pointer;
@@ -2160,13 +2174,74 @@ button.group:hover {
 }
 
 .composer-agent-mode.mode-plan {
-  border-color: #6f42c1;
-  color: #a371f7;
+  border-color: color-mix(in srgb, var(--plan) 45%, transparent);
+  color: var(--plan);
 }
 
 .composer-agent-mode.mode-autopilot {
-  border-color: #bb8009;
-  color: #d29922;
+  border-color: color-mix(in srgb, var(--warning) 45%, transparent);
+  color: var(--warning);
+}
+
+/* What the agent is doing, and how long it has been at it. Held to the right by its own
+   margin rather than by the line's justification, so it does not slide across when the mode
+   appears or goes. */
+.composer-working {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+/* The intent can be a sentence, and the box is not allowed to widen for it. */
+.composer-intent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * A turning ring rather than a pulse, because the point is that something is still moving:
+ * a breathing dot reads the same whether the work is progressing or wedged.
+ */
+.composer-spinner {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/*
+ * The mode again, as a stripe down the side of the box.
+ *
+ * Drawn inside rather than as a border so nothing shifts when the mode changes, and left to
+ * the two modes that alter what the agent may do on its own. Interactive is the resting
+ * state and gets no stripe: a marker shown always is a marker nobody reads.
+ */
+.composer.mode-plan .composer-input {
+  box-shadow: inset 3px 0 0 var(--plan);
+}
+
+.composer.mode-autopilot .composer-input {
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-spinner {
+    animation: none;
+  }
 }
 
 /*

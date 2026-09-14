@@ -8,6 +8,20 @@ export function contentOf(event: TranscriptEvent): string | null {
   return typeof data?.content === 'string' ? data.content : null;
 }
 
+/**
+ * What the agent says it is currently doing, for the status line under the composer.
+ *
+ * Trimmed, and an empty description counts as having said nothing: the line falls back to
+ * "Working" rather than collapsing to a bare spinner with a gap where words should be.
+ */
+export function intentOf(event: TranscriptEvent): string | null {
+  if (event.type !== 'assistant.intent') return null;
+
+  const data = event.data as { intent?: unknown } | null;
+  const said = typeof data?.intent === 'string' ? data.intent.trim() : '';
+  return said || null;
+}
+
 function messageIdOf(event: TranscriptEvent): string | null {
   const data = event.data as { messageId?: unknown } | null;
   return typeof data?.messageId === 'string' ? data.messageId : null;

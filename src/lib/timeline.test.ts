@@ -1,6 +1,35 @@
 import { describe, expect, it } from 'vitest';
 
-import { appendLive, timelineOf, type TimelineEvent } from './timeline';
+import { appendLive, intentOf, timelineOf, type TimelineEvent } from './timeline';
+
+const intended = (intent: unknown): TimelineEvent =>
+  ({ type: 'assistant.intent', data: { intent } }) as unknown as TimelineEvent;
+
+describe('intentOf', () => {
+  it('reads what the agent says it is doing', () => {
+    expect(intentOf(intended('Reading the runtime'))).toBe('Reading the runtime');
+  });
+
+  // Nothing else on the stream describes the current activity, so a near miss is not one.
+  it('ignores any other event', () => {
+    expect(intentOf({ type: 'assistant.message', data: { intent: 'nope' } } as unknown as TimelineEvent)).toBeNull();
+  });
+
+  it('trims what it is given', () => {
+    expect(intentOf(intended('  Running the tests\n'))).toBe('Running the tests');
+  });
+
+  // An empty description is the same as none: the line falls back to "Working" rather than
+  // showing a spinner with a gap beside it.
+  it('treats an empty description as nothing said', () => {
+    expect(intentOf(intended('   '))).toBeNull();
+  });
+
+  it('survives a description that is not text', () => {
+    expect(intentOf(intended(42))).toBeNull();
+    expect(intentOf(intended(undefined))).toBeNull();
+  });
+});
 
 const said = (content: string, extra: Partial<TimelineEvent> = {}): TimelineEvent => ({
   type: 'user.message',

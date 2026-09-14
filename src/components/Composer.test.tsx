@@ -46,6 +46,7 @@ function Host({
       onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
+      intent={null}
     />
   );
 }
@@ -79,6 +80,7 @@ function bare(props: Partial<Parameters<typeof Composer>[0]> = {}) {
       onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
+      intent={null}
       {...props}
     />,
   );
@@ -115,6 +117,7 @@ describe('Composer', () => {
         onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
+      intent={null}
       />,
     );
     expect(document.activeElement).toBe(box());
@@ -231,6 +234,7 @@ describe('the slash command menu', () => {
           onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
+      intent={null}
           {...props}
         />
       );
@@ -360,6 +364,7 @@ describe('while a cold session wakes', () => {
         onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
+      intent={null}
         {...props}
       />,
     );
@@ -421,6 +426,7 @@ describe('the waking state belongs to one session', () => {
         onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
+      intent={null}
       />,
     );
 
@@ -847,6 +853,32 @@ describe('the mode indicator', () => {
     expect(indicator().textContent).toBe('plan');
   });
 
+  /**
+   * Interactive is where a session spends most of its life, and saying so every time would
+   * bury the two modes that change what the agent may do without asking. Shift+Tab is still
+   * the way back in, whether or not anything is drawn.
+   */
+  it('says nothing while the session is interactive', () => {
+    bare({ mode: 'interactive' });
+
+    expect(screen.queryByRole('button', { name: /^Mode:/ })).toBeNull();
+  });
+
+  // And still nothing when work has brought the line out for its own reasons.
+  it('stays quiet in interactive even while the line is up', () => {
+    const { view } = bare({ mode: 'interactive', busy: true, busySince: new Date().toISOString() });
+
+    expect(view.container.querySelector('.composer-status')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Mode:/ })).toBeNull();
+  });
+
+  // Nothing to report on either end, so there is no line either.
+  it('leaves no empty line behind when there is nothing to say', () => {
+    const { view } = bare({ mode: 'interactive', busy: false });
+
+    expect(view.container.querySelector('.composer-status')).toBeNull();
+  });
+
   it('marks the mode on the element, so the colour can follow it', () => {
     bare({ mode: 'autopilot' });
 
@@ -856,7 +888,7 @@ describe('the mode indicator', () => {
   // The shell badge above the box already owned `composer-mode`, and reusing the name here
   // put the pill's padding and colours on the badge instead.
   it('does not wear the shell badge class', () => {
-    bare({ value: '!ls' });
+    bare({ value: '!ls', mode: 'plan' });
 
     expect(screen.getByTitle('Escape leaves shell mode').className).toBe('composer-mode');
     expect(indicator().className.split(' ')).not.toContain('composer-mode');
@@ -884,7 +916,7 @@ describe('the mode indicator', () => {
   // Whoever never finds the shortcut should still be able to change the mode.
   it('cycles when clicked', async () => {
     const onCycleMode = vi.fn();
-    const { user } = bare({ onCycleMode });
+    const { user } = bare({ onCycleMode, mode: 'plan' });
 
     await user.click(indicator());
 
@@ -912,5 +944,55 @@ describe('the mode indicator', () => {
 
     expect(onCycleMode).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  // The stripe down the side of the box, which is the same signal read from further away.
+  it('marks the mode on the composer, so the edge can follow it', () => {
+    const { view } = bare({ mode: 'plan' });
+
+    expect(view.container.querySelector('.composer')?.className).toContain('mode-plan');
+  });
+});
+
+/**
+ * What the agent says it is doing, beside the mode on the status line. It revises this
+ * through a turn, and it is never written to the log, so the only chance to show it is live.
+ */
+describe('the working indicator', () => {
+  const working = () => document.querySelector('.composer-working');
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+
+  it('says nothing while the session is idle', () => {
+    bare({ busy: false, intent: 'Reading the runtime' });
+
+    expect(working()).toBeNull();
+  });
+
+  // The line is not only about the mode: work still has to report itself in interactive.
+  it('reports work even while the session is interactive', () => {
+    bare({ busy: true, busySince: ago(1_000), mode: 'interactive', intent: 'Reading the runtime' });
+
+    expect(working()?.textContent).toContain('Reading the runtime');
+  });
+
+  it('says what the agent is doing', () => {
+    bare({ busy: true, busySince: ago(1_000), intent: 'Reading the runtime' });
+
+    expect(working()?.textContent).toContain('Reading the runtime');
+  });
+
+  // A turn starts before the agent has said anything, and some never say anything at all.
+  it('falls back to Working when the agent has not said', () => {
+    bare({ busy: true, busySince: ago(1_000), intent: null });
+
+    expect(working()?.textContent).toContain('Working');
+  });
+
+  // The two answer one question together: is this progressing, and for how long (#70).
+  it('counts the wait beside what is being waited on', () => {
+    bare({ busy: true, busySince: ago(95_000), intent: 'Running the tests' });
+
+    expect(working()?.textContent).toContain('Running the tests');
+    expect(working()?.querySelector('.elapsed')).toBeTruthy();
   });
 });
