@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * its sub-millisecond part, which the cache compares.
  */
 const reads = vi.hoisted(() => [] as string[]);
+const opens = vi.hoisted(() => [] as string[]);
 vi.mock('node:fs', async () => {
   const actual = await vi.importActual<typeof import('node:fs')>('node:fs');
   return {
@@ -21,6 +22,10 @@ vi.mock('node:fs', async () => {
     readFileSync: (path: Parameters<typeof actual.readFileSync>[0], ...rest: unknown[]) => {
       reads.push(String(path));
       return (actual.readFileSync as (...args: unknown[]) => unknown)(path, ...rest);
+    },
+    openSync: (path: Parameters<typeof actual.openSync>[0], ...rest: unknown[]) => {
+      opens.push(String(path));
+      return (actual.openSync as (...args: unknown[]) => number)(path, ...rest);
     },
   };
 });
@@ -104,6 +109,12 @@ function makeStore() {
     /** Take the name file away, as deleting or never writing it would. */
     removeName(sessionId: string) {
       rmSync(join(home, 'session-state', sessionId, 'workspace.yaml'), { force: true });
+    },
+    /** Write a session's log the way the CLI does, one JSON event to a line. */
+    writeLog(sessionId: string, events: readonly unknown[]) {
+      const dir = join(home, 'session-state', sessionId);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'events.jsonl'), `${events.map((event) => JSON.stringify(event)).join('\n')}\n`);
     },
     close() {
       db.close();
@@ -470,5 +481,94 @@ describe('existingSessions', () => {
     const { existingSessions } = await loadIndex();
     expect(existingSessions([])).toEqual([]);
     expect(existingSessions(['never-existed'])).toEqual([]);
+  });
+});
+
+describe('preview text', () => {
+  /** A message event in the shape the CLI writes. */
+  const said = (type: 'user.message' | 'assistant.message', content: string) => ({
+    type,
+    data: { content },
+    id: 'e1',
+    timestamp: '2026-01-01T00:00:00.000Z',
+  });
+
+  /** A tool result, which is what a log is mostly made of and is what pushes messages back. */
+  const tooled = (bytes: number) => ({
+    type: 'tool.execution_complete',
+    data: { content: 'x'.repeat(bytes) },
+  });
+
+  it('prefers what the log says over a turn row that has fallen behind', async () => {
+    store.addSession('s', { summary: 'Titled' });
+    store.addTurn('s', 1, 'an old question', null, '2026-01-01 00:00:00');
+    store.writeLog('s', [said('user.message', 'an old question'), said('assistant.message', 'the real latest reply')]);
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.preview).toBe('the real latest reply');
+  });
+
+  it('shows a question the agent has not answered yet', async () => {
+    store.addSession('s', { summary: 'Titled' });
+    store.addTurn('s', 1, 'older', 'an older reply', '2026-01-01 00:00:00');
+    store.writeLog('s', [said('assistant.message', 'an older reply'), said('user.message', 'and what about this')]);
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.preview).toBe('and what about this');
+  });
+
+  it('falls back to the database when the log holds no message', async () => {
+    store.addSession('s', { summary: 'Titled' });
+    store.addTurn('s', 1, null, 'only the database knows', '2026-01-01 00:00:00');
+    store.writeLog('s', [{ type: 'session.start', data: {} }]);
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.preview).toBe('only the database knows');
+  });
+
+  it('looks past a closing run of large tool results', async () => {
+    store.addSession('s', { summary: 'Titled' });
+    store.addTurn('s', 1, null, 'the stale one', '2026-01-01 00:00:00');
+    // Comfortably more than the window opens with, so finding this needs the window to grow.
+    store.writeLog('s', [said('assistant.message', 'buried but current'), tooled(40 * 1024)]);
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.preview).toBe('buried but current');
+  });
+
+  it('ignores an event that merely mentions a message type', async () => {
+    store.addSession('s', { summary: 'Titled' });
+    store.writeLog('s', [
+      said('assistant.message', 'the genuine one'),
+      // Names the type in a field of its own, so the cheap string test cannot tell it apart.
+      { type: 'tool.execution_complete', data: { eventType: 'assistant.message', content: 'not a message' } },
+    ]);
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.preview).toBe('the genuine one');
+  });
+
+  it('reads a log once while it stays untouched', async () => {
+    store.addSession('s', { summary: 'Titled' });
+    store.writeLog('s', [said('assistant.message', 'stable')]);
+
+    const { listSessions } = await loadIndex();
+    listSessions();
+    opens.length = 0;
+    listSessions();
+    listSessions();
+
+    expect(opens.filter((path) => path.endsWith('events.jsonl'))).toEqual([]);
+  });
+
+  it('reads it again once it has moved on', async () => {
+    store.addSession('s', { summary: 'Titled' });
+    store.writeLog('s', [said('assistant.message', 'before')]);
+
+    const { listSessions } = await loadIndex();
+    expect(listSessions()[0]?.preview).toBe('before');
+
+    store.writeLog('s', [said('assistant.message', 'before'), said('assistant.message', 'after')]);
+    expect(listSessions()[0]?.preview).toBe('after');
   });
 });
