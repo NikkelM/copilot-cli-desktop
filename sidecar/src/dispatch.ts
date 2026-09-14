@@ -63,6 +63,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.resolveElicitation': ({ requestId, action, content }) =>
       runtime.resolveElicitation(requestId, action, content),
+    'sessions.resolvePlan': ({ requestId, approved, selectedAction, feedback }) =>
+      runtime.resolvePlan(requestId, approved, selectedAction, feedback),
 
     'sessions.create': ({ workingDirectory }) => runtime.create(workingDirectory),
 

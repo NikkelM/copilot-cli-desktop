@@ -1,44 +1,50 @@
 import { describe, expect, it } from 'vitest';
 
 import { activityOf, describeActivity } from './activity';
-import type { PendingElicitation, PendingPermission } from '../../shared/protocol';
+import type { PendingElicitation, PendingPermission, PendingPlanApproval } from '../../shared/protocol';
 
 const permission = (sessionId: string) => ({ sessionId, requestId: 'p1' }) as PendingPermission;
 const elicitation = (sessionId: string) => ({ sessionId, requestId: 'e1' }) as PendingElicitation;
+const plan = (sessionId: string) => ({ sessionId, requestId: 'pl1' }) as PendingPlanApproval;
 
 describe('activityOf', () => {
   it('says nothing about a session doing nothing', () => {
-    expect(activityOf(new Set(), [], [], {})).toEqual({});
+    expect(activityOf(new Set(), [], {})).toEqual({});
   });
 
   it('marks a session with a turn running', () => {
-    expect(activityOf(new Set(['a']), [], [], {})).toEqual({ a: { state: 'working', queued: 0 } });
+    expect(activityOf(new Set(['a']), [], {})).toEqual({ a: { state: 'working', queued: 0 } });
   });
 
   /** The one state that asks for something, so it wins over merely running. */
   it('lets a decision outrank the turn it is blocking', () => {
-    expect(activityOf(new Set(['a']), [permission('a')], [], {})).toEqual({ a: { state: 'blocked', queued: 0 } });
+    expect(activityOf(new Set(['a']), [permission('a')], {})).toEqual({ a: { state: 'blocked', queued: 0 } });
   });
 
   it('treats a question the same way as a permission', () => {
-    expect(activityOf(new Set(), [], [elicitation('a')], {})).toEqual({ a: { state: 'blocked', queued: 0 } });
+    expect(activityOf(new Set(), [elicitation('a')], {})).toEqual({ a: { state: 'blocked', queued: 0 } });
+  });
+
+  /** A plan blocks the agent as surely as a permission does, and for far longer. */
+  it('treats a plan awaiting approval the same way', () => {
+    expect(activityOf(new Set(), [plan('a')], {})).toEqual({ a: { state: 'blocked', queued: 0 } });
   });
 
   /** Queued explains a delay rather than causing one, so it never hides what is happening. */
   it('keeps the count without letting it displace the state', () => {
-    expect(activityOf(new Set(['a']), [], [], { a: 2 })).toEqual({ a: { state: 'working', queued: 2 } });
+    expect(activityOf(new Set(['a']), [], { a: 2 })).toEqual({ a: { state: 'working', queued: 2 } });
   });
 
   it('stands alone when there is no turn to hide behind', () => {
-    expect(activityOf(new Set(), [], [], { a: 1 })).toEqual({ a: { state: 'queued', queued: 1 } });
+    expect(activityOf(new Set(), [], { a: 1 })).toEqual({ a: { state: 'queued', queued: 1 } });
   });
 
   it('ignores a queue that has been emptied', () => {
-    expect(activityOf(new Set(), [], [], { a: 0 })).toEqual({});
+    expect(activityOf(new Set(), [], { a: 0 })).toEqual({});
   });
 
   it('keeps sessions apart', () => {
-    expect(activityOf(new Set(['a']), [permission('b')], [], {})).toEqual({
+    expect(activityOf(new Set(['a']), [permission('b')], {})).toEqual({
       a: { state: 'working', queued: 0 },
       b: { state: 'blocked', queued: 0 },
     });

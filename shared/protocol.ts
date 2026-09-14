@@ -315,6 +315,44 @@ export interface ResolveElicitationParams {
   content?: Record<string, ElicitationFieldValue>;
 }
 
+/** What the reader chose to do once the agent's plan was accepted. */
+export type PlanAction = 'exit_only' | 'interactive' | 'autopilot' | 'autopilot_fleet';
+
+/**
+ * A plan the agent wants approval to act on, the checkpoint plan mode exists for.
+ *
+ * Unlike a permission or a question this is not a yes/no: approving it also decides how
+ * the work proceeds, which is what `actions` offers. Nothing is shown for an unapproved
+ * plan on a cold session because the request is ephemeral and never reaches the log.
+ */
+export interface PendingPlanApproval {
+  sessionId: string;
+  requestId: string;
+  /** One-line summary of what the agent intends to do. */
+  summary: string;
+  /** The plan itself, as markdown. */
+  planContent: string;
+  /**
+   * The ways forward the agent is willing to offer, which is not always all four: it
+   * decides whether to put the fleet option up at all. Shown as sent rather than from a
+   * fixed list, so an option the agent withheld is never offered.
+   */
+  actions: PlanAction[];
+  /** The agent's own suggestion, which the UI labels and puts first. */
+  recommendedAction: PlanAction;
+  /** When this lapses on its own. Giving up leaves the plan unapproved. */
+  expiresAt: string;
+}
+
+export interface ResolvePlanParams {
+  requestId: string;
+  approved: boolean;
+  /** Only meaningful on approval; how the agent should carry on. */
+  selectedAction?: PlanAction;
+  /** Why the plan was turned down, which is how a reader redirects one. */
+  feedback?: string;
+}
+
 /** One of the fixed values a command's argument accepts, such as `on` or `off`. */
 export interface CommandChoice {
   name: string;
@@ -586,6 +624,7 @@ export interface SidecarRequests {
   'sessions.evict': { params: { sessionId: string }; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
+  'sessions.resolvePlan': { params: ResolvePlanParams; result: void };
   'sessions.create': { params: { workingDirectory?: string }; result: { sessionId: string } };
   /**
    * What a session changed, read from its rewind snapshots.
@@ -706,6 +745,11 @@ export interface ElicitationResolvedNotification {
   requestId: string;
 }
 
+/** Sent when a plan is approved, turned down or abandoned, so the UI can clear it. */
+export interface PlanResolvedNotification {
+  requestId: string;
+}
+
 /** Sent when the session list may have changed, so the sidebar can refetch. */
 export const NOTIFY_SESSIONS_CHANGED = 'sessions.changed';
 
@@ -727,6 +771,8 @@ export const NOTIFY_PERMISSION_REQUESTED = 'permission.requested';
 export const NOTIFY_PERMISSION_RESOLVED = 'permission.resolved';
 export const NOTIFY_ELICITATION_REQUESTED = 'elicitation.requested';
 export const NOTIFY_ELICITATION_RESOLVED = 'elicitation.resolved';
+export const NOTIFY_PLAN_REQUESTED = 'plan.requested';
+export const NOTIFY_PLAN_RESOLVED = 'plan.resolved';
 
 export interface JsonRpcRequest<M extends SidecarMethod = SidecarMethod> {
   jsonrpc: '2.0';

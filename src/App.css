@@ -712,6 +712,109 @@ body {
   cursor: default;
 }
 
+/* A plan is read before it is answered, so it is given room the other prompts are not. */
+.plan {
+  padding: 14px 16px;
+  border: 1px solid #6f42c1;
+  border-radius: 8px;
+  background: #1b1233;
+  min-width: 0;
+}
+
+.plan:focus,
+.plan:focus-visible {
+  outline: none;
+}
+
+.plan-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: var(--font-xl);
+}
+
+.plan-badge {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #6f42c1;
+  color: #fff;
+  font-size: var(--font-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.plan-summary {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Capped so a long plan cannot push its own buttons off the bottom of the pane. */
+.plan-body {
+  max-height: 45vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: var(--bg-raised);
+  min-width: 0;
+}
+
+.plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.plan-actions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #6f42c1;
+  color: #fff;
+  font: inherit;
+  font-size: var(--font-lg);
+  cursor: pointer;
+}
+
+.plan-actions button.secondary {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.plan-recommended {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #ffffff2e;
+  font-size: var(--font-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.plan-feedback {
+  width: 100%;
+  min-height: 72px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-lg);
+  resize: vertical;
+}
+
+.plan-feedback:focus {
+  outline: none;
+  border-color: #6f42c1;
+}
+
 .permission {
   padding: 12px 14px;
   border: 1px solid #9e6a03;

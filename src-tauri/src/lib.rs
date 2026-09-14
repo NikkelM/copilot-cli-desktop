@@ -271,6 +271,8 @@ impl Supervisor {
                         "permission.resolved" => "permission-resolved",
                         "elicitation.requested" => "elicitation-requested",
                         "elicitation.resolved" => "elicitation-resolved",
+                        "plan.requested" => "plan-requested",
+                        "plan.resolved" => "plan-resolved",
                         _ => continue,
                     };
                     let payload = message.get("params").cloned().unwrap_or(Value::Null);

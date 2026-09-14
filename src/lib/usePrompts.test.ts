@@ -2,7 +2,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { PendingElicitation, PendingPermission } from '../../shared/protocol';
+import type {
+  PendingElicitation,
+  PendingPermission,
+  PendingPlanApproval,
+} from '../../shared/protocol';
 
 import { usePrompts } from './usePrompts';
 
@@ -15,16 +19,20 @@ const listeners = {
   permissionResolved: [] as ((p: unknown) => void)[],
   elicitationRequested: [] as ((p: unknown) => void)[],
   elicitationResolved: [] as ((p: unknown) => void)[],
+  planRequested: [] as ((p: unknown) => void)[],
+  planResolved: [] as ((p: unknown) => void)[],
 };
 
-const { resolvePermission, resolveElicitation } = vi.hoisted(() => ({
+const { resolvePermission, resolveElicitation, resolvePlan } = vi.hoisted(() => ({
   resolvePermission: vi.fn(),
   resolveElicitation: vi.fn(),
+  resolvePlan: vi.fn(),
 }));
 
 vi.mock('./sidecar', () => ({
   resolvePermission,
   resolveElicitation,
+  resolvePlan,
   onPermissionRequested: (h: (p: unknown) => void) => {
     listeners.permissionRequested.push(h);
     return Promise.resolve(() => {});
@@ -39,6 +47,14 @@ vi.mock('./sidecar', () => ({
   },
   onElicitationResolved: (h: (p: unknown) => void) => {
     listeners.elicitationResolved.push(h);
+    return Promise.resolve(() => {});
+  },
+  onPlanRequested: (h: (p: unknown) => void) => {
+    listeners.planRequested.push(h);
+    return Promise.resolve(() => {});
+  },
+  onPlanResolved: (h: (p: unknown) => void) => {
+    listeners.planResolved.push(h);
     return Promise.resolve(() => {});
   },
 }));
@@ -62,6 +78,16 @@ const elicitation = (requestId: string, sessionId = 's1'): PendingElicitation =>
   expiresAt: '2026-01-02T00:05:00.000Z',
 });
 
+const plan = (requestId: string, sessionId = 's1'): PendingPlanApproval => ({
+  requestId,
+  sessionId,
+  summary: 'Rewrite the parser',
+  planContent: '1. Read it\n2. Rewrite it',
+  actions: ['interactive', 'autopilot'],
+  recommendedAction: 'autopilot',
+  expiresAt: '2026-01-02T00:05:00.000Z',
+});
+
 /** Deliver an event to every handler registered for it, as Tauri would. */
 async function emit(which: keyof typeof listeners, payload: unknown) {
   await waitFor(() => expect(listeners[which].length).toBeGreaterThan(0));
@@ -73,6 +99,7 @@ describe('usePrompts', () => {
     for (const key of Object.keys(listeners) as (keyof typeof listeners)[]) listeners[key] = [];
     resolvePermission.mockReset().mockResolvedValue(undefined);
     resolveElicitation.mockReset().mockResolvedValue(undefined);
+    resolvePlan.mockReset().mockResolvedValue(undefined);
   });
 
   it('starts with nothing waiting', () => {
@@ -80,6 +107,7 @@ describe('usePrompts', () => {
 
     expect(result.current.permissions).toEqual([]);
     expect(result.current.elicitations).toEqual([]);
+    expect(result.current.plans).toEqual([]);
     expect(result.current.blocked).toBe(false);
   });
 
@@ -104,6 +132,29 @@ describe('usePrompts', () => {
     act(() => result.current.answerElicitation(elicitation('e1'), 'accept', { a: 'b' }));
     expect(result.current.elicitations).toEqual([]);
     expect(resolveElicitation).toHaveBeenCalledWith('e1', 'accept', { a: 'b' });
+  });
+
+  it('holds a plan until it is approved', async () => {
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+
+    await emit('planRequested', plan('p1'));
+    expect(result.current.plans).toHaveLength(1);
+    expect(result.current.blocked).toBe(true);
+
+    act(() => result.current.answerPlan(plan('p1'), true, 'autopilot'));
+    expect(result.current.plans).toEqual([]);
+    expect(resolvePlan).toHaveBeenCalledWith('p1', true, 'autopilot', undefined);
+  });
+
+  // Turning a plan down is the half that carries something back: the feedback is what the
+  // agent plans against on its next attempt.
+  it('sends the feedback a refused plan came with', async () => {
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+    await emit('planRequested', plan('p1'));
+
+    act(() => result.current.answerPlan(plan('p1'), false, undefined, 'too much at once'));
+
+    expect(resolvePlan).toHaveBeenCalledWith('p1', false, undefined, 'too much at once');
   });
 
   /**
@@ -147,6 +198,11 @@ describe('usePrompts', () => {
     await emit('permissionRequested', permission('r1'));
 
     expect(result.current.permissions).toHaveLength(1);
+
+    await emit('planRequested', plan('p1'));
+    await emit('planRequested', plan('p1'));
+
+    expect(result.current.plans).toHaveLength(1);
   });
 
   // Answered in a terminal, or by another window: the prompt here is stale either way.
@@ -160,6 +216,14 @@ describe('usePrompts', () => {
     await emit('elicitationRequested', elicitation('e1'));
     await emit('elicitationResolved', { requestId: 'e1' });
     expect(result.current.elicitations).toEqual([]);
+
+    await emit('planRequested', plan('p1'));
+    await emit('planResolved', { requestId: 'p1' });
+    expect(result.current.plans).toEqual([]);
+
+    // And a late answer to it is not sent, because the runtime rejects a second one.
+    act(() => result.current.answerPlan(plan('p1'), true, 'autopilot'));
+    expect(resolvePlan).not.toHaveBeenCalled();
   });
 
   /**
@@ -171,9 +235,13 @@ describe('usePrompts', () => {
 
     await emit('permissionRequested', permission('r1', 's1'));
     await emit('permissionRequested', permission('r2', 's2'));
+    await emit('planRequested', plan('p1', 's1'));
+    await emit('planRequested', plan('p2', 's2'));
 
     expect(result.current.permissions).toHaveLength(2);
     expect(result.current.mine.permissions.map((p) => p.requestId)).toEqual(['r1']);
+    expect(result.current.plans).toHaveLength(2);
+    expect(result.current.mine.plans.map((p) => p.requestId)).toEqual(['p1']);
   });
 
   it('follows the session being read', async () => {
@@ -194,11 +262,13 @@ describe('usePrompts', () => {
     const { result } = renderHook(() => usePrompts('s1', () => {}));
     await emit('permissionRequested', permission('r1'));
     await emit('elicitationRequested', elicitation('e1'));
+    await emit('planRequested', plan('p1'));
 
     act(() => result.current.clear());
 
     expect(result.current.permissions).toEqual([]);
     expect(result.current.elicitations).toEqual([]);
+    expect(result.current.plans).toEqual([]);
     expect(resolvePermission).not.toHaveBeenCalled();
   });
 
@@ -214,5 +284,16 @@ describe('usePrompts', () => {
     // Still gone from the screen: it cannot be answered again, and saying so is the point
     // of the message.
     expect(result.current.permissions).toEqual([]);
+  });
+
+  it('reports a plan answer that could not be delivered', async () => {
+    resolvePlan.mockRejectedValue(new Error('session is gone'));
+    const failed: string[] = [];
+    const { result } = renderHook(() => usePrompts('s1', (m) => failed.push(m)));
+    await emit('planRequested', plan('p1'));
+
+    act(() => result.current.answerPlan(plan('p1'), true, 'autopilot'));
+
+    await waitFor(() => expect(failed.join()).toContain('session is gone'));
   });
 });

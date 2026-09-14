@@ -5,7 +5,9 @@ import type {
   ElicitationFieldValue,
   PendingElicitation,
   PendingPermission,
+  PendingPlanApproval,
   PermissionChoice,
+  PlanAction,
 } from '../../shared/protocol';
 
 import {
@@ -13,24 +15,28 @@ import {
   onElicitationResolved,
   onPermissionRequested,
   onPermissionResolved,
+  onPlanRequested,
+  onPlanResolved,
   resolveElicitation,
   resolvePermission,
+  resolvePlan,
 } from './sidecar';
 import { explain } from './errors';
 import { useTauriEvent } from './useTauriEvent';
 
 /**
- * The questions an agent is blocked on: permission requests and elicitations.
+ * The questions an agent is blocked on: permission requests, elicitations and plans.
  *
- * Both halves of the app need these and want different things from them. The sidebar wants
- * every session's, to mark the ones waiting on someone; the pane wants only the open
- * session's, to draw the prompt. Kept together because they share one invariant - a request
- * is shown exactly until it is settled, and settling it twice is a protocol error the
- * runtime answers with a rejection.
+ * All three want the same thing from this hook and want it in both halves of the app. The
+ * sidebar wants every session's, to mark the ones waiting on someone; the pane wants only
+ * the open session's, to draw the prompt. Kept together because they share one invariant -
+ * a request is shown exactly until it is settled, and settling it twice is a protocol error
+ * the runtime answers with a rejection.
  */
 export function usePrompts(sessionId: string | null, onError: (message: string) => void) {
   const [permissions, setPermissions] = useState<PendingPermission[]>([]);
   const [elicitations, setElicitations] = useState<PendingElicitation[]>([]);
+  const [plans, setPlans] = useState<PendingPlanApproval[]>([]);
 
   const report = useRef(onError);
   report.current = onError;
@@ -83,6 +89,22 @@ export function usePrompts(sessionId: string | null, onError: (message: string) 
     }),
   );
 
+  useTauriEvent(() =>
+    onPlanRequested((pending) => {
+      open.current.add(pending.requestId);
+      setPlans((current) =>
+        current.some((p) => p.requestId === pending.requestId) ? current : [...current, pending],
+      );
+    }),
+  );
+
+  useTauriEvent(() =>
+    onPlanResolved(({ requestId }) => {
+      open.current.delete(requestId);
+      setPlans((current) => current.filter((p) => p.requestId !== requestId));
+    }),
+  );
+
   const answerPermission = useCallback(
     (pending: PendingPermission, choice: PermissionChoice) => {
       // Dropped before the call rather than on its reply, so the prompt cannot be answered
@@ -112,6 +134,23 @@ export function usePrompts(sessionId: string | null, onError: (message: string) 
   );
 
   /**
+   * Approve a plan, or turn it down with feedback the agent can plan against again.
+   *
+   * A plan the reader never chose an action for is still approved: the agent asked two
+   * things at once, and only the approval is compulsory.
+   */
+  const answerPlan = useCallback(
+    (pending: PendingPlanApproval, approved: boolean, selectedAction?: PlanAction, feedback?: string) => {
+      setPlans((current) => current.filter((p) => p.requestId !== pending.requestId));
+      if (!claim(pending.requestId)) return;
+      void resolvePlan(pending.requestId, approved, selectedAction, feedback).catch((e: unknown) =>
+        report.current(explain(e)),
+      );
+    },
+    [claim],
+  );
+
+  /**
    * Forget everything, for when the sidecar goes.
    *
    * Nothing is answered on the way out: the runtime that asked is gone, so there is nobody
@@ -121,24 +160,28 @@ export function usePrompts(sessionId: string | null, onError: (message: string) 
     open.current.clear();
     setPermissions([]);
     setElicitations([]);
+    setPlans([]);
   }, []);
 
   const mine = useMemo(
     () => ({
       permissions: permissions.filter((p) => p.sessionId === sessionId),
       elicitations: elicitations.filter((e) => e.sessionId === sessionId),
+      plans: plans.filter((p) => p.sessionId === sessionId),
     }),
-    [permissions, elicitations, sessionId],
+    [permissions, elicitations, plans, sessionId],
   );
 
   return {
     permissions,
     elicitations,
+    plans,
     mine,
     answerPermission,
     answerElicitation,
+    answerPlan,
     clear,
     /** Whether the session on screen is waiting on an answer, which the composer stands down for. */
-    blocked: mine.permissions.length + mine.elicitations.length > 0,
+    blocked: mine.permissions.length + mine.elicitations.length + mine.plans.length > 0,
   };
 }

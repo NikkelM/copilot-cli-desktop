@@ -4,6 +4,8 @@ import {
   type CopilotSession,
   type ElicitationContext,
   type ElicitationResult,
+  type ExitPlanModeRequest,
+  type ExitPlanModeResult,
   type PermissionRequest,
   type PermissionRequestResult,
   type SessionEvent,
@@ -18,6 +20,7 @@ import type {
   ElicitationFieldValue,
   ModelChoice,
   PermissionChoice,
+  PlanAction,
   ReasoningEffort,
   ShellResult,
   QueuedItem,
@@ -65,6 +68,24 @@ export interface AskContext {
   choices: string[];
   mode: 'form' | 'url' | null;
   url: string | null;
+}
+
+/**
+ * The ways forward a plan can be approved with.
+ *
+ * The SDK types these as plain strings, so they are narrowed here rather than trusted.
+ * An action this app does not know how to draw is dropped instead of being offered as a
+ * button with no meaning; approving without choosing one is still allowed, so a plan
+ * whose options are all unknown can be accepted or turned down as usual.
+ */
+const PLAN_ACTIONS: readonly PlanAction[] = ['exit_only', 'interactive', 'autopilot', 'autopilot_fleet'];
+
+function knownPlanAction(action: string): PlanAction | null {
+  return PLAN_ACTIONS.find((known) => known === action) ?? null;
+}
+
+function knownPlanActions(actions: string[]): PlanAction[] {
+  return actions.map(knownPlanAction).filter((action): action is PlanAction => action !== null);
 }
 
 /**
@@ -137,6 +158,15 @@ export interface RuntimeOptions {
   ) => void;
   /** Tells the UI a question is no longer awaiting an answer. */
   onElicitationResolved?: (requestId: string) => void;
+  /** Asks the UI to put the agent's plan to the user for approval. Lapses like a question. */
+  onPlanRequest?: (
+    sessionId: string,
+    requestId: string,
+    plan: { summary: string; planContent: string; actions: PlanAction[]; recommendedAction: PlanAction },
+    expiresAt: string,
+  ) => void;
+  /** Tells the UI a plan is no longer awaiting a decision. */
+  onPlanResolved?: (requestId: string) => void;
   /**
    * Overrides how the CLI client is created.
    * Exists so the eviction and permission rules can be exercised without spawning a real
@@ -190,6 +220,13 @@ export class SessionRuntime {
     expiresAt: string,
   ) => void;
   private readonly onElicitationResolved?: (requestId: string) => void;
+  private readonly onPlanRequest?: (
+    sessionId: string,
+    requestId: string,
+    plan: { summary: string; planContent: string; actions: PlanAction[]; recommendedAction: PlanAction },
+    expiresAt: string,
+  ) => void;
+  private readonly onPlanResolved?: (requestId: string) => void;
   private readonly createClient: () => Promise<CopilotClient>;
 
   /** Tool calls waiting on an approve or deny decision. */
@@ -198,6 +235,8 @@ export class SessionRuntime {
   private readonly elicitations: PendingRequests<ElicitationResult>;
   /** Legacy ask_user questions waiting on an answer. */
   private readonly userInputs: PendingRequests<UserInputResponse>;
+  /** Plans waiting on the reader to approve them and say how to proceed. */
+  private readonly plans: PendingRequests<ExitPlanModeResult>;
 
   constructor(options: RuntimeOptions = {}) {
     this.maxLoadedSessions = options.maxLoadedSessions ?? 0;
@@ -209,6 +248,8 @@ export class SessionRuntime {
     this.onPermissionResolved = options.onPermissionResolved;
     this.onElicitationRequest = options.onElicitationRequest;
     this.onElicitationResolved = options.onElicitationResolved;
+    this.onPlanRequest = options.onPlanRequest;
+    this.onPlanResolved = options.onPlanResolved;
     this.createClient = options.createClient ?? defaultClientFactory;
 
     const timeout = options.permissionTimeoutMs ?? 5 * 60_000;
@@ -234,6 +275,14 @@ export class SessionRuntime {
       timeout,
       () => ({ answer: '', wasFreeform: true }),
       questionResolved,
+    );
+    // Nobody read the plan, so it is not approved. The SDK's own default is the opposite,
+    // which is what made plan mode a checkpoint that never stopped anything (#167).
+    this.plans = new PendingRequests<ExitPlanModeResult>(
+      'plan',
+      timeout,
+      () => ({ approved: false }),
+      (_sessionId, requestId) => this.onPlanResolved?.(requestId),
     );
   }
 
@@ -303,6 +352,10 @@ export class SessionRuntime {
       onPermissionRequest: (request) => this.decidePermission(id, request),
       onUserInputRequest: (request) => this.askUserInput(id, request),
       onElicitationRequest: (context) => this.askElicitation(id, context),
+      // Registering this is what makes the runtime ask at all: the client sends
+      // `requestExitPlanMode: !!onExitPlanModeRequest` as a capability, so leaving it off
+      // told the runtime this host cannot approve plans and the request never came (#167).
+      onExitPlanModeRequest: (request) => this.askExitPlan(id, request),
       // The runtime owns the rewind store, and only fills it when asked to. Asking on
       // creation is the only chance to get a complete record: capture starts with the
       // first turn and cannot be reconstructed later.
@@ -382,6 +435,8 @@ export class SessionRuntime {
       // The legacy one arrives here as a user input request.
       onUserInputRequest: (request) => this.askUserInput(sessionId, request),
       onElicitationRequest: (context) => this.askElicitation(sessionId, context),
+      // Also a capability, so a resumed session needs it as much as a new one.
+      onExitPlanModeRequest: (request) => this.askExitPlan(sessionId, request),
       // Turns tracking on for a session that still has a baseline to track against. A
       // session that has run untracked turns keeps them untracked: the runtime cannot
       // reconstruct what it did not watch, and says so rather than guessing.
@@ -530,11 +585,43 @@ export class SessionRuntime {
     this.elicitations.settle(requestId, result);
   }
 
+  /**
+   * Put the agent's plan to the reader and wait for them to approve it.
+   *
+   * This is the checkpoint plan mode exists for, so with no UI to ask, the plan is not
+   * approved. The SDK defaults the other way when no handler is registered, which meant
+   * every plan was waved through unread (#167).
+   */
+  private askExitPlan(sessionId: string, request: ExitPlanModeRequest): Promise<ExitPlanModeResult> {
+    if (!this.onPlanRequest) return Promise.resolve({ approved: false });
+
+    const { requestId, expiresAt, answered } = this.plans.add(sessionId);
+    const actions = knownPlanActions(request.actions);
+    this.onPlanRequest(sessionId, requestId, {
+      summary: request.summary,
+      // Optional on the handler's request though the event always carries it, so the UI
+      // is given the summary to show rather than an empty plan.
+      planContent: request.planContent ?? request.summary,
+      actions,
+      recommendedAction: knownPlanAction(request.recommendedAction) ?? actions[0] ?? 'interactive',
+    }, expiresAt);
+    return answered;
+  }
+
+  /** Apply the reader's decision on a plan, unblocking the agent. */
+  resolvePlan(requestId: string, approved: boolean, selectedAction?: PlanAction, feedback?: string): void {
+    // Each half of the reply only means something on one answer: an action the reader
+    // never chose would steer a plan they turned down, and feedback on approval would
+    // read as a complaint about a plan they accepted.
+    this.plans.settle(requestId, approved ? { approved, selectedAction } : { approved, feedback });
+  }
+
   /** Settle every request for a session, so tearing it down cannot leave the agent hanging. */
   private abandonPending(sessionId: string): void {
     this.permissions.abandon(sessionId, { kind: 'user-not-available' });
     this.elicitations.abandon(sessionId, { action: 'cancel' });
     this.userInputs.abandon(sessionId, { answer: '', wasFreeform: true });
+    this.plans.abandon(sessionId, { approved: false });
   }
 
   private handleEvent(sessionId: string, event: SessionEvent): void {

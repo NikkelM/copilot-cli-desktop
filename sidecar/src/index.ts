@@ -11,6 +11,8 @@ import type { JsonRpcRequest, JsonRpcResponse } from '../../shared/protocol.js';
 import {
   NOTIFY_ELICITATION_REQUESTED,
   NOTIFY_ELICITATION_RESOLVED,
+  NOTIFY_PLAN_REQUESTED,
+  NOTIFY_PLAN_RESOLVED,
   NOTIFY_PERMISSION_REQUESTED,
   NOTIFY_PERMISSION_RESOLVED,
   NOTIFY_SESSION_EVENT,
@@ -77,6 +79,9 @@ const runtime = new SessionRuntime({
   onElicitationRequest: (sessionId, requestId, context, expiresAt) =>
     notify(NOTIFY_ELICITATION_REQUESTED, { sessionId, requestId, ...context, expiresAt }),
   onElicitationResolved: (requestId) => notify(NOTIFY_ELICITATION_RESOLVED, { requestId }),
+  onPlanRequest: (sessionId, requestId, plan, expiresAt) =>
+    notify(NOTIFY_PLAN_REQUESTED, { sessionId, requestId, ...plan, expiresAt }),
+  onPlanResolved: (requestId) => notify(NOTIFY_PLAN_RESOLVED, { requestId }),
 });
 
 const handlers = createHandlers(runtime);

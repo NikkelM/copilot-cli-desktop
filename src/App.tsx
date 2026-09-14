@@ -15,6 +15,7 @@ import { AgentPicker } from './components/AgentPicker';
 import { ModelPicker } from './components/ModelPicker';
 import { OpenIn } from './components/OpenIn';
 import { PermissionPrompt } from './components/PermissionPrompt';
+import { PlanPrompt } from './components/PlanPrompt';
 import { Shortcuts } from './components/Shortcuts';
 import { Queue } from './components/Queue';
 import { SessionPath } from './components/SessionPath';
@@ -628,11 +629,10 @@ export default function App() {
     () =>
       activityOf(
         sessions.working,
-        prompts.permissions,
-        prompts.elicitations,
+        [...prompts.permissions, ...prompts.elicitations, ...prompts.plans],
         Object.fromEntries(Object.entries(queue.queues).map(([id, waiting]) => [id, waiting.length])),
       ),
-    [sessions.working, prompts.permissions, prompts.elicitations, queue.queues],
+    [sessions.working, prompts.permissions, prompts.elicitations, prompts.plans, queue.queues],
   );
 
   useTaskbar(sessions.working.size > 0);
@@ -772,6 +772,16 @@ export default function App() {
                   pending={pending}
                   cwd={selected.cwd}
                   onResolve={(choice) => prompts.answerPermission(pending, choice)}
+                />
+              ))}
+
+              {prompts.mine.plans.map((pending) => (
+                <PlanPrompt
+                  key={pending.requestId}
+                  pending={pending}
+                  onResolve={(approved, selectedAction, feedback) =>
+                    prompts.answerPlan(pending, approved, selectedAction, feedback)
+                  }
                 />
               ))}
 

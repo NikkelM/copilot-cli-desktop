@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
-import type { CopilotSession } from '@github/copilot-sdk';
+import type { CopilotSession, ExitPlanModeRequest, ExitPlanModeResult } from '@github/copilot-sdk';
 
 import { copilotHome } from './paths.js';
 import { SessionRuntime, type RuntimeOptions } from './runtime.js';
@@ -105,6 +105,8 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
   const sessions = new Map<string, FakeSession>();
   const permissionHandlers = new Map<string, (request: unknown) => unknown>();
   const elicitationHandlers = new Map<string, (context: unknown) => unknown>();
+  /** Typed from the SDK, so a change to either end of the plan exchange fails the build. */
+  const planHandlers = new Map<string, (request: ExitPlanModeRequest) => Promise<ExitPlanModeResult>>();
 
   const client = {
     start: vi.fn(async () => undefined),
@@ -149,12 +151,14 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
         config: {
           onPermissionRequest: (r: unknown) => unknown;
           onUserInputRequest?: (r: unknown) => unknown;
+          onExitPlanModeRequest?: (r: ExitPlanModeRequest) => Promise<ExitPlanModeResult>;
         },
       ) => {
         const session = makeSession(id);
         sessions.set(id, session);
         permissionHandlers.set(id, config.onPermissionRequest);
         if (config.onUserInputRequest) elicitationHandlers.set(id, config.onUserInputRequest);
+        if (config.onExitPlanModeRequest) planHandlers.set(id, config.onExitPlanModeRequest);
         return session;
       },
     ),
@@ -171,7 +175,7 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
     ...options,
   });
 
-  return { runtime, client, sessions, permissionHandlers, elicitationHandlers };
+  return { runtime, client, sessions, permissionHandlers, elicitationHandlers, planHandlers };
 }
 
 /**
@@ -511,6 +515,178 @@ describe('questions from the agent', () => {
     await expect(answered).resolves.toEqual({ answer: '', wasFreeform: true });
   });
 
+});
+
+/**
+ * Plan mode's checkpoint: the agent stops so a human can read what it intends to do.
+ *
+ * The SDK approves every plan when no handler is registered, and registering one is also
+ * what tells the runtime to ask in the first place, so an app that leaves it off skips the
+ * checkpoint entirely without any sign that it did (#167).
+ */
+describe('plans awaiting approval', () => {
+  const propose = (
+    handlers: Map<string, (r: ExitPlanModeRequest) => Promise<ExitPlanModeResult>>,
+    plan: Partial<ExitPlanModeRequest> = {},
+  ) =>
+    handlers.get('a')?.({
+      summary: 'Rewrite the parser',
+      planContent: '# Plan\n\n1. Do the thing',
+      actions: ['exit_only', 'interactive', 'autopilot'],
+      recommendedAction: 'interactive',
+      ...plan,
+    });
+
+  it('registers a handler, which is what makes the runtime ask at all', async () => {
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest: vi.fn() });
+    await runtime.send('a', 'x');
+    expect(planHandlers.has('a')).toBe(true);
+  });
+
+  // A new session has to be asked too, and the client only offers the capability when the
+  // handler is there, so its absence would be silent.
+  it('registers the handler on a session it just made', async () => {
+    const { runtime, client } = makeRuntime({ onPlanRequest: vi.fn() });
+    await runtime.create();
+
+    const config = client.createSession.mock.calls[0]?.[0];
+    expect(config?.onExitPlanModeRequest).toBeInstanceOf(Function);
+  });
+
+  it('passes the plan, its actions and the recommendation to the UI', async () => {
+    const onPlanRequest = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest });
+    await runtime.send('a', 'x');
+
+    void propose(planHandlers);
+
+    expect(onPlanRequest.mock.calls[0]?.[2]).toEqual({
+      summary: 'Rewrite the parser',
+      planContent: '# Plan\n\n1. Do the thing',
+      actions: ['exit_only', 'interactive', 'autopilot'],
+      recommendedAction: 'interactive',
+    });
+  });
+
+  // The SDK types these as plain strings, so a new one must not reach the UI as a button
+  // with nothing behind it.
+  it('drops an action this build does not know how to offer', async () => {
+    const onPlanRequest = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest });
+    await runtime.send('a', 'x');
+
+    void propose(planHandlers, { actions: ['interactive', 'teleport'] });
+
+    expect(onPlanRequest.mock.calls[0]?.[2]).toMatchObject({ actions: ['interactive'] });
+  });
+
+  it('falls back to an action it can draw when the recommendation is unknown', async () => {
+    const onPlanRequest = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest });
+    await runtime.send('a', 'x');
+
+    void propose(planHandlers, { actions: ['autopilot'], recommendedAction: 'teleport' });
+
+    expect(onPlanRequest.mock.calls[0]?.[2]).toMatchObject({ recommendedAction: 'autopilot' });
+  });
+
+  // Nothing offered is recognisable, so there is no action to fall back to either. The UI
+  // is left with approve or decline, which it can still draw.
+  it('names a way forward even when none of the offered ones are known', async () => {
+    const onPlanRequest = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest });
+    await runtime.send('a', 'x');
+
+    void propose(planHandlers, { actions: ['teleport'], recommendedAction: 'teleport' });
+
+    expect(onPlanRequest.mock.calls[0]?.[2]).toMatchObject({
+      actions: [],
+      recommendedAction: 'interactive',
+    });
+  });
+
+  // Optional on the handler's request even though the event always carries it.
+  it('shows the summary when the plan arrived without a body', async () => {
+    const onPlanRequest = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest });
+    await runtime.send('a', 'x');
+
+    void propose(planHandlers, { planContent: undefined });
+
+    expect(onPlanRequest.mock.calls[0]?.[2]).toMatchObject({ planContent: 'Rewrite the parser' });
+  });
+
+  it('approves a plan with the way forward the reader chose', async () => {
+    const onPlanRequest = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest });
+    await runtime.send('a', 'x');
+
+    const decided = propose(planHandlers);
+    runtime.resolvePlan(onPlanRequest.mock.calls[0]?.[1] as string, true, 'autopilot');
+
+    await expect(decided).resolves.toEqual({ approved: true, selectedAction: 'autopilot' });
+  });
+
+  // Feedback is how a reader redirects a plan rather than abandoning it, so it has to
+  // survive the trip back.
+  it('turns a plan down with the reason, and no action it never chose', async () => {
+    const onPlanRequest = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest });
+    await runtime.send('a', 'x');
+
+    const decided = propose(planHandlers);
+    runtime.resolvePlan(onPlanRequest.mock.calls[0]?.[1] as string, false, undefined, 'Use the old parser');
+
+    await expect(decided).resolves.toEqual({ approved: false, feedback: 'Use the old parser' });
+  });
+
+  /**
+   * Feedback left over from a reader who typed a complaint, thought better of it and
+   * approved anyway would tell the agent it had been criticised when it had not.
+   */
+  it('leaves feedback out of an approval that happens to carry some', async () => {
+    const onPlanRequest = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest });
+    await runtime.send('a', 'x');
+
+    const decided = propose(planHandlers);
+    runtime.resolvePlan(onPlanRequest.mock.calls[0]?.[1] as string, true, 'interactive', 'a stale draft');
+
+    await expect(decided).resolves.toEqual({ approved: true, selectedAction: 'interactive' });
+  });
+
+  /** The fix for #167: nobody read it, so it is not approved. */
+  it('refuses a plan when there is no UI to read it', async () => {
+    const { runtime, planHandlers } = makeRuntime();
+    await runtime.send('a', 'x');
+
+    await expect(propose(planHandlers)).resolves.toEqual({ approved: false });
+  });
+
+  it('settles a pending plan when the session is evicted', async () => {
+    const { runtime, planHandlers } = makeRuntime({ onPlanRequest: vi.fn() });
+    await runtime.send('a', 'x');
+
+    const decided = propose(planHandlers);
+    await runtime.evict('a');
+
+    await expect(decided).resolves.toEqual({ approved: false });
+  });
+
+  it('tells the UI when it gives up waiting for a decision', async () => {
+    const onPlanResolved = vi.fn();
+    const { runtime, planHandlers } = makeRuntime({
+      onPlanRequest: vi.fn(),
+      onPlanResolved,
+      permissionTimeoutMs: 5,
+    });
+    await runtime.send('a', 'x');
+
+    // Giving up is not consent: the value the agent gets back matters as much as the
+    // notification, since this is the path a plan takes when nobody is watching.
+    await expect(propose(planHandlers)).resolves.toEqual({ approved: false });
+    expect(onPlanResolved).toHaveBeenCalledWith(expect.stringMatching(/^plan-/));
+  });
 });
 
 /**

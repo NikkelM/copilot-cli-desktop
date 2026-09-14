@@ -14,8 +14,11 @@ import type {
   ModelChoice,
   PendingElicitation,
   PendingPermission,
+  PendingPlanApproval,
   PermissionChoice,
   PermissionResolvedNotification,
+  PlanAction,
+  PlanResolvedNotification,
   SessionEnvironment,
   ReasoningEffort,
   RuntimeStatus,
@@ -358,4 +361,23 @@ export function resolveElicitation(
   content?: Record<string, ElicitationFieldValue>,
 ): Promise<void> {
   return request('sessions.resolveElicitation', { requestId, action, content });
+}
+
+/** The agent has a plan and is blocked until the reader approves or turns it down. */
+export function onPlanRequested(handler: (payload: PendingPlanApproval) => void) {
+  return listen<PendingPlanApproval>('plan-requested', (e) => handler(e.payload));
+}
+
+export function onPlanResolved(handler: (payload: PlanResolvedNotification) => void) {
+  return listen<PlanResolvedNotification>('plan-resolved', (e) => handler(e.payload));
+}
+
+/** Approve a plan and say how to proceed, or turn it down with a reason. */
+export function resolvePlan(
+  requestId: string,
+  approved: boolean,
+  selectedAction?: PlanAction,
+  feedback?: string,
+): Promise<void> {
+  return request('sessions.resolvePlan', { requestId, approved, selectedAction, feedback });
 }

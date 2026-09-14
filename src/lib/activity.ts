@@ -1,4 +1,4 @@
-import type { PendingElicitation, PendingPermission } from '../../shared/protocol';
+import type { PendingElicitation, PendingPermission, PendingPlanApproval } from '../../shared/protocol';
 
 /**
  * What a session is doing, for the one row that has to say it (#115).
@@ -19,6 +19,15 @@ export interface ActivityMark {
 }
 
 /**
+ * Anything an agent is blocked on, of which only the session it belongs to matters here.
+ *
+ * Permissions, questions and plans are three different asks with three different prompts,
+ * but the sidebar says the same thing about all of them, so they arrive as one list rather
+ * than as a parameter per kind that grows every time another is added.
+ */
+export type Blocking = Pick<PendingPermission | PendingElicitation | PendingPlanApproval, 'sessionId'>;
+
+/**
  * Fold everything the app knows about what sessions are doing into one entry per session.
  *
  * The pieces live apart for good reasons - the runtime reports turns, the app holds the
@@ -28,8 +37,7 @@ export interface ActivityMark {
  */
 export function activityOf(
   working: ReadonlySet<string>,
-  permissions: readonly PendingPermission[],
-  elicitations: readonly PendingElicitation[],
+  blocked: readonly Blocking[],
   queued: Readonly<Record<string, number>>,
 ): Record<string, ActivityMark> {
   const marks: Record<string, ActivityMark> = {};
@@ -40,8 +48,7 @@ export function activityOf(
   };
 
   for (const sessionId of working) raise(sessionId, 'working');
-  for (const pending of permissions) raise(pending.sessionId, 'blocked');
-  for (const pending of elicitations) raise(pending.sessionId, 'blocked');
+  for (const pending of blocked) raise(pending.sessionId, 'blocked');
 
   for (const [sessionId, count] of Object.entries(queued)) {
     if (count <= 0) continue;
