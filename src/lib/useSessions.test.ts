@@ -79,9 +79,8 @@ describe('useSessions', () => {
     });
 
     /**
-     * The reason the override is kept outside the fetched list. The store changes on every
-     * turn of every running session, so a refetch lands moments after the event, carrying
-     * the preview the lagging turns table still holds.
+     * The reason the override is kept outside the fetched list. A refetch can land between
+     * a reply and the write that announces it, carrying a list assembled a turn earlier.
      */
     it('keeps the live preview when the list is read again', async () => {
       const { result } = await listed();

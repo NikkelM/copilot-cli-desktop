@@ -10,13 +10,16 @@ import { contentOf } from './timeline';
 /**
  * Which sessions exist, in the order the sidebar shows them.
  *
- * The list has two sources that disagree. Fetching gives every session on disk, including
- * ones this app has never opened, but its previews come from a table the runtime flushes
- * well after the fact. Live events are immediate but only cover sessions this app holds
- * open. So the fetch is the list and the events are the correction, and the correction has
- * to outlive any single fetch: the store changes on every turn of every running session,
- * which means a refetch can land at any moment and would otherwise put the stale preview
- * straight back.
+ * The list has two sources, and they differ in when rather than in what. Fetching gives
+ * every session on disk, including ones this app has never opened, and since #164 its
+ * previews come from the event logs and are right. What is slow is the asking: a refetch
+ * happens when the history database changes, debounced by a second and a half, and the
+ * logs themselves are not watched at all.
+ *
+ * Live events arrive as they happen, but only for sessions this app holds open. So the
+ * fetch is the list and the events are what keeps the sessions in front of the reader from
+ * visibly trailing their own transcripts. The overlay has to outlive a single fetch because
+ * a refetch can land between a reply and the write that would have carried it.
  *
  * The caller owns the event subscriptions and hands the two kinds here, rather than this
  * subscribing for itself. One `session.event` stream feeds six different parts of the app,
@@ -31,7 +34,7 @@ export function useSessions(onError: (message: string) => void) {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set());
 
   /**
-   * Previews derived from live events, which are ahead of the database.
+   * Previews taken from live events, which run ahead of anything that would prompt a refetch.
    * A ref rather than state: refetches read it, but it never needs to trigger a render
    * on its own, since the render always follows a setSessions in the same handler.
    */
@@ -40,8 +43,8 @@ export function useSessions(onError: (message: string) => void) {
   const refresh = useCallback(() => {
     // Returned so a caller that needs the list to contain something can wait for it.
     return listSessions()
-      // The fetched previews come from the lagging turns table, so anything already
-      // learned from live events wins until the database catches up.
+      // A fetch that lands between a reply and the write that announces it would otherwise
+      // show the session a turn behind, so what the app has already heard wins.
       .then((result) => setSessions(mergeLivePreviews(result.sessions, livePreviews.current)))
       .catch((e: unknown) => onError(String(e)));
   }, [onError]);
@@ -59,10 +62,9 @@ export function useSessions(onError: (message: string) => void) {
   /**
    * Take what a session's own events say about it.
    *
-   * The sidebar preview comes from the turns table, which is flushed well after the fact,
-   * so a loaded session would keep showing an older reply. Its events are already
-   * streaming, so use them and skip the wait entirely. This applies to every loaded
-   * session, not just the one on screen.
+   * The sidebar is only refetched when the history database changes, and a reply reaches
+   * this app long before that. Its events are already streaming, so use them rather than
+   * wait to be told. This applies to every loaded session, not just the one on screen.
    */
   const observe = useCallback((sessionId: string, event: TranscriptEvent) => {
     // Which sessions have a turn running, for the sidebar to say so (#115). Tracked here
@@ -111,7 +113,7 @@ export function useSessions(onError: (message: string) => void) {
     );
 
     // Once unloaded the app no longer sees this session's events, so its own preview
-    // must stop overriding whatever the database reports.
+    // must stop overriding what the next fetch reads from the log.
     if (!loaded) livePreviews.current.delete(sessionId);
     // A session let go cannot still be mid-turn, and it will send no idle event to say so.
     if (!loaded) {

@@ -3,11 +3,14 @@ import type { SessionSummary } from '../../shared/protocol';
 /**
  * Overlay previews taken from live events onto a freshly fetched list.
  *
- * The sidecar reads previews from the `turns` table, which is flushed well after the
- * fact: for a session this app holds open, the newest turn was measured minutes behind.
- * The app sees that session's events as they happen, so for a loaded session it is the
- * authority on what was last said. Without this merge the refetch, which fires on every
- * store change, would immediately put the stale text back.
+ * Not a correction any more. Since #164 the sidecar reads previews from the event logs,
+ * which trail the live stream by about nine milliseconds, so a fetch and an event agree on
+ * what was said. What they disagree on is when: the sidebar is refetched only when the
+ * history database changes, debounced by a second and a half, and nothing watches the logs.
+ *
+ * For a session this app holds open the reply is already here, so showing it at once is
+ * free. Without the overlay a fetch landing between the reply and the write that announces
+ * it would put the previous turn back on screen, which reads as the sidebar lagging.
  *
  * Only the preview is overridden. `updatedAt` comes from the event log's mtime and is
  * already accurate; the two values are not measured against the same clock, so comparing
