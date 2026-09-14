@@ -43,6 +43,7 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useEnvironment } from './lib/useEnvironment';
+import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
 import { useAgent } from './lib/useAgent';
 import { useModel } from './lib/useModel';
@@ -123,6 +124,7 @@ export default function App() {
   const slash = useCommands(selectedId);
   const changes = useChanges(selectedId);
   const environment = useEnvironment(selected?.cwd ?? null);
+  const skills = useDisabledSkills(selectedId);
   const prompts = usePrompts(selectedId, setError);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
@@ -734,9 +736,11 @@ export default function App() {
                 <Environment
                   environment={environment.environment}
                   loading={environment.loading}
-                  failed={environment.failed}
+                  failed={environment.failed ?? skills.failed}
                   onReload={() => void environment.load()}
                   onClose={closeEnvironment}
+                  disabledSkills={skills.disabled}
+                  onToggleSkill={selectedId ? (name, enabled) => void skills.toggle(name, enabled) : undefined}
                 />
               )}
 

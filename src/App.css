@@ -2665,6 +2665,37 @@ button.group:hover {
   font-size: var(--font-sm);
 }
 
+/* A skill's description is the longest thing in any of these lists and the least important
+   to read in full, so it takes what room is left and gives up the rest to an ellipsis. */
+.environment-description {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.environment-toggle {
+  flex: none;
+  margin-left: auto;
+  min-width: 34px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--success);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.environment-toggle:hover {
+  border-color: var(--text-muted);
+}
+
+.environment-toggle.off {
+  color: var(--text-muted);
+}
+
 /* Indented to the path above it, so a long file reads as that entry's contents rather than
    as the next thing in the list. */
 .environment-content {

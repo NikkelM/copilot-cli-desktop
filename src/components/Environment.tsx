@@ -10,6 +10,10 @@ interface EnvironmentProps {
   /** Read it again, for after editing one of the files listed. */
   onReload: () => void;
   onClose: () => void;
+  /** Skills this session has switched off. Empty when the panel is open on no session. */
+  disabledSkills?: string[];
+  /** Absent when there is no session to switch anything for, which leaves the list readable but fixed. */
+  onToggleSkill?: (name: string, enabled: boolean) => void;
 }
 
 /** Where a source came from, in the words someone would use to go and find it. */
@@ -48,7 +52,15 @@ const MODE: Record<SessionEnvironment['extensionMode'], string> = {
  * Read fresh each time it opens rather than remembered, since the reason to open it is
  * usually that one of these files has just been edited.
  */
-export function Environment({ environment, loading, failed, onReload, onClose }: EnvironmentProps) {
+export function Environment({
+  environment,
+  loading,
+  failed,
+  onReload,
+  onClose,
+  disabledSkills = [],
+  onToggleSkill,
+}: EnvironmentProps) {
   const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,6 +72,8 @@ export function Environment({ environment, loading, failed, onReload, onClose }:
   const instructions = environment?.instructions ?? [];
   const plugins = environment?.plugins ?? [];
   const extensions = environment?.extensions ?? [];
+  const skills = environment?.skills ?? [];
+  const off = new Set(disabledSkills);
 
   return (
     <div className="environment">
@@ -136,6 +150,61 @@ export function Environment({ environment, loading, failed, onReload, onClose }:
           </section>
 
           <section className="environment-section">
+            <h3 className="environment-heading">Skills</h3>
+            {skills.length === 0 ? (
+              <p className="changes-note">No skills found for this directory.</p>
+            ) : (
+              <>
+                {!onToggleSkill && (
+                  <p className="changes-note">Open a session to switch any of these off for it.</p>
+                )}
+                <ul className="environment-list">
+                  {skills.map((skill) => {
+                    const switchedOff = off.has(skill.name);
+                    return (
+                      <li key={skill.name} className="environment-item">
+                        <span
+                          className={skill.enabled && !switchedOff ? 'environment-dot on' : 'environment-dot off'}
+                          aria-hidden
+                        />
+                        <span className="environment-name" title={skill.path}>
+                          {skill.commandName ? `/${skill.commandName}` : skill.name}
+                        </span>
+                        <span className="environment-meta environment-description" title={skill.description}>
+                          {skill.description}
+                        </span>
+                        <span className="environment-meta">{SKILL_SOURCE[skill.source] ?? skill.source}</span>
+                        {/* The runtime's own answer, which a choice made here cannot overrule. */}
+                        {!skill.enabled ? (
+                          <span className="environment-off" title="Switched off for every session">
+                            off everywhere
+                          </span>
+                        ) : onToggleSkill ? (
+                          <button
+                            type="button"
+                            className={switchedOff ? 'environment-toggle off' : 'environment-toggle'}
+                            onClick={() => onToggleSkill(skill.name, switchedOff)}
+                            aria-pressed={!switchedOff}
+                            title={
+                              switchedOff
+                                ? `Load ${skill.name} in this session again`
+                                : `Stop loading ${skill.name} in this session`
+                            }
+                          >
+                            {switchedOff ? 'Off' : 'On'}
+                          </button>
+                        ) : (
+                          switchedOff && <span className="environment-off">off here</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
+            )}
+          </section>
+
+          <section className="environment-section">
             <h3 className="environment-heading">Extensions</h3>
             <p className="changes-note">{MODE[environment.extensionMode]}</p>
             {extensions.length > 0 && (
@@ -156,6 +225,24 @@ export function Environment({ environment, loading, failed, onReload, onClose }:
     </div>
   );
 }
+
+/**
+ * Where a skill came from, in the words someone would use to go and find it.
+ *
+ * Not a closed set - the runtime is explicit that unknown values should be tolerated - so
+ * anything unrecognised is shown as the runtime named it rather than hidden.
+ */
+const SKILL_SOURCE: Record<string, string> = {
+  project: 'This project',
+  inherited: 'A parent directory',
+  'personal-copilot': 'Yours',
+  'personal-agents': 'Yours',
+  custom: 'A configured directory',
+  plugin: 'Plugin',
+  builtin: 'Built in',
+  remote: 'Your organisation',
+  sdk: 'This app',
+};
 
 /** Which plugin an extension arrived with, since that is what turning it off would mean. */
 function source(extension: ExtensionSummary): string {

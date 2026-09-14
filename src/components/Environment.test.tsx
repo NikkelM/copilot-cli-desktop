@@ -169,3 +169,119 @@ describe('Environment', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+describe('skills a session would load', () => {
+  /** The dot beside the one skill in the fixture. Plugins carry dots of their own, so the
+      section has to be found first rather than taking the first dot on the panel. */
+  const skillDot = (container: HTMLElement) => {
+    const heading = [...container.querySelectorAll('.environment-heading')].find((h) => h.textContent === 'Skills');
+    return heading?.parentElement?.querySelector('.environment-dot') ?? null;
+  };
+
+  const skill = (over: Partial<SessionEnvironment['skills'][number]> = {}) => ({
+    name: 'agent-creator',
+    commandName: 'agent-creator',
+    description: 'Build a custom agent',
+    source: 'personal-copilot',
+    userInvocable: true,
+    enabled: true,
+    path: 'C:\\Users\\x\\.copilot\\skills\\agent-creator\\SKILL.md',
+    ...over,
+  });
+
+  const withSkills = (over: Partial<SessionEnvironment['skills'][number]>[] = [{}]) =>
+    environment({ skills: over.map(skill) });
+
+  it('names a skill as it would be typed', () => {
+    render(<Environment {...props} environment={withSkills()} />);
+
+    expect(screen.getByText('/agent-creator')).toBeTruthy();
+  });
+
+  it('falls back to the name for a skill with no command', () => {
+    render(<Environment {...props} environment={withSkills([{ name: 'quiet', commandName: undefined }])} />);
+
+    expect(screen.getByText('quiet')).toBeTruthy();
+  });
+
+  it('says where a skill came from', () => {
+    render(<Environment {...props} environment={withSkills([{ source: 'plugin' }])} />);
+
+    expect(screen.getByText('Plugin')).toBeTruthy();
+  });
+
+  // Not a closed set, so an unfamiliar one is shown as the runtime named it rather than hidden.
+  it('shows a source it does not recognise', () => {
+    render(<Environment {...props} environment={withSkills([{ source: 'something-new' }])} />);
+
+    expect(screen.getByText('something-new')).toBeTruthy();
+  });
+
+  it('offers no switch without a session to switch it for', () => {
+    render(<Environment {...props} environment={withSkills()} />);
+
+    expect(screen.queryByRole('button', { name: /On|Off/ })).toBeNull();
+    expect(screen.getByText(/Open a session to switch any of these off/)).toBeTruthy();
+  });
+
+  it('switches a skill off for this session', () => {
+    const onToggleSkill = vi.fn();
+    render(<Environment {...props} environment={withSkills()} onToggleSkill={onToggleSkill} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'On' }));
+
+    expect(onToggleSkill).toHaveBeenCalledWith('agent-creator', false);
+  });
+
+  it('switches one back on', () => {
+    const onToggleSkill = vi.fn();
+    render(
+      <Environment
+        {...props}
+        environment={withSkills()}
+        disabledSkills={['agent-creator']}
+        onToggleSkill={onToggleSkill}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Off' }));
+
+    expect(onToggleSkill).toHaveBeenCalledWith('agent-creator', true);
+  });
+
+  it('shows a switched-off skill as off', () => {
+    render(<Environment {...props} environment={withSkills()} disabledSkills={['agent-creator']} onToggleSkill={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Off' }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  // The dot is the only mark a reader takes in at a glance, so it has to follow the choice
+  // rather than only the runtime's answer.
+  it('dims the dot for a skill this session has switched off', () => {
+    const { container } = render(
+      <Environment {...props} environment={withSkills()} disabledSkills={['agent-creator']} onToggleSkill={vi.fn()} />,
+    );
+
+    expect(skillDot(container)?.className).toBe('environment-dot off');
+  });
+
+  it('lights the dot for a skill this session is still loading', () => {
+    const { container } = render(<Environment {...props} environment={withSkills()} onToggleSkill={vi.fn()} />);
+
+    expect(skillDot(container)?.className).toBe('environment-dot on');
+  });
+
+  // A choice made here cannot overrule the runtime turning it off for everything.
+  it('offers no switch for a skill the runtime has off everywhere', () => {
+    render(<Environment {...props} environment={withSkills([{ enabled: false }])} onToggleSkill={vi.fn()} />);
+
+    expect(screen.queryByRole('button', { name: /^(On|Off)$/ })).toBeNull();
+    expect(screen.getByText('off everywhere')).toBeTruthy();
+  });
+
+  it('says when there are none', () => {
+    render(<Environment {...props} environment={environment({ skills: [] })} />);
+
+    expect(screen.getByText('No skills found for this directory.')).toBeTruthy();
+  });
+});
