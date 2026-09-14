@@ -45,6 +45,10 @@ function makeSession(id: string) {
       commands: {
         enqueue: vi.fn(async (_params: { command: string; displayText?: string }) => ({ queued: true })),
       },
+      agent: {
+        select: vi.fn(async (_params: { name: string }) => ({})),
+        deselect: vi.fn(async () => undefined),
+      },
     },
     abort: vi.fn(async function (this: { aborted: boolean }) {
       this.aborted = true;
@@ -65,6 +69,31 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
   const client = {
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => []),
+    rpc: {
+      agents: {
+        discover: vi.fn(async (_params: { projectPaths?: string[] }) => ({
+          agents: [
+            {
+              id: 'deep-audit',
+              name: 'deep-audit',
+              displayName: 'Deep Audit',
+              description: 'Audits things',
+              source: 'user',
+              path: 'C:\\Users\\x\\.copilot\\agents\\deep-audit.agent.md',
+              tools: ['grep', 'view'],
+              prompt: 'a very long prompt',
+            },
+            {
+              id: 'spawned-only',
+              name: 'spawned-only',
+              displayName: 'Spawned Only',
+              description: 'Not for people',
+              userInvocable: false,
+            },
+          ],
+        })),
+      },
+    },
     resumeSession: vi.fn(
       async (
         id: string,
@@ -751,5 +780,94 @@ describe('output from a tool that is still running', () => {
       .emit({ type: 'tool.execution_partial_result', data: { toolCallId: 't1', partialOutput: 'y'.repeat(20_000) } });
 
     expect(seen.at(-1)!.data.toolCallId).toBe('t1');
+  });
+});
+
+describe('custom agents', () => {
+  /**
+   * The reason this goes through the server rather than a session at all. Listing agents is
+   * browsing, and browsing must not start a conversation to answer a question about one.
+   */
+  it('lists agents without resuming any session', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.agents();
+
+    expect(client.start).toHaveBeenCalledTimes(1);
+    expect(client.resumeSession).not.toHaveBeenCalled();
+  });
+
+  it('asks about a project when given a directory, so its own agents are found', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.agents('C:\\repo');
+
+    expect(client.rpc.agents.discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
+  });
+
+  /** A session that is not about a project has no project path, which is not an empty one. */
+  it('asks about no project when given no directory', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.agents();
+
+    expect(client.rpc.agents.discover).toHaveBeenCalledWith({});
+  });
+
+  it('keeps what a picker needs and drops what it does not', async () => {
+    const { runtime } = makeRuntime();
+
+    const [first] = await runtime.agents();
+
+    expect(first).toEqual({
+      id: 'deep-audit',
+      name: 'deep-audit',
+      displayName: 'Deep Audit',
+      description: 'Audits things',
+      source: 'user',
+      path: 'C:\\Users\\x\\.copilot\\agents\\deep-audit.agent.md',
+      userInvocable: true,
+    });
+  });
+
+  /** Absent means invocable: the field is there to mark the exceptions, not the rule. */
+  it('treats an agent that does not say as one the reader may choose', async () => {
+    const { runtime } = makeRuntime();
+
+    const agents = await runtime.agents();
+
+    expect(agents.map((agent) => agent.userInvocable)).toEqual([true, false]);
+  });
+
+  it('selects an agent on the session it names', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+
+    await runtime.selectAgent('s1', 'deep-audit');
+
+    expect(sessions.get('s1')!.rpc.agent.select).toHaveBeenCalledWith({ name: 'deep-audit' });
+    expect(sessions.get('s1')!.rpc.agent.deselect).not.toHaveBeenCalled();
+  });
+
+  it('returns a session to the default agent when given no name', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+
+    await runtime.selectAgent('s1', null);
+
+    expect(sessions.get('s1')!.rpc.agent.deselect).toHaveBeenCalled();
+    expect(sessions.get('s1')!.rpc.agent.select).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Choosing is an act on a conversation rather than a question about one, so it resumes,
+   * the same way setting a model does.
+   */
+  it('resumes a cold session to select on it', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.selectAgent('cold', 'deep-audit');
+
+    expect(client.resumeSession).toHaveBeenCalledTimes(1);
   });
 });

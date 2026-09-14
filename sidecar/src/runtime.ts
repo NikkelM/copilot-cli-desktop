@@ -10,6 +10,7 @@ import {
 } from '@github/copilot-sdk';
 
 import type {
+  AgentSummary,
   Attachment,
   CommandOutcome,
   ContextTier,
@@ -729,6 +730,54 @@ export class SessionRuntime {
       allowDuringTurn: command.allowDuringAgentExecution,
       ...(command.experimental ? { experimental: true } : {}),
     }));
+  }
+
+  /**
+   * The custom agents there are.
+   *
+   * Asked of the server, which has its own sessionless `agents` namespace, rather than of a
+   * session's `agent.list`. The difference is the whole design: listing through a session
+   * would mean resuming one to find out what agents exist, and this app exists because
+   * resuming is expensive.
+   *
+   * A working directory is passed on as a project path, so a session in a repository sees the
+   * agents that repository carries as well as the reader's own. Without one only the reader's
+   * own are found, which is the right answer for a session that is not about a project.
+   *
+   * Built-in agents are not returned. Including them is a parameter of the session surface
+   * only, and a cold list that silently left some out would be worse than one that never
+   * offered them in the first place.
+   */
+  async agents(cwd?: string): Promise<AgentSummary[]> {
+    const client = await this.ensureClient();
+    const { agents } = await client.rpc.agents.discover(cwd ? { projectPaths: [cwd] } : {});
+
+    return agents.map((agent) => ({
+      id: agent.id,
+      name: agent.name,
+      displayName: agent.displayName,
+      description: agent.description,
+      source: agent.source ?? 'unknown',
+      ...(agent.path ? { path: agent.path } : {}),
+      ...(agent.model ? { model: agent.model } : {}),
+      // Absent means invocable. The field marks the exceptions, which are agents meant only
+      // to be spawned by other agents rather than chosen by a reader.
+      userInvocable: agent.userInvocable !== false,
+    }));
+  }
+
+  /**
+   * Put a session on a custom agent, or back on the default when no name is given.
+   *
+   * Resumes a cold session, as setting a model does. Browsing is where the saving belongs and
+   * it is already free; choosing is an act on one particular conversation, and nobody chooses
+   * an agent except immediately before using it.
+   */
+  async selectAgent(sessionId: string, name: string | null): Promise<void> {
+    const session = await this.ensureSession(sessionId);
+
+    if (name === null) await session.rpc.agent.deselect();
+    else await session.rpc.agent.select({ name });
   }
 
   /**

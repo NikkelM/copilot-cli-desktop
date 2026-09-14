@@ -347,3 +347,95 @@ describe('lastModel', () => {
     expect((await lastModel('s1'))?.model).toBe('claude-opus-5');
   });
 });
+
+describe('lastAgent', () => {
+  const selected = (name: string, displayName?: string) =>
+    JSON.stringify({
+      type: 'subagent.selected',
+      data: { agentName: name, ...(displayName ? { agentDisplayName: displayName } : {}) },
+    });
+  const deselected = () => JSON.stringify({ type: 'subagent.deselected', data: {} });
+
+  it('says nothing for a session with no log', async () => {
+    const { lastAgent } = await loadEventLog();
+    expect(await lastAgent('never-run')).toBeNull();
+  });
+
+  it('handles an empty log', async () => {
+    writeLog('s1', []);
+    const { lastAgent } = await loadEventLog();
+    expect(await lastAgent('s1')).toBeNull();
+  });
+
+  it('says nothing for a session that never chose an agent', async () => {
+    writeLog('s1', [line(1), line(2), line(3)]);
+    const { lastAgent } = await loadEventLog();
+
+    expect(await lastAgent('s1')).toBeNull();
+  });
+
+  it('reads the agent a session was put on', async () => {
+    writeLog('s1', [line(1), selected('deep-audit', 'Deep Audit'), line(2)]);
+    const { lastAgent } = await loadEventLog();
+
+    expect(await lastAgent('s1')).toEqual({ name: 'deep-audit', displayName: 'Deep Audit' });
+  });
+
+  it('shows the name when the event carries no display name', async () => {
+    writeLog('s1', [selected('deep-audit'), line(1)]);
+    const { lastAgent } = await loadEventLog();
+
+    expect(await lastAgent('s1')).toEqual({ name: 'deep-audit', displayName: 'deep-audit' });
+  });
+
+  it('takes the last of several selections', async () => {
+    writeLog('s1', [selected('first'), line(1), selected('second'), line(2), selected('third')]);
+    const { lastAgent } = await loadEventLog();
+
+    expect((await lastAgent('s1'))?.name).toBe('third');
+  });
+
+  // The distinction the wrapper in latestAgentIn exists for: without it the deselection reads
+  // as nothing to say and the scan carries on to the selection it undid.
+  it('treats a later deselection as the default agent rather than a miss', async () => {
+    writeLog('s1', [selected('deep-audit'), line(1), deselected(), line(2)]);
+    const { lastAgent } = await loadEventLog();
+
+    expect(await lastAgent('s1')).toBeNull();
+  });
+
+  it('prefers a selection made after a deselection', async () => {
+    writeLog('s1', [selected('first'), deselected(), line(1), selected('second')]);
+    const { lastAgent } = await loadEventLog();
+
+    expect((await lastAgent('s1'))?.name).toBe('second');
+  });
+
+  it('ignores a selection event that names no agent', async () => {
+    writeLog('s1', [selected('deep-audit'), JSON.stringify({ type: 'subagent.selected', data: {} })]);
+    const { lastAgent } = await loadEventLog();
+
+    expect((await lastAgent('s1'))?.name).toBe('deep-audit');
+  });
+
+  it('finds a selection buried behind a lot of events', async () => {
+    const filler = Array.from({ length: 4000 }, (_, index) => line(index));
+    writeLog('s1', [...filler, selected('deep-audit'), ...filler]);
+    const { lastAgent } = await loadEventLog();
+
+    expect((await lastAgent('s1'))?.name).toBe('deep-audit');
+  });
+
+  // The second read of the opening, which is reachable only for a log too long for the tail
+  // scan to reach the selection. Fat lines rather than many, so the file passes the 32 MB
+  // ceiling without the cost of parsing a million of them.
+  it('reads the opening when the tail is too long to scan to the selection', async () => {
+    const fat = JSON.stringify({ type: 'user.message', data: { content: 'x'.repeat(5000) } });
+    const dir = join(home, 'session-state', 'huge');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'events.jsonl'), `${selected('deep-audit')}\n${`${fat}\n`.repeat(6800)}`);
+
+    const { lastAgent } = await loadEventLog();
+    expect((await lastAgent('huge'))?.name).toBe('deep-audit');
+  }, 30_000);
+});

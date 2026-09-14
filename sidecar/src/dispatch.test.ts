@@ -13,7 +13,11 @@ vi.mock('./sessionIndex.js', () => ({
   findSessions: vi.fn(() => [{ sessionId: 'warm' }]),
   existingSessions: vi.fn((ids: string[]) => ids.slice(0, 1)),
 }));
-vi.mock('./eventLog.js', () => ({ lastModel: vi.fn(async () => null), readTranscript: vi.fn(() => ({ events: [] })) }));
+vi.mock('./eventLog.js', () => ({
+  lastAgent: vi.fn(async () => ({ name: 'deep-audit', displayName: 'Deep Audit' })),
+  lastModel: vi.fn(async () => null),
+  readTranscript: vi.fn(() => ({ events: [] })),
+}));
 vi.mock('./git.js', () => ({ treeStateOf: vi.fn(async () => null) }));
 vi.mock('./images.js', () => ({ previewImage: vi.fn(() => null) }));
 vi.mock('./pastes.js', () => ({ stashPaste: vi.fn(() => 'C:\\stashed.png') }));
@@ -142,5 +146,49 @@ describe('what the sidecar answers', () => {
     await bare['commands.list'](undefined as never);
 
     expect(commands).toHaveBeenCalledWith(undefined);
+  });
+
+  /** Browsing agents outside any session sends nothing at all, for the same reason. */
+  it('asks for agents without a directory when none was named', async () => {
+    const agents = vi.fn(async () => []);
+    const bare = createHandlers({ ...runtime, agents } as unknown as SessionRuntime);
+
+    await bare['agents.list'](undefined as never);
+
+    expect(agents).toHaveBeenCalledWith(undefined);
+  });
+
+  it('passes a working directory on, so a project\u2019s own agents are found', async () => {
+    const agents = vi.fn(async () => []);
+    const bare = createHandlers({ ...runtime, agents } as unknown as SessionRuntime);
+
+    await bare['agents.list']({ cwd: 'C:\\repo' });
+
+    expect(agents).toHaveBeenCalledWith('C:\\repo');
+  });
+
+  it('reads the current agent from the log rather than the session', async () => {
+    const { agent } = await handlers['agents.current']({ sessionId: 'cold' });
+
+    expect(agent).toEqual({ name: 'deep-audit', displayName: 'Deep Audit' });
+  });
+
+  it('selects an agent by name', async () => {
+    const selectAgent = vi.fn(async () => undefined);
+    const bare = createHandlers({ ...runtime, selectAgent } as unknown as SessionRuntime);
+
+    await bare['agents.select']({ sessionId: 's1', name: 'deep-audit' });
+
+    expect(selectAgent).toHaveBeenCalledWith('s1', 'deep-audit');
+  });
+
+  /** Deselecting is the same call with nothing chosen, which is what keeps the two in step. */
+  it('deselects by asking for no agent at all', async () => {
+    const selectAgent = vi.fn(async () => undefined);
+    const bare = createHandlers({ ...runtime, selectAgent } as unknown as SessionRuntime);
+
+    await bare['agents.deselect']({ sessionId: 's1' });
+
+    expect(selectAgent).toHaveBeenCalledWith('s1', null);
   });
 });

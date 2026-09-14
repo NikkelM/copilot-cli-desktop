@@ -307,6 +307,44 @@ export interface SlashCommand {
 }
 
 /**
+ * A custom agent the runtime found.
+ *
+ * Narrowed from the runtime's `AgentInfo`, which also carries the agent's entire prompt, its
+ * tool list and its MCP servers. A list of agents to choose between needs none of those, and
+ * a prompt is not small, so they are dropped here rather than carried across the wire to be
+ * ignored at the other end.
+ */
+export interface AgentSummary {
+  /** Stable id, with any plugin namespace normalised into it. */
+  id: string;
+  /** The name `select` is given, which is not always the name shown. */
+  name: string;
+  displayName: string;
+  description: string;
+  /** Where it was found: the reader's own directory, a project, or a named plugin. */
+  source: string;
+  /** The file it was read from, for agents that came from one. */
+  path?: string;
+  /** The model it pins itself to, for the agents that name one. */
+  model?: string;
+  /** Whether the reader may choose it, as against it only being spawned by other agents. */
+  userInvocable: boolean;
+}
+
+/**
+ * The custom agent a session is on.
+ *
+ * Two fields rather than an `AgentSummary` because this can be answered from the session's
+ * own log, and the log records only what was chosen - the name and how to show it. Anything
+ * more would mean matching it back to a discovered agent, which is the caller's to do if it
+ * wants it, and would fail for an agent whose file has since been deleted.
+ */
+export interface SessionAgent {
+  name: string;
+  displayName: string;
+}
+
+/**
  * What invoking a command produced.
  *
  * Narrowed from the runtime's union, which has eight arms describing effects a terminal
@@ -457,6 +495,26 @@ export interface SidecarRequests {
     params: { sessionId: string; command: string; displayText?: string };
     result: { queued: boolean };
   };
+  /**
+   * The custom agents there are.
+   *
+   * Asked of the server rather than of a session, which is the point: the session surface has
+   * its own `agent.list`, and using it would mean resuming a session to find out what agents
+   * exist. Browsing should never cost what running costs.
+   *
+   * `cwd` is passed on as a project path, because a session in a repository can see agents
+   * that repository carries as well as the reader's own.
+   *
+   * Built-in agents are not among these. Only a loaded session can list those, and a cold
+   * list that quietly left some out would be worse than one that never offered them.
+   */
+  'agents.list': { params: { cwd?: string }; result: { agents: AgentSummary[] } };
+  /** The agent a session is on, or null for the default. Read from its log, so it costs no process. */
+  'agents.current': { params: { sessionId: string }; result: { agent: SessionAgent | null } };
+  /** Choose an agent for a session's next turns, resuming it if it is cold. */
+  'agents.select': { params: { sessionId: string; name: string }; result: void };
+  /** Return a session to the default agent, resuming it if it is cold. */
+  'agents.deselect': { params: { sessionId: string }; result: void };
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };

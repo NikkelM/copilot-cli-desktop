@@ -9,7 +9,12 @@
 import { existsSync } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
 
-import type { GetTranscriptResult, SessionModel, TranscriptEvent } from '../../shared/protocol.js';
+import type {
+  GetTranscriptResult,
+  SessionAgent,
+  SessionModel,
+  TranscriptEvent,
+} from '../../shared/protocol.js';
 import { sessionEventLog } from './paths.js';
 
 /** Default cap on events per read; logs reach hundreds of thousands of entries. */
@@ -144,6 +149,75 @@ export async function lastModel(sessionId: string): Promise<SessionModel | null>
   } finally {
     await file.close();
   }
+}
+
+/**
+ * The custom agent a session was last put on, read from its log.
+ *
+ * Read from both ends for the same reason `lastModel` is. A selection made recently sits near
+ * the tail, while one made when the session was created sits in its first lines and nowhere
+ * else, because `sessions.create` takes an agent and records choosing it exactly once.
+ *
+ * What this misses is a selection made in the middle of a very long session and never touched
+ * since, because both reads are bounded and being bounded is the point. The consequence is
+ * mild and self-correcting: the session reads as being on the default agent until it is
+ * loaded, at which point the runtime's own `agent.getCurrent` answers and is authoritative.
+ */
+export async function lastAgent(sessionId: string): Promise<SessionAgent | null> {
+  const path = sessionEventLog(sessionId);
+  if (!existsSync(path)) return null;
+
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    if (size === 0) return null;
+
+    let window = Math.min(INITIAL_WINDOW, size);
+
+    for (;;) {
+      const start = Math.max(0, size - window);
+      const reachedStart = start === 0;
+
+      const found = latestAgentIn(await eventsIn(file, start, size, reachedStart));
+      if (found) return found.agent;
+
+      // Reaching the start means the whole log has been read and there is nothing to find,
+      // so the opening is not worth reading again.
+      if (reachedStart) return null;
+      if (window >= MAX_WINDOW) break;
+
+      window = Math.min(window * GROWTH_FACTOR, size, MAX_WINDOW);
+    }
+
+    return latestAgentIn(await eventsIn(file, 0, Math.min(INITIAL_WINDOW, size), true))?.agent ?? null;
+  } finally {
+    await file.close();
+  }
+}
+
+/**
+ * What a slice of the log says a session's agent is, the newest mention winning.
+ *
+ * Wrapped rather than returned bare because being deselected is an answer. It means the
+ * default agent, which is a different thing from the slice having nothing to say; without the
+ * distinction a deselection would read as a miss and the search would carry on past the very
+ * event that settled it, to an older selection that has since been undone.
+ */
+function latestAgentIn(events: TranscriptEvent[]): { agent: SessionAgent | null } | null {
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index];
+
+    if (event.type === 'subagent.deselected') return { agent: null };
+    if (event.type !== 'subagent.selected') continue;
+
+    const data = (event.data ?? {}) as Record<string, unknown>;
+    const name = textOf(data.agentName);
+    if (!name) continue;
+
+    return { agent: { name, displayName: textOf(data.agentDisplayName) ?? name } };
+  }
+
+  return null;
 }
 
 /**

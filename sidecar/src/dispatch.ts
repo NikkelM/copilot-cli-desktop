@@ -7,7 +7,7 @@
  */
 import type { JsonRpcRequest, SidecarHandlers } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
-import { lastModel, readTranscript } from './eventLog.js';
+import { lastAgent, lastModel, readTranscript } from './eventLog.js';
 import { treeStateOf } from './git.js';
 import { previewImage } from './images.js';
 import { stashPaste } from './pastes.js';
@@ -85,6 +85,16 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     }),
 
     'sessions.queue': async ({ sessionId }) => ({ items: await runtime.queue(sessionId) }),
+
+    // Params are read defensively for the same reason `commands.list` reads them that way:
+    // a caller browsing agents outside any session has nothing to say and may send nothing.
+    'agents.list': async (params) => ({ agents: await runtime.agents(params?.cwd) }),
+
+    'agents.current': async ({ sessionId }) => ({ agent: await lastAgent(sessionId) }),
+
+    'agents.select': ({ sessionId, name }) => runtime.selectAgent(sessionId, name),
+
+    'agents.deselect': ({ sessionId }) => runtime.selectAgent(sessionId, null),
 
     'sessions.model': async ({ sessionId }) => ({ current: await lastModel(sessionId) }),
 
