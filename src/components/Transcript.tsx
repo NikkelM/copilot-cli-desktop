@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
@@ -227,10 +227,16 @@ export function Transcript({
   onLoadOlder,
   reasoning,
 }: TranscriptProps) {
-  const all = toEntries(events, cwd, abandoned);
+  // Rebuilt only when the events are, rather than on every render: a streamed reply
+  // re-renders this component once per chunk, and the walk costs more the more history is
+  // on screen.
+  const all = useMemo(() => toEntries(events, cwd, abandoned), [events, cwd, abandoned]);
   // Dropped rather than hidden with CSS: thinking is usually longer than the answer it
   // produced, and the point of turning it off is to stop paying to lay it out.
-  const entries = reasoning ? all : all.filter((entry) => entry.kind !== 'reasoning');
+  const entries = useMemo(
+    () => (reasoning ? all : all.filter((entry) => entry.kind !== 'reasoning')),
+    [all, reasoning],
+  );
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
   /** Scroll height before older events were prepended, so the view can be held still. */
@@ -298,9 +304,7 @@ export function Transcript({
         {loadingOlder ? 'Loading earlier messages…' : hasOlder ? 'Scroll up for earlier messages' : 'Start of session'}
       </li>
       {entries.map((entry) => (
-        <li key={entry.key} className={entry.kind === 'tool' ? 'entry tool-entry' : 'entry'}>
-          <EntryRow entry={entry} />
-        </li>
+        <EntryRow key={entry.key} entry={entry} />
       ))}
     </ol>
   );
@@ -313,30 +317,42 @@ export function Transcript({
  * object and nothing is reference-equal. Without this, a single streamed event re-renders
  * the whole transcript, and the cost of receiving one grows with how much history is on
  * screen - measured at 2000 rows, it was several times the cost at 200.
+ *
+ * The list item is inside the boundary rather than around it. Outside, React reconciled
+ * every one of them for each chunk of a streamed reply, which is the cost this exists to
+ * avoid.
  */
 const EntryRow = memo(
   function EntryRow({ entry }: { entry: Entry }) {
-    if (entry.kind === 'tool') return <ToolRow entry={entry} />;
-    if (entry.kind === 'reasoning') return <ReasoningRow entry={entry} />;
-    // Not markdown: the app wrote this line, and it belongs to the transcript rather than
-    // to anyone in the conversation.
-    if (entry.variant === 'stopped') return <p className="message stopped">{entry.body}</p>;
-
     return (
-      <div className={`message ${entry.variant}`}>
-        <div className="message-meta">
-          {/* The whole reply, since selecting a long one by hand is not really possible. */}
-          {entry.variant === 'assistant' && <CopyButton text={entry.body} what="reply" />}
-          {/* Coarse on the face of it, exact on hover: "2h ago" covers an hour of moments. */}
-          {entry.at && <Said at={entry.at} />}
-        </div>
-        {entry.preformatted ? (
-          <pre className="plain">{entry.body}</pre>
-        ) : (
-          <Markdown body={entry.body} anchor={entry.key} streaming={entry.streaming} />
-        )}
-      </div>
+      <li className={entry.kind === 'tool' ? 'entry tool-entry' : 'entry'}>
+        <EntryBody entry={entry} />
+      </li>
     );
   },
   (before, after) => sameEntry(before.entry, after.entry),
 );
+
+function EntryBody({ entry }: { entry: Entry }) {
+  if (entry.kind === 'tool') return <ToolRow entry={entry} />;
+  if (entry.kind === 'reasoning') return <ReasoningRow entry={entry} />;
+  // Not markdown: the app wrote this line, and it belongs to the transcript rather than
+  // to anyone in the conversation.
+  if (entry.variant === 'stopped') return <p className="message stopped">{entry.body}</p>;
+
+  return (
+    <div className={`message ${entry.variant}`}>
+      <div className="message-meta">
+        {/* The whole reply, since selecting a long one by hand is not really possible. */}
+        {entry.variant === 'assistant' && <CopyButton text={entry.body} what="reply" />}
+        {/* Coarse on the face of it, exact on hover: "2h ago" covers an hour of moments. */}
+        {entry.at && <Said at={entry.at} />}
+      </div>
+      {entry.preformatted ? (
+        <pre className="plain">{entry.body}</pre>
+      ) : (
+        <Markdown body={entry.body} anchor={entry.key} streaming={entry.streaming} />
+      )}
+    </div>
+  );
+}
