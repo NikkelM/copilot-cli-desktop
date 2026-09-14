@@ -5,18 +5,60 @@ import { appendLive, intentOf, timelineOf, type TimelineEvent } from './timeline
 const intended = (intent: unknown): TimelineEvent =>
   ({ type: 'assistant.intent', data: { intent } }) as unknown as TimelineEvent;
 
+const requesting = (...summaries: unknown[]): TimelineEvent =>
+  ({
+    type: 'assistant.message',
+    data: { toolRequests: summaries.map((intentionSummary) => ({ intentionSummary })) },
+  }) as unknown as TimelineEvent;
+
 describe('intentOf', () => {
   it('reads what the agent says it is doing', () => {
     expect(intentOf(intended('Reading the runtime'))).toBe('Reading the runtime');
   });
 
-  // Nothing else on the stream describes the current activity, so a near miss is not one.
+  // The description the agent writes for a tool call is what keeps the line moving, since
+  // it writes one per call rather than one per turn.
+  it('reads the description of a tool the agent is about to run', () => {
+    expect(intentOf(requesting('List project directories'))).toBe('List project directories');
+  });
+
+  // A message can ask for several tools at once, and the last is the one being started.
+  it('prefers the last of several tools requested together', () => {
+    expect(intentOf(requesting('Read the config', 'Count the files'))).toBe('Count the files');
+  });
+
+  it('skips back past a tool that was requested without a description', () => {
+    expect(intentOf(requesting('Read the config', '  '))).toBe('Read the config');
+  });
+
+  it('says nothing for a message that requests no tools', () => {
+    expect(intentOf(requesting())).toBeNull();
+    expect(intentOf({ type: 'assistant.message', data: {} } as unknown as TimelineEvent)).toBeNull();
+  });
+
+  // Anything list-shaped but not a list, standing in for a payload that changed under us.
+  it('says nothing for tool requests that are not a list', () => {
+    const arrayLike = { length: 1, 0: { intentionSummary: 'Not a real request' } };
+    expect(
+      intentOf({ type: 'assistant.message', data: { toolRequests: arrayLike } } as unknown as TimelineEvent),
+    ).toBeNull();
+  });
+
+  // Nothing else on the stream describes the current activity, so a near miss is not one:
+  // another event carrying the same shape is still another event.
   it('ignores any other event', () => {
-    expect(intentOf({ type: 'assistant.message', data: { intent: 'nope' } } as unknown as TimelineEvent)).toBeNull();
+    expect(intentOf({ type: 'assistant.turn_start', data: { intent: 'nope' } } as unknown as TimelineEvent)).toBeNull();
+    expect(
+      intentOf({
+        type: 'assistant.turn_start',
+        data: { toolRequests: [{ intentionSummary: 'nope' }] },
+      } as unknown as TimelineEvent),
+    ).toBeNull();
   });
 
   it('trims what it is given', () => {
     expect(intentOf(intended('  Running the tests\n'))).toBe('Running the tests');
+    expect(intentOf(requesting('  Counting the files\n'))).toBe('Counting the files');
   });
 
   // An empty description is the same as none: the line falls back to "Working" rather than
@@ -28,6 +70,8 @@ describe('intentOf', () => {
   it('survives a description that is not text', () => {
     expect(intentOf(intended(42))).toBeNull();
     expect(intentOf(intended(undefined))).toBeNull();
+    expect(intentOf(requesting(42))).toBeNull();
+    expect(intentOf({ type: 'assistant.message', data: { toolRequests: [null] } } as unknown as TimelineEvent)).toBeNull();
   });
 });
 

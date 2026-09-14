@@ -8,18 +8,39 @@ export function contentOf(event: TranscriptEvent): string | null {
   return typeof data?.content === 'string' ? data.content : null;
 }
 
+/** Text worth showing, or nothing: whitespace and non-strings both count as nothing said. */
+function trimmed(value: unknown): string | null {
+  const said = typeof value === 'string' ? value.trim() : '';
+  return said || null;
+}
+
 /**
  * What the agent says it is currently doing, for the status line under the composer.
  *
- * Trimmed, and an empty description counts as having said nothing: the line falls back to
- * "Working" rather than collapsing to a bare spinner with a gap where words should be.
+ * Two sources, because the runtime has two. `assistant.intent` is the agent describing its
+ * own activity, which it does rarely. The one that actually keeps the line moving is the
+ * description attached to each tool call: the agent writes one per call, so it changes
+ * several times a turn and says something specific about the work rather than about the
+ * turn. That is what the CLI shows beside its spinner.
+ *
+ * A message can request several tools at once, and the last one is the one being started.
  */
 export function intentOf(event: TranscriptEvent): string | null {
-  if (event.type !== 'assistant.intent') return null;
+  if (event.type === 'assistant.intent') {
+    return trimmed((event.data as { intent?: unknown } | null)?.intent);
+  }
 
-  const data = event.data as { intent?: unknown } | null;
-  const said = typeof data?.intent === 'string' ? data.intent.trim() : '';
-  return said || null;
+  if (event.type !== 'assistant.message') return null;
+
+  const requests = (event.data as { toolRequests?: unknown } | null)?.toolRequests;
+  if (!Array.isArray(requests)) return null;
+
+  for (let index = requests.length - 1; index >= 0; index--) {
+    const said = trimmed((requests[index] as { intentionSummary?: unknown } | null)?.intentionSummary);
+    if (said) return said;
+  }
+
+  return null;
 }
 
 function messageIdOf(event: TranscriptEvent): string | null {
