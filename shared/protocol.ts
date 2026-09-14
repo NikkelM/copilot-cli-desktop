@@ -709,6 +709,23 @@ export interface SidecarRequests {
     params: { sessionId: string; model: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier };
     result: void;
   };
+  /**
+   * How a session is working. Read from the log when it is not loaded, so asking is cheap.
+   *
+   * Always an answer rather than null: a session with nothing to say about its mode is in
+   * the one it opened in, which is `interactive`.
+   */
+  'sessions.mode': { params: { sessionId: string }; result: { mode: SessionMode } };
+  /**
+   * Puts a session into a mode, answering with the one the runtime actually applied.
+   *
+   * The notice is the runtime's own prose about the switch, which is worth passing on
+   * mainly because entering plan mode can change the model the session runs on.
+   */
+  'sessions.setMode': {
+    params: { sessionId: string; mode: SessionMode };
+    result: { mode: SessionMode; notice?: string };
+  };
   'runtime.status': { params: void; result: RuntimeStatus };
   /** Writes a pasted file beside the session's record, since a message can only carry a path. */
   'attachments.stash': { params: StashParams; result: { path: string } };

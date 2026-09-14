@@ -5,10 +5,23 @@ import type { CopilotSession, ExitPlanModeRequest, ExitPlanModeResult } from '@g
 import { copilotHome } from './paths.js';
 import { SessionRuntime, type RuntimeOptions } from './runtime.js';
 
+/**
+ * The one reader a cold session's mode comes from, stubbed so a test can put a session's log
+ * into a mode without a fixture directory. Everything else in the module is the real thing.
+ */
+const { lastMode } = vi.hoisted(() => ({ lastMode: vi.fn(async () => 'interactive') }));
+vi.mock('./eventLog.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  lastMode,
+}));
+
 /** Tied to the SDK's own signature so a shape change fails the build rather than the fake. */
 type ContextAttribution = Awaited<ReturnType<CopilotSession['rpc']['metadata']['getContextAttribution']>>;
 /** The same, for the command result whose `mode` follow-up was being dropped (#167). */
 type InvokeResult = Awaited<ReturnType<CopilotSession['rpc']['commands']['invoke']>>;
+/** And for the two halves of the mode surface, which report more than the mode itself. */
+type ModeGetResult = Awaited<ReturnType<CopilotSession['rpc']['mode']['get']>>;
+type ModeSetResult = Awaited<ReturnType<CopilotSession['rpc']['mode']['set']>>;
 
 /**
  * A stand-in for a resumed session.
@@ -55,8 +68,10 @@ function makeSession(id: string) {
         invoke: vi.fn(async (_params: { name: string; input?: string }): Promise<InvokeResult> => ({ kind: 'completed' })),
       },
       mode: {
-        get: vi.fn(async () => 'interactive' as const),
-        set: vi.fn(async (_params: { mode: string }) => ({ status: 'unchanged', modelChanged: false })),
+        get: vi.fn(async (): Promise<ModeGetResult> => 'interactive'),
+        set: vi.fn(
+          async (_params: { mode: string }): Promise<ModeSetResult> => ({ status: 'unchanged', modelChanged: false }),
+        ),
       },
       agent: {
         select: vi.fn(async (_params: { name: string }) => ({})),
@@ -1031,29 +1046,33 @@ describe('how full a session window is', () => {
 /**
  * A command that reports a mode is asking the host to apply it.
  *
- * `/plan` and `/autopilot` are runtime commands, so they reach the session and return
- * `completed` - but the switch itself is the host's to perform. Dropping it made both
- * commands run, report success and change nothing, which is indistinguishable from a
+ * `/autopilot` and `/interactive` are runtime commands, so they reach the session and
+ * return `completed` - but the switch itself is the host's to perform. Dropping it made
+ * both commands run, report success and change nothing, which is indistinguishable from a
  * command this app does not support except that it does not say so (#167).
+ *
+ * `/plan` is deliberately not the example here. Despite the name it reports no mode: it is
+ * a prompt command that prefixes the message with `[[PLAN]]` and has the agent write a
+ * plan.md. Plan mode is entered through `setMode`, not through it.
  */
 describe('a command that changes the mode', () => {
   it('applies the mode the command asked for', async () => {
     const { runtime, sessions } = makeRuntime();
     await runtime.send('s1', 'x');
     const session = sessions.get('s1')!;
-    session.rpc.commands.invoke.mockResolvedValueOnce({ kind: 'completed', mode: 'plan' });
+    session.rpc.commands.invoke.mockResolvedValueOnce({ kind: 'completed', mode: 'autopilot' });
 
-    await runtime.invoke('s1', 'plan');
+    await runtime.invoke('s1', 'autopilot');
 
-    expect(session.rpc.mode.set).toHaveBeenCalledWith({ mode: 'plan' });
+    expect(session.rpc.mode.set).toHaveBeenCalledWith({ mode: 'autopilot' });
   });
 
   it('reports the mode back, so the switch is not silent', async () => {
     const { runtime, sessions } = makeRuntime();
     await runtime.send('s1', 'x');
-    sessions.get('s1')!.rpc.commands.invoke.mockResolvedValueOnce({ kind: 'completed', mode: 'autopilot' });
+    sessions.get('s1')!.rpc.commands.invoke.mockResolvedValueOnce({ kind: 'completed', mode: 'interactive' });
 
-    expect(await runtime.invoke('s1', 'autopilot')).toEqual({ kind: 'done', mode: 'autopilot' });
+    expect(await runtime.invoke('s1', 'interactive')).toEqual({ kind: 'done', mode: 'interactive' });
   });
 
   // Most commands complete without touching the mode, and switching to a default would put
@@ -1066,6 +1085,92 @@ describe('a command that changes the mode', () => {
 
     expect(await runtime.invoke('s1', 'compact')).toEqual({ kind: 'done', message: 'done' });
     expect(session.rpc.mode.set).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The mode a session is in, which the sidebar wants for every session it lists.
+ *
+ * Split by whether the session is loaded, because the two answers come from different
+ * places for a reason: a cold session is read from its log so that labelling the list does
+ * not resume anything, which is the cost this app exists to avoid.
+ */
+describe('the mode a session is in', () => {
+  it('asks a loaded session, which holds the truth', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    sessions.get('s1')!.rpc.mode.get.mockResolvedValueOnce('autopilot');
+
+    expect(await runtime.mode('s1')).toBe('autopilot');
+  });
+
+  // The whole point: the sidebar asks about every session it draws.
+  it('does not load a cold session to ask', async () => {
+    const { runtime, sessions } = makeRuntime();
+    lastMode.mockResolvedValueOnce('plan');
+
+    expect(await runtime.mode('cold')).toBe('plan');
+    expect(sessions.size).toBe(0);
+  });
+
+  it('applies a mode the reader chose', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+
+    await runtime.setMode('s1', 'plan');
+
+    expect(sessions.get('s1')!.rpc.mode.set).toHaveBeenCalledWith({ mode: 'plan' });
+  });
+
+  /**
+   * A switch can be refused, or held up waiting on a confirmation this app does not answer.
+   * Echoing the request back would leave the reader looking at a mode the session is not in,
+   * so the mode is read back rather than assumed.
+   */
+  it('answers with the mode that took, not the one asked for', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    sessions.get('s1')!.rpc.mode.get.mockResolvedValueOnce('interactive');
+
+    expect(await runtime.setMode('s1', 'plan')).toEqual({ mode: 'interactive' });
+  });
+
+  // Entering plan mode can switch the model, which is not something to discover later.
+  it('passes on what the runtime said about the switch', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    sessions
+      .get('s1')!
+      .rpc.mode.set.mockResolvedValueOnce({ status: 'changed', modelChanged: true, message: 'Plan model set\u001B[0m' });
+
+    expect(await runtime.setMode('s1', 'plan')).toEqual({ mode: 'interactive', notice: 'Plan model set' });
+  });
+
+  // A warning is the more urgent of the two, so it is the one that gets shown.
+  it('prefers a warning to a message', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    sessions
+      .get('s1')!
+      .rpc.mode.set.mockResolvedValueOnce({ status: 'changed', modelChanged: false, warning: 'careful', message: 'fine' });
+
+    expect((await runtime.setMode('s1', 'plan')).notice).toBe('careful');
+  });
+
+  it('says nothing when the runtime had nothing to say', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.send('s1', 'x');
+
+    expect(await runtime.setMode('s1', 'plan')).toEqual({ mode: 'interactive' });
+  });
+
+  // Unlike asking, choosing a mode is something the reader did on purpose.
+  it('resumes a cold session to change its mode', async () => {
+    const { runtime, sessions } = makeRuntime();
+
+    await runtime.setMode('cold', 'plan');
+
+    expect(sessions.get('cold')!.rpc.mode.set).toHaveBeenCalledWith({ mode: 'plan' });
   });
 });
 

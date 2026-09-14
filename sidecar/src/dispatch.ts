@@ -112,6 +112,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.setModel': ({ sessionId, model, reasoningEffort, contextTier }) =>
       runtime.setModel(sessionId, model, reasoningEffort, contextTier),
+    'sessions.mode': async ({ sessionId }) => ({ mode: await runtime.mode(sessionId) }),
+    'sessions.setMode': ({ sessionId, mode }) => runtime.setMode(sessionId, mode),
 
     'git.state': async ({ cwd }) => ({ state: await treeStateOf(cwd) }),
 

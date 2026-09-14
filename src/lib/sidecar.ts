@@ -31,6 +31,7 @@ import type {
   SessionAgent,
   SessionContextUsage,
   SessionModel,
+  SessionMode,
   ShellResult,
   QueuedItem,
   SidecarMethod,
@@ -160,6 +161,20 @@ export function setSessionModel(
   contextTier?: ContextTier,
 ): Promise<void> {
   return request('sessions.setModel', { sessionId, model, reasoningEffort, contextTier });
+}
+
+/** How a session is working, read from its log when it is cold. Costs no Copilot process. */
+export async function sessionMode(sessionId: string): Promise<SessionMode> {
+  const { mode } = await request('sessions.mode', { sessionId });
+  return mode;
+}
+
+/** Put a session into a mode, answering with the one that took. Resumes it if it is cold. */
+export function setSessionMode(
+  sessionId: string,
+  mode: SessionMode,
+): Promise<{ mode: SessionMode; notice?: string }> {
+  return request('sessions.setMode', { sessionId, mode });
 }
 
 /**

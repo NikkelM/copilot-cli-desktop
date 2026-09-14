@@ -26,6 +26,7 @@ import type {
   QueuedItem,
   SessionContextUsage,
   SessionEnvironment,
+  SessionMode,
   SlashCommand,
 } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
@@ -33,6 +34,7 @@ import { join } from 'node:path';
 
 import { copilotHome, resolveCliPath } from './paths.js';
 import { stripAnsi } from '../../shared/ansi.js';
+import { lastMode } from './eventLog.js';
 
 import { PendingRequests } from './pending.js';
 import { disabledSkills, setSkillDisabled } from './skills.js';
@@ -1121,11 +1123,15 @@ export class SessionRuntime {
         };
 
       case 'completed': {
-        // `/plan` and `/autopilot` do not switch the mode themselves. They report the mode
-        // the host is then to apply, and dropping that meant both commands ran, reported
-        // themselves completed, and left the session in the mode it started in - a command
-        // that silently did nothing, which is the one outcome the default branch below
-        // exists to avoid (#167).
+        // `/autopilot` and `/interactive` do not switch the mode themselves. They report
+        // the mode the host is then to apply, and dropping that meant both commands ran,
+        // reported themselves completed, and left the session in the mode it started in -
+        // a command that silently did nothing, which is the one outcome the default branch
+        // below exists to avoid (#167).
+        //
+        // `/plan` is not one of these, whatever its name suggests: it is a prompt command
+        // that prefixes the message with `[[PLAN]]` and has the agent write a plan.md. It
+        // reports no mode and never enters plan mode.
         if (result.mode) await session.rpc.mode.set({ mode: result.mode });
 
         return {
@@ -1146,6 +1152,47 @@ export class SessionRuntime {
       default:
         return { kind: 'unsupported', what: result.kind };
     }
+  }
+
+  /**
+   * How a session is working, without loading it to find out.
+   *
+   * A loaded session is asked, since it holds the truth; a cold one is read from its log,
+   * which is what keeps the sidebar from resuming every session just to label it. The two
+   * can disagree only while a change is in flight, and the runtime's answer wins as soon
+   * as the session is loaded.
+   */
+  async mode(sessionId: string): Promise<SessionMode> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return lastMode(sessionId);
+
+    return live.rpc.mode.get();
+  }
+
+  /**
+   * Put a session into a mode, from its next message onwards.
+   *
+   * Costs a resume, because a mode belongs to the running session rather than to anything
+   * on disk. That is the same price as sending to it, and unlike the sidebar's labelling
+   * this is something the reader asked for outright.
+   *
+   * The mode is read back rather than assumed: a switch can be refused, or be held up
+   * waiting on a confirmation this app does not yet answer, and reporting the request as
+   * though it took would leave the reader looking at a mode the session is not in.
+   *
+   * Switching can also change the model, since plan mode can have one of its own. The
+   * runtime says so in prose, which is passed on rather than dropped - a model changing
+   * underneath the reader is not something to discover later.
+   */
+  async setMode(sessionId: string, mode: SessionMode): Promise<{ mode: SessionMode; notice?: string }> {
+    const session = await this.ensureSession(sessionId);
+    const result = await session.rpc.mode.set({ mode });
+
+    const notice = result.warning ?? result.message;
+    return {
+      mode: await session.rpc.mode.get(),
+      ...(notice ? { notice: stripAnsi(notice) } : {}),
+    };
   }
 
   /**

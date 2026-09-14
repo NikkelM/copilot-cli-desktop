@@ -44,6 +44,8 @@ function Host({
       history={history}
       commands={[]}
       onCommandsNeeded={() => {}}
+      mode="interactive"
+      onCycleMode={() => {}}
     />
   );
 }
@@ -75,6 +77,8 @@ function bare(props: Partial<Parameters<typeof Composer>[0]> = {}) {
       history={[]}
       commands={[]}
       onCommandsNeeded={() => {}}
+      mode="interactive"
+      onCycleMode={() => {}}
       {...props}
     />,
   );
@@ -109,6 +113,8 @@ describe('Composer', () => {
         history={[]}
         commands={[]}
         onCommandsNeeded={() => {}}
+      mode="interactive"
+      onCycleMode={() => {}}
       />,
     );
     expect(document.activeElement).toBe(box());
@@ -223,6 +229,8 @@ describe('the slash command menu', () => {
           history={[]}
           commands={COMMANDS}
           onCommandsNeeded={() => {}}
+      mode="interactive"
+      onCycleMode={() => {}}
           {...props}
         />
       );
@@ -350,6 +358,8 @@ describe('while a cold session wakes', () => {
         history={[]}
         commands={[]}
         onCommandsNeeded={() => {}}
+      mode="interactive"
+      onCycleMode={() => {}}
         {...props}
       />,
     );
@@ -409,6 +419,8 @@ describe('the waking state belongs to one session', () => {
         history={[]}
         commands={[]}
         onCommandsNeeded={() => {}}
+      mode="interactive"
+      onCycleMode={() => {}}
       />,
     );
 
@@ -819,5 +831,86 @@ describe('searching back through what was sent', () => {
     await view.user.keyboard('{Control>}r{/Control}');
 
     expect(row()).toBeNull();
+  });
+});
+
+/**
+ * The mode the session is working in, which the CLI puts by the prompt and cycles with
+ * Shift+Tab. The indicator is the only sign the shortcut exists, so it is also the button.
+ */
+describe('the mode indicator', () => {
+  const indicator = () => screen.getByRole('button', { name: /^Mode:/ });
+
+  it('says which mode the session is in', () => {
+    bare({ mode: 'plan' });
+
+    expect(indicator().textContent).toBe('plan');
+  });
+
+  it('marks the mode on the element, so the colour can follow it', () => {
+    bare({ mode: 'autopilot' });
+
+    expect(indicator().className).toContain('mode-autopilot');
+  });
+
+  // The shell badge above the box already owned `composer-mode`, and reusing the name here
+  // put the pill's padding and colours on the badge instead.
+  it('does not wear the shell badge class', () => {
+    bare({ value: '!ls' });
+
+    expect(screen.getByTitle('Escape leaves shell mode').className).toBe('composer-mode');
+    expect(indicator().className.split(' ')).not.toContain('composer-mode');
+  });
+
+  it('cycles on Shift+Tab', async () => {
+    const onCycleMode = vi.fn();
+    const { user } = bare({ onCycleMode });
+
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+
+    expect(onCycleMode).toHaveBeenCalledTimes(1);
+  });
+
+  // Shift+Tab is the browser's own "focus the previous thing", and losing the box mid-message
+  // to change the mode would be a poor trade.
+  it('keeps the caret in the box', async () => {
+    const { user } = bare();
+
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+
+    expect(document.activeElement).toBe(box());
+  });
+
+  // Whoever never finds the shortcut should still be able to change the mode.
+  it('cycles when clicked', async () => {
+    const onCycleMode = vi.fn();
+    const { user } = bare({ onCycleMode });
+
+    await user.click(indicator());
+
+    expect(onCycleMode).toHaveBeenCalledTimes(1);
+  });
+
+  // Plain Tab belongs to the command menu, and completing a command must not also change
+  // the mode out from under the message being written.
+  it('leaves plain Tab alone', async () => {
+    const onCycleMode = vi.fn();
+    const { user } = bare({ onCycleMode });
+
+    await user.keyboard('{Tab}');
+
+    expect(onCycleMode).not.toHaveBeenCalled();
+  });
+
+  // Shift+Tab means the same thing wherever the caret is, including mid-message.
+  it('cycles without sending what is being written', async () => {
+    const onCycleMode = vi.fn();
+    const onSend = vi.fn();
+    const { user } = bare({ onCycleMode, onSend, value: 'half a thought' });
+
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+
+    expect(onCycleMode).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
   });
 });

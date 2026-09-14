@@ -13,6 +13,7 @@ import type {
   GetTranscriptResult,
   SessionAgent,
   SessionModel,
+  SessionMode,
   TranscriptEvent,
 } from '../../shared/protocol.js';
 import { sessionEventLog } from './paths.js';
@@ -215,6 +216,63 @@ function latestAgentIn(events: TranscriptEvent[]): { agent: SessionAgent | null 
     if (!name) continue;
 
     return { agent: { name, displayName: textOf(data.agentDisplayName) ?? name } };
+  }
+
+  return null;
+}
+
+/**
+ * How a session was last working, read from its log.
+ *
+ * A bounded tail read, and only the tail: a session opens in `interactive` and records
+ * nothing to say so, so unlike a model there is no opening line to fall back on. Absence
+ * really is the answer, which is why this returns a mode rather than null.
+ *
+ * Reading only the tail misses a change made early in a very long session and never
+ * touched since, and that is the same trade `lastAgent` makes for the same reason. It is
+ * cheap to be wrong about: the session reads as interactive until it is loaded, at which
+ * point `session.mode.get` answers and is authoritative.
+ *
+ * `user.message.agentMode` looks like a second source and is not. It is optional, and
+ * across every session on this machine it is never written - so trusting it would add a
+ * branch that only ever costs time.
+ */
+export async function lastMode(sessionId: string): Promise<SessionMode> {
+  const path = sessionEventLog(sessionId);
+  if (!existsSync(path)) return 'interactive';
+
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    if (size === 0) return 'interactive';
+
+    let window = Math.min(INITIAL_WINDOW, size);
+
+    for (;;) {
+      const start = Math.max(0, size - window);
+      const reachedStart = start === 0;
+
+      const found = latestModeIn(await eventsIn(file, start, size, reachedStart));
+      if (found) return found;
+
+      if (reachedStart || window >= MAX_WINDOW) return 'interactive';
+      window = Math.min(window * GROWTH_FACTOR, size, MAX_WINDOW);
+    }
+  } finally {
+    await file.close();
+  }
+}
+
+/** What a slice of the log says a session's mode is, the newest change winning. */
+function latestModeIn(events: TranscriptEvent[]): SessionMode | null {
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index];
+    if (event.type !== 'session.mode_changed') continue;
+
+    const mode = textOf((event.data as Record<string, unknown> | undefined)?.newMode);
+    // A mode this build does not know is not a reason to stop looking: an older change to
+    // one it does know still describes the session better than the default would.
+    if (mode === 'interactive' || mode === 'plan' || mode === 'autopilot') return mode;
   }
 
   return null;

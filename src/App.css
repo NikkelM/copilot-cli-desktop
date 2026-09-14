@@ -2134,6 +2134,42 @@ button.group:hover {
 }
 
 /*
+ * The mode, pushed to the left so it reads as state rather than as another action.
+ *
+ * Lowercase and unadorned in interactive, which is where a session spends most of its
+ * life and where a loud badge would just be noise. The other two earn a colour: they
+ * change what the agent will do without asking, which is worth noticing from across
+ * the room.
+ */
+.composer-agent-mode {
+  margin-right: auto;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.composer-agent-mode:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.composer-agent-mode.mode-plan {
+  border-color: #6f42c1;
+  color: #a371f7;
+}
+
+.composer-agent-mode.mode-autopilot {
+  border-color: #bb8009;
+  color: #d29922;
+}
+
+/*
  * Icon buttons: square, quiet, and the same size whichever one is showing.
  *
  * Only Send is filled. Attach and Stop are things done to the message rather than the

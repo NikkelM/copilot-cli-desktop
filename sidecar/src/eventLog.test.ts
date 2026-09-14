@@ -439,3 +439,88 @@ describe('lastAgent', () => {
     expect((await lastAgent('huge'))?.name).toBe('deep-audit');
   }, 30_000);
 });
+
+/**
+ * Unlike a model or an agent, absence is an answer here: a session opens in `interactive`
+ * and records nothing to say so, so there is no opening line to fall back on and nothing
+ * found means the default rather than "not known".
+ */
+describe('lastMode', () => {
+  const changed = (newMode: string, previousMode = 'interactive') =>
+    JSON.stringify({ type: 'session.mode_changed', data: { previousMode, newMode } });
+
+  it('says interactive for a session with no log', async () => {
+    const { lastMode } = await loadEventLog();
+    expect(await lastMode('never-run')).toBe('interactive');
+  });
+
+  it('handles an empty log', async () => {
+    writeLog('s1', []);
+    const { lastMode } = await loadEventLog();
+    expect(await lastMode('s1')).toBe('interactive');
+  });
+
+  // Which is almost every session: only one log on this machine has a mode event at all.
+  it('says interactive for a session that never changed mode', async () => {
+    writeLog('s1', [line(1), line(2), line(3)]);
+    const { lastMode } = await loadEventLog();
+
+    expect(await lastMode('s1')).toBe('interactive');
+  });
+
+  it('reads the mode a session was put into', async () => {
+    writeLog('s1', [line(1), changed('plan'), line(2)]);
+    const { lastMode } = await loadEventLog();
+
+    expect(await lastMode('s1')).toBe('plan');
+  });
+
+  it('takes the last of several changes', async () => {
+    writeLog('s1', [changed('plan'), line(1), changed('autopilot', 'plan'), line(2), changed('interactive', 'autopilot')]);
+    const { lastMode } = await loadEventLog();
+
+    expect(await lastMode('s1')).toBe('interactive');
+  });
+
+  /**
+   * A mode this build does not know is not a reason to give up: an older change to one it
+   * does know still describes the session better than the default does. `shell` is the real
+   * case - the SDK records it as an agent mode without it being a session mode.
+   */
+  it('keeps looking past a mode it does not know', async () => {
+    writeLog('s1', [changed('plan'), line(1), changed('shell', 'plan')]);
+    const { lastMode } = await loadEventLog();
+
+    expect(await lastMode('s1')).toBe('plan');
+  });
+
+  it('ignores a change event that names no mode', async () => {
+    writeLog('s1', [changed('autopilot'), JSON.stringify({ type: 'session.mode_changed', data: {} })]);
+    const { lastMode } = await loadEventLog();
+
+    expect(await lastMode('s1')).toBe('autopilot');
+  });
+
+  it('finds a change buried behind a lot of events', async () => {
+    const filler = Array.from({ length: 4000 }, (_, index) => line(index));
+    writeLog('s1', [...filler, changed('autopilot'), ...filler]);
+    const { lastMode } = await loadEventLog();
+
+    expect(await lastMode('s1')).toBe('autopilot');
+  });
+
+  /**
+   * The bounded read giving up, which is the trade this makes deliberately. Being wrong
+   * costs a label that says interactive until the session is loaded, at which point the
+   * runtime answers instead.
+   */
+  it('falls back to interactive when the change is beyond the scan', async () => {
+    const fat = JSON.stringify({ type: 'user.message', data: { content: 'x'.repeat(5000) } });
+    const dir = join(home, 'session-state', 'huge-mode');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'events.jsonl'), `${changed('autopilot')}\n${`${fat}\n`.repeat(6800)}`);
+
+    const { lastMode } = await loadEventLog();
+    expect(await lastMode('huge-mode')).toBe('interactive');
+  }, 30_000);
+});

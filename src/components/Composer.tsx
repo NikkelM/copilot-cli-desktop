@@ -6,7 +6,8 @@ import { PlusIcon, SendIcon, StopIcon } from './Icons';
 import { Menu, type MenuItem } from './Menu';
 import { commandText, completionOf, findCommand, matchCommands, typedCommand } from '../lib/slash';
 import { cycled, erased, highlighted, opened, typed as searchTyped, type Search } from '../lib/reverseSearch';
-import type { Attachment, SlashCommand } from '../../shared/protocol';
+import { MODE_LABELS } from '../lib/useMode';
+import type { Attachment, SessionMode, SlashCommand } from '../../shared/protocol';
 
 interface ComposerProps {
   disabled: boolean;
@@ -64,6 +65,10 @@ interface ComposerProps {
   commands: SlashCommand[];
   /** Called once a slash is typed, so the list can be fetched if it is not known yet. */
   onCommandsNeeded: () => void;
+  /** How the session is working, shown beside the box as the CLI shows it. */
+  mode: SessionMode;
+  /** Advance to the next mode, which Shift+Tab asks for. */
+  onCycleMode: () => void;
 }
 
 /** Where the line the caret sits on ends: the next newline, or the end of the text. */
@@ -96,6 +101,8 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
   history,
   commands,
   onCommandsNeeded,
+  mode,
+  onCycleMode,
 }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   /** The picker lives with the chips; the button that opens it lives with the buttons. */
@@ -245,6 +252,15 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
     // goes to the search rather than into the box behind it.
     if (search) {
       onSearchKey(event, search);
+      return;
+    }
+
+    // Shift+Tab cycles the mode, as it does in the CLI. Ahead of everything except the
+    // search because it means the same thing wherever the caret is, and the menu claims
+    // only plain Tab, so completing a command and changing the mode cannot be confused.
+    if (event.key === 'Tab' && event.shiftKey) {
+      event.preventDefault();
+      onCycleMode();
       return;
     }
 
@@ -507,6 +523,19 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
             one is named as well as drawn: an icon on its own says nothing to a reader who
             cannot see it, and little to one seeing it for the first time. */}
         <div className="composer-actions">
+          {/* Which mode the session is in, and the only sign that Shift+Tab does anything.
+              A button rather than a label because it is the same action by another route,
+              and a reader who never finds the shortcut should not be shut out of it. */}
+          <button
+            type="button"
+            className={`composer-agent-mode mode-${mode}`}
+            onClick={onCycleMode}
+            title={`${MODE_LABELS[mode].hint}. Shift+Tab for the next mode.`}
+            aria-label={`Mode: ${MODE_LABELS[mode].label}. Shift+Tab for the next mode.`}
+          >
+            {MODE_LABELS[mode].label}
+          </button>
+
           {/* How long this has been going, next to the button that stops it. Long work
               otherwise gives no sign of whether it is progressing or hung (#70). */}
           {busy && <Elapsed since={busySince ?? undefined} />}
