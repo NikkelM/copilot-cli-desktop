@@ -706,6 +706,8 @@ export default function App() {
               hasOlder={transcript.hasOlder}
               loadingOlder={transcript.loadingOlder}
               onLoadOlder={transcript.loadOlder}
+              extraPages={transcript.extraPages}
+              onDropOlder={transcript.dropOlder}
               reasoning={reasoning}
             />
 

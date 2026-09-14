@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-
+import type { ComponentProps } from 'react';
 import type { TranscriptEvent } from '../../shared/protocol';
 import { Transcript } from './Transcript';
 
@@ -669,5 +669,149 @@ describe('a skill in the transcript', () => {
     const { container } = skill({ name: 'build.ts', content: 'x' });
 
     expect(container.querySelector('.tool-badge')).toBeNull();
+  });
+});
+
+// Same reason the block above defines scroll metrics by hand: jsdom lays nothing out, so
+// without them the component can never tell where the reader is.
+describe('giving back history once the reader is following again', () => {
+  const VIEWPORT = 300;
+  const HEIGHT = 1000;
+  const BOTTOM = HEIGHT - VIEWPORT;
+  const DWELL = 10_000;
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  function mounted(over: Partial<ComponentProps<typeof Transcript>> = {}) {
+    const onDropOlder = vi.fn();
+    const props: ComponentProps<typeof Transcript> = {
+      events: [event('assistant.message', { content: 'hello' }, 'e1')],
+      sessionId: 's1',
+      cwd: null,
+      hasOlder: true,
+      loadingOlder: false,
+      onLoadOlder: () => {},
+      extraPages: true,
+      onDropOlder,
+      reasoning: true,
+      ...over,
+    };
+
+    const view = render(<Transcript {...props} />);
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => HEIGHT });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+
+    const scrollTo = (top: number) => {
+      list.scrollTop = top;
+      fireEvent.scroll(list);
+    };
+    const wait = (ms: number) => act(() => void vi.advanceTimersByTime(ms));
+
+    return { onDropOlder, scrollTo, wait, view, props };
+  }
+
+  it('gives it back once the view has followed the bottom for long enough', () => {
+    const t = mounted();
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+
+    expect(t.onDropOlder).toHaveBeenCalledTimes(1);
+  });
+
+  // Touching the bottom on the way past is not the same as having finished with what is above.
+  it('does not give it back to a view merely passing the bottom', () => {
+    const t = mounted();
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL / 2);
+    t.scrollTo(400);
+    t.wait(DWELL);
+
+    expect(t.onDropOlder).not.toHaveBeenCalled();
+  });
+
+  it('waits rather than acting the moment the bottom is reached', () => {
+    const t = mounted();
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL - 1);
+
+    expect(t.onDropOlder).not.toHaveBeenCalled();
+  });
+
+  // A streamed reply scrolls the view itself, which fires a scroll for every chunk. Were
+  // each to restart the wait, a reply longer than the dwell would never reach the end of it.
+  it('keeps counting through a reply that is scrolling the view itself', () => {
+    const t = mounted();
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL / 2);
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL / 2);
+
+    expect(t.onDropOlder).toHaveBeenCalledTimes(1);
+
+    // Each of those scrolls leaving a wait of its own behind would come due later.
+    t.wait(DWELL * 2);
+    expect(t.onDropOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves it alone while a page is still being fetched', () => {
+    const t = mounted({ loadingOlder: true });
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+
+    expect(t.onDropOlder).not.toHaveBeenCalled();
+  });
+
+  it('does nothing for a session that never reached back', () => {
+    const t = mounted({ extraPages: false });
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+
+    expect(t.onDropOlder).not.toHaveBeenCalled();
+  });
+
+  // The pages belong to the session that loaded them, and it is no longer on screen.
+  it('stops counting when the reader moves to another session', () => {
+    const t = mounted();
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL / 2);
+    t.view.rerender(<Transcript {...t.props} sessionId="s2" />);
+    t.wait(DWELL);
+
+    expect(t.onDropOlder).not.toHaveBeenCalled();
+  });
+
+  it('gives it back only once for one stay at the bottom', () => {
+    const t = mounted();
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL * 3);
+
+    expect(t.onDropOlder).toHaveBeenCalledTimes(1);
+  });
+
+  // The rows go from above the view, so without this the reader is left looking at
+  // whatever the removal left under their scroll position instead of the newest reply.
+  it('keeps the reader at the bottom when the rows go', () => {
+    const older = [
+      event('assistant.message', { content: 'older one' }, 'e0'),
+      event('assistant.message', { content: 'older two' }, 'e1'),
+      event('assistant.message', { content: 'newest' }, 'e2'),
+    ];
+    const t = mounted({ events: older });
+    t.scrollTo(BOTTOM);
+
+    act(() => t.view.rerender(<Transcript {...t.props} events={older.slice(-1)} />));
+
+    const list = t.view.container.querySelector('ol.transcript') as HTMLOListElement;
+    expect(list.scrollTop).toBe(list.scrollHeight);
   });
 });

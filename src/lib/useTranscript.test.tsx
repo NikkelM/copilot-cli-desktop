@@ -348,3 +348,105 @@ describe('useTranscript when there is nothing to read', () => {
     expect(result.current.loadingOlder).toBe(false);
   });
 });
+
+describe('giving back history reached by scrolling up', () => {
+  beforeEach(() => {
+    getTranscript.mockReset();
+  });
+
+  /** Opens on one page, then reaches back for two more. */
+  async function scrolledBack() {
+    getTranscript.mockResolvedValueOnce({ events: [reply('page 0', 'e0')], nextBefore: 100 });
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+
+    getTranscript.mockResolvedValueOnce({ events: [reply('page 1', 'e1')], nextBefore: 50 });
+    await act(async () => result.current.loadOlder());
+    getTranscript.mockResolvedValueOnce({ events: [reply('page 2', 'e2')], nextBefore: 20 });
+    await act(async () => result.current.loadOlder());
+
+    return result;
+  }
+
+  it('keeps only the page the session opened with', async () => {
+    const result = await scrolledBack();
+    expect(bodies(result.current.events)).toEqual(['page 2', 'page 1', 'page 0']);
+
+    act(() => result.current.dropOlder());
+
+    expect(bodies(result.current.events)).toEqual(['page 0']);
+  });
+
+  // Otherwise the next scroll up would fetch from where the discarded pages left off, and
+  // splice a run of events on top of history that no longer reaches them.
+  it('puts the cursor back to where the opening page left off', async () => {
+    const result = await scrolledBack();
+
+    act(() => result.current.dropOlder());
+
+    getTranscript.mockResolvedValueOnce({ events: [reply('page 1', 'e1')], nextBefore: 50 });
+    await act(async () => result.current.loadOlder());
+
+    expect(getTranscript).toHaveBeenLastCalledWith('s1', 150, 100);
+    expect(bodies(result.current.events)).toEqual(['page 1', 'page 0']);
+  });
+
+  it('says there is something to give back only once there is', async () => {
+    getTranscript.mockResolvedValueOnce({ events: [reply('page 0', 'e0')], nextBefore: 100 });
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+    expect(result.current.extraPages).toBe(false);
+
+    getTranscript.mockResolvedValueOnce({ events: [reply('page 1', 'e1')], nextBefore: 50 });
+    await act(async () => result.current.loadOlder());
+
+    expect(result.current.extraPages).toBe(true);
+  });
+
+  it('has nothing to give back once it has', async () => {
+    const result = await scrolledBack();
+
+    act(() => result.current.dropOlder());
+
+    expect(result.current.extraPages).toBe(false);
+  });
+
+  // A page fetched to sit above history that is about to go would land with a hole beneath it.
+  it('refuses while a page is still being fetched', async () => {
+    const result = await scrolledBack();
+    const pending = deferred();
+    getTranscript.mockReturnValueOnce(pending.promise);
+
+    act(() => result.current.loadOlder());
+    act(() => result.current.dropOlder());
+
+    expect(bodies(result.current.events)).toEqual(['page 2', 'page 1', 'page 0']);
+
+    await act(async () => {
+      pending.settle({ events: [reply('page 3', 'e3')], nextBefore: 10 });
+    });
+
+    expect(bodies(result.current.events)).toEqual(['page 3', 'page 2', 'page 1', 'page 0']);
+  });
+
+  it('leaves a session that never reached back alone', async () => {
+    getTranscript.mockResolvedValueOnce({ events: [reply('page 0', 'e0')], nextBefore: null });
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+
+    act(() => result.current.dropOlder());
+
+    expect(bodies(result.current.events)).toEqual(['page 0']);
+    expect(result.current.hasOlder).toBe(false);
+  });
+
+  // What has happened since the session was opened is not re-readable from anywhere.
+  it('never touches what arrived live', async () => {
+    const result = await scrolledBack();
+    act(() => result.current.showSent('said just now'));
+
+    act(() => result.current.dropOlder());
+
+    expect(bodies(result.current.events)).toEqual(['page 0', 'said just now']);
+  });
+});

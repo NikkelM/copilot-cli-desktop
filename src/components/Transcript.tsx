@@ -22,6 +22,16 @@ const BOTTOM_TOLERANCE_PX = 4;
 /** How close to the top triggers loading the previous page. */
 const LOAD_OLDER_THRESHOLD_PX = 120;
 
+/**
+ * How long the view has to stay at the bottom before history reached by scrolling up is
+ * given back.
+ *
+ * Long enough that passing through the bottom does not count as having finished with what
+ * is above it, and short enough that the reader is not still paying for it a conversation
+ * later. Ten seconds is roughly the gap between reading something and typing about it.
+ */
+const DROP_OLDER_AFTER_MS = 10_000;
+
 /** Why a skill arrived, for the rows where that is not the reader's own doing. */
 const SKILL_NOTE: Record<string, string> = {
   agent: 'skill the agent reached for',
@@ -224,6 +234,10 @@ interface TranscriptProps {
   hasOlder: boolean;
   loadingOlder: boolean;
   onLoadOlder: () => void;
+  /** Whether anything was reached by scrolling up, and so whether there is anything to give back. */
+  extraPages?: boolean;
+  /** Give back the pages reached by scrolling up. Absent leaves them held for as long as the session is open. */
+  onDropOlder?: () => void;
   /** Whether the model's thinking is shown at all, which ctrl+t turns off (#72). */
   reasoning: boolean;
 }
@@ -236,6 +250,8 @@ export function Transcript({
   hasOlder,
   loadingOlder,
   onLoadOlder,
+  extraPages = false,
+  onDropOlder,
   reasoning,
 }: TranscriptProps) {
   // Rebuilt only when the events are, rather than on every render: a streamed reply
@@ -252,6 +268,17 @@ export function Transcript({
   const pinned = useRef(true);
   /** Scroll height before older events were prepended, so the view can be held still. */
   const restoreFrom = useRef<number | null>(null);
+  /** Counting down to giving back the pages reached by scrolling up, or null when not. */
+  const dropAfter = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cancelDrop = () => {
+    if (dropAfter.current === null) return;
+    clearTimeout(dropAfter.current);
+    dropAfter.current = null;
+  };
+
+  // Nothing to give back in another session, and the timer must not outlive this one.
+  useEffect(() => cancelDrop, [sessionId]);
 
   // Selecting a session re-pins to the bottom. The transcript itself arrives a moment
   // later, so the actual scroll happens in the effect below once content exists.
@@ -302,6 +329,21 @@ export function Transcript({
 
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
     pinned.current = distance <= BOTTOM_TOLERANCE_PX;
+
+    // Back at the bottom and following the reply again, rather than reading somewhere of
+    // their own choosing: the pages behind are no longer being looked at, only paid for.
+    // Waiting rather than acting at once, because touching the bottom on the way past is
+    // not the same as having finished with what is above it.
+    if (pinned.current && extraPages && onDropOlder && !loadingOlder) {
+      if (dropAfter.current === null) {
+        dropAfter.current = setTimeout(() => {
+          dropAfter.current = null;
+          onDropOlder();
+        }, DROP_OLDER_AFTER_MS);
+      }
+    } else {
+      cancelDrop();
+    }
 
     if (list.scrollTop <= LOAD_OLDER_THRESHOLD_PX && hasOlder && !loadingOlder) {
       restoreFrom.current = list.scrollHeight;
