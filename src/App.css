@@ -4,6 +4,13 @@
   --border: #30363d;
   --text: #e6edf3;
   --text-muted: #8b949e;
+  /**
+   * One step below muted, for detail under something that already said what it is. The CLI
+   * runs the same two greys: the description it gives a tool in the lighter one, the command
+   * itself in the darker. Scaled to this palette rather than copied, so it sits against this
+   * background the way the CLI's does against its own.
+   */
+  --text-dim: #767e88;
   --accent: #2f81f7;
   --success: #3fb950;
   /** Red, for a failure or a destructive action. */
@@ -14,6 +21,12 @@
   --cyan: #39c5cf;
   /** Purple, for plan mode, where the agent is thinking rather than doing. */
   --plan: #a371f7;
+  /**
+   * Purple, for work in progress. The CLI's own spinner colour, kept exactly: the status
+   * line is the one place this app is deliberately imitating it. Close to --plan and
+   * separate on purpose - one says what the agent may do, the other that it is doing it.
+   */
+  --working: #b346c1;
 
   /*
    * One type scale (#139).
@@ -2204,11 +2217,18 @@ button.group:hover {
   font-size: var(--font-sm);
 }
 
-/* The intent can be a sentence, and the box is not allowed to widen for it. */
+/*
+ * The intent can be a sentence, and the box is not allowed to widen for it.
+ *
+ * Purple, and a shade below the spinner, which is what the CLI does: it paints the spinner
+ * and the word beside it the same hue and dims the word. That leaves the description and
+ * the clock reading as two things rather than one run-on line (#20).
+ */
 .composer-intent {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: color-mix(in srgb, var(--working) 78%, transparent);
 }
 
 /*
@@ -2220,8 +2240,8 @@ button.group:hover {
   align-self: center;
   width: 9px;
   height: 9px;
-  border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);
-  border-top-color: var(--accent);
+  border: 1.5px solid color-mix(in srgb, var(--working) 30%, transparent);
+  border-top-color: var(--working);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
@@ -2333,13 +2353,14 @@ button.group:hover {
 }
 
 /* What actually ran, below what it returned. Wrapped rather than clipped: a long command
-   is exactly the case the header could not show. */
+   is exactly the case the header could not show. A shade under the description that
+   introduced it, the way the CLI ranks the two. */
 .tool-command {
   max-height: 240px;
   margin: 4px 0 4px 20px;
   padding: 8px 10px;
   border-left: 1px solid var(--border);
-  color: var(--text);
+  color: var(--text-dim);
   font-family: ui-monospace, monospace;
   font-size: var(--font-md);
   white-space: pre-wrap;
