@@ -24,8 +24,9 @@ import type {
   SlashCommand,
 } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
-import { resolveCliPath } from './paths.js';
+import { copilotHome, resolveCliPath } from './paths.js';
 import { stripAnsi } from '../../shared/ansi.js';
 
 import { PendingRequests } from './pending.js';
@@ -158,6 +159,8 @@ export class SessionRuntime {
   private client: CopilotClient | null = null;
   /** In-flight client start, so concurrent sends share one server. */
   private starting: Promise<CopilotClient> | null = null;
+  /** Installed plugin directories, resolved once per client. Null until first asked. */
+  private pluginDirs: string[] | null = null;
 
   private readonly loaded = new Map<string, LoadedSession>();
   /** In-flight resumes, so concurrent sends to one session resume it once. */
@@ -287,6 +290,7 @@ export class SessionRuntime {
    */
   async create(workingDirectory?: string): Promise<{ sessionId: string }> {
     const client = await this.ensureClient();
+    const pluginDirectories = await this.pluginDirectories(client);
 
     // The handlers need the session's id, which does not exist until it does, so they
     // read it when called rather than closing over a value that is not there yet.
@@ -304,6 +308,8 @@ export class SessionRuntime {
       // and instructions while the same session in a terminal had all three (#161). What
       // is set explicitly above still wins over anything discovered.
       enableConfigDiscovery: true,
+      // Skills from installed plugins load only when their directories are named (#163).
+      pluginDirectories,
       streaming: true,
     });
 
@@ -311,6 +317,34 @@ export class SessionRuntime {
     this.adopt(id, session);
     await this.enforceCap();
     return { sessionId: id };
+  }
+
+  /**
+   * Where the reader's installed plugins live, for a session to load skills from.
+   *
+   * Plugin skills sit under `installed-plugins/<marketplace>/<plugin>/skills`, which is
+   * not one of the places skills are discovered, so a session without this saw none of
+   * them while the same session in a terminal saw all of them (#163). Plugin agents were
+   * never affected, which is what kept it quiet.
+   *
+   * The list comes from the runtime's own record rather than a directory walk, so a
+   * plugin the reader has disabled stays disabled. Resolved once per client: plugins are
+   * installed far less often than sessions are opened.
+   */
+  private async pluginDirectories(client: CopilotClient): Promise<string[]> {
+    if (this.pluginDirs) return this.pluginDirs;
+
+    try {
+      const { plugins } = await client.rpc.plugins.list();
+      this.pluginDirs = (plugins ?? [])
+        .filter((plugin) => plugin.enabled !== false)
+        .map((plugin) => join(copilotHome, 'installed-plugins', plugin.marketplace, plugin.name));
+    } catch {
+      // Worth a session without plugin skills, never worth no session at all.
+      this.pluginDirs = [];
+    }
+
+    return this.pluginDirs;
   }
 
   /** Resume a session if it is not already loaded, evicting another if needed. */
@@ -331,6 +365,7 @@ export class SessionRuntime {
 
   private async resume(sessionId: string): Promise<CopilotSession> {
     const client = await this.ensureClient();
+    const pluginDirectories = await this.pluginDirectories(client);
 
     const session = await client.resumeSession(sessionId, {
       onPermissionRequest: (request) => this.decidePermission(sessionId, request),
@@ -345,6 +380,8 @@ export class SessionRuntime {
       // As on creation (#161): a resumed session has to see the same agents, skills and
       // instructions the CLI would give it, or it quietly behaves like a different one.
       enableConfigDiscovery: true,
+      // As on creation (#163): without these a resumed session is missing most of its skills.
+      pluginDirectories,
       streaming: true,
     });
 
@@ -966,6 +1003,7 @@ export class SessionRuntime {
 
     const client = this.client;
     this.client = null;
+    this.pluginDirs = null;
     if (client) await client.stop().catch(() => undefined);
   }
 }

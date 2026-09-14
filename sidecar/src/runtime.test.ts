@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { join } from 'node:path';
 
+import { copilotHome } from './paths.js';
 import { SessionRuntime, type RuntimeOptions } from './runtime.js';
 
 /**
@@ -90,6 +92,15 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
               description: 'Not for people',
               userInvocable: false,
             },
+          ],
+        })),
+      },
+      plugins: {
+        list: vi.fn(async () => ({
+          plugins: [
+            { name: 'context-engineering', marketplace: 'awesome-copilot', enabled: true },
+            { name: 'project-planning', marketplace: 'awesome-copilot', enabled: true },
+            { name: 'switched-off', marketplace: 'awesome-copilot', enabled: false },
           ],
         })),
       },
@@ -902,5 +913,61 @@ describe('config discovery', () => {
       's1',
       expect.objectContaining({ enableConfigDiscovery: true }),
     );
+  });
+});
+
+describe('plugin skills', () => {
+  const dir = (name: string) => join(copilotHome, 'installed-plugins', 'awesome-copilot', name);
+
+  it('points a new session at every installed plugin', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+
+    expect(client.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pluginDirectories: [dir('context-engineering'), dir('project-planning')],
+      }),
+    );
+  });
+
+  it('points a resumed session at them too', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.send('s1', 'x');
+
+    expect(client.resumeSession).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        pluginDirectories: [dir('context-engineering'), dir('project-planning')],
+      }),
+    );
+  });
+
+  it('leaves out a plugin the reader has disabled', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+
+    const config = client.createSession.mock.calls[0][0] as { pluginDirectories: string[] };
+    expect(config.pluginDirectories).not.toContain(dir('switched-off'));
+  });
+
+  it('asks the runtime once however many sessions open', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+    await runtime.create('C:\\other');
+    await runtime.send('s1', 'x');
+
+    expect(client.rpc.plugins.list).toHaveBeenCalledTimes(1);
+  });
+
+  it('still opens a session when the plugin list cannot be read', async () => {
+    const { runtime, client } = makeRuntime();
+    client.rpc.plugins.list.mockRejectedValueOnce(new Error('no plugins for you'));
+
+    await expect(runtime.create('C:\\repo')).resolves.toMatchObject({ sessionId: expect.any(String) });
+    expect(client.createSession).toHaveBeenCalledWith(expect.objectContaining({ pluginDirectories: [] }));
   });
 });
