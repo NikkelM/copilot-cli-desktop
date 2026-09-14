@@ -137,6 +137,31 @@ mistake is silent rather than obvious:
 `RuntimeOptions.createClient` exists so the runtime can be exercised without spawning a
 real CLI.
 
+#### Checking that a test would fail
+
+Passing tests prove the code runs, not that anything asserts it is right. `scripts/mutate.ps1`
+answers the second question: it swaps a snippet into a source file, reruns a chosen test
+file, and reports whether the suite noticed. A mutation reported as `ALIVE` is a line the
+tests execute but nothing checks.
+
+```powershell
+.\scripts\mutate.ps1 -Source src\lib\timeline.ts `
+                     -Tests src/lib/timeline.test.ts `
+                     -Mutations scripts\mutations.example.json
+```
+
+The mutation list is per change rather than permanent: write one while the code is fresh,
+close the gaps it finds, then throw it away. `mutations.example.json` is kept as a worked
+example of the format, not as a suite to run.
+
+#### Probes
+
+`scripts/probe-*.mjs` ask the real runtime what it does, rather than trusting the SDK's
+typings. Each creates a throwaway session in a temp directory and prints what came back, so
+none of them touch a real session. They exist because several of this project's assumptions
+turned out to be wrong when checked: `assistant.intent`, for one, is declared by the SDK but
+never actually emitted, and `probe-intent.mjs` is what established that.
+
 Environment overrides, mostly for testing:
 
 | Variable | Purpose |
