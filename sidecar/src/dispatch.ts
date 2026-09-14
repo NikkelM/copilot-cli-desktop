@@ -96,6 +96,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'agents.deselect': ({ sessionId }) => runtime.selectAgent(sessionId, null),
 
+    'environment.describe': (params) => runtime.environment(params?.cwd),
+
     'sessions.model': async ({ sessionId }) => ({ current: await lastModel(sessionId) }),
 
     'sessions.setModel': ({ sessionId, model, reasoningEffort, contextTier }) =>

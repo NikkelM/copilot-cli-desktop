@@ -971,3 +971,112 @@ describe('plugin skills', () => {
     expect(client.createSession).toHaveBeenCalledWith(expect.objectContaining({ pluginDirectories: [] }));
   });
 });
+
+describe('environment', () => {
+  /** Give the client fake the three server surfaces the environment is assembled from. */
+  function withEnvironment(runtimeParts: ReturnType<typeof makeRuntime>) {
+    const rpc = runtimeParts.client.rpc as unknown as Record<string, unknown>;
+    rpc.instructions = {
+      discover: vi.fn(async (_params: { projectPaths?: string[] }) => ({
+        sources: [
+          {
+            id: 'home-copilot',
+            label: 'Home copilot-instructions.md',
+            sourcePath: 'C:\\Users\\x\\.copilot\\copilot-instructions.md',
+            content: '# Rules',
+            type: 'home',
+            location: 'user',
+          },
+        ],
+      })),
+    };
+    rpc.extensions = {
+      discover: vi.fn(async () => ({
+        extensions: [
+          {
+            id: 'plugin:awesome-copilot/thing',
+            name: 'thing',
+            path: 'C:\\x\\thing.js',
+            source: 'plugin',
+            enabled: true,
+            plugin: { name: 'awesome-copilot' },
+          },
+        ],
+        mode: 'load_and_augment',
+      })),
+    };
+    return rpc;
+  }
+
+  it('gathers instructions, plugins and extensions together', async () => {
+    const parts = makeRuntime();
+    withEnvironment(parts);
+
+    const environment = await parts.runtime.environment('C:\\repo');
+
+    expect(environment.instructions).toEqual([
+      {
+        id: 'home-copilot',
+        label: 'Home copilot-instructions.md',
+        sourcePath: 'C:\\Users\\x\\.copilot\\copilot-instructions.md',
+        content: '# Rules',
+        type: 'home',
+        location: 'user',
+      },
+    ]);
+    expect(environment.plugins.map((plugin) => plugin.name)).toEqual([
+      'context-engineering',
+      'project-planning',
+      'switched-off',
+    ]);
+    expect(environment.extensionMode).toBe('load_and_augment');
+  });
+
+  it('names the plugin an extension came from', async () => {
+    const parts = makeRuntime();
+    withEnvironment(parts);
+
+    const { extensions } = await parts.runtime.environment('C:\\repo');
+
+    expect(extensions[0]).toMatchObject({ id: 'plugin:awesome-copilot/thing', plugin: 'awesome-copilot' });
+  });
+
+  it('keeps a plugin the reader has disabled, saying so', async () => {
+    const parts = makeRuntime();
+    withEnvironment(parts);
+
+    const { plugins } = await parts.runtime.environment('C:\\repo');
+
+    expect(plugins.find((plugin) => plugin.name === 'switched-off')?.enabled).toBe(false);
+  });
+
+  it('offers the working directory as a project path', async () => {
+    const parts = makeRuntime();
+    const rpc = withEnvironment(parts);
+
+    await parts.runtime.environment('C:\\repo');
+
+    const discover = (rpc.instructions as { discover: ReturnType<typeof vi.fn> }).discover;
+    expect(discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
+  });
+
+  it('asks about no project at all when there is no working directory', async () => {
+    const parts = makeRuntime();
+    const rpc = withEnvironment(parts);
+
+    await parts.runtime.environment();
+
+    const discover = (rpc.instructions as { discover: ReturnType<typeof vi.fn> }).discover;
+    expect(discover).toHaveBeenCalledWith({});
+  });
+
+  it('resumes nothing to answer', async () => {
+    const parts = makeRuntime();
+    withEnvironment(parts);
+
+    await parts.runtime.environment('C:\\repo');
+
+    expect(parts.client.resumeSession).not.toHaveBeenCalled();
+    expect(parts.client.createSession).not.toHaveBeenCalled();
+  });
+});

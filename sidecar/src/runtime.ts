@@ -21,6 +21,7 @@ import type {
   ReasoningEffort,
   ShellResult,
   QueuedItem,
+  SessionEnvironment,
   SlashCommand,
 } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
@@ -808,6 +809,53 @@ export class SessionRuntime {
       // to be spawned by other agents rather than chosen by a reader.
       userInvocable: agent.userInvocable !== false,
     }));
+  }
+
+  /**
+   * What a session in this directory would load, without loading one.
+   *
+   * All three parts come off the server surface, so this answers for a session the app has
+   * never opened, and for no session at all. The alternative is a session's own
+   * `instructions.getSources`, which was measured to agree exactly and costs a resume to ask.
+   *
+   * Gathered together because the panel wants all of it at once, and three round trips to
+   * fill one panel is three chances for it to render half-empty.
+   */
+  async environment(cwd?: string): Promise<SessionEnvironment> {
+    const client = await this.ensureClient();
+    const projectPaths = cwd ? { projectPaths: [cwd] } : {};
+
+    const [instructions, plugins, extensions] = await Promise.all([
+      client.rpc.instructions.discover(projectPaths),
+      client.rpc.plugins.list(),
+      client.rpc.extensions.discover(),
+    ]);
+
+    return {
+      instructions: (instructions.sources ?? []).map((source) => ({
+        id: source.id,
+        label: source.label,
+        sourcePath: source.sourcePath,
+        content: source.content,
+        type: source.type,
+        location: source.location,
+      })),
+      plugins: (plugins.plugins ?? []).map((plugin) => ({
+        name: plugin.name,
+        marketplace: plugin.marketplace,
+        ...(plugin.version ? { version: plugin.version } : {}),
+        enabled: plugin.enabled !== false,
+      })),
+      extensions: (extensions.extensions ?? []).map((extension) => ({
+        id: extension.id,
+        name: extension.name,
+        path: extension.path,
+        source: extension.source,
+        enabled: extension.enabled !== false,
+        ...(extension.plugin ? { plugin: extension.plugin.name } : {}),
+      })),
+      extensionMode: extensions.mode,
+    };
   }
 
   /**

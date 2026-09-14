@@ -345,6 +345,64 @@ export interface SessionAgent {
 }
 
 /**
+ * An instructions file the runtime would load, and what is in it.
+ *
+ * The content is carried rather than fetched on demand because the whole point of showing
+ * this is answering why an agent behaved as it did, and a list of paths does not answer it.
+ * These are documents someone wrote by hand, so they are kilobytes, not megabytes.
+ */
+export interface InstructionSource {
+  id: string;
+  /** How the runtime describes it, e.g. "Home copilot-instructions.md". */
+  label: string;
+  sourcePath: string;
+  content: string;
+  /** Which kind of file it is: home, repo, model, vscode, nested-agents, child-instructions. */
+  type: string;
+  /** Which scope it lives in: user, repository, working-directory, plugin. */
+  location: string;
+}
+
+/** An installed plugin, as the runtime records it. */
+export interface PluginSummary {
+  name: string;
+  marketplace: string;
+  /** Absent for a plugin whose manifest does not give one. */
+  version?: string;
+  enabled: boolean;
+}
+
+/** An extension the runtime found in the reader's Copilot home. */
+export interface ExtensionSummary {
+  id: string;
+  name: string;
+  path: string;
+  /** Where it came from: the reader's own directory, or a plugin. */
+  source: string;
+  enabled: boolean;
+  /** The plugin that contributes it, for the ones that come from one. */
+  plugin?: string;
+}
+
+/**
+ * What a session in a given directory would load, short of loading it.
+ *
+ * Answered from the sessionless server surface, so opening this costs no session. The
+ * working directory is the only thing that changes the answer, which is why it is the only
+ * input: instructions and extensions are discovered per project, plugins are global.
+ */
+export interface SessionEnvironment {
+  instructions: InstructionSource[];
+  plugins: PluginSummary[];
+  extensions: ExtensionSummary[];
+  /**
+   * Whether extensions are loaded at all, and whether the agent may manage them.
+   * Worth showing, because an empty list means something different under `disabled`.
+   */
+  extensionMode: string;
+}
+
+/**
  * What invoking a command produced.
  *
  * Narrowed from the runtime's union, which has eight arms describing effects a terminal
@@ -515,6 +573,14 @@ export interface SidecarRequests {
   'agents.select': { params: { sessionId: string; name: string }; result: void };
   /** Return a session to the default agent, resuming it if it is cold. */
   'agents.deselect': { params: { sessionId: string }; result: void };
+  /**
+   * What a session in this directory would load: its instructions, plugins and extensions.
+   *
+   * Asked of the server for the same reason `agents.list` is. Every part of this is
+   * discoverable without a session, so answering it never resumes one, and the panel works
+   * on a session the app has never opened.
+   */
+  'environment.describe': { params: { cwd?: string }; result: SessionEnvironment };
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };
