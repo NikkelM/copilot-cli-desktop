@@ -313,6 +313,12 @@ export class SessionRuntime {
       enableConfigDiscovery: true,
       // Skills from installed plugins load only when their directories are named (#163).
       pluginDirectories,
+      // Tokens are discarded with the session unless asked for otherwise, so an OAuth-backed
+      // MCP server would ask to authenticate again on every resume - which this app does
+      // constantly, evicting and reviving sessions under the cap. The keychain is the store
+      // the CLI already writes to, so this shares those logins rather than opening a second
+      // place to hold them (#162).
+      mcpOAuthTokenStorage: 'persistent',
       streaming: true,
     });
 
@@ -389,6 +395,9 @@ export class SessionRuntime {
       // resumes constantly - a session evicted under the cap comes back through here. The
       // reader's choices are re-applied on the way in so they hold (#22).
       disabledSkills: disabledSkills(sessionId),
+      // As on creation (#162): the resume this app performs constantly is exactly the moment
+      // an in-memory token would already have been thrown away.
+      mcpOAuthTokenStorage: 'persistent',
       streaming: true,
     });
 

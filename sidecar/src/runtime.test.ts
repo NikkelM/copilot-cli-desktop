@@ -1011,6 +1011,37 @@ describe('config discovery', () => {
   });
 });
 
+/**
+ * MCP logins outlive the session that made them.
+ *
+ * The SDK discards them by default, which is the wrong default for an app that evicts and
+ * revives sessions under a cap: the reader would re-authenticate for reasons they never see
+ * and cannot predict. Silent until an OAuth-backed server is configured, so only a test
+ * notices it reverting (#162).
+ */
+describe('MCP OAuth tokens', () => {
+  it('keeps the logins a new session makes', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+
+    expect(client.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ mcpOAuthTokenStorage: 'persistent' }),
+    );
+  });
+
+  it('keeps them across the resume that would have dropped them', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.send('s1', 'x');
+
+    expect(client.resumeSession).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({ mcpOAuthTokenStorage: 'persistent' }),
+    );
+  });
+});
+
 describe('plugin skills', () => {
   const dir = (name: string) => join(copilotHome, 'installed-plugins', 'awesome-copilot', name);
 
