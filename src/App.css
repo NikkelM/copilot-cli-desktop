@@ -2183,11 +2183,18 @@ button.group:hover {
   color: var(--warning);
 }
 
-/* What the agent is doing, and how long it has been at it. Left-aligned, which puts it in
-   the reading path rather than in the far corner, and next to the mode when there is one. */
+/*
+ * What the agent is doing, and how long it has been at it. Left-aligned, which puts it in
+ * the reading path rather than in the far corner, and next to the mode when there is one.
+ *
+ * Aligned on the baseline rather than centred: the clock is monospace and the description
+ * is not, and two fonts of the same size have different metrics, so centring their boxes
+ * left the text visibly off from itself. The spinner has no baseline to share and is
+ * centred on its own.
+ */
 .composer-working {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
   min-width: 0;
   color: var(--text-muted);
@@ -2207,6 +2214,7 @@ button.group:hover {
  */
 .composer-spinner {
   flex: none;
+  align-self: center;
   width: 9px;
   height: 9px;
   border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);
