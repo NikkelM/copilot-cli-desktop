@@ -2580,6 +2580,99 @@ button.group:hover {
   color: var(--danger);
 }
 
+/* Borrows the changes panel's frame and rows, since it is the same kind of thing: a
+   read-only list that expands into detail. */
+.environment {
+  display: flex;
+  flex-direction: column;
+  max-height: 55vh;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+
+.environment-body {
+  overflow-y: auto;
+}
+
+.environment-section + .environment-section {
+  border-top: 1px solid var(--border);
+}
+
+.environment-heading {
+  margin: 0;
+  padding: 8px 10px 2px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.environment-list {
+  margin: 0;
+  padding: 2px 0 6px;
+  list-style: none;
+}
+
+.environment-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 10px;
+  font-size: var(--font-md);
+}
+
+/* A fixed gutter like the status column, so names line up whether or not a dot precedes them. */
+.environment-scope {
+  flex: none;
+  width: 108px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.environment-size {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.environment-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.environment-dot.on {
+  background: var(--success);
+}
+
+.environment-dot.off {
+  background: var(--text-muted);
+}
+
+.environment-meta {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.environment-off {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+/* Indented to the path above it, so a long file reads as that entry's contents rather than
+   as the next thing in the list. */
+.environment-content {
+  padding: 2px 10px 10px 26px;
+  border-left: 2px solid var(--border);
+  margin-left: 10px;
+}
+
 /* Quiet beside the model picker until it is wanted, like the buttons beside the path. */
 .header-button {
   padding: 3px 9px;

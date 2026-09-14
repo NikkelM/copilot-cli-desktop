@@ -10,6 +10,7 @@ import type {
 import { Changes } from './components/Changes';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
+import { Environment } from './components/Environment';
 import { AgentPicker } from './components/AgentPicker';
 import { ModelPicker } from './components/ModelPicker';
 import { OpenIn } from './components/OpenIn';
@@ -41,6 +42,7 @@ import { activityOf } from './lib/activity';
 import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
+import { useEnvironment } from './lib/useEnvironment';
 import { useDrafts } from './lib/useDrafts';
 import { useAgent } from './lib/useAgent';
 import { useModel } from './lib/useModel';
@@ -83,6 +85,8 @@ export default function App() {
   const [help, setHelp] = useState<'keys' | 'full' | null>(null);
   /** Whether the list of files this session changed is showing. */
   const [showChanges, setShowChanges] = useState(false);
+  /** Whether what this session would load is showing. */
+  const [showEnvironment, setShowEnvironment] = useState(false);
   /**
    * The session being woken, if one is.
    *
@@ -118,6 +122,7 @@ export default function App() {
   const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
   const slash = useCommands(selectedId);
   const changes = useChanges(selectedId);
+  const environment = useEnvironment(selected?.cwd ?? null);
   const prompts = usePrompts(selectedId, setError);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
@@ -177,6 +182,9 @@ export default function App() {
 
   // The same for the list of changes, which is about the session that was open, not this one.
   useEffect(() => setShowChanges(false), [selectedId]);
+
+  // And for the environment, which is read for one directory and says nothing about another.
+  useEffect(() => setShowEnvironment(false), [selectedId]);
 
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
@@ -343,6 +351,7 @@ export default function App() {
 
   /** Open the panel and read the list, from wherever the request came from. */
   function openChanges() {
+    setShowEnvironment(false);
     setShowChanges(true);
     changes.load();
     toComposer();
@@ -350,6 +359,25 @@ export default function App() {
 
   function closeChanges() {
     setShowChanges(false);
+    toComposer();
+  }
+
+  /**
+   * Open the panel and read it again.
+   *
+   * Reread on every open rather than kept, since the reason to open it is usually that one
+   * of the files it lists has just been edited. Only one of these panels shows at a time:
+   * both are tall, and stacking them pushes the transcript off the screen.
+   */
+  function openEnvironment() {
+    setShowChanges(false);
+    setShowEnvironment(true);
+    void environment.load();
+    toComposer();
+  }
+
+  function closeEnvironment() {
+    setShowEnvironment(false);
     toComposer();
   }
 
@@ -643,6 +671,17 @@ export default function App() {
                   >
                     Changes
                   </button>
+                  {/* Reads the same files a session would, without starting one, so the
+                      question "is my instructions file in force" costs nothing to ask. */}
+                  <button
+                    type="button"
+                    className={showEnvironment ? 'header-button on' : 'header-button'}
+                    onClick={() => (showEnvironment ? closeEnvironment() : openEnvironment())}
+                    aria-pressed={showEnvironment}
+                    title="The instructions, plugins and extensions a session here loads"
+                  >
+                    Environment
+                  </button>
                   <AgentPicker
                     current={agent.current}
                     agents={agent.agents}
@@ -698,6 +737,16 @@ export default function App() {
                   reviewedAt={changes.reviewedAt}
                   showAll={changes.showAll}
                   onSpan={changes.setSpan}
+                />
+              )}
+
+              {showEnvironment && (
+                <Environment
+                  environment={environment.environment}
+                  loading={environment.loading}
+                  failed={environment.failed}
+                  onReload={() => void environment.load()}
+                  onClose={closeEnvironment}
                 />
               )}
 
