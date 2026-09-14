@@ -45,7 +45,6 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useEnvironment } from './lib/useEnvironment';
-import { useDirectories } from './lib/useDirectories';
 import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
 import { useAgent } from './lib/useAgent';
@@ -139,7 +138,6 @@ export default function App() {
   const changes = useChanges(selectedId);
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
-  const directories = useDirectories(selectedId);
   const prompts = usePrompts(selectedId, setError);
   /**
    * Starting a session is the one action here that costs a Copilot process before anything
@@ -147,14 +145,13 @@ export default function App() {
    */
   const [creating, setCreating] = useState(false);
 
-  async function handleCreate(workingDirectory?: string) {
+  async function handleCreate() {
     setError(null);
     setCreating(true);
     try {
-      // Without a folder the sidecar starts the session in the home directory, as running
-      // the CLI with no arguments does: not every session is about a project, and wanting
-      // to ask something quickly should not begin with choosing a directory.
-      const { sessionId } = await createSession(workingDirectory);
+      // No folder asked for: not every session is about a project, and wanting to ask
+      // something quickly should not begin with choosing a directory.
+      const { sessionId } = await createSession();
       // Selected only once the list holds it, or the pane has nothing to show and the
       // button looks as though it did nothing.
       await sessions.refresh();
@@ -661,11 +658,10 @@ export default function App() {
         sessions={sessions.all}
         selectedId={selectedId}
         onSelect={open}
-        onCreate={(workingDirectory) => void handleCreate(workingDirectory)}
+        onCreate={() => void handleCreate()}
         creating={creating}
         maxLoaded={sessions.maxLoaded}
         activity={activity}
-        onError={setError}
       />
 
       <main className="main">
@@ -767,16 +763,11 @@ export default function App() {
                 <Environment
                   environment={environment.environment}
                   loading={environment.loading}
-                  failed={environment.failed ?? skills.failed ?? directories.failed}
+                  failed={environment.failed ?? skills.failed}
                   onReload={() => void environment.load()}
                   onClose={closeEnvironment}
                   disabledSkills={skills.disabled}
                   onToggleSkill={selectedId ? (name, enabled) => void skills.toggle(name, enabled) : undefined}
-                  cwd={selected.cwd}
-                  directories={directories.directories}
-                  pendingDirectories={directories.pending}
-                  onAddDirectory={selectedId ? (path) => void directories.add(path) : undefined}
-                  onRemoveDirectory={selectedId ? (path) => void directories.remove(path) : undefined}
                 />
               )}
 
@@ -844,12 +835,7 @@ export default function App() {
             )}
             {/* Offered whichever of the two is showing: a list that would not load is a
                 reason to start a session, not a reason to hide the way to. */}
-            <button
-              type="button"
-              className="new-session"
-              onClick={() => void handleCreate()}
-              disabled={creating}
-            >
+            <button type="button" className="new-session" onClick={handleCreate} disabled={creating}>
               {creating ? 'Starting…' : 'Start a new session'}
             </button>
           </div>

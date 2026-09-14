@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { open as pickFolder } from '@tauri-apps/plugin-dialog';
 
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
@@ -16,10 +15,8 @@ interface SidebarProps {
    */
   onSelect: (sessionId: string, session?: SessionSummary) => void;
   /** Starting a session needs a directory to start it in, which only the reader knows. */
-  onCreate: (workingDirectory?: string) => void;
+  onCreate: () => void;
   creating: boolean;
-  /** Told when the folder picker itself fails, which is not something the sidebar can show. */
-  onError?: (message: string) => void;
   /** How many sessions may be resident at once; zero or absent means no cap. */
   maxLoaded?: number;
   /** What each session is doing, keyed by id. Absent means resident and idle (#115). */
@@ -122,7 +119,7 @@ function useHiddenMatches(query: string, enabled: boolean): SessionSummary[] {
 }
 
 /** Sessions ordered by last use. Rendering and filtering this list never loads a session. */
-export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, maxLoaded, activity, onError }: SidebarProps) {
+export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, maxLoaded, activity }: SidebarProps) {
   const [query, setQuery] = useState('');
 
   // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
@@ -173,31 +170,11 @@ export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, ma
         <button
           type="button"
           className="new-session"
-          onClick={() => onCreate()}
+          onClick={onCreate}
           disabled={creating}
-          title="Start a new session in your home directory"
+          title="Start a new session"
         >
           {creating ? 'Starting…' : 'New'}
-        </button>
-        {/* A second button rather than a prompt on the first: not every session is about a
-            project, and wanting to ask something quickly should not begin with choosing a
-            folder. The ones that are about a project need the folder before the first word,
-            because it decides which instructions, skills and agents the session loads. */}
-        <button
-          type="button"
-          className="new-session"
-          onClick={() => {
-            pickFolder({ directory: true, title: 'Start a new session in this folder' })
-              .then((picked) => {
-                if (typeof picked === 'string') onCreate(picked);
-              })
-              .catch((error: unknown) => onError?.(String(error)));
-          }}
-          disabled={creating}
-          title="Start a new session in a folder"
-          aria-label="Start a new session in a folder"
-        >
-          📁
         </button>
       </header>
 

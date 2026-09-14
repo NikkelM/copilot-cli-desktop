@@ -700,29 +700,6 @@ export interface SidecarRequests {
     params: { sessionId: string; name: string; enabled: boolean };
     result: { disabled: string[] };
   };
-  /**
-   * The directories a session may reach beyond the one it works in, this app's `--add-dir`.
-   *
-   * Kept here rather than in the runtime, which applies them on creation and cold resume
-   * and keeps them nowhere in between. Reading costs no process; the list is a file beside
-   * the session's own record.
-   */
-  'directories.list': { params: { sessionId: string }; result: { directories: string[] } };
-  /**
-   * Grant a session another directory. Rejects a path that is not a directory.
-   *
-   * Grants the skills and agents stored under it as well, so this is a trust decision.
-   * Applied at once to a loaded session and on next start to a cold one.
-   */
-  'directories.add': { params: { sessionId: string; path: string }; result: { directories: string[] } };
-  /**
-   * Withdraw a directory. `untilRestart` reports that a loaded session still has access,
-   * because the runtime can add a directory to a live session but cannot remove one.
-   */
-  'directories.remove': {
-    params: { sessionId: string; path: string };
-    result: { directories: string[]; untilRestart: boolean };
-  };
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   /** How full the window is. Null for a session that is not loaded, which is not resumed to ask. */

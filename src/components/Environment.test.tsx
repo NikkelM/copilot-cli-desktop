@@ -1,12 +1,9 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { SessionEnvironment } from '../../shared/protocol';
 import { Environment } from './Environment';
-
-const pickFolder = vi.fn();
-vi.mock('@tauri-apps/plugin-dialog', () => ({ open: (...args: unknown[]) => pickFolder(...args) }));
 
 const source = (over: Partial<SessionEnvironment['instructions'][number]> = {}) => ({
   id: 'home-copilot',
@@ -335,102 +332,5 @@ describe('skills that would not load', () => {
     );
 
     expect(container.querySelector('.environment-errors')).toBeNull();
-  });
-});
-describe('the directories a session may reach', () => {
-  beforeEach(() => {
-    pickFolder.mockReset().mockResolvedValue(null);
-  });
-
-  const withDirectories = (over: Record<string, unknown> = {}) =>
-    render(<Environment {...props} environment={environment()} cwd={'C:\\work\\repo'} {...over} />);
-
-  it('names the directory the session works in', () => {
-    withDirectories();
-
-    expect(screen.getByText('Working directory')).toBeTruthy();
-    expect(screen.getByText('C:\\work\\repo')).toBeTruthy();
-  });
-
-  it('lists a directory that was added', () => {
-    withDirectories({ directories: ['C:\\wiki'] });
-
-    expect(screen.getByText('C:\\wiki')).toBeTruthy();
-    expect(screen.getByText('Added')).toBeTruthy();
-  });
-
-  // The panel opens on a session that was never started as readily as on a live one, and
-  // there is nothing to grant a directory to until one is selected.
-  it('offers no way to add one without a session', () => {
-    withDirectories();
-
-    expect(screen.queryByRole('button', { name: 'Add directory' })).toBeNull();
-    expect(screen.getByText(/Open a session to give it another directory/)).toBeTruthy();
-  });
-
-  it('leaves an added directory listed but fixed without a session', () => {
-    withDirectories({ directories: ['C:\\wiki'] });
-
-    expect(screen.getByText('C:\\wiki')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Remove' })).toBeNull();
-  });
-
-  it('hands back the directory that was picked', async () => {
-    pickFolder.mockResolvedValue('C:\\wiki');
-    const onAddDirectory = vi.fn();
-    withDirectories({ onAddDirectory });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add directory' }));
-
-    await waitFor(() => expect(onAddDirectory).toHaveBeenCalledWith('C:\\wiki'));
-    expect(pickFolder).toHaveBeenCalledWith(expect.objectContaining({ directory: true }));
-  });
-
-  it('adds nothing when the picker is dismissed', async () => {
-    const onAddDirectory = vi.fn();
-    withDirectories({ onAddDirectory });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add directory' }));
-
-    await waitFor(() => expect(pickFolder).toHaveBeenCalled());
-    expect(onAddDirectory).not.toHaveBeenCalled();
-  });
-
-  it('says so when the picker fails', async () => {
-    pickFolder.mockRejectedValue(new Error('no picker here'));
-    withDirectories({ onAddDirectory: vi.fn() });
-
-    fireEvent.click(screen.getByRole('button', { name: 'Add directory' }));
-
-    await waitFor(() => expect(screen.getByText(/no picker here/)).toBeTruthy());
-  });
-
-  it('withdraws the directory whose button was pressed', () => {
-    const onRemoveDirectory = vi.fn();
-    withDirectories({ directories: ['C:\\wiki', 'C:\\notes'], onRemoveDirectory });
-
-    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1]!);
-
-    expect(onRemoveDirectory).toHaveBeenCalledWith('C:\\notes');
-  });
-
-  // Saying it is gone would be untrue: the runtime has no way to take a directory back
-  // from a session that is already running.
-  it('says a withdrawn directory stays reachable until the session restarts', () => {
-    withDirectories({ pendingDirectories: ['C:\\wiki'] });
-
-    expect(screen.getByText(/One directory stays/)).toBeTruthy();
-  });
-
-  it('counts several still held', () => {
-    withDirectories({ pendingDirectories: ['C:\\wiki', 'C:\\notes'] });
-
-    expect(screen.getByText(/2 directories stay/)).toBeTruthy();
-  });
-
-  it('says nothing about restarting when nothing is held', () => {
-    withDirectories({ directories: ['C:\\wiki'] });
-
-    expect(screen.queryByText(/until this session next starts/)).toBeNull();
   });
 });

@@ -224,29 +224,6 @@ export function setSkillEnabled(sessionId: string, name: string, enabled: boolea
   return request('skills.set', { sessionId, name, enabled });
 }
 
-/** The directories this session may reach beyond its own. Read from the app's own record, so it costs no process. */
-export function sessionDirectories(sessionId: string): Promise<{ directories: string[] }> {
-  return request('directories.list', { sessionId });
-}
-
-/** Grant a session another directory, and get back everything it may now reach. */
-export function addSessionDirectory(sessionId: string, path: string): Promise<{ directories: string[] }> {
-  return request('directories.add', { sessionId, path });
-}
-
-/**
- * Withdraw a directory, and get back what is left.
- *
- * `untilRestart` says a loaded session can still reach it: the runtime grants a directory
- * to a live session but has no way to take one back, so it goes on the next start.
- */
-export function removeSessionDirectory(
-  sessionId: string,
-  path: string,
-): Promise<{ directories: string[]; untilRestart: boolean }> {
-  return request('directories.remove', { sessionId, path });
-}
-
 /** What git says about a directory now. Null when it is not in a repository. */
 export async function gitState(cwd: string): Promise<TreeState | null> {
   const { state } = await request('git.state', { cwd });

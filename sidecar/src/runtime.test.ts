@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CopilotSession, ExitPlanModeRequest, ExitPlanModeResult } from '@github/copilot-sdk';
 
@@ -77,11 +76,6 @@ function makeSession(id: string) {
       agent: {
         select: vi.fn(async (_params: { name: string }) => ({})),
         deselect: vi.fn(async () => undefined),
-      },
-      permissions: {
-        paths: {
-          add: vi.fn(async (_params: { path: string }) => ({ success: true })),
-        },
       },
       options: {
         update: vi.fn(async (_params: { disabledSkills?: string[] }) => ({ success: true })),
@@ -1486,106 +1480,6 @@ describe('skills a session has switched off', () => {
     await runtime.setSkillEnabled('s-back', 'agent-creator', true);
 
     expect(runtime.disabledSkills('s-back')).toEqual([]);
-  });
-});
-
-/**
- * The runtime applies `additionalDirectories` on creation and cold resume and keeps them
- * nowhere in between, so this app has to hand them back every time it revives a session -
- * which, evicting under the cap, it does constantly (#25).
- */
-describe('directories a session may reach', () => {
-  /** A directory that exists, since the store refuses a path it cannot find. */
-  function realDirectory(name: string): string {
-    const path = join(copilotHome, 'granted', name);
-    mkdirSync(path, { recursive: true });
-    return path;
-  }
-
-  it('starts a session with only its own directory', async () => {
-    const { runtime, client } = makeRuntime();
-
-    await runtime.send('d1', 'x');
-
-    expect(client.resumeSession).toHaveBeenCalledWith('d1', expect.objectContaining({ additionalDirectories: [] }));
-  });
-
-  it('hands the directories back to a session being resumed', async () => {
-    const { runtime, client } = makeRuntime();
-    const wiki = realDirectory('wiki');
-    await runtime.addDirectory('d-resume', wiki);
-
-    await runtime.send('d-resume', 'x');
-
-    expect(client.resumeSession).toHaveBeenCalledWith(
-      'd-resume',
-      expect.objectContaining({ additionalDirectories: [wiki] }),
-    );
-  });
-
-  it('reports what a session may reach without loading it', async () => {
-    const { runtime, client } = makeRuntime();
-
-    await runtime.addDirectory('d-cold', realDirectory('cold'));
-
-    expect(runtime.directories('d-cold')).toHaveLength(1);
-    expect(client.resumeSession).not.toHaveBeenCalled();
-  });
-
-  // Otherwise the directory would not be reachable until something evicted the session.
-  it('tells a session that is already loaded', async () => {
-    const { runtime, client } = makeRuntime();
-    await runtime.send('d-live', 'x');
-    const session = await client.resumeSession.mock.results[0].value;
-    const wiki = realDirectory('live');
-
-    await runtime.addDirectory('d-live', wiki);
-
-    expect(session.rpc.permissions.paths.add).toHaveBeenCalledWith({ path: wiki });
-  });
-
-  it('does not resume a cold session to grant it a directory', async () => {
-    const { runtime, client } = makeRuntime();
-
-    await runtime.addDirectory('d-quiet', realDirectory('quiet'));
-
-    expect(client.resumeSession).not.toHaveBeenCalled();
-  });
-
-  it('refuses a path that is not a directory', async () => {
-    const { runtime } = makeRuntime();
-
-    await expect(runtime.addDirectory('d-bad', join(copilotHome, 'nowhere'))).rejects.toThrow(/Not a directory/);
-  });
-
-  // The runtime can add a directory to a live path manager but has no matching remove, so
-  // the only way to withdraw one is to leave it out of the next resume. The caller is told
-  // rather than left showing a change that has not happened.
-  it('says a loaded session keeps the directory until it restarts', async () => {
-    const { runtime } = makeRuntime();
-    const wiki = realDirectory('held');
-    await runtime.addDirectory('d-held', wiki);
-    await runtime.send('d-held', 'x');
-
-    expect(runtime.removeDirectory('d-held', wiki)).toEqual({ directories: [], untilRestart: true });
-  });
-
-  it('takes it away at once from a session that is cold', async () => {
-    const { runtime } = makeRuntime();
-    const wiki = realDirectory('dropped');
-    await runtime.addDirectory('d-dropped', wiki);
-
-    expect(runtime.removeDirectory('d-dropped', wiki)).toEqual({ directories: [], untilRestart: false });
-  });
-
-  it('reports nothing pending when there was nothing to remove', async () => {
-    const { runtime } = makeRuntime();
-    await runtime.send('d-none', 'x');
-
-    expect(runtime.removeDirectory('d-none', realDirectory('never'))).toEqual({
-      directories: [],
-      untilRestart: false,
-    });
   });
 });
 
