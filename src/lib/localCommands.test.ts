@@ -20,6 +20,14 @@ describe('isLocal', () => {
     expect(isLocal('session')).toBe(false);
     expect(isLocal('model')).toBe(false);
   });
+
+  /**
+   * `/env` is the one name both sides define. Taking it is deliberate, and the consequence
+   * is that the runtime's version no longer runs, so it should never happen by accident.
+   */
+  it('takes /env from the runtime deliberately', () => {
+    expect(isLocal('env')).toBe(true);
+  });
 });
 
 /**

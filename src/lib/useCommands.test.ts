@@ -109,6 +109,22 @@ describe('useCommands', () => {
     expect(result.current.commands).toHaveLength(withLocal(cold.length));
   });
 
+  /**
+   * `/env` exists on both sides, and `isLocal` decides by name what actually runs. Letting
+   * the runtime's description win would leave the menu promising what its version does
+   * while this app's answers.
+   */
+  it('keeps its own description of a command the runtime also defines', async () => {
+    const mine = LOCAL_COMMANDS.find((c) => c.name === 'env')!;
+    listCommands.mockResolvedValue([...cold, { ...command('env'), description: 'the runtime version' }]);
+
+    const { result } = renderHook(() => useCommands('s1'));
+    act(() => result.current.open());
+    await waitFor(() => expect(result.current.commands).toHaveLength(withLocal(cold.length)));
+
+    expect(result.current.commands.find((c) => c.name === 'env')?.description).toBe(mine.description);
+  });
+
   it('ignores a remembered entry that is missing what the menu reads', () => {
     localStorage.setItem('copilot-desktop.commands', JSON.stringify([{ name: 'model' }]));
 

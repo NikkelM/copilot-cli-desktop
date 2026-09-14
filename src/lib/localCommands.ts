@@ -36,12 +36,31 @@ export const CHANGES: SlashCommand = {
 };
 
 /**
+ * Show what a session in this directory would load, as a panel rather than a scrollback dump.
+ *
+ * Takes the runtime's own `/env` name deliberately. Both answer the same question, and two
+ * commands for it would be a menu that has to be explained. Ours reads files rather than a
+ * session, so it costs nothing and answers for a session that has never been opened, and it
+ * renders the instruction files rather than only listing their paths.
+ *
+ * The runtime's version covers more: MCP servers, skills, agents, hooks and LSPs as well
+ * (#165). Those sections are still to come, and until they do this shows less than the CLI
+ * does for the same word.
+ */
+export const ENVIRONMENT: SlashCommand = {
+  name: 'env',
+  description: 'show the instructions, plugins and extensions loaded here',
+  aliases: [],
+  allowDuringTurn: true,
+};
+
+/**
  * The commands this app answers itself.
  *
  * Folded into the runtime's list so they are offered by the menu alongside it - the reader
  * has no reason to care which side of the wire answers them.
  */
-export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES];
+export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT];
 
 /** Whether a command is one of ours, and so must not be sent to the runtime. */
 export function isLocal(name: string): boolean {

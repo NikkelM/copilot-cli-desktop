@@ -36,10 +36,11 @@ function remembered(): SlashCommand[] {
     const stored = localStorage.getItem(REMEMBERED);
     const parsed: unknown = stored ? JSON.parse(stored) : null;
     const known = Array.isArray(parsed) && parsed.length > 0 && parsed.every(usable) ? (parsed as SlashCommand[]) : [];
-    return merge(known, [...LOCAL_COMMANDS]);
+    // Nothing to fold in: the merge adds this app's own commands whatever it is given.
+    return merge(known, []);
   } catch {
     // A corrupt or unreadable entry is worth no more than an absent one.
-    return merge([], [...LOCAL_COMMANDS]);
+    return merge([], []);
   }
 }
 
@@ -51,10 +52,15 @@ function remembered(): SlashCommand[] {
  * them. Replacing the list would let whichever answer arrived last decide what exists, so a
  * narrower one fills gaps instead of emptying them, while a newer definition of a command
  * already known still wins.
+ *
+ * Except where the name is one of ours. `/env` exists on both sides, and `isLocal` decides
+ * by name what actually runs, so ours are applied last: letting the runtime's description
+ * through would leave the menu promising what its version does while this app's answers.
  */
 function merge(known: SlashCommand[], found: SlashCommand[]): SlashCommand[] {
   const byName = new Map(known.map((command) => [command.name, command]));
   for (const command of found) byName.set(command.name, command);
+  for (const command of LOCAL_COMMANDS) byName.set(command.name, command);
   return withLocalChoices([...byName.values()].sort((a, b) => a.name.localeCompare(b.name)));
 }
 

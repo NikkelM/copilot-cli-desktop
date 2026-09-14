@@ -35,7 +35,7 @@ import {
   runShell,
   sendMessage,
 } from './lib/sidecar';
-import { CHANGES } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
 import { activityOf } from './lib/activity';
@@ -402,6 +402,7 @@ export default function App() {
       // Which one it is decides what opens. There is no default: an unhandled local
       // command would silently do whatever the last branch happened to do.
       if (what.command.name === CHANGES.name) openChanges();
+      else if (what.command.name === ENVIRONMENT.name) openEnvironment();
       else setHelp('full');
       return;
     }
@@ -670,17 +671,6 @@ export default function App() {
                     title="What this session changed, and the diff for any of it"
                   >
                     Changes
-                  </button>
-                  {/* Reads the same files a session would, without starting one, so the
-                      question "is my instructions file in force" costs nothing to ask. */}
-                  <button
-                    type="button"
-                    className={showEnvironment ? 'header-button on' : 'header-button'}
-                    onClick={() => (showEnvironment ? closeEnvironment() : openEnvironment())}
-                    aria-pressed={showEnvironment}
-                    title="The instructions, plugins and extensions a session here loads"
-                  >
-                    Environment
                   </button>
                   <AgentPicker
                     current={agent.current}
