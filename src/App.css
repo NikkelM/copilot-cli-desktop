@@ -2203,44 +2203,51 @@ button.group:hover {
  * What the agent is doing, and how long it has been at it. Left-aligned, which puts it in
  * the reading path rather than in the far corner, and next to the mode when there is one.
  *
- * Aligned on the baseline rather than centred: the clock is monospace and the description
- * is not, and two fonts of the same size have different metrics, so centring their boxes
- * left the text visibly off from itself. The spinner has no baseline to share and is
- * centred on its own.
+ * Centred, with a line-height pinned on the row so the description and the monospace clock
+ * sit in boxes of the same height. That is what centring lacked the first time: left to
+ * their own metrics the two fonts made two different line boxes, so centring them centred
+ * nothing. Aligning on the baseline fixed the text and broke the spinner instead, since a
+ * ring has no baseline to share and was left centring against whichever font happened to
+ * be tallest. One shared box settles all three.
  */
 .composer-working {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   min-width: 0;
   color: var(--text-muted);
   font-size: var(--font-sm);
+  line-height: 1.5;
 }
 
 /*
  * The intent can be a sentence, and the box is not allowed to widen for it.
  *
- * Purple, and a shade below the spinner, which is what the CLI does: it paints the spinner
- * and the word beside it the same hue and dims the word. That leaves the description and
- * the clock reading as two things rather than one run-on line (#20).
+ * Full-strength text, and the one thing on this row that is. The CLI dims this word, but the
+ * CLI is dimming "Working" while this says what the agent is actually doing, which is worth
+ * reading. It separates from the clock by being brighter than it rather than by hue: purple
+ * at this size cleared about 3:1 against the background, which is a colour you notice and
+ * then cannot read (#20).
  */
 .composer-intent {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: color-mix(in srgb, var(--working) 78%, transparent);
+  color: var(--text);
 }
 
 /*
  * A turning ring rather than a pulse, because the point is that something is still moving:
  * a breathing dot reads the same whether the work is progressing or wedged.
+ *
+ * Purple is the CLI's own colour for this, and a ring is a shape rather than something to
+ * read, so it can carry a hue the text next to it could not.
  */
 .composer-spinner {
   flex: none;
-  align-self: center;
   width: 9px;
   height: 9px;
-  border: 1.5px solid color-mix(in srgb, var(--working) 30%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--working) 35%, transparent);
   border-top-color: var(--working);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
