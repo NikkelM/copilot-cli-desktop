@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { open as pickFolder } from '@tauri-apps/plugin-dialog';
 
 import type {
   Attachment,
@@ -36,7 +37,7 @@ import {
   runShell,
   sendMessage,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
 import { activityOf } from './lib/activity';
@@ -480,7 +481,31 @@ export default function App() {
       return;
     }
 
-    const typed = input ? `/${command.name} ${input}` : `/${command.name}`;
+    /**
+     * A command that wants a directory is answered with a window rather than a usage line.
+     *
+     * A path is the one argument a keyboard is bad at: it is long, it is easy to mistype,
+     * and the runtime only finds out at the end. `/add-dir` with nothing after it fails
+     * outright, so there is nothing to lose by asking; `/cwd` with nothing after it reports
+     * where the session is, which is worth keeping, so that one has to be asked for by name.
+     */
+    let argument = input;
+    if (wantsDirectory(command.name, input)) {
+      let picked: string | string[] | null;
+      try {
+        picked = await pickFolder({ directory: true, title: `Choose a directory for /${command.name}` });
+      } catch (e: unknown) {
+        transcript.showLocal('command.failed', { text: messageOf(e) });
+        return;
+      }
+
+      // Dismissing the picker abandons the command. The draft stays, so the line that was
+      // typed is still there to edit rather than having to be typed again.
+      if (typeof picked !== 'string') return;
+      argument = picked;
+    }
+
+    const typed = argument ? `/${command.name} ${argument}` : `/${command.name}`;
 
     /**
      * A command the runtime will not run mid-turn joins the queue behind it.
@@ -516,7 +541,7 @@ export default function App() {
     setResuming(wasCold ? sessionId : null);
 
     try {
-      const outcome = await invokeCommand(sessionId, command.name, input || undefined);
+      const outcome = await invokeCommand(sessionId, command.name, argument || undefined);
 
       switch (outcome.kind) {
         case 'text':

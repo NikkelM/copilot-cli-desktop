@@ -68,15 +68,53 @@ export function isLocal(name: string): boolean {
 }
 
 /**
+ * The word that asks for a folder picker instead of a typed path.
+ *
+ * An ordinary word rather than a symbol, because it has to read as an option in the menu
+ * beside `on` and `off`. It is therefore also a directory name somebody could in principle
+ * own, and `/add-dir browse` would pick rather than add it - reachable anyway by writing
+ * `.\browse` or the full path, and cancelling the picker costs nothing.
+ */
+export const BROWSE = 'browse';
+
+/**
+ * Commands whose argument is a directory, and whether one is required.
+ *
+ * Verified against the runtime rather than assumed. `/add-dir` with no argument fails with
+ * a usage line, so there is nothing to lose by opening a picker instead. `/cwd` with no
+ * argument reports the current directory, which is useful and is not ours to take away -
+ * so it is offered by name and never by omission.
+ */
+const DIRECTORY_COMMANDS: Readonly<Record<string, { readonly required: boolean }>> = {
+  'add-dir': { required: true },
+  cwd: { required: false },
+};
+
+/** Whether this command and argument should be answered by a folder picker. */
+export function wantsDirectory(name: string, input: string): boolean {
+  const command = DIRECTORY_COMMANDS[name];
+  if (!command) return false;
+
+  const argument = input.trim();
+  return argument.toLowerCase() === BROWSE || (argument === '' && command.required);
+}
+
+/**
  * Arguments this app answers for commands the runtime owns.
  *
  * `/session id` is the terminal's own: the runtime's `/session` offers
  * info|checkpoints|files|plan|rename and answers `id` with a usage line, while the CLI adds
  * it and handles it locally (#129). This app holds the id too, so it answers it as well -
  * and the menu has to offer it, or the only way to find it is to already know.
+ *
+ * `browse` is ours everywhere a command wants a directory. A path is the one argument a
+ * window can supply better than a keyboard can, and offering it as a choice is what makes
+ * it findable: nobody guesses a word that appears nowhere.
  */
 const LOCAL_CHOICES: Readonly<Record<string, readonly CommandChoice[]>> = {
   session: [{ name: 'id', description: 'copy this session id to the clipboard' }],
+  'add-dir': [{ name: BROWSE, description: 'choose the directory with a folder picker' }],
+  cwd: [{ name: BROWSE, description: 'choose the directory with a folder picker' }],
 };
 
 /**
