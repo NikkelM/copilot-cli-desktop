@@ -147,13 +147,14 @@ export default function App() {
    */
   const [creating, setCreating] = useState(false);
 
-  async function handleCreate() {
+  async function handleCreate(workingDirectory?: string) {
     setError(null);
     setCreating(true);
     try {
-      // No folder asked for: not every session is about a project, and wanting to ask
-      // something quickly should not begin with choosing a directory.
-      const { sessionId } = await createSession();
+      // Without a folder the sidecar starts the session in the home directory, as running
+      // the CLI with no arguments does: not every session is about a project, and wanting
+      // to ask something quickly should not begin with choosing a directory.
+      const { sessionId } = await createSession(workingDirectory);
       // Selected only once the list holds it, or the pane has nothing to show and the
       // button looks as though it did nothing.
       await sessions.refresh();
@@ -660,10 +661,11 @@ export default function App() {
         sessions={sessions.all}
         selectedId={selectedId}
         onSelect={open}
-        onCreate={() => void handleCreate()}
+        onCreate={(workingDirectory) => void handleCreate(workingDirectory)}
         creating={creating}
         maxLoaded={sessions.maxLoaded}
         activity={activity}
+        onError={setError}
       />
 
       <main className="main">
@@ -842,7 +844,12 @@ export default function App() {
             )}
             {/* Offered whichever of the two is showing: a list that would not load is a
                 reason to start a session, not a reason to hide the way to. */}
-            <button type="button" className="new-session" onClick={handleCreate} disabled={creating}>
+            <button
+              type="button"
+              className="new-session"
+              onClick={() => void handleCreate()}
+              disabled={creating}
+            >
               {creating ? 'Starting…' : 'Start a new session'}
             </button>
           </div>

@@ -9,7 +9,13 @@ import type { SessionSummary } from '../../shared/protocol';
 const findSessions = vi.hoisted(() => vi.fn());
 vi.mock('../lib/sidecar', () => ({ findSessions: (prefix: string) => findSessions(prefix) }));
 
-beforeEach(() => findSessions.mockReset().mockResolvedValue({ sessions: [] }));
+const pickFolder = vi.hoisted(() => vi.fn());
+vi.mock('@tauri-apps/plugin-dialog', () => ({ open: (...args: unknown[]) => pickFolder(...args) }));
+
+beforeEach(() => {
+  findSessions.mockReset().mockResolvedValue({ sessions: [] });
+  pickFolder.mockReset().mockResolvedValue(null);
+});
 
 const session = (over: Partial<SessionSummary>): SessionSummary =>
   ({
@@ -347,5 +353,82 @@ describe('the state a row reports', () => {
       />,
     );
     expect(container.querySelector('.mark')).toBeNull();
+  });
+});
+
+
+/**
+ * Starting a session in a chosen folder (#25). The folder decides which instructions, skills
+ * and agents the session loads, so it has to be settled before the first message rather than
+ * moved afterwards.
+ */
+describe('starting a session in a folder', () => {
+  const start = (onCreate: (dir?: string) => void, onError?: (message: string) => void) => {
+    render(
+      <Sidebar
+        sessions={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={onCreate}
+        creating={false}
+        activity={{}}
+        onError={onError}
+      />,
+    );
+    return screen.getByLabelText('Start a new session in a folder');
+  };
+
+  it('starts the session in the folder that was picked', async () => {
+    const onCreate = vi.fn();
+    pickFolder.mockResolvedValue('C:\\work\\repo');
+
+    await userEvent.click(start(onCreate));
+
+    expect(pickFolder).toHaveBeenCalledWith(expect.objectContaining({ directory: true }));
+    expect(onCreate).toHaveBeenCalledWith('C:\\work\\repo');
+  });
+
+  /** Dismissing the picker means the reader changed their mind, not that they want a session. */
+  it('starts nothing when the picker is dismissed', async () => {
+    const onCreate = vi.fn();
+    pickFolder.mockResolvedValue(null);
+
+    await userEvent.click(start(onCreate));
+
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  it('reports a picker that fails rather than starting a session somewhere else', async () => {
+    const onCreate = vi.fn();
+    const onError = vi.fn();
+    pickFolder.mockRejectedValue(new Error('no picker'));
+
+    await userEvent.click(start(onCreate, onError));
+
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('no picker'));
+    expect(onCreate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The plain button takes no folder. It is a click handler, so without the wrapper it would
+   * hand the mouse event to a parameter that expects a path.
+   */
+  it('asks for no folder at all from the plain button', async () => {
+    const onCreate = vi.fn();
+    render(
+      <Sidebar
+        sessions={[]}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={onCreate}
+        creating={false}
+        activity={{}}
+      />,
+    );
+
+    await userEvent.click(screen.getByText('New'));
+
+    expect(pickFolder).not.toHaveBeenCalled();
+    expect(onCreate).toHaveBeenCalledWith();
   });
 });
