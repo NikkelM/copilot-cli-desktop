@@ -10,6 +10,7 @@ import type {
 import { Changes } from './components/Changes';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
+import { AgentPicker } from './components/AgentPicker';
 import { ModelPicker } from './components/ModelPicker';
 import { OpenIn } from './components/OpenIn';
 import { PermissionPrompt } from './components/PermissionPrompt';
@@ -41,6 +42,7 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useDrafts } from './lib/useDrafts';
+import { useAgent } from './lib/useAgent';
 import { useModel } from './lib/useModel';
 import { useCommands } from './lib/useCommands';
 import { dispatch } from './lib/slash';
@@ -113,6 +115,7 @@ export default function App() {
   const tree = useTreeState(selected?.cwd ?? null);
   const queue = useQueue();
   const model = useModel(selectedId, setError);
+  const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
   const slash = useCommands(selectedId);
   const changes = useChanges(selectedId);
   const prompts = usePrompts(selectedId, setError);
@@ -219,6 +222,8 @@ export default function App() {
       // Every resume reports the model as well as every switch, including one made from a
       // terminal, so the header follows rather than trusting what it read from the log.
       model.observe(event);
+      // The same for the agent, which a slash command can change without this picker.
+      agent.observe(event);
 
       transcript.push(event);
     }),
@@ -638,6 +643,13 @@ export default function App() {
                   >
                     Changes
                   </button>
+                  <AgentPicker
+                    current={agent.current}
+                    agents={agent.agents}
+                    failed={agent.failed}
+                    onOpen={agent.refresh}
+                    onChoose={agent.choose}
+                  />
                   <ModelPicker
                     current={model.current}
                     models={model.models}

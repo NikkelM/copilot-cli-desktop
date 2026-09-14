@@ -439,6 +439,121 @@ body {
   color: var(--accent);
 }
 
+/* The custom agent a session runs as: the same kind of setting as the model, beside it. */
+.agent {
+  position: relative;
+}
+
+.agent-current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.agent-current:hover {
+  color: var(--text);
+}
+
+/* Dimmer than a chosen agent, since running as no agent is the absence of a setting. */
+.agent-name.default {
+  opacity: 0.75;
+}
+
+/* Holds the width a name takes, so switching sessions does not shrink the control. */
+.agent-name.waiting {
+  width: 56px;
+  height: 11px;
+  border-radius: 3px;
+  background: rgba(110, 118, 129, 0.25);
+}
+
+.agent-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  width: 340px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.6);
+}
+
+.agent-loading,
+.agent-menu .error {
+  margin: 0;
+  padding: 8px;
+  font-size: var(--font-md);
+}
+
+.agent-group-head {
+  margin: 6px 0 2px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.agent-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agent-row:hover {
+  background: rgba(110, 118, 129, 0.12);
+}
+
+.agent-row.chosen {
+  background: rgba(56, 139, 253, 0.1);
+}
+
+.agent-row-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text);
+  font-size: var(--font-md);
+}
+
+.agent-row.chosen .agent-row-name {
+  color: var(--accent);
+}
+
+.agent-row-model {
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-xs);
+}
+
+/* One line, because a description is there to tell agents apart rather than to be read. */
+.agent-row-description {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .footer {
   display: flex;
   flex-direction: column;

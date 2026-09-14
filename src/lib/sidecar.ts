@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import type {
+  AgentSummary,
   CommandOutcome,
   ContextTier,
   ElicitationAction,
@@ -23,6 +24,7 @@ import type {
   SessionChange,
   SessionLoadedNotification,
   SessionChangesNotification,
+  SessionAgent,
   SessionModel,
   ShellResult,
   QueuedItem,
@@ -147,6 +149,33 @@ export function setSessionModel(
   contextTier?: ContextTier,
 ): Promise<void> {
   return request('sessions.setModel', { sessionId, model, reasoningEffort, contextTier });
+}
+
+/**
+ * The custom agents there are. Starts the shared server, so it is asked for lazily.
+ *
+ * A directory narrows this to the agents that project defines as well as the reader's own.
+ * No session is resumed either way: which agents exist is a question about the machine.
+ */
+export async function listAgents(cwd?: string): Promise<AgentSummary[]> {
+  const { agents } = await request('agents.list', { cwd });
+  return agents;
+}
+
+/** Which agent a session is on, read from its log. Null is the default agent. */
+export async function sessionAgent(sessionId: string): Promise<SessionAgent | null> {
+  const { agent } = await request('agents.current', { sessionId });
+  return agent;
+}
+
+/** Put a session on an agent from its next message on. Resumes it if it is cold. */
+export function selectAgent(sessionId: string, name: string): Promise<void> {
+  return request('agents.select', { sessionId, name });
+}
+
+/** Return a session to the default agent. Resumes it if it is cold. */
+export function deselectAgent(sessionId: string): Promise<void> {
+  return request('agents.deselect', { sessionId });
 }
 
 /** What git says about a directory now. Null when it is not in a repository. */
