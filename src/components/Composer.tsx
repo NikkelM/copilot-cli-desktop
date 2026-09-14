@@ -458,6 +458,12 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
             shell
           </span>
         )}
+        {/* Said here rather than at the top of the pane, because this is where the reader is
+            looking after pressing Send, and in terms that make the wait make sense: this
+            session costs nothing until it is woken, which is the whole idea. On its own row,
+            because a sentence sitting beside the buttons would squeeze the box it is about. */}
+        {resuming && <span className="waking">Waking this session up</span>}
+
         <textarea
           ref={inputRef}
           value={text}
@@ -487,7 +493,7 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
                   ? 'Agent is working. Enter queues this behind it.'
                   : 'Send a message. Enter to send, Shift+Enter for a newline, / for commands, ! for a shell command.'
           }
-          rows={3}
+          rows={1}
           disabled={disabled}
         />
         {ghost && (
@@ -501,11 +507,6 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
             one is named as well as drawn: an icon on its own says nothing to a reader who
             cannot see it, and little to one seeing it for the first time. */}
         <div className="composer-actions">
-          {/* Said here rather than at the top of the pane, because this is where the reader
-              is looking after pressing Send, and in terms that make the wait make sense:
-              this session costs nothing until it is woken, which is the whole idea. */}
-          {resuming && <span className="waking">Waking this session up</span>}
-
           {/* How long this has been going, next to the button that stops it. Long work
               otherwise gives no sign of whether it is progressing or hung (#70). */}
           {busy && <Elapsed since={busySince ?? undefined} />}

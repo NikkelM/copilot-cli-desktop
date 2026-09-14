@@ -1423,7 +1423,9 @@ button.group:hover {
  * length and a static line reads as something that has already failed.
  */
 .waking {
-  margin-right: auto;
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin: 6px 0 -4px 12px;
   color: var(--text-muted);
   font-size: var(--font-md);
   animation: breathe 1.4s ease-in-out infinite;
@@ -1735,14 +1737,24 @@ button.group:hover {
   gap: 8px;
 }
 
+/*
+ * One row to start with, growing a row at a time and scrolling once it reaches the ceiling.
+ *
+ * `field-sizing` does this in the layout engine, so there is no measuring pass per keystroke
+ * and no second copy of the text to measure against. The ceiling is about eight rows, past
+ * which a long prompt would start eating the transcript it is being written about.
+ */
 .composer textarea {
   width: 100%;
+  max-height: 13rem;
   padding: 10px 12px;
   border: none;
   background: transparent;
   color: var(--text);
   font: inherit;
-  resize: vertical;
+  field-sizing: content;
+  resize: none;
+  overflow-y: auto;
 }
 
 /* The menu sits directly on the box it is completing, so the composer's own gap is all the
@@ -1758,14 +1770,21 @@ button.group:hover {
  * so the composer is the last thing in the pane rather than the second to last. The border
  * moves here and the textarea gives its own up, which is also what lets the two share a
  * focus ring.
+ *
+ * A grid rather than a column, so the buttons sit beside the text instead of under it and
+ * stay on the first row as the box grows. The shell badge spans both columns above them.
  */
 .composer-input {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg-raised);
+}
+
+.composer-input > textarea {
+  grid-column: 1;
 }
 
 .composer-input:focus-within {
@@ -1802,7 +1821,8 @@ button.group:hover {
  * mode changes where Enter sends what is written, which is worth noticing.
  */
 .composer-mode {
-  align-self: flex-start;
+  grid-column: 1 / -1;
+  justify-self: start;
   margin: 6px 0 -4px 12px;
   padding: 1px 6px;
   border-radius: 4px;
@@ -1865,14 +1885,17 @@ button.group:hover {
   outline: none;
 }
 
-/* Right-aligned inside the box, with anything the app has to say about the wait pushed to
-   the left by the .waking rule's own margin. */
+/* Beside the text rather than under it, and pinned to the first row so they stay put as the
+   box grows. Only the elapsed time joins them: it is short enough not to crowd the box, and
+   it belongs next to the button that stops the work it is counting. */
 .composer-actions {
+  grid-column: 2;
+  align-self: start;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  padding: 0 6px 6px;
+  padding: 6px 6px 0 0;
 }
 
 /*
