@@ -21,6 +21,7 @@ import type {
   ReasoningEffort,
   ShellResult,
   QueuedItem,
+  SessionContextUsage,
   SessionEnvironment,
   SlashCommand,
 } from '../../shared/protocol.js';
@@ -934,6 +935,43 @@ export class SessionRuntime {
       text: stripAnsi(item.displayText),
       ...(item.messageId ? { messageId: item.messageId } : {}),
     }));
+  }
+
+  /**
+   * How much of a loaded session's context window is spoken for.
+   *
+   * Asked of the runtime rather than reconstructed here, because the count depends on the
+   * tokeniser of the model actually resolved - which under `Auto` is not the model the log
+   * names - and on tool definitions that vary with what is installed. This is the same
+   * breakdown `/context` prints.
+   *
+   * Null for a session that is not loaded, for the same reason the queue is empty for one:
+   * the numbers live in the running session and nowhere on disk, and resuming a session to
+   * find out how full it is would cost exactly what this app exists to avoid. Also null for
+   * a session that is loaded but has not yet built its system prompt, which the runtime
+   * reports by answering with a null attribution rather than an error.
+   */
+  async contextUsage(sessionId: string): Promise<SessionContextUsage | null> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return null;
+
+    const { contextAttribution: found } = await live.rpc.metadata.getContextAttribution();
+    if (!found) return null;
+
+    return {
+      totalTokens: found.totalTokens,
+      promptTokenLimit: found.promptTokenLimit,
+      compactionThreshold: found.compactionThreshold,
+      categories: {
+        systemPrompt: found.categories.systemPrompt,
+        customInstructions: found.categories.customInstructions,
+        systemTools: found.categories.systemTools,
+        mcpTools: found.categories.mcpTools,
+        messages: found.categories.messages,
+        freeSpace: found.categories.freeSpace,
+      },
+      compactions: found.compactions.count,
+    };
   }
 
   /**

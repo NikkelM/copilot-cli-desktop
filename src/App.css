@@ -301,6 +301,17 @@ body {
   background: rgba(110, 118, 129, 0.25);
 }
 
+/* Tabular figures so a meter counting up does not jitter the controls beside it. */
+.model-tag.context {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Past the point the runtime starts compacting, which is the reader's cue to wrap up. */
+.model-tag.context.pressed {
+  background: rgba(210, 153, 34, 0.25);
+  color: #d29922;
+}
+
 /* Anchored to the control and above the transcript, which scrolls underneath it. */
 .model-menu {
   position: absolute;

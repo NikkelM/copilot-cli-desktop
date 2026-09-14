@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
+import type { CopilotSession } from '@github/copilot-sdk';
 
 import { copilotHome } from './paths.js';
 import { SessionRuntime, type RuntimeOptions } from './runtime.js';
+
+/** Tied to the SDK's own signature so a shape change fails the build rather than the fake. */
+type ContextAttribution = Awaited<ReturnType<CopilotSession['rpc']['metadata']['getContextAttribution']>>;
 
 /**
  * A stand-in for a resumed session.
@@ -53,6 +57,30 @@ function makeSession(id: string) {
       },
       options: {
         update: vi.fn(async (_params: { disabledSkills?: string[] }) => ({ success: true })),
+      },
+      metadata: {
+        getContextAttribution: vi.fn(async (): Promise<ContextAttribution> => ({
+          contextAttribution: {
+            totalTokens: 34_000,
+            modelId: 'claude-opus-5',
+            modelSource: 'selected',
+            promptTokenLimit: 128_000,
+            limit: 144_000,
+            bufferTokens: 16_000,
+            compactionThreshold: 102_400,
+            categories: {
+              systemPrompt: 4000,
+              customInstructions: 1000,
+              systemTools: 8000,
+              mcpTools: 2000,
+              messages: 19_000,
+              freeSpace: 94_000,
+              buffer: 16_000,
+            },
+            entries: [],
+            compactions: { count: 2 },
+          },
+        })),
       },
     },
     abort: vi.fn(async function (this: { aborted: boolean }) {
@@ -750,6 +778,70 @@ describe('queueing a command behind a running turn', () => {
     sessions.get('s1')!.rpc.commands.enqueue.mockResolvedValueOnce({ queued: false });
 
     expect(await runtime.enqueue('s1', '/compact')).toBe(false);
+  });
+});
+
+/**
+ * The usage figures are emitted live and never written to the log, so a cold session cannot
+ * be asked how full it is - and must not be woken to find out, which is the cost this app
+ * exists to avoid.
+ */
+describe('how full a session window is', () => {
+  it('reports the breakdown for a loaded session', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    expect(await runtime.contextUsage('s1')).toEqual({
+      totalTokens: 34_000,
+      promptTokenLimit: 128_000,
+      compactionThreshold: 102_400,
+      categories: {
+        systemPrompt: 4000,
+        customInstructions: 1000,
+        systemTools: 8000,
+        mcpTools: 2000,
+        messages: 19_000,
+        freeSpace: 94_000,
+      },
+      compactions: 2,
+    });
+  });
+
+  it('says nothing for a session that is not loaded', async () => {
+    const { runtime, sessions } = makeRuntime();
+
+    expect(await runtime.contextUsage('never-opened')).toBeNull();
+    expect(sessions.has('never-opened')).toBe(false);
+  });
+
+  // Asking is what the sidebar does for whichever session is open, so it must never be the
+  // thing that starts a Copilot process.
+  it('does not resume a cold session to answer', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.contextUsage('cold');
+
+    expect(client.start).not.toHaveBeenCalled();
+  });
+
+  // Null until the session has built its system prompt and tool metadata, which the runtime
+  // reports by answering with a null attribution rather than with zeroes.
+  it('says nothing when the session has not finished starting', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.metadata.getContextAttribution.mockResolvedValueOnce({ contextAttribution: null });
+
+    expect(await runtime.contextUsage('s1')).toBeNull();
+  });
+
+  // The property is optional as well as nullable, so an older runtime that omits it entirely
+  // has to read as "no answer" rather than throw on the way past the guard.
+  it('says nothing when the runtime omits the attribution', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.metadata.getContextAttribution.mockResolvedValueOnce({});
+
+    expect(await runtime.contextUsage('s1')).toBeNull();
   });
 });
 

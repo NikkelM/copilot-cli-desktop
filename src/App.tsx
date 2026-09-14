@@ -47,6 +47,7 @@ import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
 import { useAgent } from './lib/useAgent';
 import { useModel } from './lib/useModel';
+import { useContextUsage } from './lib/useContextUsage';
 import { useCommands } from './lib/useCommands';
 import { dispatch } from './lib/slash';
 import { usePrompts } from './lib/usePrompts';
@@ -120,6 +121,7 @@ export default function App() {
   const tree = useTreeState(selected?.cwd ?? null);
   const queue = useQueue();
   const model = useModel(selectedId, setError);
+  const contextUsage = useContextUsage(selectedId);
   const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
   const slash = useCommands(selectedId);
   const changes = useChanges(selectedId);
@@ -234,6 +236,9 @@ export default function App() {
       model.observe(event);
       // The same for the agent, which a slash command can change without this picker.
       agent.observe(event);
+      // And the same for the window's occupancy, which a finished reply or a compaction
+      // moves without either being something this app asked for.
+      contextUsage.observe(event);
 
       transcript.push(event);
     }),
@@ -249,6 +254,10 @@ export default function App() {
       // A session that is awake knows about a few commands the runtime at large does not,
       // and a server is already running to ask, so this costs nothing to take.
       slash.observe(loaded, sessionId);
+
+      // Waking one is what gives it a window to measure, and letting it go takes the
+      // measurement with it. Only for the session on screen, since that is the only meter.
+      if (sessionId === selectedRef.current) contextUsage.observeLoaded(loaded);
     }),
   );
 
@@ -684,6 +693,7 @@ export default function App() {
                   <ModelPicker
                     current={model.current}
                     models={model.models}
+                    usage={contextUsage.usage}
                     failed={model.failed}
                     onOpen={model.refresh}
                     onChoose={model.choose}

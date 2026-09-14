@@ -26,6 +26,7 @@ import type {
   SessionLoadedNotification,
   SessionChangesNotification,
   SessionAgent,
+  SessionContextUsage,
   SessionModel,
   ShellResult,
   QueuedItem,
@@ -140,6 +141,12 @@ export async function sessionQueue(sessionId: string): Promise<QueuedItem[]> {
 export async function sessionModel(sessionId: string): Promise<SessionModel | null> {
   const { current } = await request('sessions.model', { sessionId });
   return current;
+}
+
+/** How full a loaded session's window is. Null when it is not loaded, which is not changed by asking. */
+export async function sessionContext(sessionId: string): Promise<SessionContextUsage | null> {
+  const { usage } = await request('sessions.context', { sessionId });
+  return usage;
 }
 
 /** Change the model a session uses from its next message on. Resumes it if it is cold. */

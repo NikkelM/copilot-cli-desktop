@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 
 import { startingEffort } from '../lib/models';
 import { credits, tokens } from '../lib/units';
-import type { ContextTier, ModelChoice, ReasoningEffort, SessionModel } from '../../shared/protocol';
+import type {
+  ContextTier,
+  ModelChoice,
+  ReasoningEffort,
+  SessionContextUsage,
+  SessionModel,
+} from '../../shared/protocol';
 
 export interface ModelChoiceMade {
   model: string;
@@ -15,6 +21,8 @@ interface ModelPickerProps {
   current: SessionModel | null | undefined;
   /** What is available. Remembered between runs, so it is usually known before opening. */
   models: ModelChoice[] | null;
+  /** How full the window is. Null for a session the runtime is not holding, which has no window. */
+  usage: SessionContextUsage | null;
   /** Why the catalogue could not be fetched, if it could not. */
   failed: string | null;
   /** Refresh the catalogue. Costs a running server, so it waits for the picker to open. */
@@ -23,12 +31,40 @@ interface ModelPickerProps {
 }
 
 /**
+ * What the room has gone on, for the meter's tooltip.
+ *
+ * Ordered largest first rather than by name: the reason to open this is to find what is
+ * taking the space, and empty buckets are left out so a session with no MCP servers does not
+ * read as having them.
+ */
+function spentOn(usage: SessionContextUsage): string {
+  const parts: [string, number][] = [
+    ['messages', usage.categories.messages],
+    ['tools', usage.categories.systemTools],
+    ['MCP tools', usage.categories.mcpTools],
+    ['system prompt', usage.categories.systemPrompt],
+    ['instructions', usage.categories.customInstructions],
+  ];
+
+  const spent = parts
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([label, count]) => `${tokens(count)} ${label}`)
+    .join(', ');
+
+  const compacted =
+    usage.compactions > 0 ? `, compacted ${usage.compactions === 1 ? 'once' : `${usage.compactions} times`}` : '';
+
+  return `${spent}${compacted}`;
+}
+
+/**
  * Which model a session runs on, how hard it is asked to think, and how much room it has.
  *
  * All three read as one setting, so the closed control shows all three and the menu offers
  * all three: changing the effort should not mean finding the model again.
  */
-export function ModelPicker({ current, models, failed, onOpen, onChoose }: ModelPickerProps) {
+export function ModelPicker({ current, models, usage, failed, onOpen, onChoose }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   /** The row under the pointer, so its price can be read without committing to it. */
   const [hovered, setHovered] = useState<string | null>(null);
@@ -88,8 +124,20 @@ export function ModelPicker({ current, models, failed, onOpen, onChoose }: Model
           <span className="model-id">{current?.model ?? 'No model recorded'}</span>
         )}
         {effort && <span className="model-tag">{effort}</span>}
-        {/* Only once the catalogue is known, since the size is not in the session's log. */}
-        {room && <span className="model-tag">{tokens(room.maxPromptTokens)}</span>}
+        {/* How much room is left beats how much there is, so the meter replaces the size
+            whenever the runtime can say. Only a loaded session can: a cold one is occupying
+            no window, and its size alone still tells the reader what it would have. */}
+        {usage ? (
+          <span
+            className={`model-tag context${usage.totalTokens >= usage.compactionThreshold ? ' pressed' : ''}`}
+            title={`Context: ${spentOn(usage)}`}
+          >
+            {tokens(usage.totalTokens)}/{tokens(usage.promptTokenLimit)}
+          </span>
+        ) : (
+          /* Only once the catalogue is known, since the size is not in the session's log. */
+          room && <span className="model-tag">{tokens(room.maxPromptTokens)}</span>
+        )}
       </button>
 
       {open && (

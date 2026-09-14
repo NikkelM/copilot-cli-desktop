@@ -129,6 +129,34 @@ export interface SessionModel {
 }
 
 /**
+ * How full a loaded session's context window is.
+ *
+ * Only ever known for a session the runtime already holds. The figures are not written to
+ * the event log - `session.usage_info` is emitted live and never persisted - so a session
+ * nobody has opened cannot be asked how much room it has left, and asking must not be what
+ * loads it.
+ */
+export interface SessionContextUsage {
+  /** System prompt, conversation and tool definitions together: the numerator of `##k/###k`. */
+  totalTokens: number;
+  /** Most the model will take, and so the denominator. */
+  promptTokenLimit: number;
+  /** Where background compaction starts, which is the number worth warning before. */
+  compactionThreshold: number;
+  /** The `/context` buckets, for saying what the room went on rather than only how much. */
+  categories: {
+    systemPrompt: number;
+    customInstructions: number;
+    systemTools: number;
+    mcpTools: number;
+    messages: number;
+    freeSpace: number;
+  };
+  /** How many times this session's history has already been compacted away. */
+  compactions: number;
+}
+
+/**
  * Something sent along with a message.
  *
  * The runtime takes several shapes - directories, selections, raw blobs - and this is the
@@ -626,6 +654,8 @@ export interface SidecarRequests {
   };
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
+  /** How full the window is. Null for a session that is not loaded, which is not resumed to ask. */
+  'sessions.context': { params: { sessionId: string }; result: { usage: SessionContextUsage | null } };
   'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };
   'sessions.setModel': {
     params: { sessionId: string; model: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier };

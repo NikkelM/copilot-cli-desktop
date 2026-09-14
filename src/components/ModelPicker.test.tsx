@@ -31,10 +31,18 @@ const models: ModelChoice[] = [
 const picker = (props: Partial<Parameters<typeof ModelPicker>[0]> = {}) => {
   const onChoose = vi.fn();
   const onOpen = vi.fn();
-  render(
-    <ModelPicker current={null} models={models} failed={null} onOpen={onOpen} onChoose={onChoose} {...props} />,
+  const { container } = render(
+    <ModelPicker
+      current={null}
+      models={models}
+      usage={null}
+      failed={null}
+      onOpen={onOpen}
+      onChoose={onChoose}
+      {...props}
+    />,
   );
-  return { onChoose, onOpen };
+  return { onChoose, onOpen, container };
 };
 
 const openMenu = async () => {
@@ -88,6 +96,100 @@ describe('ModelPicker', () => {
     it('says so when the log never named a model', () => {
       picker({ current: null });
       expect(screen.getAllByRole('button')[0].textContent).toContain('No model recorded');
+    });
+  });
+
+  /**
+   * How much room is left is worth more than how much there is, but only a loaded session can
+   * say: the figures live in the running session and are never written to the log.
+   */
+  describe('the context meter', () => {
+    const usage = {
+      totalTokens: 34_000,
+      promptTokenLimit: 128_000,
+      compactionThreshold: 102_400,
+      categories: {
+        systemPrompt: 4000,
+        customInstructions: 1000,
+        systemTools: 8000,
+        mcpTools: 2000,
+        messages: 19_000,
+        freeSpace: 94_000,
+      },
+      compactions: 0,
+    };
+
+    it('shows what is used against what there is', () => {
+      picker({ current: { model: 'grok-4.6' }, usage });
+      expect(screen.getAllByRole('button')[0].textContent).toContain('34k/128k');
+    });
+
+    // Nothing is occupying the window of a session the runtime is not holding, so its size
+    // alone is still the useful thing to say.
+    it('falls back to the size when the session is not loaded', () => {
+      picker({ current: { model: 'grok-4.6' }, usage: null });
+
+      const control = screen.getAllByRole('button')[0];
+      expect(control.textContent).toContain('128k');
+      expect(control.textContent).not.toContain('/');
+    });
+
+    // The runtime resolves what `auto` actually ran as, so its limit is right where the
+    // catalogue's entry for the named model would not be.
+    it('trusts the runtime\u2019s limit over the catalogue\u2019s', () => {
+      picker({ current: { model: 'auto' }, usage: { ...usage, promptTokenLimit: 936_000 } });
+      expect(screen.getAllByRole('button')[0].textContent).toContain('34k/936k');
+    });
+
+    it('marks nothing while there is room left', () => {
+      const { container } = picker({ current: { model: 'grok-4.6' }, usage });
+      expect(container.querySelector('.model-tag.context.pressed')).toBeNull();
+    });
+
+    // Past this the runtime starts compacting history away, which is the reader's cue.
+    it('marks the meter once compaction is due', () => {
+      const { container } = picker({ current: { model: 'grok-4.6' }, usage: { ...usage, totalTokens: 110_000 } });
+      expect(container.querySelector('.model-tag.context.pressed')).toBeTruthy();
+    });
+
+    it('marks it exactly at the threshold, not only past it', () => {
+      const { container } = picker({ current: { model: 'grok-4.6' }, usage: { ...usage, totalTokens: 102_400 } });
+      expect(container.querySelector('.model-tag.context.pressed')).toBeTruthy();
+    });
+
+    it('says what the room went on, largest first', () => {
+      const { container } = picker({ current: { model: 'grok-4.6' }, usage });
+
+      expect(container.querySelector('.model-tag.context')?.getAttribute('title')).toBe(
+        'Context: 19k messages, 8k tools, 4k system prompt, 2k MCP tools, 1k instructions',
+      );
+    });
+
+    // A session with no MCP servers should not read as having them.
+    it('leaves out what is taking nothing', () => {
+      const { container } = picker({
+        current: { model: 'grok-4.6' },
+        usage: { ...usage, categories: { ...usage.categories, mcpTools: 0, customInstructions: 0 } },
+      });
+
+      const title = container.querySelector('.model-tag.context')?.getAttribute('title');
+      expect(title).not.toContain('MCP');
+      expect(title).not.toContain('instructions');
+    });
+
+    it('says how much history has already been compacted away', () => {
+      const { container } = picker({ current: { model: 'grok-4.6' }, usage: { ...usage, compactions: 3 } });
+      expect(container.querySelector('.model-tag.context')?.getAttribute('title')).toContain('compacted 3 times');
+    });
+
+    it('counts a single compaction in words', () => {
+      const { container } = picker({ current: { model: 'grok-4.6' }, usage: { ...usage, compactions: 1 } });
+      expect(container.querySelector('.model-tag.context')?.getAttribute('title')).toContain('compacted once');
+    });
+
+    it('says nothing about compaction when none has happened', () => {
+      const { container } = picker({ current: { model: 'grok-4.6' }, usage });
+      expect(container.querySelector('.model-tag.context')?.getAttribute('title')).not.toContain('compacted');
     });
   });
 

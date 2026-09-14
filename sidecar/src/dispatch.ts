@@ -106,6 +106,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.model': async ({ sessionId }) => ({ current: await lastModel(sessionId) }),
 
+    'sessions.context': async ({ sessionId }) => ({ usage: await runtime.contextUsage(sessionId) }),
+
     'sessions.setModel': ({ sessionId, model, reasoningEffort, contextTier }) =>
       runtime.setModel(sessionId, model, reasoningEffort, contextTier),
 
