@@ -1727,6 +1727,12 @@ button.group:hover {
   font-size: var(--font-sm);
 }
 
+/* A skill's note reports rather than warns: it says where the row came from, which is
+   ordinary, where an interrupted tool is not. */
+.tool-note.skill {
+  color: var(--text-muted);
+}
+
 .tool-lines {
   flex-shrink: 0;
   color: var(--text-muted);

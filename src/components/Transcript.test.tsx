@@ -626,3 +626,48 @@ describe('showing or hiding the model thinking', () => {
     expect(screen.getByText('the second one')).toBeTruthy();
   });
 });
+
+describe('a skill in the transcript', () => {
+  const skill = (data: Record<string, unknown>) => show([event('skill.invoked', data, 'e1')]);
+
+  it('marks the row as a skill rather than a finished tool', () => {
+    const { container } = skill({ name: 'pdf', commandName: 'pdf', description: 'Work with PDFs' });
+
+    expect(container.querySelector('.tool-status')?.textContent).toBe('\u25C8');
+  });
+
+  it('says when the agent reached for the skill itself', () => {
+    skill({ name: 'pdf', trigger: 'agent-invoked' });
+
+    expect(screen.getByText('skill the agent reached for')).toBeTruthy();
+  });
+
+  it('says when the skill arrived with the agent', () => {
+    skill({ name: 'pdf', trigger: 'context-load' });
+
+    expect(screen.getByText('skill loaded with the agent')).toBeTruthy();
+  });
+
+  // Telling the reader they invoked something, on the row they invoked it from, is noise.
+  it('stays quiet about a skill the reader invoked', () => {
+    const { container } = skill({ name: 'pdf', trigger: 'user-invoked' });
+
+    expect(container.querySelector('.tool-note')).toBeNull();
+  });
+
+  it('holds the skill\u2019s instructions behind the row', async () => {
+    skill({ name: 'pdf', description: 'Work with PDFs', content: 'Use pdftk for everything.' });
+    expect(screen.queryByText('Use pdftk for everything.')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: /pdf/ }));
+    expect(screen.getByText('Use pdftk for everything.')).toBeTruthy();
+  });
+
+  // A skill names no file, so its row keeps the marker rather than taking a file's badge,
+  // even when the skill is named after one.
+  it('never wears a file badge', () => {
+    const { container } = skill({ name: 'build.ts', content: 'x' });
+
+    expect(container.querySelector('.tool-badge')).toBeNull();
+  });
+});

@@ -999,3 +999,51 @@ describe('toEntries, a tool reporting output while it runs', () => {
     expect(toEntries([chunk('orphaned')], CWD)).toHaveLength(0);
   });
 });
+
+describe('a skill loading into the conversation', () => {
+  const invoked = (data: Record<string, unknown>) => toEntries([event('skill.invoked', data, 'e1')], CWD);
+
+  it('names the skill by the command that would invoke it', () => {
+    const [entry] = invoked({ name: 'pdf-tools', commandName: 'pdf', description: 'Work with PDFs', trigger: 'user-invoked' });
+
+    expect(entry).toMatchObject({ kind: 'tool', name: '/pdf', summary: 'Work with PDFs', status: 'ok' });
+  });
+
+  it('falls back to the skill\u2019s own name when it has no command', () => {
+    const [entry] = invoked({ name: 'pdf-tools', description: 'Work with PDFs', trigger: 'agent-invoked' });
+
+    expect(entry).toMatchObject({ name: 'pdf-tools' });
+  });
+
+  it('keeps the skill\u2019s content to read behind the row', () => {
+    const [entry] = invoked({ name: 'pdf', content: '# PDF\n\nUse pdftk.' });
+
+    expect((entry as ToolEntry).output).toBe('# PDF\n\nUse pdftk.');
+  });
+
+  it('trims content too long to be worth holding whole', () => {
+    const [entry] = invoked({ name: 'pdf', content: 'x'.repeat(5000) });
+
+    expect((entry as ToolEntry).output).toHaveLength(4001);
+    expect((entry as ToolEntry).output?.endsWith('\u2026')).toBe(true);
+  });
+
+  it('records why the skill loaded', () => {
+    expect((invoked({ name: 'a', trigger: 'user-invoked' })[0] as ToolEntry).skill).toBe('user');
+    expect((invoked({ name: 'a', trigger: 'agent-invoked' })[0] as ToolEntry).skill).toBe('agent');
+    expect((invoked({ name: 'a', trigger: 'context-load' })[0] as ToolEntry).skill).toBe('context');
+  });
+
+  it('treats an unfamiliar trigger as the reader\u2019s own doing', () => {
+    expect((invoked({ name: 'a', trigger: 'something-new' })[0] as ToolEntry).skill).toBe('user');
+    expect((invoked({ name: 'a' })[0] as ToolEntry).skill).toBe('user');
+  });
+
+  it('ignores an invocation that names no skill', () => {
+    expect(invoked({ trigger: 'user-invoked' })).toEqual([]);
+  });
+
+  it('leaves a skill with no content unexpandable', () => {
+    expect((invoked({ name: 'a' })[0] as ToolEntry).output).toBeNull();
+  });
+});

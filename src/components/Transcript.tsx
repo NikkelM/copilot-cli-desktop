@@ -22,6 +22,12 @@ const BOTTOM_TOLERANCE_PX = 4;
 /** How close to the top triggers loading the previous page. */
 const LOAD_OLDER_THRESHOLD_PX = 120;
 
+/** Why a skill arrived, for the rows where that is not the reader's own doing. */
+const SKILL_NOTE: Record<string, string> = {
+  agent: 'skill the agent reached for',
+  context: 'skill loaded with the agent',
+};
+
 const STATUS_GLYPH: Record<ToolEntry['status'], string> = {
   running: '·',
   ok: '✓',
@@ -135,7 +141,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
             {badge.label}
           </span>
         ) : (
-          <span className="tool-status">{STATUS_GLYPH[entry.status]}</span>
+          <span className="tool-status">{entry.skill ? '◈' : STATUS_GLYPH[entry.status]}</span>
         )}
         <span className="tool-name">{entry.name}</span>
         <span className="tool-subject">
@@ -158,6 +164,11 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
           {entry.answer && <span className="tool-answer">{entry.answer}</span>}
         </span>
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
+        {/* Why a skill is here, next to its name. Silent when the reader invoked it: they
+            know, and the row would be saying it back to them. */}
+        {entry.skill && entry.skill !== 'user' && (
+          <span className="tool-note skill">{SKILL_NOTE[entry.skill]}</span>
+        )}
         {/* Says how much is behind the row, and stays once it is opened: it describes the
             row rather than the fact that it is folded. Right-aligned, so it reads as a
             separate column without needing punctuation. */}

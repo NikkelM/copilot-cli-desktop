@@ -97,6 +97,14 @@ export interface ToolEntry {
   path?: string;
   /** A search, whose result is counted in matches rather than lines. */
   search?: boolean;
+  /**
+   * Not a tool at all, but a skill that was loaded, and what caused it to load.
+   *
+   * Shares the row because it is the same shape: a named thing that ran, with content
+   * worth reading only if asked for. Giving it its own kind would mean a second collapsing
+   * row that behaves identically, and a second path for the transcript to render.
+   */
+  skill?: 'user' | 'agent' | 'context';
   /** When it began, so a long-running call can say how long it has been going. */
   startedAt?: string;
   /** When it stopped, whether it finished or was cancelled. Absent while it runs. */
@@ -242,6 +250,20 @@ function clip(value: string): string {
   const trimmed = stripAnsi(value).trim();
   return trimmed.length > MAX_OUTPUT ? `${trimmed.slice(0, MAX_OUTPUT)}…` : trimmed;
 }
+
+/**
+ * Why a skill loaded.
+ *
+ * The distinction is most of the point of the row: a skill the reader asked for needs no
+ * explaining, while one the agent reached for on its own, or one that arrived with a chosen
+ * agent, accounts for behaviour nobody asked for. An unknown trigger reads as user-invoked,
+ * the case that says least.
+ */
+const TRIGGER: Record<string, ToolEntry['skill']> = {
+  'user-invoked': 'user',
+  'agent-invoked': 'agent',
+  'context-load': 'context',
+};
 
 /** Longest question shown in a row header before clamping. */
 const MAX_HEADER = 140;
@@ -478,6 +500,31 @@ export function toEntries(
           body: text(data, 'message') ?? 'Session error',
         });
         break;
+
+      // A skill that was loaded into the conversation. Worth a row because its content
+      // becomes part of what the agent was told, and a reader wondering why a session
+      // behaved unusually has no other way to see that it arrived.
+      case 'skill.invoked': {
+        const name = text(data, 'name');
+        if (name) {
+          const command = text(data, 'commandName');
+          const content = text(data, 'content');
+          entries.push({
+            kind: 'tool',
+            key,
+            name: command ? `/${command}` : name,
+            summary: text(data, 'description') ?? '',
+            // The whole SKILL.md, trimmed like any other output: it is what the agent was
+            // handed, and is occasionally long enough to be the answer on its own.
+            output: content ? clip(content) : null,
+            status: 'ok',
+            skill: TRIGGER[text(data, 'trigger') ?? ''] ?? 'user',
+            startedAt: event.timestamp,
+            endedAt: event.timestamp,
+          });
+        }
+        break;
+      }
 
       // What a slash command produced. Only ever a local event: a command's output is
       // returned to whoever ran it and written down nowhere, so this row exists for as long
