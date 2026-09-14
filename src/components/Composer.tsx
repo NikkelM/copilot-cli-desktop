@@ -557,10 +557,10 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
           </button>
         </div>
 
-        {/* The status line the CLI puts under its prompt: what mode the session is in on
-            one side, what it is doing on the other. Absent entirely when there is neither
-            to report, which is most of the time - a line that is always there is a line
-            nobody reads, and an empty one only shortens the transcript above it. */}
+        {/* The status line the CLI puts under its prompt: what mode the session is in, and
+            what it is doing, both from the left. Absent entirely when there is neither to
+            report, which is most of the time - a line that is always there is a line nobody
+            reads, and an empty one only shortens the transcript above it. */}
         {(mode !== 'interactive' || busy) && (
           <div className="composer-status">
             {/* Only when the session is somewhere other than interactive. That is where a

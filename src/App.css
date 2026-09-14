@@ -2183,15 +2183,13 @@ button.group:hover {
   color: var(--warning);
 }
 
-/* What the agent is doing, and how long it has been at it. Held to the right by its own
-   margin rather than by the line's justification, so it does not slide across when the mode
-   appears or goes. */
+/* What the agent is doing, and how long it has been at it. Left-aligned, which puts it in
+   the reading path rather than in the far corner, and next to the mode when there is one. */
 .composer-working {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  margin-left: auto;
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
