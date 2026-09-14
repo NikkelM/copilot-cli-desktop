@@ -2148,7 +2148,10 @@ button.group:hover {
   align-items: center;
   gap: 8px;
   min-height: 24px;
-  padding: 0 8px 4px 10px;
+  /* Bottom matches the textarea's own 10px top padding, so the line sits in the box with
+     the same air above the first word as below the last badge, rather than crowding the
+     border. */
+  padding: 0 8px 8px 10px;
 }
 
 /*
