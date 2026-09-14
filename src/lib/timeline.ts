@@ -43,6 +43,30 @@ export function intentOf(event: TranscriptEvent): string | null {
   return null;
 }
 
+/**
+ * When the clock under the composer should be counting from, given the event that arrived.
+ *
+ * Three rules, and the first two are in tension:
+ *
+ * - A user message restarts it. That covers the reader sending one and the runtime taking
+ *   one off the queue, which look identical here because `user.message` is emitted when a
+ *   message is picked up rather than when it is queued.
+ * - A turn start only starts it if nothing else has. A request that calls tools starts a
+ *   turn once per round trip, and the reader is waiting for the answer rather than for the
+ *   hop, so restarting on each would report the last few seconds of a long wait (#70).
+ * - Going idle stops it.
+ *
+ * Idle is the only stop, and the runtime does not go idle between a finished turn and a
+ * queued one, so without the user message rule the clock runs across every queued prompt
+ * and reports how long the reader has been waiting overall.
+ */
+export function clockFrom(event: TranscriptEvent, current: string | null): string | null {
+  if (event.type === 'session.idle' || event.type === 'abort') return null;
+  if (event.type === 'user.message') return event.timestamp ?? new Date().toISOString();
+  if (event.type === 'assistant.turn_start') return current ?? event.timestamp ?? new Date().toISOString();
+  return current;
+}
+
 function messageIdOf(event: TranscriptEvent): string | null {
   const data = event.data as { messageId?: unknown } | null;
   return typeof data?.messageId === 'string' ? data.messageId : null;

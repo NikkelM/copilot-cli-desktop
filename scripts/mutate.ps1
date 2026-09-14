@@ -19,9 +19,17 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$sourcePath = Join-Path $root $Source
+
+# Accept both a path relative to the repository and an absolute one, so a mutation list can
+# live outside the tree without being silently glued onto the repository root.
+function Resolve-Input([string]$path) {
+  if ([System.IO.Path]::IsPathRooted($path)) { return $path }
+  return Join-Path $root $path
+}
+
+$sourcePath = Resolve-Input $Source
 $original = Get-Content $sourcePath -Raw
-$plan = Get-Content (Join-Path $root $Mutations) -Raw | ConvertFrom-Json
+$plan = Get-Content (Resolve-Input $Mutations) -Raw | ConvertFrom-Json
 
 $caught = 0
 $skipped = 0

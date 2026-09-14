@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { appendLive, intentOf, timelineOf, type TimelineEvent } from './timeline';
+import { appendLive, clockFrom, intentOf, timelineOf, type TimelineEvent } from './timeline';
 
 const intended = (intent: unknown): TimelineEvent =>
   ({ type: 'assistant.intent', data: { intent } }) as unknown as TimelineEvent;
@@ -72,6 +72,67 @@ describe('intentOf', () => {
     expect(intentOf(intended(undefined))).toBeNull();
     expect(intentOf(requesting(42))).toBeNull();
     expect(intentOf({ type: 'assistant.message', data: { toolRequests: [null] } } as unknown as TimelineEvent)).toBeNull();
+  });
+});
+
+const at = (type: string, timestamp?: string): TimelineEvent =>
+  ({ type, timestamp, data: {} }) as unknown as TimelineEvent;
+
+describe('clockFrom', () => {
+  it('starts when the reader sends a message', () => {
+    expect(clockFrom(at('user.message', '12:00:00'), null)).toBe('12:00:00');
+  });
+
+  it('starts on a turn when nothing else has started it', () => {
+    expect(clockFrom(at('assistant.turn_start', '12:00:00'), null)).toBe('12:00:00');
+  });
+
+  // A request that calls tools starts a turn once per round trip, and the reader is waiting
+  // for the answer rather than for the hop (#70).
+  it('keeps running across the turns of one answer', () => {
+    expect(clockFrom(at('assistant.turn_start', '12:00:09'), '12:00:00')).toBe('12:00:00');
+  });
+
+  it('stops when the session goes idle', () => {
+    expect(clockFrom(at('session.idle'), '12:00:00')).toBeNull();
+  });
+
+  it('stops when the turn is aborted', () => {
+    expect(clockFrom(at('abort'), '12:00:00')).toBeNull();
+  });
+
+  /*
+   * The reason the user message rule exists. The runtime does not go idle between finishing
+   * a turn and picking up a queued message, so idle alone leaves the clock running and the
+   * second answer reports the time since the first prompt.
+   */
+  it('restarts for a queued message picked up without an idle in between', () => {
+    let since = clockFrom(at('user.message', '12:00:00'), null);
+    since = clockFrom(at('assistant.turn_start', '12:00:00'), since);
+    since = clockFrom(at('assistant.turn_end', '12:00:30'), since);
+    expect(since).toBe('12:00:00');
+
+    since = clockFrom(at('user.message', '12:00:31'), since);
+    expect(since).toBe('12:00:31');
+    expect(clockFrom(at('assistant.turn_start', '12:00:31'), since)).toBe('12:00:31');
+  });
+
+  it('leaves the clock alone for everything else', () => {
+    expect(clockFrom(at('assistant.message', '12:00:09'), '12:00:00')).toBe('12:00:00');
+    expect(clockFrom(at('tool.execution_start', '12:00:09'), null)).toBeNull();
+  });
+
+  // Every event the runtime sends is stamped, but the clock cannot show "since null", so a
+  // missing stamp falls back to the moment it arrived rather than to no clock at all.
+  it('falls back to now for an event with no timestamp', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
+    try {
+      expect(clockFrom(at('user.message'), null)).toBe('2026-01-01T12:00:00.000Z');
+      expect(clockFrom(at('assistant.turn_start'), null)).toBe('2026-01-01T12:00:00.000Z');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

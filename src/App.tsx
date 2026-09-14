@@ -40,7 +40,7 @@ import { CHANGES, ENVIRONMENT } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
 import { activityOf } from './lib/activity';
-import { intentOf } from './lib/timeline';
+import { clockFrom, intentOf } from './lib/timeline';
 import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
@@ -224,25 +224,22 @@ export default function App() {
 
       if (sessionId !== selectedRef.current) return;
 
-      if (event.type === 'assistant.turn_start') {
-        setBusy(true);
-        // The first turn of the request, not each round trip: a request calling tools starts
-        // a turn many times over, and restarting the clock in those gaps would report the
-        // last hop rather than how long the reader has been waiting (#70).
-        setBusySince((current) => current ?? event.timestamp ?? new Date().toISOString());
-      }
+      if (event.type === 'assistant.turn_start') setBusy(true);
       // Not `assistant.turn_end`, which is one model round trip: a request that calls tools
       // ends and starts a turn many times over, and clearing the flag in those gaps offered
       // a Send button for a session that was still working.
-      if (event.type === 'session.idle' || event.type === 'abort') {
-        setBusy(false);
-        setBusySince(null);
-        setIntent(null);
-      }
+      if (event.type === 'session.idle' || event.type === 'abort') setBusy(false);
+      // When this answer started, which is not the same as when the reader last waited: a
+      // queued prompt begins a new answer without the runtime going idle in between (#70).
+      setBusySince((current) => clockFrom(event, current));
       // What the agent is up to, which it revises through a turn as the work changes shape.
       // Ephemeral, so this is the only chance to see it: it is never written to the log.
       const said = intentOf(event);
       if (said) setIntent(said);
+      // A new answer, so the tool the last one ended on is no longer what is happening.
+      if (event.type === 'user.message' || event.type === 'session.idle' || event.type === 'abort') {
+        setIntent(null);
+      }
       if (event.type === 'session.error') setError(describeError(event));
       // The agent working is what changes the working tree, so this is the moment the
       // branch line is worth asking about again. Once per request rather than once per
