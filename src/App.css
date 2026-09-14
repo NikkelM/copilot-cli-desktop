@@ -2243,13 +2243,17 @@ button.group:hover {
  * works now only because the row is held to the height of one line of its text: centring
  * measures against the flex line, and left to itself that line took its height from the
  * monospace clock.
+ *
+ * The stroke is set against the size rather than on its own. Boxes here are border-box, so
+ * thickening the ring closes the hole instead of growing the ring, and past about a quarter
+ * of the width it stops reading as something turning and starts reading as a notched dot.
  */
 .composer-spinner {
   flex: none;
   align-self: center;
-  width: 9px;
-  height: 9px;
-  border: 1.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  width: 11px;
+  height: 11px;
+  border: 2.5px solid color-mix(in srgb, var(--accent) 35%, transparent);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
