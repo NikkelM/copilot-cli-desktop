@@ -873,6 +873,8 @@ export class SessionRuntime {
       description: command.description,
       aliases: command.aliases ?? [],
       ...(command.input?.hint ? { hint: command.input.hint } : {}),
+      ...(command.input?.required ? { required: true } : {}),
+      ...(command.input?.completion ? { completion: command.input.completion } : {}),
       ...(command.input?.choices?.length
         ? { choices: command.input.choices.map(({ name, description }) => ({ name, description })) }
         : {}),

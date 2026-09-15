@@ -72,19 +72,21 @@ describe('withLocalChoices', () => {
  */
 describe('wantsDirectory', () => {
   it.each(['add-dir', 'cwd'])('offers the picker when %s is asked for it by name', (name) => {
-    expect(wantsDirectory(name, BROWSE)).toBe(true);
+    expect(wantsDirectory(command({ name, completion: 'directory' }), BROWSE)).toBe(true);
   });
 
   /** Typed rather than chosen from the menu, which is the same request spelt by hand. */
   it('ignores the case it was typed in', () => {
-    expect(wantsDirectory('add-dir', 'Browse')).toBe(true);
-    expect(wantsDirectory('add-dir', '  browse  ')).toBe(true);
+    const add = command({ name: 'add-dir', completion: 'directory', required: true });
+    expect(wantsDirectory(add, 'Browse')).toBe(true);
+    expect(wantsDirectory(add, '  browse  ')).toBe(true);
   });
 
   /** Nothing is lost: the runtime answers a bare /add-dir with a usage line and no more. */
   it('offers the picker for a bare /add-dir, which would otherwise only fail', () => {
-    expect(wantsDirectory('add-dir', '')).toBe(true);
-    expect(wantsDirectory('add-dir', '   ')).toBe(true);
+    const add = command({ name: 'add-dir', completion: 'directory', required: true });
+    expect(wantsDirectory(add, '')).toBe(true);
+    expect(wantsDirectory(add, '   ')).toBe(true);
   });
 
   /**
@@ -92,29 +94,36 @@ describe('wantsDirectory', () => {
    * is useful and is not ours to replace with a window nobody asked for.
    */
   it('leaves a bare /cwd alone, because it already answers', () => {
-    expect(wantsDirectory('cwd', '')).toBe(false);
+    expect(wantsDirectory(command({ name: 'cwd', completion: 'directory' }), '')).toBe(false);
   });
 
   it('leaves a path that was actually typed alone', () => {
-    expect(wantsDirectory('add-dir', 'C:\\work\\repo')).toBe(false);
-    expect(wantsDirectory('cwd', '/home/user/projects')).toBe(false);
+    const add = command({ name: 'add-dir', completion: 'directory', required: true });
+    const cwd = command({ name: 'cwd', completion: 'directory' });
+    expect(wantsDirectory(add, 'C:\\work\\repo')).toBe(false);
+    expect(wantsDirectory(cwd, '/home/user/projects')).toBe(false);
   });
 
   it('has nothing to say about commands that do not want a directory', () => {
-    expect(wantsDirectory('model', BROWSE)).toBe(false);
-    expect(wantsDirectory('session', '')).toBe(false);
+    expect(wantsDirectory(command({ name: 'model' }), BROWSE)).toBe(false);
+    expect(wantsDirectory(command({ name: 'session' }), '')).toBe(false);
   });
 });
 
 /** The word has to appear in the menu, or the only way to find it is to already know. */
 describe('the browse choice', () => {
   it.each(['add-dir', 'cwd'])('is offered on %s', (name) => {
-    const [found] = withLocalChoices([command({ name })]);
+    const [found] = withLocalChoices([command({ name, completion: 'directory' })]);
     expect(found!.choices?.map((c) => c.name)).toContain(BROWSE);
   });
 
   it('is not offered on commands that take no directory', () => {
     const [model] = withLocalChoices([command({ name: 'model' })]);
     expect(model!.choices?.map((c) => c.name) ?? []).not.toContain(BROWSE);
+  });
+
+  it('follows the runtime hint rather than a hardcoded command name', () => {
+    const [future] = withLocalChoices([command({ name: 'future-path', completion: 'directory' })]);
+    expect(future!.choices?.map((c) => c.name)).toContain(BROWSE);
   });
 });

@@ -6,6 +6,7 @@ import { PlusIcon, SendIcon, StopIcon } from './Icons';
 import { Menu, type MenuItem } from './Menu';
 import { commandText, completionOf, findCommand, matchCommands, typedCommand } from '../lib/slash';
 import { cycled, erased, highlighted, opened, typed as searchTyped, type Search } from '../lib/reverseSearch';
+import { useDirectoryCompletion } from '../lib/useDirectoryCompletion';
 import { MODE_LABELS } from '../lib/useMode';
 import type { Attachment, SessionMode, SlashCommand } from '../../shared/protocol';
 
@@ -63,6 +64,8 @@ interface ComposerProps {
   history: readonly string[];
   /** The slash commands there are, for the menu a leading slash opens. */
   commands: SlashCommand[];
+  /** The session directory relative command paths begin in. */
+  cwd: string | null;
   /** Called once a slash is typed, so the list can be fetched if it is not known yet. */
   onCommandsNeeded: () => void;
   /** How the session is working, shown beside the box as the CLI shows it. */
@@ -102,6 +105,7 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
   onAbort,
   history,
   commands,
+  cwd,
   onCommandsNeeded,
   mode,
   onCycleMode,
@@ -166,6 +170,7 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
 
   const typed = typedCommand(value);
   const named = typed ? findCommand(commands, typed.name) : undefined;
+  const directories = useDirectoryCompletion(named, typed?.input ?? null, cwd, onError);
 
   /**
    * What the menu is offering, if anything.
@@ -186,13 +191,28 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
     }
 
     const wanted = typed.input.toLowerCase();
-    return (named?.choices ?? [])
+    const choices = (named?.choices ?? [])
       .filter((choice) => choice.name.toLowerCase().startsWith(wanted))
-      .map((choice) => ({ id: choice.name, label: choice.name, description: choice.description }));
-  }, [typed?.name, typed?.input, value, dismissed, commands, named]);
+      .map((choice) => ({
+        id: `choice:${choice.name}`,
+        value: choice.name,
+        label: choice.name,
+        description: choice.description,
+      }));
+    const folders = directories.map((directory) => ({
+      id: `directory:${directory.path}`,
+      value: directory.path,
+      label: `${directory.name}${directory.separator}`,
+      description: 'directory',
+      kind: 'directory' as const,
+      separator: directory.separator,
+    }));
+    return [...choices, ...folders];
+  }, [typed?.name, typed?.input, value, dismissed, commands, named, directories]);
 
   // A list that changes under the cursor leaves it on a row that has moved or gone.
-  useEffect(() => setSelected(0), [items.length, typed?.name]);
+  const itemIdentity = items.map((item) => item.id).join('\0');
+  useEffect(() => setSelected(0), [itemIdentity, typed?.name]);
 
   // Asked for on the first slash rather than at startup: the list costs a Copilot process,
   // and most sessions are read without a command ever being typed.
@@ -229,7 +249,11 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
 
     // A value for the argument: the name stays, and only what follows it is filled in.
     if (typed.input !== null) {
-      const text = `/${typed.name} ${item.id}`;
+      const argument = item.value ?? item.id;
+      const text =
+        item.kind === 'directory' && key === 'Tab'
+          ? `/${typed.name} ${argument}${item.separator}`
+          : `/${typed.name} ${argument}`;
       onChange(text);
       if (key === 'Enter') submit(text);
       else inputRef.current?.focus();

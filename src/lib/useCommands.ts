@@ -13,7 +13,41 @@ import type { SlashCommand } from '../../shared/protocol';
  * is there. Remembering it means that cost is paid once, ever, and then only because
  * somebody opened the list.
  */
-const REMEMBERED = 'copilot-desktop.commands';
+/**
+ * Versioned because the runtime's input completion metadata changes what the composer can do.
+ *
+ * An older cached list is otherwise valid enough to keep forever, so it would prevent this
+ * build from learning that `/cwd` and `/add-dir` support directory completion.
+ */
+const REMEMBERED = 'copilot-desktop.commands.v2';
+
+/**
+ * Enough runtime metadata to make directory completion useful before the runtime starts.
+ *
+ * These are the exact definitions reported by the installed CLI. They are a fast seed, not
+ * a second source of truth: the lazily fetched runtime list replaces them by name as soon as
+ * it arrives.
+ */
+const BOOTSTRAP_COMMANDS: readonly SlashCommand[] = [
+  {
+    name: 'add-dir',
+    description: 'Allow file access to a directory and load its .github skills and agents as trusted configuration',
+    aliases: [],
+    hint: 'directory',
+    required: true,
+    completion: 'directory',
+    allowDuringTurn: true,
+  },
+  {
+    name: 'cwd',
+    description: 'Change working directory or show current directory',
+    aliases: ['cd'],
+    hint: 'directory',
+    completion: 'directory',
+    allowDuringTurn: false,
+  },
+];
+const BOOTSTRAP_NAMES = new Set(BOOTSTRAP_COMMANDS.map((command) => command.name));
 
 /**
  * A remembered entry is only usable if it still matches what this version expects.
@@ -31,16 +65,25 @@ function usable(value: unknown): value is SlashCommand {
   );
 }
 
-function remembered(): SlashCommand[] {
+interface RememberedCommands {
+  commands: SlashCommand[];
+  /** Whether the cache came from a complete runtime list rather than only the fast seed. */
+  runtimeKnown: boolean;
+}
+
+function remembered(): RememberedCommands {
   try {
     const stored = localStorage.getItem(REMEMBERED);
     const parsed: unknown = stored ? JSON.parse(stored) : null;
     const known = Array.isArray(parsed) && parsed.length > 0 && parsed.every(usable) ? (parsed as SlashCommand[]) : [];
     // Nothing to fold in: the merge adds this app's own commands whatever it is given.
-    return merge(known, []);
+    return {
+      commands: merge(known, []),
+      runtimeKnown: known.some((command) => !BOOTSTRAP_NAMES.has(command.name)),
+    };
   } catch {
     // A corrupt or unreadable entry is worth no more than an absent one.
-    return merge([], []);
+    return { commands: merge([], []), runtimeKnown: false };
   }
 }
 
@@ -58,7 +101,8 @@ function remembered(): SlashCommand[] {
  * through would leave the menu promising what its version does while this app's answers.
  */
 function merge(known: SlashCommand[], found: SlashCommand[]): SlashCommand[] {
-  const byName = new Map(known.map((command) => [command.name, command]));
+  const byName = new Map(BOOTSTRAP_COMMANDS.map((command) => [command.name, command]));
+  for (const command of known) byName.set(command.name, command);
   for (const command of found) byName.set(command.name, command);
   for (const command of LOCAL_COMMANDS) byName.set(command.name, command);
   return withLocalChoices([...byName.values()].sort((a, b) => a.name.localeCompare(b.name)));
@@ -73,8 +117,10 @@ function merge(known: SlashCommand[], found: SlashCommand[]): SlashCommand[] {
  * awake without anything being woken to bring that about.
  */
 export function useCommands(sessionId: string | null) {
-  const [commands, setCommands] = useState<SlashCommand[]>(remembered);
+  const [{ commands: initialCommands, runtimeKnown: initiallyKnown }] = useState(remembered);
+  const [commands, setCommands] = useState<SlashCommand[]>(initialCommands);
   const [failed, setFailed] = useState<string | null>(null);
+  const runtimeKnown = useRef(initiallyKnown);
   /** Set while a fetch is in flight, so opening the menu repeatedly asks once. */
   const asking = useRef(false);
 
@@ -87,6 +133,7 @@ export function useCommands(sessionId: string | null) {
       listCommands(forSession ?? undefined)
         .then((found) => {
           if (found.length === 0) return;
+          runtimeKnown.current = true;
           setCommands((known) => {
             const merged = merge(known, found);
             try {
@@ -119,10 +166,11 @@ export function useCommands(sessionId: string | null) {
   );
 
   // Nothing is fetched on mount. The first slash is what asks, and only when the list holds
-  // nothing but the handful this app answers itself.
+  // no complete runtime answer. The two seeded directory commands can already complete
+  // while that answer starts in the background.
   const open = useCallback(() => {
-    if (commands.every((command) => isLocal(command.name))) refresh(sessionId);
-  }, [commands, refresh, sessionId]);
+    if (!runtimeKnown.current) refresh(sessionId);
+  }, [refresh, sessionId]);
 
   return { commands, failed, open, observe };
 }

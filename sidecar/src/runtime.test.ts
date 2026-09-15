@@ -64,6 +64,7 @@ function makeSession(id: string) {
         })),
       },
       commands: {
+        list: vi.fn(async () => ({ commands: [] })),
         enqueue: vi.fn(async (_params: { command: string; displayText?: string }) => ({ queued: true })),
         invoke: vi.fn(async (_params: { name: string; input?: string }): Promise<InvokeResult> => ({ kind: 'completed' })),
       },
@@ -127,6 +128,19 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => []),
     rpc: {
+      commands: {
+        list: vi.fn(async () => ({
+          commands: [
+            {
+              name: 'add-dir',
+              description: 'Allow a directory',
+              aliases: [],
+              input: { hint: 'directory', required: true, completion: 'directory' },
+              allowDuringAgentExecution: true,
+            },
+          ],
+        })),
+      },
       agents: {
         discover: vi.fn(async (_params: { projectPaths?: string[] }) => ({
           agents: [
@@ -217,6 +231,22 @@ describe('SessionRuntime', () => {
 
     await runtime.send('a', 'hello');
     expect(runtime.status().serverRunning).toBe(true);
+  });
+
+  it('keeps the runtime input rules needed to complete a command', async () => {
+    const { runtime } = makeRuntime();
+
+    expect(await runtime.commands()).toEqual([
+      {
+        name: 'add-dir',
+        description: 'Allow a directory',
+        aliases: [],
+        hint: 'directory',
+        required: true,
+        completion: 'directory',
+        allowDuringTurn: true,
+      },
+    ]);
   });
 
   it('reuses one server and one session across sends', async () => {

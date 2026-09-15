@@ -374,6 +374,10 @@ export interface SlashCommand {
   aliases: string[];
   /** What the argument is for, for commands that take one. */
   hint?: string;
+  /** Whether the runtime refuses an empty argument. */
+  required?: boolean;
+  /** How the runtime says clients should complete the argument. */
+  completion?: 'directory';
   /** The values the argument accepts, when it is a choice rather than free text. */
   choices?: CommandChoice[];
   /** Whether it may run while a turn is in flight. */
@@ -649,6 +653,15 @@ export interface SidecarRequests {
    * but never resumes one to find out.
    */
   'commands.list': { params: { sessionId?: string }; result: { commands: SlashCommand[] } };
+  /**
+   * Child directories of a path being completed in the composer.
+   *
+   * Reads the local filesystem in the sidecar. It never starts or resumes Copilot.
+   */
+  'filesystem.directories': {
+    params: { cwd?: string; path: string };
+    result: { entries: string[]; separator: string; caseSensitive: boolean };
+  };
   /** Run a command in a session, resuming it if it is cold. */
   'commands.invoke': {
     params: { sessionId: string; name: string; input?: string };

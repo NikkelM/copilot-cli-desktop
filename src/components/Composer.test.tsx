@@ -1,11 +1,25 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 
 import { Composer } from './Composer';
 import type { SlashCommand } from '../../shared/protocol';
+
+const { listDirectories } = vi.hoisted(() => ({ listDirectories: vi.fn() }));
+
+vi.mock('../lib/sidecar', () => ({
+  listDirectories: (cwd: string | undefined, path: string) => listDirectories(cwd, path),
+}));
+
+beforeEach(() => {
+  listDirectories.mockReset().mockResolvedValue({
+    entries: [],
+    separator: '\\',
+    caseSensitive: false,
+  });
+});
 
 const box = () => screen.getByRole('textbox') as HTMLTextAreaElement;
 
@@ -43,6 +57,7 @@ function Host({
       onAbort={() => {}}
       history={history}
       commands={[]}
+      cwd={'C:\\repo'}
       onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
@@ -77,6 +92,7 @@ function bare(props: Partial<Parameters<typeof Composer>[0]> = {}) {
       onAbort={() => {}}
       history={[]}
       commands={[]}
+      cwd={'C:\\repo'}
       onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
@@ -114,6 +130,7 @@ describe('Composer', () => {
         onAbort={() => {}}
         history={[]}
         commands={[]}
+        cwd={'C:\\repo'}
         onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
@@ -207,6 +224,14 @@ describe('the slash command menu', () => {
       ],
       allowDuringTurn: true,
     },
+    {
+      name: 'cwd',
+      description: 'Change the working directory',
+      aliases: ['cd'],
+      hint: 'directory',
+      completion: 'directory',
+      allowDuringTurn: true,
+    },
   ];
 
   function menu(props: Record<string, unknown> = {}) {
@@ -231,6 +256,7 @@ describe('the slash command menu', () => {
           onAbort={() => {}}
           history={[]}
           commands={COMMANDS}
+          cwd={'C:\\repo'}
           onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
@@ -321,6 +347,88 @@ describe('the slash command menu', () => {
     expect(onSend).toHaveBeenCalledWith('/allow-all off');
   });
 
+  it('shows folders below the session working directory', async () => {
+    listDirectories.mockResolvedValue({
+      entries: ['src', 'tests'],
+      separator: '\\',
+      caseSensitive: false,
+    });
+    const { user } = menu();
+
+    await user.keyboard('/cwd ');
+
+    await waitFor(() => expect(rows()).toContain('src\\' + 'directory'));
+    expect(rows()).toContain('tests\\' + 'directory');
+    expect(listDirectories).toHaveBeenCalledWith('C:\\repo', '');
+  });
+
+  it('filters folders as a relative path is typed without reading the directory again', async () => {
+    listDirectories.mockResolvedValue({
+      entries: ['Source', 'src', 'tests'],
+      separator: '\\',
+      caseSensitive: false,
+    });
+    const { user } = menu();
+
+    await user.keyboard('/cwd s');
+    await waitFor(() => expect(rows()).toEqual(['Source\\' + 'directory', 'src\\' + 'directory']));
+    await user.keyboard('r');
+
+    expect(rows()).toEqual(['src\\' + 'directory']);
+    expect(listDirectories).toHaveBeenCalledTimes(1);
+  });
+
+  it('drills into the selected folder with Tab', async () => {
+    listDirectories
+      .mockResolvedValueOnce({
+        entries: ['src'],
+        separator: '\\',
+        caseSensitive: false,
+      })
+      .mockResolvedValueOnce({
+        entries: ['components'],
+        separator: '\\',
+        caseSensitive: false,
+      });
+    const { onSend, user } = menu();
+
+    await user.keyboard('/cwd s');
+    await waitFor(() => expect(rows()).toEqual(['src\\' + 'directory']));
+    await user.keyboard('{Tab}');
+
+    expect(box().value).toBe('/cwd src\\');
+    expect(onSend).not.toHaveBeenCalled();
+    await waitFor(() => expect(rows()).toEqual(['components\\' + 'directory']));
+    expect(listDirectories).toHaveBeenNthCalledWith(2, 'C:\\repo', 'src\\');
+  });
+
+  it('runs the command with the selected folder on Enter', async () => {
+    listDirectories.mockResolvedValue({
+      entries: ['src'],
+      separator: '\\',
+      caseSensitive: false,
+    });
+    const { onSend, user } = menu();
+
+    await user.keyboard('/cwd s');
+    await waitFor(() => expect(rows()).toEqual(['src\\' + 'directory']));
+    await user.keyboard('{Enter}');
+
+    expect(onSend).toHaveBeenCalledWith('/cwd src');
+  });
+
+  it('completes directories through the cwd alias too', async () => {
+    listDirectories.mockResolvedValue({
+      entries: ['src'],
+      separator: '\\',
+      caseSensitive: false,
+    });
+    const { user } = menu();
+
+    await user.keyboard('/cd s');
+    await waitFor(() => expect(rows()).toEqual(['src\\' + 'directory']));
+  });
+
   it('closes on Escape and leaves what was typed alone', async () => {
     const { user } = menu();
     await user.keyboard('/mod{Escape}');
@@ -361,6 +469,7 @@ describe('while a cold session wakes', () => {
         onAbort={() => {}}
         history={[]}
         commands={[]}
+        cwd={'C:\\repo'}
         onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}
@@ -423,6 +532,7 @@ describe('the waking state belongs to one session', () => {
         onAbort={() => {}}
         history={[]}
         commands={[]}
+        cwd={'C:\\repo'}
         onCommandsNeeded={() => {}}
       mode="interactive"
       onCycleMode={() => {}}

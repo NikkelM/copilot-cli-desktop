@@ -6,6 +6,11 @@ export interface MenuItem {
   /** The name, shown in monospace on the left. */
   label: string;
   description: string;
+  /** What selecting the row writes when its stable id is only an implementation detail. */
+  value?: string;
+  /** Directory rows make Tab drill down rather than merely fill the argument. */
+  kind?: 'directory';
+  separator?: string;
 }
 
 /** Keys that are the start of a combination rather than input in their own right. */

@@ -18,11 +18,17 @@ vi.mock('./eventLog.js', () => ({
   lastModel: vi.fn(async () => null),
   readTranscript: vi.fn(() => ({ events: [] })),
 }));
+vi.mock('./directories.js', () => ({
+  directoryCaseSensitive: false,
+  directorySeparator: '\\',
+  listDirectories: vi.fn(async () => ['src', 'tests']),
+}));
 vi.mock('./git.js', () => ({ treeStateOf: vi.fn(async () => null) }));
 vi.mock('./images.js', () => ({ previewImage: vi.fn(() => null) }));
 vi.mock('./pastes.js', () => ({ stashPaste: vi.fn(() => 'C:\\stashed.png') }));
 
 const { sessionChanges, sessionDiff } = await import('./changes.js');
+const { listDirectories } = await import('./directories.js');
 const { listSessions } = await import('./sessionIndex.js');
 
 const ask = (method: string, params?: unknown) =>
@@ -146,6 +152,13 @@ describe('what the sidecar answers', () => {
     await bare['commands.list'](undefined as never);
 
     expect(commands).toHaveBeenCalledWith(undefined);
+  });
+
+  it('lists folders from disk without asking the runtime', async () => {
+    const result = await handlers['filesystem.directories']({ cwd: 'C:\\repo', path: 'src\\' });
+
+    expect(listDirectories).toHaveBeenCalledWith('C:\\repo', 'src\\');
+    expect(result).toEqual({ entries: ['src', 'tests'], separator: '\\', caseSensitive: false });
   });
 
   /** Browsing agents outside any session sends nothing at all, for the same reason. */

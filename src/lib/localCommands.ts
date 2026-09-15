@@ -77,26 +77,11 @@ export function isLocal(name: string): boolean {
  */
 export const BROWSE = 'browse';
 
-/**
- * Commands whose argument is a directory, and whether one is required.
- *
- * Verified against the runtime rather than assumed. `/add-dir` with no argument fails with
- * a usage line, so there is nothing to lose by opening a picker instead. `/cwd` with no
- * argument reports the current directory, which is useful and is not ours to take away -
- * so it is offered by name and never by omission.
- */
-const DIRECTORY_COMMANDS: Readonly<Record<string, { readonly required: boolean }>> = {
-  'add-dir': { required: true },
-  cwd: { required: false },
-};
-
 /** Whether this command and argument should be answered by a folder picker. */
-export function wantsDirectory(name: string, input: string): boolean {
-  const command = DIRECTORY_COMMANDS[name];
-  if (!command) return false;
-
+export function wantsDirectory(command: SlashCommand, input: string): boolean {
+  if (command.completion !== 'directory') return false;
   const argument = input.trim();
-  return argument.toLowerCase() === BROWSE || (argument === '' && command.required);
+  return argument.toLowerCase() === BROWSE || (argument === '' && command.required === true);
 }
 
 /**
@@ -113,8 +98,11 @@ export function wantsDirectory(name: string, input: string): boolean {
  */
 const LOCAL_CHOICES: Readonly<Record<string, readonly CommandChoice[]>> = {
   session: [{ name: 'id', description: 'copy this session id to the clipboard' }],
-  'add-dir': [{ name: BROWSE, description: 'choose the directory with a folder picker' }],
-  cwd: [{ name: BROWSE, description: 'choose the directory with a folder picker' }],
+};
+
+const DIRECTORY_CHOICE: CommandChoice = {
+  name: BROWSE,
+  description: 'choose the directory with a folder picker',
 };
 
 /**
@@ -125,8 +113,11 @@ const LOCAL_CHOICES: Readonly<Record<string, readonly CommandChoice[]>> = {
  */
 export function withLocalChoices(commands: SlashCommand[]): SlashCommand[] {
   return commands.map((command) => {
-    const extra = LOCAL_CHOICES[command.name];
-    if (!extra) return command;
+    const extra = [
+      ...(LOCAL_CHOICES[command.name] ?? []),
+      ...(command.completion === 'directory' ? [DIRECTORY_CHOICE] : []),
+    ];
+    if (extra.length === 0) return command;
 
     const known = command.choices ?? [];
     const missing = extra.filter((choice) => !known.some((each) => each.name === choice.name));

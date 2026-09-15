@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SlashCommand } from '../../shared/protocol';
-import { LOCAL_COMMANDS } from './localCommands';
+import { LOCAL_COMMANDS, isLocal } from './localCommands';
 import { useCommands } from './useCommands';
 
 const listCommands = vi.fn();
@@ -16,8 +16,24 @@ function command(name: string): SlashCommand {
   return { name, description: `the ${name} command`, aliases: [], allowDuringTurn: true };
 }
 
+const directoryCommands: SlashCommand[] = [
+  {
+    ...command('add-dir'),
+    hint: 'directory',
+    required: true,
+    completion: 'directory',
+  },
+  {
+    ...command('cwd'),
+    aliases: ['cd'],
+    hint: 'directory',
+    completion: 'directory',
+    allowDuringTurn: false,
+  },
+];
+
 /** What a client with no session knows, against what a loaded one adds to it. */
-const cold = [command('model'), command('review')];
+const cold = [...directoryCommands, command('model'), command('review')];
 const live = [...cold, command('session'), command('usage')];
 
 /** Derived rather than counted, so adding a command the app answers itself is not a test change. */
@@ -25,6 +41,7 @@ const withLocal = (runtime: number) => runtime + LOCAL_COMMANDS.length;
 
 /** The app's own commands, in the order the merge puts them. */
 const localNames = LOCAL_COMMANDS.map((c) => c.name).sort();
+const initialNames = [...localNames, ...directoryCommands.map((command) => command.name)].sort();
 
 beforeEach(() => {
   localStorage.clear();
@@ -36,6 +53,20 @@ describe('useCommands', () => {
   it('asks for nothing until the menu is opened', () => {
     renderHook(() => useCommands('s1'));
 
+    expect(listCommands).not.toHaveBeenCalled();
+  });
+
+  it('can complete the runtime directory commands before anything starts', () => {
+    const { result } = renderHook(() => useCommands('s1'));
+
+    expect(result.current.commands.find((command) => command.name === 'add-dir')).toMatchObject({
+      required: true,
+      completion: 'directory',
+    });
+    expect(result.current.commands.find((command) => command.name === 'cwd')).toMatchObject({
+      aliases: ['cd'],
+      completion: 'directory',
+    });
     expect(listCommands).not.toHaveBeenCalled();
   });
 
@@ -92,7 +123,9 @@ describe('useCommands', () => {
     act(() => result.current.observe(true, 's2'));
 
     await waitFor(() => expect(listCommands).toHaveBeenCalledTimes(2));
-    expect(result.current.commands.map((c) => c.name)).toEqual([...localNames, 'model', 'review', 'session', 'usage'].sort());
+    expect(result.current.commands.map((c) => c.name)).toEqual(
+      [...initialNames, 'model', 'review', 'session', 'usage'].sort(),
+    );
   });
 
   it('prefers the newer definition of a command it already knew', async () => {
@@ -126,11 +159,20 @@ describe('useCommands', () => {
   });
 
   it('ignores a remembered entry that is missing what the menu reads', () => {
-    localStorage.setItem('copilot-desktop.commands', JSON.stringify([{ name: 'model' }]));
+    localStorage.setItem('copilot-desktop.commands.v2', JSON.stringify([{ name: 'model' }]));
 
     const { result } = renderHook(() => useCommands('s1'));
 
-    expect(result.current.commands.map((c) => c.name)).toEqual(localNames);
+    expect(result.current.commands.map((c) => c.name)).toEqual(initialNames);
+  });
+
+  it('still refreshes when the cache contains only the bootstrap commands', () => {
+    localStorage.setItem('copilot-desktop.commands.v2', JSON.stringify(directoryCommands));
+    const { result } = renderHook(() => useCommands('s1'));
+
+    act(() => result.current.open());
+
+    expect(listCommands).toHaveBeenCalledWith('s1');
   });
 
   it('reports a refusal rather than showing an empty menu', async () => {
@@ -149,7 +191,7 @@ describe('useCommands', () => {
     it('offers them before anything has been asked for', () => {
       const { result } = renderHook(() => useCommands('s1'));
 
-      expect(result.current.commands.map((c) => c.name)).toEqual(localNames);
+      expect(result.current.commands.filter((c) => isLocal(c.name)).map((c) => c.name)).toEqual(localNames);
     });
 
     it('still asks the runtime, since ours are not an answer to the menu being opened', async () => {
@@ -165,8 +207,8 @@ describe('useCommands', () => {
       act(() => result.current.open());
       await waitFor(() => expect(result.current.commands).toHaveLength(withLocal(cold.length)));
 
-      const stored: SlashCommand[] = JSON.parse(localStorage.getItem('copilot-desktop.commands') ?? '[]');
-      expect(stored.map((c) => c.name)).toEqual(['model', 'review']);
+      const stored: SlashCommand[] = JSON.parse(localStorage.getItem('copilot-desktop.commands.v2') ?? '[]');
+      expect(stored.map((c) => c.name)).toEqual(['add-dir', 'cwd', 'model', 'review']);
     });
   });
 });

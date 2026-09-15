@@ -7,6 +7,7 @@
  */
 import type { JsonRpcRequest, SidecarHandlers } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
+import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
 import { lastAgent, lastModel, readTranscript } from './eventLog.js';
 import { treeStateOf } from './git.js';
 import { previewImage } from './images.js';
@@ -77,6 +78,12 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     // Params are read defensively because a caller with nothing to say may send none at all,
     // and the one field here is optional in the first place.
     'commands.list': async (params) => ({ commands: await runtime.commands(params?.sessionId) }),
+
+    'filesystem.directories': async ({ cwd, path }) => ({
+      entries: await listDirectories(cwd, path),
+      separator: directorySeparator,
+      caseSensitive: directoryCaseSensitive,
+    }),
 
     'commands.invoke': async ({ sessionId, name, input }) => ({
       outcome: await runtime.invoke(sessionId, name, input),

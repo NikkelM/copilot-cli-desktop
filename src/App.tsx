@@ -490,7 +490,7 @@ export default function App() {
      * where the session is, which is worth keeping, so that one has to be asked for by name.
      */
     let argument = input;
-    if (wantsDirectory(command.name, input)) {
+    if (wantsDirectory(command, input)) {
       let picked: string | string[] | null;
       try {
         picked = await pickFolder({ directory: true, title: `Choose a directory for /${command.name}` });
@@ -844,6 +844,7 @@ export default function App() {
                 onAbort={interrupt}
                 history={history}
                 commands={slash.commands}
+                cwd={selected.cwd}
                 onCommandsNeeded={slash.open}
                 mode={mode.mode}
                 onCycleMode={mode.cycle}

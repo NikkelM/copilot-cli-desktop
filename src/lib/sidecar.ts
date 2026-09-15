@@ -102,6 +102,18 @@ export async function listCommands(sessionId?: string): Promise<SlashCommand[]> 
   return commands;
 }
 
+/**
+ * Child directories below the path being completed in the composer.
+ *
+ * This is a local disk read in the sidecar and never starts or resumes Copilot.
+ */
+export function listDirectories(
+  cwd: string | undefined,
+  path: string,
+): Promise<{ entries: string[]; separator: string; caseSensitive: boolean }> {
+  return request('filesystem.directories', { cwd, path });
+}
+
 /** Run a slash command in a session, resuming it if it is cold. */
 export async function invokeCommand(
   sessionId: string,
