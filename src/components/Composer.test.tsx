@@ -1106,3 +1106,90 @@ describe('the working indicator', () => {
     expect(working()?.querySelector('.elapsed')).toBeTruthy();
   });
 });
+
+/**
+ * The ghost is a second copy of the text drawn underneath the real one, so it lines up only
+ * if it is positioned against the textarea's own box. Anchored to the whole composer it
+ * drifted: the border was counted twice, and a row above the box - the waking line - pushed
+ * the text down and left the ghost behind.
+ *
+ * jsdom lays nothing out, so what can be checked here is the arrangement that makes the
+ * alignment true rather than the alignment itself.
+ */
+describe('the completion drawn ahead of the cursor', () => {
+  const COMMANDS: SlashCommand[] = [
+    { name: 'mcp', description: 'Manage MCP servers', aliases: [], allowDuringTurn: true },
+  ];
+
+  function typing(props: Record<string, unknown> = {}) {
+    function Wrapper() {
+      const [value, setValue] = useState('');
+      return (
+        <Composer
+          disabled={false}
+          busy={false}
+          busySince={null}
+          resuming={false}
+          attached={[]}
+          onAttach={() => {}}
+          onPasteFiles={() => {}}
+          stashed={false}
+          onError={() => {}}
+          focusOn="s1"
+          value={value}
+          onChange={setValue}
+          onSend={() => {}}
+          onAbort={() => {}}
+          history={[]}
+          commands={COMMANDS}
+          cwd={'C:\\repo'}
+          onCommandsNeeded={() => {}}
+          mode="interactive"
+          onCycleMode={() => {}}
+          intent={null}
+          {...props}
+        />
+      );
+    }
+    const view = render(<Wrapper />);
+    return { view, user: userEvent.setup() };
+  }
+
+  it('draws the rest of the name once there is one to draw', async () => {
+    const { user, view } = typing();
+    await user.keyboard('/mc');
+
+    const rest = view.container.querySelector('.ghost-rest');
+    expect(rest?.textContent).toBe('p');
+  });
+
+  // Same box as the textarea, so the two sets of characters share an origin.
+  it('sits in the same box as the text it continues', async () => {
+    const { user, view } = typing();
+    await user.keyboard('/mc');
+
+    const field = view.container.querySelector('.composer-field');
+    expect(field?.querySelector('textarea')).toBeTruthy();
+    expect(field?.querySelector('.ghost')).toBeTruthy();
+  });
+
+  /**
+   * The waking line is a row of the outer box, above the text. A ghost anchored out there
+   * would be drawn on that line instead of on the characters it continues.
+   */
+  it('stays with the text when a row appears above the box', async () => {
+    const { user, view } = typing({ resuming: true });
+    await user.keyboard('/mc');
+
+    expect(view.container.querySelector('.waking')).toBeTruthy();
+    expect(view.container.querySelector('.composer-field > .ghost')).toBeTruthy();
+    expect(view.container.querySelector('.composer-input > .ghost')).toBeNull();
+  });
+
+  it('carries the typed text underneath, so the rest begins where the text ends', async () => {
+    const { user, view } = typing();
+    await user.keyboard('/mc');
+
+    expect(view.container.querySelector('.ghost')?.textContent).toBe('/mcp');
+  });
+});

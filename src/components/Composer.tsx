@@ -507,44 +507,50 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
             because a sentence sitting beside the buttons would squeeze the box it is about. */}
         {resuming && <span className="waking">Waking this session up</span>}
 
-        <textarea
-          ref={inputRef}
-          value={text}
-          className={shell ? 'shell' : undefined}
-          onChange={(e) => {
-            // Typing ends a walk through the history: the position was taken against text
-            // that no longer exists.
-            setBrowsing(null);
-            write(e.target.value);
-          }}
-          onKeyDown={onKeyDown}
-          onPaste={(event) => {
-            // Text is by far the commonest paste, and the clipboard carries files only when
-            // files were copied, so an empty list means there is nothing to do here.
-            const files = Array.from(event.clipboardData?.files ?? []);
-            if (files.length === 0) return;
+        <div className="composer-field">
+          <textarea
+            ref={inputRef}
+            value={text}
+            className={shell ? 'shell' : undefined}
+            onChange={(e) => {
+              // Typing ends a walk through the history: the position was taken against text
+              // that no longer exists.
+              setBrowsing(null);
+              write(e.target.value);
+            }}
+            onKeyDown={onKeyDown}
+            onPaste={(event) => {
+              // Text is by far the commonest paste, and the clipboard carries files only when
+              // files were copied, so an empty list means there is nothing to do here.
+              const files = Array.from(event.clipboardData?.files ?? []);
+              if (files.length === 0) return;
 
-            event.preventDefault();
-            onPasteFiles(files);
-          }}
-          placeholder={
-            shell
-              ? 'Run a command in this session\'s shell. Escape leaves shell mode.'
-              : stashed
-                ? 'A prompt is stashed. Ctrl+S brings it back.'
-                : busy
-                  ? 'Agent is working. Enter queues this behind it.'
-                  : 'Send a message. Enter to send, Shift+Enter for a newline, / for commands, ! for a shell command.'
-          }
-          rows={1}
-          disabled={disabled}
-        />
-        {ghost && (
-          <div className="ghost" aria-hidden="true">
-            <span>{value}</span>
-            <span className="ghost-rest">{ghost}</span>
-          </div>
-        )}
+              event.preventDefault();
+              onPasteFiles(files);
+            }}
+            placeholder={
+              shell
+                ? 'Run a command in this session\'s shell. Escape leaves shell mode.'
+                : stashed
+                  ? 'A prompt is stashed. Ctrl+S brings it back.'
+                  : busy
+                    ? 'Agent is working. Enter queues this behind it.'
+                    : 'Send a message. Enter to send, Shift+Enter for a newline, / for commands, ! for a shell command.'
+            }
+            rows={1}
+            disabled={disabled}
+          />
+          {/* Inside the same box as the textarea rather than beside it, so it lines up with
+              the text by construction. Anchored to the whole composer it drifted: the border
+              was counted twice, and a row above the box - the waking line - pushed the text
+              down and left the ghost behind. */}
+          {ghost && (
+            <div className="ghost" aria-hidden="true">
+              <span>{value}</span>
+              <span className="ghost-rest">{ghost}</span>
+            </div>
+          )}
+        </div>
 
         {/* In the box rather than under it, so the composer is what the pane ends on. Each
             one is named as well as drawn: an icon on its own says nothing to a reader who

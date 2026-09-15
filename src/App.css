@@ -2027,8 +2027,22 @@ button.group:hover {
   background: var(--bg-raised);
 }
 
-.composer-input > textarea {
+.composer-field > textarea {
   grid-column: 1;
+}
+
+/*
+ * The text and the ghost, in one box of their own.
+ *
+ * A grid so the textarea is blockified exactly as it was when it sat in the outer grid
+ * directly, and so the ghost has something to be positioned against that is the textarea's
+ * box rather than the whole composer's.
+ */
+.composer-field {
+  position: relative;
+  display: grid;
+  grid-column: 1;
+  min-width: 0;
 }
 
 .composer-input:focus-within {
@@ -2038,13 +2052,17 @@ button.group:hover {
 /*
  * The rest of the command name, drawn under the box in the same place the text would be.
  *
- * Inset by the border rather than laid over it, so the two sets of characters line up
- * exactly. Transparent by default: only the part after what has been typed is coloured, and
- * the part underneath must not double what the textarea is already drawing.
+ * Laid over the textarea exactly, which is what `inset: 0` against `.composer-field` means:
+ * an absolutely positioned element is placed against its ancestor's padding box, so the
+ * border is already excluded and insetting by it again moved the ghost a pixel down and to
+ * the right of the characters it was meant to continue.
+ *
+ * Transparent by default: only the part after what has been typed is coloured, and the part
+ * underneath must not double what the textarea is already drawing.
  */
 .composer .ghost {
   position: absolute;
-  inset: 1px;
+  inset: 0;
   padding: 10px 12px;
   color: transparent;
   font: inherit;
@@ -2053,7 +2071,16 @@ button.group:hover {
   pointer-events: none;
 }
 
+/*
+ * Only the part that has not been typed is coloured.
+ *
+ * Nudged a fraction to the right of the characters it follows. That is deliberately not
+ * where the letter would land once the name is completed, but a completion sitting flush
+ * against the text reads as part of the word already written; a hair of space is what makes
+ * it legible as a suggestion. In em, so it keeps its proportions if the text is resized.
+ */
 .composer .ghost-rest {
+  margin-left: 0.15em;
   color: var(--text-muted);
 }
 
