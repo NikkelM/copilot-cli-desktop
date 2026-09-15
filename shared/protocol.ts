@@ -668,6 +668,53 @@ export function showsInTranscript(type: string): boolean {
   return SHOWN.has(type);
 }
 
+/**
+ * What a session has spent.
+ *
+ * Two sources, and which one answered decides how much is here. A loaded session is asked
+ * directly and can account for tokens, requests and the code it changed. A cold one is read
+ * from the last usage checkpoint in its log, which carries the two running totals and
+ * nothing else - and is exact: the figures a resumed session reports for them are the same
+ * ones, rebuilt from that checkpoint.
+ *
+ * No session is ever resumed to answer this. Browsing what a session cost must not cost a
+ * process, which is the rule the rest of this app is built on.
+ */
+export interface SessionUsage {
+  /** Premium requests spent. Fractional, since a model's multiplier is applied to each. */
+  premiumRequests: number;
+  /** AI units, from the nano units the runtime counts in. */
+  aiu: number;
+  /** Whether a loaded session answered, and so whether the rest of this is present. */
+  loaded: boolean;
+  tokens?: SessionUsageTokens;
+  /** API calls made, counted across models. Absent unless a loaded session said. */
+  requests?: number;
+  /** Time spent waiting on the model, in milliseconds. */
+  apiDurationMs?: number;
+  /** When the session began, as the runtime recorded it. */
+  startedAt?: string;
+  codeChanges?: { linesAdded: number; linesRemoved: number; filesModified: number };
+  /** What each model was used for, largest cost first. */
+  models?: SessionUsageModel[];
+}
+
+export interface SessionUsageTokens {
+  input: number;
+  output: number;
+  /** Tokens read back from the prompt cache, which are charged differently from fresh ones. */
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning: number;
+}
+
+export interface SessionUsageModel {
+  model: string;
+  requests: number;
+  /** Premium requests attributed to this model. */
+  cost: number;
+}
+
 /** Requests the frontend may issue. */
 export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };
@@ -777,6 +824,14 @@ export interface SidecarRequests {
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   /** How full the window is. Null for a session that is not loaded, which is not resumed to ask. */
   'sessions.context': { params: { sessionId: string }; result: { usage: SessionContextUsage | null } };
+  /**
+   * What a session has spent.
+   *
+   * Answered from a loaded session when there is one and from its last usage checkpoint
+   * when there is not, so this never resumes anything. Null only when the log has no
+   * checkpoint yet, which is a session that has not finished a turn.
+   */
+  'sessions.usage': { params: { sessionId: string }; result: { usage: SessionUsage | null } };
   'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };
   'sessions.setModel': {
     params: { sessionId: string; model: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier };
@@ -865,6 +920,7 @@ export const SIDECAR_METHODS = [
   'skills.set',
   'sessions.queue',
   'sessions.context',
+  'sessions.usage',
   'sessions.model',
   'sessions.setModel',
   'sessions.mode',

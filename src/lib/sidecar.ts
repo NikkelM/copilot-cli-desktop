@@ -32,6 +32,7 @@ import type {
   SessionContextUsage,
   SessionModel,
   SessionMode,
+  SessionUsage,
   ShellResult,
   QueuedItem,
   SidecarMethod,
@@ -168,6 +169,17 @@ export async function sessionModel(sessionId: string): Promise<SessionModel | nu
 /** How full a loaded session's window is. Null when it is not loaded, which is not changed by asking. */
 export async function sessionContext(sessionId: string): Promise<SessionContextUsage | null> {
   const { usage } = await request('sessions.context', { sessionId });
+  return usage;
+}
+
+/**
+ * What a session has spent. Costs no Copilot process, loaded or not.
+ *
+ * A loaded session accounts for tokens and the code it changed as well; a cold one is read
+ * from its log and can only give the two running totals.
+ */
+export async function sessionUsage(sessionId: string): Promise<SessionUsage | null> {
+  const { usage } = await request('sessions.usage', { sessionId });
   return usage;
 }
 

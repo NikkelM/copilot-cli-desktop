@@ -34,7 +34,14 @@ const directoryCommands: SlashCommand[] = [
 
 /** What a client with no session knows, against what a loaded one adds to it. */
 const cold = [...directoryCommands, command('model'), command('review')];
-const live = [...cold, command('session'), command('usage')];
+/**
+ * A loaded session knows a few the runtime does not offer without one.
+ *
+ * Deliberately not `usage`: that is one this app answers itself, so using it here would
+ * test the collision rule rather than the merge, and would quietly change what these counts
+ * mean the moment it was added to `LOCAL_COMMANDS`.
+ */
+const live = [...cold, command('session'), command('compact')];
 
 /** Derived rather than counted, so adding a command the app answers itself is not a test change. */
 const withLocal = (runtime: number) => runtime + LOCAL_COMMANDS.length;
@@ -124,7 +131,7 @@ describe('useCommands', () => {
 
     await waitFor(() => expect(listCommands).toHaveBeenCalledTimes(2));
     expect(result.current.commands.map((c) => c.name)).toEqual(
-      [...initialNames, 'model', 'review', 'session', 'usage'].sort(),
+      [...initialNames, 'model', 'review', 'session', 'compact'].sort(),
     );
   });
 

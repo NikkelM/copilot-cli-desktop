@@ -69,8 +69,7 @@ describe('readTranscript', () => {
    * Half of a real page is events the transcript has no case for and silently drops, and
    * the biggest of them carries the whole system prompt. Sending them costs a serialise,
    * two process boundaries and a parse to produce nothing.
-   */
-  describe('events the transcript cannot draw', () => {
+   */  describe('events the transcript cannot draw', () => {
     /** A system prompt is the expensive one: measured at up to 305 KB in a single page. */
     const noisy = [
       JSON.stringify({ type: 'user.message', data: { content: 'asked' } }),
@@ -579,5 +578,81 @@ describe('lastMode', () => {
 
     const { lastMode } = await loadEventLog();
     expect(await lastMode('huge-mode')).toBe('interactive');
+  }, 30_000);
+});
+
+/**
+ * What a session spent, read from its log so that a session nobody has opened can still
+ * account for itself. The checkpoint carries exactly the two running totals that
+ * `usage.getMetrics` reports for a resumed session, verified against two real sessions.
+ */
+describe('lastUsage', () => {
+  const checkpoint = (totalPremiumRequests: number, totalNanoAiu: number) =>
+    JSON.stringify({ type: 'session.usage_checkpoint', data: { totalPremiumRequests, totalNanoAiu } });
+
+  it('says nothing for a session with no log', async () => {
+    const { lastUsage } = await loadEventLog();
+    expect(await lastUsage('never-run')).toBeNull();
+  });
+
+  it('says nothing for an empty log', async () => {
+    writeLog('s', []);
+    const { lastUsage } = await loadEventLog();
+    expect(await lastUsage('s')).toBeNull();
+  });
+
+  // A session that has not finished a turn has written no checkpoint, and zero would claim
+  // it cost nothing rather than that nothing is recorded.
+  it('says nothing when no checkpoint has been written yet', async () => {
+    writeLog('s', [line(1), line(2)]);
+    const { lastUsage } = await loadEventLog();
+    expect(await lastUsage('s')).toBeNull();
+  });
+
+  it('reports the totals, converting the nano units the runtime counts in', async () => {
+    writeLog('s', [line(1), checkpoint(390, 1_057_768_750_000)]);
+    const { lastUsage } = await loadEventLog();
+
+    expect(await lastUsage('s')).toEqual({ premiumRequests: 390, aiu: 1057.76875, loaded: false });
+  });
+
+  // Each checkpoint supersedes the one before it: they are running totals, not increments.
+  it('takes the newest checkpoint rather than adding them up', async () => {
+    writeLog('s', [checkpoint(10, 1_000_000_000), checkpoint(45, 2_048_175_675_000)]);
+    const { lastUsage } = await loadEventLog();
+
+    expect(await lastUsage('s')).toMatchObject({ premiumRequests: 45 });
+  });
+
+  it('marks it as not having come from a loaded session', async () => {
+    writeLog('s', [checkpoint(1, 0)]);
+    const { lastUsage } = await loadEventLog();
+
+    expect((await lastUsage('s'))?.loaded).toBe(false);
+  });
+
+  /** A checkpoint carrying neither total describes nothing, so an older one still wins. */
+  it('looks past a checkpoint with no totals in it', async () => {
+    writeLog('s', [checkpoint(7, 3_000_000_000), JSON.stringify({ type: 'session.usage_checkpoint', data: {} })]);
+    const { lastUsage } = await loadEventLog();
+
+    expect(await lastUsage('s')).toMatchObject({ premiumRequests: 7 });
+  });
+
+  it('reads one total when the other is missing', async () => {
+    writeLog('s', [JSON.stringify({ type: 'session.usage_checkpoint', data: { totalPremiumRequests: 12 } })]);
+    const { lastUsage } = await loadEventLog();
+
+    expect(await lastUsage('s')).toEqual({ premiumRequests: 12, aiu: 0, loaded: false });
+  });
+
+  // The checkpoint is near the end of a live session's log but not at it, so the read has
+  // to grow its window the way the other cold reads do.
+  it('grows the window to reach a checkpoint behind a wall of newer events', async () => {
+    const fat = JSON.stringify({ type: 'user.message', data: { content: 'x'.repeat(4000) } });
+    writeLog('s', [checkpoint(99, 5_000_000_000), ...Array.from({ length: 400 }, () => fat)]);
+
+    const { lastUsage } = await loadEventLog();
+    expect(await lastUsage('s')).toMatchObject({ premiumRequests: 99 });
   }, 30_000);
 });

@@ -25,6 +25,7 @@ import type {
   ShellResult,
   QueuedItem,
   SessionContextUsage,
+  SessionUsage,
   SessionEnvironment,
   SessionMode,
   SlashCommand,
@@ -34,7 +35,7 @@ import { join } from 'node:path';
 
 import { copilotHome, resolveCliPath } from './paths.js';
 import { stripAnsi } from '../../shared/ansi.js';
-import { lastMode } from './eventLog.js';
+import { lastMode, lastUsage } from './eventLog.js';
 
 import { PendingRequests } from './pending.js';
 import { disabledSkills, setSkillDisabled } from './skills.js';
@@ -1071,6 +1072,59 @@ export class SessionRuntime {
         freeSpace: found.categories.freeSpace,
       },
       compactions: found.compactions.count,
+    };
+  }
+
+  /**
+   * What a session has spent, without starting one to find out.
+   *
+   * A loaded session is asked directly, because only it can account for tokens, requests
+   * and the code the agent changed. A cold one is read from the last usage checkpoint in
+   * its log, which carries the two running totals and is exact for them: a resumed session
+   * reports the same numbers, rebuilt from that same checkpoint.
+   *
+   * So this answers for a session the app has never opened, which is the difference from
+   * `contextUsage` - a window only exists while a session is loaded, but what it has
+   * already cost is a fact about its past and is written down.
+   *
+   * `totalUserRequests` and the last call's token counts are deliberately not carried.
+   * Both read zero on every resumed session measured, so passing them on would report a
+   * busy session as having made no requests.
+   */
+  async usage(sessionId: string): Promise<SessionUsage | null> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return lastUsage(sessionId);
+
+    const found = await live.rpc.usage.getMetrics();
+    const models = Object.entries(found.modelMetrics ?? {})
+      .flatMap(([model, metric]) => (metric ? [{ model, requests: metric.requests.count, cost: metric.requests.cost }] : []))
+      .sort((a, b) => b.cost - a.cost);
+
+    const totals = Object.values(found.modelMetrics ?? {}).reduce(
+      (sum, metric) => ({
+        input: sum.input + (metric?.usage.inputTokens ?? 0),
+        output: sum.output + (metric?.usage.outputTokens ?? 0),
+        cacheRead: sum.cacheRead + (metric?.usage.cacheReadTokens ?? 0),
+        cacheWrite: sum.cacheWrite + (metric?.usage.cacheWriteTokens ?? 0),
+        reasoning: sum.reasoning + (metric?.usage.reasoningTokens ?? 0),
+      }),
+      { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+    );
+
+    return {
+      premiumRequests: found.totalPremiumRequestCost,
+      aiu: (found.totalNanoAiu ?? 0) / 1e9,
+      loaded: true,
+      tokens: totals,
+      requests: models.reduce((sum, model) => sum + model.requests, 0),
+      apiDurationMs: found.totalApiDurationMs,
+      ...(found.sessionStartTime ? { startedAt: found.sessionStartTime } : {}),
+      codeChanges: {
+        linesAdded: found.codeChanges.linesAdded,
+        linesRemoved: found.codeChanges.linesRemoved,
+        filesModified: found.codeChanges.filesModifiedCount,
+      },
+      models,
     };
   }
 

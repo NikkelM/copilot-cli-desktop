@@ -14,6 +14,7 @@ import type {
   SessionAgent,
   SessionModel,
   SessionMode,
+  SessionUsage,
   TranscriptEvent,
 } from '../../shared/protocol.js';
 import { showsInTranscript } from '../../shared/protocol.js';
@@ -274,9 +275,77 @@ export async function lastMode(sessionId: string): Promise<SessionMode> {
   }
 }
 
-/** What a slice of the log says a session's mode is, the newest change winning. */
-function latestModeIn(events: TranscriptEvent[]): SessionMode | null {
+/**
+ * What a session has spent, from the last usage checkpoint written to its log.
+ *
+ * The runtime writes one of these as a turn settles, carrying the two running totals. They
+ * are the same figures a resumed session reports for them - verified against two real
+ * sessions, where `usage.getMetrics` after a resume answered with exactly the numbers in
+ * the last checkpoint - so a cold session can account for itself without being started.
+ *
+ * The richer part of a session's usage, its tokens and per-model breakdown, is not here.
+ * That is rebuilt by the runtime on resume and is only worth having from a session that is
+ * already loaded.
+ *
+ * Read backwards in growing windows like the other cold reads, so this costs a few hundred
+ * kilobytes of a log that may be hundreds of megabytes.
+ */
+export async function lastUsage(sessionId: string): Promise<SessionUsage | null> {
+  const path = sessionEventLog(sessionId);
+  if (!existsSync(path)) return null;
+
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    if (size === 0) return null;
+
+    let window = Math.min(INITIAL_WINDOW, size);
+
+    for (;;) {
+      const start = Math.max(0, size - window);
+      const reachedStart = start === 0;
+
+      const found = latestUsageIn(await eventsIn(file, start, size, reachedStart));
+      if (found) return found;
+
+      if (reachedStart || window >= MAX_WINDOW) return null;
+      window = Math.min(window * GROWTH_FACTOR, size, MAX_WINDOW);
+    }
+  } finally {
+    await file.close();
+  }
+}
+
+/** The newest checkpoint in a slice of the log, which supersedes every earlier one. */
+function latestUsageIn(events: TranscriptEvent[]): SessionUsage | null {
   for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index];
+    if (event?.type !== 'session.usage_checkpoint') continue;
+
+    const data = (event.data ?? {}) as Record<string, unknown>;
+    const premiumRequests = numberOf(data.totalPremiumRequests);
+    const nanoAiu = numberOf(data.totalNanoAiu);
+    // A checkpoint that carries neither total says nothing worth reporting, and reading it
+    // as zero would claim a session cost nothing rather than that nothing is known.
+    if (premiumRequests === null && nanoAiu === null) continue;
+
+    return {
+      premiumRequests: premiumRequests ?? 0,
+      aiu: (nanoAiu ?? 0) / 1e9,
+      loaded: false,
+    };
+  }
+
+  return null;
+}
+
+/** A number the runtime reported, or nothing when the field is absent or not one. */
+function numberOf(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+/** What a slice of the log says a session's mode is, the newest change winning. */
+function latestModeIn(events: TranscriptEvent[]): SessionMode | null {  for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index];
     if (event.type !== 'session.mode_changed') continue;
 

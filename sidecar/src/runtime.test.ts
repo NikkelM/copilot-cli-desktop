@@ -10,15 +10,19 @@ import { SessionRuntime, type RuntimeOptions } from './runtime.js';
  * into a mode without a fixture directory. Everything else in the module is the real thing.
  */
 const { lastMode } = vi.hoisted(() => ({ lastMode: vi.fn(async () => 'interactive') }));
+const { lastUsage } = vi.hoisted(() => ({ lastUsage: vi.fn(async () => null as unknown) }));
 vi.mock('./eventLog.js', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   lastMode,
+  lastUsage,
 }));
 
 /** Tied to the SDK's own signature so a shape change fails the build rather than the fake. */
 type ContextAttribution = Awaited<ReturnType<CopilotSession['rpc']['metadata']['getContextAttribution']>>;
 /** The same, for the command result whose `mode` follow-up was being dropped (#167). */
 type InvokeResult = Awaited<ReturnType<CopilotSession['rpc']['commands']['invoke']>>;
+/** And for the usage metrics, so a change to what the runtime accounts for fails the build. */
+type UsageMetrics = Awaited<ReturnType<CopilotSession['rpc']['usage']['getMetrics']>>;
 /** And for the two halves of the mode surface, which report more than the mode itself. */
 type ModeGetResult = Awaited<ReturnType<CopilotSession['rpc']['mode']['get']>>;
 type ModeSetResult = Awaited<ReturnType<CopilotSession['rpc']['mode']['set']>>;
@@ -78,12 +82,36 @@ function makeSession(id: string) {
         select: vi.fn(async (_params: { name: string }) => ({})),
         deselect: vi.fn(async () => undefined),
       },
+      usage: {
+        getMetrics: vi.fn(async (): Promise<UsageMetrics> => ({
+          totalPremiumRequestCost: 390,
+          totalUserRequests: 0,
+          totalNanoAiu: 1_057_768_750_000,
+          totalApiDurationMs: 331_549,
+          sessionStartTime: '2026-09-13T22:54:00.166Z',
+          lastCallInputTokens: 0,
+          lastCallOutputTokens: 0,
+          codeChanges: { linesAdded: 136, linesRemoved: 8, filesModifiedCount: 5, filesModified: [] },
+          modelMetrics: {
+            'claude-opus-5': {
+              requests: { count: 51, cost: 300 },
+              usage: {
+                inputTokens: 4_242_694,
+                outputTokens: 21_306,
+                cacheReadTokens: 3_657_572,
+                cacheWriteTokens: 585_020,
+                reasoningTokens: 0,
+              },
+              totalNanoAiu: 1_057_768_750_000,
+            },
+          },
+        })),
+      },
       options: {
         update: vi.fn(async (_params: { disabledSkills?: string[] }) => ({ success: true })),
       },
       metadata: {
-        getContextAttribution: vi.fn(async (): Promise<ContextAttribution> => ({
-          contextAttribution: {
+        getContextAttribution: vi.fn(async (): Promise<ContextAttribution> => ({          contextAttribution: {
             totalTokens: 34_000,
             modelId: 'claude-opus-5',
             modelSource: 'selected',
@@ -1769,5 +1797,113 @@ describe('environment', () => {
 
     expect(parts.client.resumeSession).not.toHaveBeenCalled();
     expect(parts.client.createSession).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * What a session has spent, which unlike its context window is a fact about its past and is
+ * written down as it goes. So this answers for a cold session too, and still resumes
+ * nothing - the rule the whole app is built on.
+ */
+describe('what a session has cost', () => {
+  it('asks a loaded session, which can account for the detail', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+
+    const usage = await runtime.usage('s1');
+
+    expect(sessions.get('s1')!.rpc.usage.getMetrics).toHaveBeenCalled();
+    expect(usage).toMatchObject({
+      premiumRequests: 390,
+      aiu: 1057.76875,
+      loaded: true,
+      requests: 51,
+      apiDurationMs: 331_549,
+      codeChanges: { linesAdded: 136, linesRemoved: 8, filesModified: 5 },
+    });
+  });
+
+  it('adds the token counts up across models', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.send('s1', 'x');
+
+    expect((await runtime.usage('s1'))?.tokens).toEqual({
+      input: 4_242_694,
+      output: 21_306,
+      cacheRead: 3_657_572,
+      cacheWrite: 585_020,
+      reasoning: 0,
+    });
+  });
+
+  /**
+   * Both read zero on every resumed session measured, so passing them on would report a
+   * session that has done plenty of work as having made no requests at all.
+   */
+  it('does not pass on the figures that are only true of a live session', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.send('s1', 'x');
+
+    const usage = await runtime.usage('s1');
+
+    expect(usage).not.toHaveProperty('totalUserRequests');
+    expect(usage).not.toHaveProperty('lastCallInputTokens');
+  });
+
+  it('orders the models by what they cost', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    sessions.get('s1')!.rpc.usage.getMetrics.mockResolvedValueOnce({
+      totalPremiumRequestCost: 390,
+      totalUserRequests: 0,
+      totalApiDurationMs: 0,
+      sessionStartTime: '2026-09-13T22:54:00.166Z',
+      lastCallInputTokens: 0,
+      lastCallOutputTokens: 0,
+      codeChanges: { linesAdded: 0, linesRemoved: 0, filesModifiedCount: 0, filesModified: [] },
+      modelMetrics: {
+        cheap: { requests: { count: 2, cost: 10 }, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 } },
+        dear: { requests: { count: 9, cost: 300 }, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, reasoningTokens: 0 } },
+      },
+    } as never);
+
+    expect((await runtime.usage('s1'))?.models?.map((m) => m.model)).toEqual(['dear', 'cheap']);
+  });
+
+  // The whole point: browsing what a session cost must not cost a Copilot process.
+  it('reads a cold session from its log rather than resuming it', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.usage('never-opened');
+
+    expect(client.resumeSession).not.toHaveBeenCalled();
+  });
+
+  it('says nothing for a cold session whose log has no checkpoint', async () => {
+    const { runtime } = makeRuntime();
+
+    expect(await runtime.usage('never-opened')).toBeNull();
+  });
+
+  /**
+   * The cold answer is the log's, not a blank. Without this a session nobody has opened
+   * would report nothing at all, which is the state the checkpoint exists to avoid.
+   */
+  it('gives back what the log recorded for a session that is not loaded', async () => {
+    const { runtime } = makeRuntime();
+    lastUsage.mockResolvedValueOnce({ premiumRequests: 45, aiu: 2048.175675, loaded: false });
+
+    expect(await runtime.usage('cold')).toEqual({ premiumRequests: 45, aiu: 2048.175675, loaded: false });
+    expect(lastUsage).toHaveBeenCalledWith('cold');
+  });
+
+  it('does not read the log for a session it is already holding', async () => {
+    const { runtime } = makeRuntime();
+    await runtime.send('s1', 'x');
+    lastUsage.mockClear();
+
+    await runtime.usage('s1');
+
+    expect(lastUsage).not.toHaveBeenCalled();
   });
 });

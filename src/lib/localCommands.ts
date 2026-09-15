@@ -55,12 +55,30 @@ export const ENVIRONMENT: SlashCommand = {
 };
 
 /**
+ * Show what this session has cost, which the runtime does not offer as a command.
+ *
+ * `/usage` is one of the forty the CLI's terminal keeps to itself (#127): the runtime lists
+ * twenty-eight and this is not among them, so forwarding it reaches nothing and the word
+ * would be sent to the agent as an ordinary message.
+ *
+ * Free for a cold session as well as a loaded one, which the CLI's own is not: what a
+ * session has spent is written to its log as it goes, so this is a read rather than a
+ * resume (#12).
+ */
+export const USAGE: SlashCommand = {
+  name: 'usage',
+  description: 'show what this session has cost',
+  aliases: [],
+  allowDuringTurn: true,
+};
+
+/**
  * The commands this app answers itself.
  *
  * Folded into the runtime's list so they are offered by the menu alongside it - the reader
  * has no reason to care which side of the wire answers them.
  */
-export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT];
+export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT, USAGE];
 
 /** Whether a command is one of ours, and so must not be sent to the runtime. */
 export function isLocal(name: string): boolean {

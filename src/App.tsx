@@ -35,13 +35,15 @@ import {
   invokeCommand,
   enqueueCommand,
   runShell,
+  sessionUsage,
   sendMessage,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, wantsDirectory } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, USAGE, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
 import { staleRuntime } from './lib/protocolCheck';
 import { revealPointerForPicker } from './lib/nativePicker';
+import { usageReport } from './lib/usageReport';
 import { activityOf } from './lib/activity';
 import { clockFrom, intentOf } from './lib/timeline';
 import { stashFiles } from './lib/paste';
@@ -429,6 +431,22 @@ export default function App() {
     toComposer();
   }
 
+  /**
+   * Answer `/usage` in the transcript, where the CLI puts it.
+   *
+   * A row rather than a panel: it is a handful of figures that are read once and scrolled
+   * past, and it belongs in the record beside the question that asked for it. Nothing is
+   * resumed to produce it - a cold session is read from its log.
+   */
+  async function showUsage(sessionId: string) {
+    transcript.showSent(`/${USAGE.name}`);
+    try {
+      transcript.showLocal('command.output', { text: usageReport(await sessionUsage(sessionId)), markdown: true });
+    } catch (e: unknown) {
+      transcript.showLocal('command.failed', { text: messageOf(e) });
+    }
+  }
+
   async function handleSend(prompt: string) {
     if (!selectedId) return;
 
@@ -451,6 +469,7 @@ export default function App() {
       // command would silently do whatever the last branch happened to do.
       if (what.command.name === CHANGES.name) openChanges();
       else if (what.command.name === ENVIRONMENT.name) openEnvironment();
+      else if (what.command.name === USAGE.name) void showUsage(selectedId);
       else setHelp('full');
       return;
     }

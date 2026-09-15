@@ -21,7 +21,9 @@ const COMMANDS = [
   command('memory', { hint: '' }),
   command('allow-all', { aliases: ['yolo'], hint: '[on|off|show]' }),
   command('compact', { hint: 'focus instructions', allowDuringTurn: false }),
-  command('usage'),
+  // Not `usage`, which this app answers itself: dispatch would route it as local, and these
+  // are meant to be commands the runtime owns.
+  command('init'),
 ];
 
 describe('typedCommand', () => {
@@ -110,7 +112,7 @@ describe('matchCommands', () => {
 
 describe('findCommand', () => {
   it('matches the canonical name', () => {
-    expect(findCommand(COMMANDS, 'usage')?.name).toBe('usage');
+    expect(findCommand(COMMANDS, 'init')?.name).toBe('init');
   });
 
   it('matches an alias', () => {
@@ -144,7 +146,7 @@ describe('commandText', () => {
   });
 
   it('adds no space to a command that takes nothing', () => {
-    expect(commandText(COMMANDS[4]!)).toBe('/usage');
+    expect(commandText(COMMANDS[4]!)).toBe('/init');
   });
 });
 
@@ -158,7 +160,7 @@ describe('dispatch', () => {
   });
 
   it('runs a command with no argument as a command with an empty one', () => {
-    expect(dispatch('/usage', COMMANDS)).toEqual({ kind: 'command', command: COMMANDS[4], input: '' });
+    expect(dispatch('/init', COMMANDS)).toEqual({ kind: 'command', command: COMMANDS[4], input: '' });
   });
 
   it('finds a command under an alias', () => {
