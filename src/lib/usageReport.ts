@@ -51,7 +51,7 @@ export function usageReport(usage: SessionUsage | null): string {
   }
 
   const lines = [
-    '| | |',
+    '| What | Amount |',
     '|---|---|',
     `| Premium requests | ${requests(usage.premiumRequests)} |`,
     `| AI units | ${units(usage.aiu)} |`,

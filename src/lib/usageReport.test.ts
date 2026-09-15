@@ -23,6 +23,16 @@ const loaded = (over: Partial<SessionUsage> = {}): SessionUsage => ({
 });
 
 describe('reporting what a session cost', () => {
+  /**
+   * An empty header row is still a row: the renderer draws the borders for it, so the table
+   * opened with a blank strip above the first figure.
+   */
+  it('names its columns rather than leading with an empty row', () => {
+    const [header] = usageReport(cold()).split('\n');
+
+    expect(header).toBe('| What | Amount |');
+  });
+
   it('leads with the two figures every session can answer', () => {
     const report = usageReport(cold());
 
