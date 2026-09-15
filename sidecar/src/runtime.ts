@@ -25,6 +25,7 @@ import type {
   ShellResult,
   QueuedItem,
   SessionContextUsage,
+  McpServerSummary,
   SessionUsage,
   SessionEnvironment,
   SessionMode,
@@ -932,14 +933,14 @@ export class SessionRuntime {
     const client = await this.ensureClient();
     const projectPaths = cwd ? { projectPaths: [cwd] } : {};
 
-    const [instructions, plugins, extensions, skills, mcp] = await Promise.all([
+    const [instructions, plugins, extensions, skills, mcpServers] = await Promise.all([
       client.rpc.instructions.discover(projectPaths),
       client.rpc.plugins.list(),
       client.rpc.extensions.discover(),
       client.rpc.skills.discover(projectPaths),
-      // Takes a single directory rather than the project paths the others take, so passing
-      // the same object would have been quietly ignored and answered for nowhere.
-      client.rpc.mcp.discover(cwd ? { workingDirectory: cwd } : {}),
+      // Through the same reader the composer uses, so the panel and the completion cannot
+      // come to describe the servers differently.
+      this.mcpServers(cwd),
     ]);
 
     return {
@@ -975,15 +976,31 @@ export class SessionRuntime {
         ...(skill.path ? { path: skill.path } : {}),
       })),
       skillErrors: skills.errors ?? [],
-      mcpServers: (mcp.servers ?? []).map((server) => ({
-        name: server.name,
-        ...(server.type ? { type: server.type } : {}),
-        source: server.source,
-        ...(server.sourcePlugin ? { sourcePlugin: server.sourcePlugin } : {}),
-        enabled: server.enabled,
-      })),
+      mcpServers,
       extensionMode: extensions.mode,
     };
+  }
+
+  /**
+   * The MCP servers a directory would be offered, on their own.
+   *
+   * Shares its discovery with the environment panel but is asked for separately, because
+   * completing a server name should not fetch the instructions, plugins, extensions and
+   * skills that the panel wants and a half-typed command does not.
+   *
+   * Costs no Copilot process, like the rest of discovery.
+   */
+  async mcpServers(cwd?: string): Promise<McpServerSummary[]> {
+    const client = await this.ensureClient();
+    const { servers } = await client.rpc.mcp.discover(cwd ? { workingDirectory: cwd } : {});
+
+    return (servers ?? []).map((server) => ({
+      name: server.name,
+      ...(server.type ? { type: server.type } : {}),
+      source: server.source,
+      ...(server.sourcePlugin ? { sourcePlugin: server.sourcePlugin } : {}),
+      enabled: server.enabled,
+    }));
   }
 
   /**

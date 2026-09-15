@@ -119,6 +119,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'mcp.setEnabled': ({ name, enabled }) => runtime.setMcpEnabled(name, enabled),
 
+    // Params are read defensively: a composer completing a command outside any session has
+    // no directory to name.
+    'mcp.servers': async (params) => ({ servers: await runtime.mcpServers(params?.cwd) }),
+
     'skills.disabled': ({ sessionId }) => ({ disabled: runtime.disabledSkills(sessionId) }),
 
     'skills.set': async ({ sessionId, name, enabled }) => ({

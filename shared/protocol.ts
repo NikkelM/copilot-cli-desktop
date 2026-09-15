@@ -839,6 +839,13 @@ export interface SidecarRequests {
    */
   'mcp.setEnabled': { params: { name: string; enabled: boolean }; result: void };
   /**
+   * The MCP servers there are, for completing the name a command wants.
+   *
+   * The same discovery the environment panel uses, on its own so that finishing a command
+   * does not have to fetch the instructions, plugins, extensions and skills beside it.
+   */
+  'mcp.servers': { params: { cwd?: string }; result: { servers: McpServerSummary[] } };
+  /**
    * The skills a session has switched off, and the means to switch one.
    *
    * Both cost no process. The set belongs to the app rather than to the runtime, whose own
@@ -948,6 +955,7 @@ export const SIDECAR_METHODS = [
   'agents.deselect',
   'environment.describe',
   'mcp.setEnabled',
+  'mcp.servers',
   'skills.disabled',
   'skills.set',
   'sessions.queue',

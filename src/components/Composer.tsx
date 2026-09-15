@@ -7,6 +7,8 @@ import { Menu, type MenuItem } from './Menu';
 import { commandText, completionOf, findCommand, matchCommands, typedCommand } from '../lib/slash';
 import { cycled, erased, highlighted, opened, typed as searchTyped, type Search } from '../lib/reverseSearch';
 import { useDirectoryCompletion } from '../lib/useDirectoryCompletion';
+import { useMcpServers } from '../lib/useMcpServers';
+import { typedServerName } from '../lib/localCommands';
 import { MODE_LABELS } from '../lib/useMode';
 import type { Attachment, SessionMode, SlashCommand } from '../../shared/protocol';
 
@@ -171,6 +173,9 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
   const typed = typedCommand(value);
   const named = typed ? findCommand(commands, typed.name) : undefined;
   const directories = useDirectoryCompletion(named, typed?.input ?? null, cwd, onError);
+  /** The half-typed server name, when the argument being written is one. */
+  const serverPrefix = named && typed?.input != null ? typedServerName(named, typed.input) : null;
+  const servers = useMcpServers(cwd, serverPrefix !== null, onError);
 
   /**
    * What the menu is offering, if anything.
@@ -191,6 +196,28 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
     }
 
     const wanted = typed.input.toLowerCase();
+
+    /**
+     * A subcommand has been finished and what follows names a server.
+     *
+     * Offered instead of the subcommands rather than beside them: `disable` has already
+     * been chosen by the time this applies, so listing it again alongside the servers it
+     * takes would be offering the reader what they just picked.
+     */
+    if (serverPrefix !== null) {
+      const subcommand = typed.input.slice(0, typed.input.indexOf(' '));
+      const partial = serverPrefix.toLowerCase();
+
+      return (servers ?? [])
+        .filter((server) => server.name.toLowerCase().startsWith(partial))
+        .map((server) => ({
+          id: `server:${server.name}`,
+          value: `${subcommand} ${server.name}`,
+          label: server.name,
+          description: server.enabled ? (server.type ?? server.source) : `${server.type ?? server.source}, off`,
+        }));
+    }
+
     const choices = (named?.choices ?? [])
       .filter((choice) => choice.name.toLowerCase().startsWith(wanted))
       .map((choice) => ({
@@ -208,7 +235,7 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
       separator: directory.separator,
     }));
     return [...choices, ...folders];
-  }, [typed?.name, typed?.input, value, dismissed, commands, named, directories]);
+  }, [typed?.name, typed?.input, value, dismissed, commands, named, directories, serverPrefix, servers]);
 
   // A list that changes under the cursor leaves it on a row that has moved or gone.
   const itemIdentity = items.map((item) => item.id).join('\0');
@@ -539,6 +566,11 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
             }
             rows={1}
             disabled={disabled}
+            /* A command is not prose. Its name is a word the dictionary has never heard of,
+               so spelling it correctly earns a red underline - and the shell mode below is
+               worse, being paths and flags throughout. Checked again the moment what is
+               being written stops being either. */
+            spellCheck={!typed && !shell}
           />
           {/* Inside the same box as the textarea rather than beside it, so it lines up with
               the text by construction. Anchored to the whole composer it drifted: the border

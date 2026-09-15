@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { BROWSE, LOCAL_COMMANDS, isLocal, wantsDirectory, withLocalChoices } from './localCommands';
+import { BROWSE, LOCAL_COMMANDS, isLocal, typedServerName, wantsDirectory, withLocalChoices } from './localCommands';
 import type { SlashCommand } from '../../shared/protocol';
 
 const command = (over: Partial<SlashCommand> = {}): SlashCommand => ({
@@ -125,5 +125,47 @@ describe('the browse choice', () => {
   it('follows the runtime hint rather than a hardcoded command name', () => {
     const [future] = withLocalChoices([command({ name: 'future-path', completion: 'directory' })]);
     expect(future!.choices?.map((c) => c.name)).toContain(BROWSE);
+  });
+});
+/**
+ * `/mcp` takes a subcommand and three of them take a server name after it. The runtime
+ * describes the subcommands as flat choices and says nothing about what follows one, so
+ * which of them wants a name is this app's knowledge rather than the command's.
+ */
+describe('typedServerName', () => {
+  const mcp = command({ name: 'mcp' });
+
+  it.each(['show', 'enable', 'disable'])('offers a name after %s', (subcommand) => {
+    expect(typedServerName(mcp, `${subcommand} con`)).toBe('con');
+  });
+
+  /** The space is what finishes the subcommand; before it, the subcommand is still being typed. */
+  it('says nothing until the subcommand is finished', () => {
+    expect(typedServerName(mcp, 'disable')).toBeNull();
+    expect(typedServerName(mcp, 'disa')).toBeNull();
+  });
+
+  // An empty name is a real answer: every server matches until one is named.
+  it('treats a finished subcommand with nothing after it as matching everything', () => {
+    expect(typedServerName(mcp, 'disable ')).toBe('');
+  });
+
+  /** Offering a name after these would suggest an argument the runtime would refuse. */
+  it.each(['list', 'reload'])('says nothing after %s, which takes no server', (subcommand) => {
+    expect(typedServerName(mcp, `${subcommand} `)).toBeNull();
+  });
+
+  it('ignores the case the subcommand was typed in', () => {
+    expect(typedServerName(mcp, 'Disable con')).toBe('con');
+  });
+
+  it('has nothing to say about other commands', () => {
+    expect(typedServerName(command({ name: 'model' }), 'disable con')).toBeNull();
+    expect(typedServerName(command({ name: 'cwd' }), 'disable con')).toBeNull();
+  });
+
+  // A server name can be anything, including something with a space in it.
+  it('keeps the rest of the argument whole', () => {
+    expect(typedServerName(mcp, 'disable my server')).toBe('my server');
   });
 });

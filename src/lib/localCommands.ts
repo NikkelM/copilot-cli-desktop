@@ -103,6 +103,38 @@ export function wantsDirectory(command: SlashCommand, input: string): boolean {
 }
 
 /**
+ * Arguments that name an MCP server, and the word that introduces them.
+ *
+ * `/mcp` takes a subcommand and three of them take a server name after it. The runtime
+ * describes the subcommands as flat choices and says nothing about what follows one, so
+ * which of them wants a name is known here rather than read off the command.
+ *
+ * `list` and `reload` take nothing further, and offering names after them would suggest an
+ * argument the runtime would reject.
+ */
+const SERVER_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
+  mcp: ['show', 'enable', 'disable'],
+};
+
+/**
+ * The part of an argument that is a half-typed server name, if that is what it is.
+ *
+ * Null when the command wants no server, when no subcommand has been finished with a space,
+ * or when the subcommand is one that takes nothing further. The empty string is a real
+ * answer and means every server matches: `/mcp disable ` has named none of them yet.
+ */
+export function typedServerName(command: SlashCommand, input: string): string | null {
+  const wants = SERVER_ARGUMENTS[command.name];
+  if (!wants) return null;
+
+  const space = input.indexOf(' ');
+  if (space === -1) return null;
+
+  const subcommand = input.slice(0, space).toLowerCase();
+  return wants.includes(subcommand) ? input.slice(space + 1) : null;
+}
+
+/**
  * Arguments this app answers for commands the runtime owns.
  *
  * `/session id` is the terminal's own: the runtime's `/session` offers

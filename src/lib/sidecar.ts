@@ -11,6 +11,7 @@ import type {
   FileDiff,
   GetTranscriptResult,
   ListSessionsResult,
+  McpServerSummary,
   ModelChoice,
   PendingElicitation,
   PendingPermission,
@@ -251,6 +252,12 @@ export function describeEnvironment(cwd?: string): Promise<SessionEnvironment> {
  */
 export function setMcpEnabled(name: string, enabled: boolean): Promise<void> {
   return request('mcp.setEnabled', { name, enabled });
+}
+
+/** The MCP servers there are, for completing a command that wants one. Costs no Copilot process. */
+export async function listMcpServers(cwd?: string): Promise<McpServerSummary[]> {
+  const { servers } = await request('mcp.servers', { cwd });
+  return servers;
 }
 
 /** The skills this session has switched off. Read from the app's own record, so it costs no process. */

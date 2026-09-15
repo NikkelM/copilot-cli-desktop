@@ -7,13 +7,21 @@ import { useState } from 'react';
 import { Composer } from './Composer';
 import type { SlashCommand } from '../../shared/protocol';
 
-const { listDirectories } = vi.hoisted(() => ({ listDirectories: vi.fn() }));
+const { listDirectories, listMcpServers } = vi.hoisted(() => ({
+  listDirectories: vi.fn(),
+  listMcpServers: vi.fn(),
+}));
 
 vi.mock('../lib/sidecar', () => ({
   listDirectories: (cwd: string | undefined, path: string) => listDirectories(cwd, path),
+  listMcpServers: (cwd: string | undefined) => listMcpServers(cwd),
 }));
 
 beforeEach(() => {
+  listMcpServers.mockReset().mockResolvedValue([
+    { name: 'context7', type: 'http', source: 'user', enabled: true },
+    { name: 'github-mcp-server', type: 'stdio', source: 'builtin', enabled: false },
+  ]);
   listDirectories.mockReset().mockResolvedValue({
     entries: [],
     separator: '\\',
@@ -1191,5 +1199,126 @@ describe('the completion drawn ahead of the cursor', () => {
     await user.keyboard('/mc');
 
     expect(view.container.querySelector('.ghost')?.textContent).toBe('/mcp');
+  });
+});
+
+/**
+ * `/mcp disable` wants a server name, and typing one from memory is exactly the argument a
+ * window can supply better than a keyboard - the same reason `/cwd` lists directories.
+ */
+describe('naming an MCP server', () => {
+  const COMMANDS: SlashCommand[] = [
+    {
+      name: 'mcp',
+      description: 'Manage MCP server configuration',
+      aliases: [],
+      hint: '[list|show|enable|disable|reload]',
+      choices: [
+        { name: 'list', description: 'Open the MCP server list' },
+        { name: 'disable', description: 'Temporarily disable a server' },
+        { name: 'reload', description: 'Reload all server configurations' },
+      ],
+      allowDuringTurn: false,
+    },
+  ];
+
+  function menu() {
+    const onSend = vi.fn();
+    function Wrapper() {
+      const [value, setValue] = useState('');
+      return (
+        <Composer
+          disabled={false}
+          busy={false}
+          busySince={null}
+          resuming={false}
+          attached={[]}
+          onAttach={() => {}}
+          onPasteFiles={() => {}}
+          stashed={false}
+          onError={() => {}}
+          focusOn="s1"
+          value={value}
+          onChange={setValue}
+          onSend={onSend}
+          onAbort={() => {}}
+          history={[]}
+          commands={COMMANDS}
+          cwd={'C:\\repo'}
+          onCommandsNeeded={() => {}}
+          mode="interactive"
+          onCycleMode={() => {}}
+          intent={null}
+        />
+      );
+    }
+    render(<Wrapper />);
+    return { onSend, user: userEvent.setup() };
+  }
+
+  const rows = () => screen.queryAllByRole('option').map((row) => row.textContent);
+
+  it('offers the subcommands first, as the runtime describes them', async () => {
+    const { user } = menu();
+    await user.keyboard('/mcp ');
+
+    expect(rows()).toEqual([
+      'list' + 'Open the MCP server list',
+      'disable' + 'Temporarily disable a server',
+      'reload' + 'Reload all server configurations',
+    ]);
+    expect(listMcpServers).not.toHaveBeenCalled();
+  });
+
+  it('offers the servers once a subcommand that takes one is finished', async () => {
+    const { user } = menu();
+    await user.keyboard('/mcp disable ');
+
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(rows()[0]).toContain('context7');
+    expect(listMcpServers).toHaveBeenCalledWith('C:\\repo');
+  });
+
+  it('narrows them as the name is typed', async () => {
+    const { user } = menu();
+    await user.keyboard('/mcp disable con');
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]).toContain('context7');
+  });
+
+  /** Says which are already off, since disabling one that is off is a wasted keystroke. */
+  it('says which servers are switched off', async () => {
+    const { user } = menu();
+    await user.keyboard('/mcp disable git');
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]).toContain('off');
+  });
+
+  it('sends the subcommand and the name together', async () => {
+    const { onSend, user } = menu();
+    await user.keyboard('/mcp disable con');
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await user.keyboard('{Enter}');
+    expect(onSend).toHaveBeenCalledWith('/mcp disable context7');
+  });
+
+  // Offering one after these would suggest an argument the runtime would refuse.
+  it('offers nothing after a subcommand that takes no server', async () => {
+    const { user } = menu();
+    await user.keyboard('/mcp reload ');
+
+    expect(rows()).toHaveLength(0);
+    expect(listMcpServers).not.toHaveBeenCalled();
+  });
+
+  /** The list costs a running server, so it waits for a command that actually wants it. */
+  it('asks for nothing while an unrelated command is written', async () => {
+    const { user } = menu();
+    await user.keyboard('/mcp lis');
+
+    expect(listMcpServers).not.toHaveBeenCalled();
   });
 });

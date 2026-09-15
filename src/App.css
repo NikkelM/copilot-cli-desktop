@@ -2080,7 +2080,7 @@ button.group:hover {
  * it legible as a suggestion. In em, so it keeps its proportions if the text is resized.
  */
 .composer .ghost-rest {
-  margin-left: 0.15em;
+  margin-left: 0.08em;
   color: var(--text-muted);
 }
 
