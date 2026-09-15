@@ -450,3 +450,83 @@ describe('giving back history reached by scrolling up', () => {
     expect(bodies(result.current.events)).toEqual(['page 0', 'said just now']);
   });
 });
+/**
+ * A subagent's work is not this conversation, live any more than replayed.
+ *
+ * The replayed half is filtered in the sidecar, and for a while that was the only half: live
+ * events are pushed straight to the timeline and never go near it, so a subagent running
+ * right now still filled the conversation that delegated it while opening the same session
+ * afterwards looked correct (#11).
+ *
+ * The streaming deltas matter most here. They are ephemeral, so they reach no log at all and
+ * nothing read from disk could ever have caught them.
+ */
+describe('a subagent streaming into the session that delegated it', () => {
+  beforeEach(() => {
+    getTranscript.mockReset().mockResolvedValue({ events: [], truncated: false, nextBefore: null });
+  });
+
+  const live = (type: string, data: unknown, agentId?: string) =>
+    ({ type, data, id: `${type}-${Math.random()}`, ...(agentId ? { agentId } : {}) }) as Parameters<
+      ReturnType<typeof useTranscript>['push']
+    >[0];
+
+  it('keeps the subagent out of the conversation', () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    act(() => {
+      result.current.push(live('assistant.message', { content: 'the session speaking' }));
+      result.current.push(live('assistant.message', { content: 'a subagent speaking' }, 'agent-1'));
+    });
+
+    const said = result.current.events.map((e) => (e.data as { content?: string }).content);
+    expect(said).toContain('the session speaking');
+    expect(said).not.toContain('a subagent speaking');
+  });
+
+  it('keeps its streamed text out too, which reaches no log to be filtered from', () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    act(() => {
+      result.current.push(live('assistant.message_delta', { messageId: 'm1', deltaContent: 'thinking aloud' }, 'agent-1'));
+      result.current.push(live('assistant.reasoning_delta', { reasoningId: 'r1', deltaContent: 'reasoning' }, 'agent-1'));
+    });
+
+    expect(result.current.events).toHaveLength(0);
+  });
+
+  it('keeps its tool calls out', () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    act(() => {
+      result.current.push(live('tool.execution_start', { toolName: 'powershell', toolCallId: 'c1' }, 'agent-1'));
+      result.current.push(live('tool.execution_complete', { toolCallId: 'c1' }, 'agent-1'));
+    });
+
+    expect(result.current.events).toHaveLength(0);
+  });
+
+  /** The parent still has to say a task was delegated and how it went. */
+  it('keeps the lifecycle, which is what the delegating row reports', () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    act(() => {
+      result.current.push(live('subagent.started', { toolCallId: 'c1', agentName: 'explore' }, 'agent-1'));
+      result.current.push(live('subagent.completed', { toolCallId: 'c1' }, 'agent-1'));
+    });
+
+    expect(result.current.events.map((e) => e.type)).toEqual(['subagent.started', 'subagent.completed']);
+  });
+
+  // The rows the app writes itself carry no agentId and must survive the same guard.
+  it('still shows what the app puts there itself', () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    act(() => {
+      result.current.showSent('a prompt');
+      result.current.showLocal('command.output', { text: 'some output' });
+    });
+
+    expect(result.current.events).toHaveLength(2);
+  });
+});
