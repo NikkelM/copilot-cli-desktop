@@ -7,6 +7,7 @@ import type {
   SlashCommand,
   TranscriptEvent,
 } from '../shared/protocol';
+import { showsInTranscript } from '../shared/protocol';
 
 import { Changes } from './components/Changes';
 import { Composer } from './components/Composer';
@@ -262,7 +263,16 @@ export default function App() {
       // moves without either being something this app asked for.
       contextUsage.observe(event);
 
-      transcript.push(event);
+      /**
+       * A subagent's work is not this conversation, live any more than replayed (#11).
+       *
+       * Filtered here rather than where the event arrives, and deliberately after
+       * everything above has seen it: the status line under the composer is driven by the
+       * description attached to each tool call, and while a subagent is working those are
+       * the only tool calls there are. Filtering earlier would leave the line blank for the
+       * whole of a delegated task, which is exactly when it is worth having.
+       */
+      if (showsInTranscript(event.type, event.agentId)) transcript.push(event);
     }),
   );
 

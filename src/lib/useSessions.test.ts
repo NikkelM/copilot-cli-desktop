@@ -91,6 +91,21 @@ describe('useSessions', () => {
       expect(result.current.find('s1')?.preview).toBe('all done');
     });
 
+    /**
+     * A delegating session says far more through its subagents than in its own name, and
+     * their replies carry an agentId. Without this the row quotes another agent's words as
+     * though the session had said them (#11).
+     */
+    it('does not quote a subagent as the session', async () => {
+      const { result } = await listed();
+      act(() => result.current.observe('s1', said('all done')));
+
+      const fromSubagent = { ...said('a subagent reporting back'), agentId: 'agent-1' } as TranscriptEvent;
+      act(() => result.current.observe('s1', fromSubagent));
+
+      expect(result.current.find('s1')?.preview).toBe('all done');
+    });
+
     it('gives up the override once the session is let go', async () => {
       const { result } = await listed();
       act(() => result.current.observe('s1', said('all done')));

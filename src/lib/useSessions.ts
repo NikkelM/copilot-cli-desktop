@@ -84,7 +84,15 @@ export function useSessions(onError: (message: string) => void) {
       });
     }
 
-    const spoken = event.type === 'assistant.message' ? contentOf(event) : null;
+    /**
+     * What the session last said, for the sidebar.
+     *
+     * Only the session's own voice. A subagent's reply carries an `agentId` and would
+     * otherwise become the preview, so the row would quote another agent's words as though
+     * the session had said them - and a delegating session says far more through its
+     * subagents than in its own name (#11).
+     */
+    const spoken = event.type === 'assistant.message' && !event.agentId ? contentOf(event) : null;
     if (!spoken) return;
 
     const preview = toPreview(spoken);
