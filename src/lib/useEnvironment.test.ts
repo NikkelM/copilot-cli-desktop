@@ -26,6 +26,7 @@ const environment: SessionEnvironment = {
   extensions: [],
   skills: [],
   skillErrors: [],
+  mcpServers: [],
   extensionMode: 'load_and_augment',
 };
 

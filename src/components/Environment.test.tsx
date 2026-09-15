@@ -21,6 +21,7 @@ const environment = (over: Partial<SessionEnvironment> = {}): SessionEnvironment
   extensions: [],
   skills: [],
   skillErrors: [],
+  mcpServers: [],
   extensionMode: 'load_and_augment',
   ...over,
 });
@@ -332,5 +333,71 @@ describe('skills that would not load', () => {
     );
 
     expect(container.querySelector('.environment-errors')).toBeNull();
+  });
+});
+/**
+ * MCP servers belong here because the CLI's own /env lists them, and because which servers
+ * a directory would load is answerable without running anything (#24).
+ */
+describe('Environment, MCP servers', () => {
+  const shown = (over = {}) =>
+    render(
+      <Environment
+        environment={environment(over)}
+        loading={false}
+        failed={null}
+        onReload={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+  it('says when there are none, rather than leaving the section out', () => {
+    shown({ mcpServers: [] });
+    expect(screen.getByText('No MCP servers configured.')).toBeTruthy();
+  });
+
+  it('names each server and how it is reached', () => {
+    shown({ mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true }] });
+
+    expect(screen.getByText('context7')).toBeTruthy();
+    expect(screen.getByText('http')).toBeTruthy();
+  });
+
+  /** A disabled server is still configured, so it is listed and marked rather than hidden. */
+  it('marks one that is switched off', () => {
+    const { container } = shown({
+      mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: false }],
+    });
+
+    expect(screen.getByText('off')).toBeTruthy();
+    expect(container.querySelector('.environment-dot.off')).toBeTruthy();
+  });
+
+  it('does not mark one that is on', () => {
+    const { container } = shown({
+      mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true }],
+    });
+
+    expect(container.querySelector('.environment-dot.on')).toBeTruthy();
+    expect(screen.queryByText('off')).toBeNull();
+  });
+
+  // Where it came from is where it would have to be changed, and a plugin's server cannot
+  // be edited where the reader's own can.
+  it('names the plugin that provided one rather than just calling it a plugin', () => {
+    shown({
+      mcpServers: [
+        { name: 'from-a-plugin', type: 'stdio', source: 'plugin', sourcePlugin: 'mcp-provider', enabled: true },
+      ],
+    });
+
+    expect(screen.getByText('mcp-provider')).toBeTruthy();
+    expect(screen.queryByText('plugin')).toBeNull();
+  });
+
+  it('falls back to the source when no plugin provided it', () => {
+    shown({ mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true }] });
+
+    expect(screen.getByText('user')).toBeTruthy();
   });
 });

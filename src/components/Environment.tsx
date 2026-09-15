@@ -73,6 +73,7 @@ export function Environment({
   const plugins = environment?.plugins ?? [];
   const extensions = environment?.extensions ?? [];
   const skills = environment?.skills ?? [];
+  const mcpServers = environment?.mcpServers ?? [];
   const skillErrors = environment?.skillErrors ?? [];
   const off = new Set(disabledSkills);
 
@@ -144,6 +145,27 @@ export function Environment({
                     <span className="environment-meta">{plugin.marketplace}</span>
                     {plugin.version && <span className="environment-meta">{plugin.version}</span>}
                     {!plugin.enabled && <span className="environment-off">off</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="environment-section">
+            <h3 className="environment-heading">MCP servers</h3>
+            {mcpServers.length === 0 ? (
+              <p className="changes-note">No MCP servers configured.</p>
+            ) : (
+              <ul className="environment-list">
+                {mcpServers.map((server) => (
+                  <li key={server.name} className="environment-item">
+                    <span className={server.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
+                    <span className="environment-name">{server.name}</span>
+                    {server.type && <span className="environment-meta">{server.type}</span>}
+                    {/* Where it came from is where it would have to be changed, and a
+                        plugin's server cannot be edited where the reader's own can. */}
+                    <span className="environment-meta">{server.sourcePlugin ?? server.source}</span>
+                    {!server.enabled && <span className="environment-off">off</span>}
                   </li>
                 ))}
               </ul>

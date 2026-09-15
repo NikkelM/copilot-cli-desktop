@@ -497,6 +497,8 @@ export interface SessionEnvironment {
   plugins: PluginSummary[];
   extensions: ExtensionSummary[];
   skills: SkillSummary[];
+  /** The MCP servers a session here would be offered, and whether each is switched on. */
+  mcpServers: McpServerSummary[];
   /**
    * Skills that were found but could not be read, as the runtime described them.
    *
@@ -509,6 +511,27 @@ export interface SessionEnvironment {
    * Worth showing, because an empty list means something different under `disabled`.
    */
   extensionMode: string;
+}
+
+/**
+ * An MCP server a session in this directory would be offered.
+ *
+ * Discovered rather than read from a session, so this costs no Copilot process and answers
+ * for a directory no session has ever run in. What it cannot say is whether the server
+ * actually connected: that is a fact about a running session, and only one that is loaded
+ * can be asked (#24).
+ */
+export interface McpServerSummary {
+  /** The key it is configured under, which is also how it is enabled or disabled. */
+  name: string;
+  /** How it is reached - `http`, `stdio`, and so on. Absent when the runtime did not say. */
+  type?: string;
+  /** Where it came from: the reader's own config, the workspace, a plugin, or built in. */
+  source: string;
+  /** Named when a plugin provided it, since that is where it would have to be changed. */
+  sourcePlugin?: string;
+  /** Whether new sessions will start it. A disabled server stays configured. */
+  enabled: boolean;
 }
 
 /**

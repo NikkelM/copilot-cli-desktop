@@ -1610,9 +1610,16 @@ describe('environment', () => {
   /** Give the client fake the three server surfaces the environment is assembled from. */
   function withEnvironment(runtimeParts: ReturnType<typeof makeRuntime>) {
     const rpc = runtimeParts.client.rpc as unknown as Record<string, unknown>;
+    rpc.mcp = {
+      discover: vi.fn(async (_params: { workingDirectory?: string }) => ({
+        servers: [
+          { name: 'context7', type: 'http', source: 'user', enabled: true },
+          { name: 'from-a-plugin', type: 'stdio', source: 'plugin', sourcePlugin: 'awesome-copilot', enabled: false },
+        ],
+      })),
+    };
     rpc.instructions = {
-      discover: vi.fn(async (_params: { projectPaths?: string[] }) => ({
-        sources: [
+      discover: vi.fn(async (_params: { projectPaths?: string[] }) => ({        sources: [
           {
             id: 'home-copilot',
             label: 'Home copilot-instructions.md',
@@ -1625,8 +1632,7 @@ describe('environment', () => {
       })),
     };
     rpc.extensions = {
-      discover: vi.fn(async () => ({
-        extensions: [
+      discover: vi.fn(async () => ({        extensions: [
           {
             id: 'plugin:awesome-copilot/thing',
             name: 'thing',
@@ -1905,5 +1911,86 @@ describe('what a session has cost', () => {
     await runtime.usage('s1');
 
     expect(lastUsage).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * MCP servers a session here would be offered, discovered rather than asked of a session.
+ *
+ * Worth having in the environment panel rather than behind a running session: the CLI's own
+ * /env lists them, and which servers a directory would load is a question about the machine
+ * and its config rather than about any conversation (#24).
+ */
+describe('environment, MCP servers', () => {
+  function withEnvironment(runtimeParts: ReturnType<typeof makeRuntime>) {
+    const rpc = runtimeParts.client.rpc as unknown as Record<string, unknown>;
+    rpc.instructions = { discover: vi.fn(async () => ({ sources: [] })) };
+    rpc.extensions = { discover: vi.fn(async () => ({ extensions: [], mode: 'load_and_augment' })) };
+    rpc.skills = { discover: vi.fn(async () => ({ skills: [], errors: [] })) };
+    rpc.mcp = {
+      discover: vi.fn(async (_params: { workingDirectory?: string }) => ({
+        servers: [
+          { name: 'context7', type: 'http', source: 'user', enabled: true },
+          {
+            name: 'from-a-plugin',
+            type: 'stdio',
+            source: 'plugin',
+            sourcePlugin: 'awesome-copilot',
+            sourcePluginVersion: '1.2.0',
+            enabled: false,
+          },
+        ],
+      })),
+    };
+    return rpc;
+  }
+
+  it('lists the servers there are, with what each is and where it came from', async () => {
+    const parts = makeRuntime();
+    withEnvironment(parts);
+
+    expect((await parts.runtime.environment('C:\\repo')).mcpServers).toEqual([
+      { name: 'context7', type: 'http', source: 'user', enabled: true },
+      { name: 'from-a-plugin', type: 'stdio', source: 'plugin', sourcePlugin: 'awesome-copilot', enabled: false },
+    ]);
+  });
+
+  /** A disabled server is still configured, and saying so is the point of listing it. */
+  it('reports a server that is switched off rather than dropping it', async () => {
+    const parts = makeRuntime();
+    withEnvironment(parts);
+
+    const found = (await parts.runtime.environment()).mcpServers.find((s) => s.name === 'from-a-plugin');
+    expect(found?.enabled).toBe(false);
+  });
+
+  /**
+   * Discovery takes one directory, not the project paths its neighbours take. Passing the
+   * wrong shape is quietly accepted and answers for nowhere in particular.
+   */
+  it('asks about the working directory it was given', async () => {
+    const parts = makeRuntime();
+    const rpc = withEnvironment(parts);
+    await parts.runtime.environment('C:\\repo');
+
+    expect((rpc.mcp as { discover: ReturnType<typeof vi.fn> }).discover).toHaveBeenCalledWith({
+      workingDirectory: 'C:\\repo',
+    });
+  });
+
+  it('asks about no directory at all when there is none', async () => {
+    const parts = makeRuntime();
+    const rpc = withEnvironment(parts);
+    await parts.runtime.environment();
+
+    expect((rpc.mcp as { discover: ReturnType<typeof vi.fn> }).discover).toHaveBeenCalledWith({});
+  });
+
+  it('resumes nothing to answer', async () => {
+    const parts = makeRuntime();
+    withEnvironment(parts);
+    await parts.runtime.environment('C:\\repo');
+
+    expect(parts.client.resumeSession).not.toHaveBeenCalled();
   });
 });

@@ -932,11 +932,14 @@ export class SessionRuntime {
     const client = await this.ensureClient();
     const projectPaths = cwd ? { projectPaths: [cwd] } : {};
 
-    const [instructions, plugins, extensions, skills] = await Promise.all([
+    const [instructions, plugins, extensions, skills, mcp] = await Promise.all([
       client.rpc.instructions.discover(projectPaths),
       client.rpc.plugins.list(),
       client.rpc.extensions.discover(),
       client.rpc.skills.discover(projectPaths),
+      // Takes a single directory rather than the project paths the others take, so passing
+      // the same object would have been quietly ignored and answered for nowhere.
+      client.rpc.mcp.discover(cwd ? { workingDirectory: cwd } : {}),
     ]);
 
     return {
@@ -972,6 +975,13 @@ export class SessionRuntime {
         ...(skill.path ? { path: skill.path } : {}),
       })),
       skillErrors: skills.errors ?? [],
+      mcpServers: (mcp.servers ?? []).map((server) => ({
+        name: server.name,
+        ...(server.type ? { type: server.type } : {}),
+        source: server.source,
+        ...(server.sourcePlugin ? { sourcePlugin: server.sourcePlugin } : {}),
+        enabled: server.enabled,
+      })),
       extensionMode: extensions.mode,
     };
   }
