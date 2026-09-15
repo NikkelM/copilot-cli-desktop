@@ -564,6 +564,15 @@ export default function App() {
     try {
       const outcome = await invokeCommand(sessionId, command.name, argument || undefined);
 
+      /**
+       * The runtime says when a command changed settings, so the panel showing them can
+       * stop being wrong (#168).
+       *
+       * Only while it is open: it re-reads on every open anyway, so refreshing a panel
+       * nobody is looking at would be work for an answer that is thrown away.
+       */
+      if (outcome.settingsChanged && showEnvironment) void environment.load();
+
       switch (outcome.kind) {
         case 'text':
           transcript.showLocal('command.output', { text: outcome.text, markdown: outcome.markdown });

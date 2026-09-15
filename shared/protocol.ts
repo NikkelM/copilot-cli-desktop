@@ -519,7 +519,7 @@ export interface SessionEnvironment {
  * the rest collapse into `unsupported` so an unhandled one says so rather than looking
  * like a command that did nothing.
  */
-export type CommandOutcome =
+export type CommandOutcome = (
   /** Output to show. Already stripped of terminal escapes, which this app cannot draw. */
   | { kind: 'text'; text: string; markdown?: boolean }
   /** The command wants a prompt sent to the agent on the user's behalf. */
@@ -527,7 +527,17 @@ export type CommandOutcome =
   /** It did its work itself; the message, when there is one, is the confirmation. */
   | { kind: 'done'; message?: string; mode?: SessionMode }
   /** An effect this app has no way to apply yet. `what` is the runtime's own name for it. */
-  | { kind: 'unsupported'; what: string };
+  | { kind: 'unsupported'; what: string }
+) & {
+  /**
+   * The command changed settings, so anything holding a copy of them is now wrong.
+   *
+   * Carried on every kind because the runtime attaches it to every kind: a command can
+   * report text, send a prompt or simply finish, and still have changed something on its
+   * way past. Nothing here says which setting - only that a re-read is owed (#168).
+   */
+  settingsChanged?: boolean;
+};
 
 /**
  * What a reader's own shell command produced.

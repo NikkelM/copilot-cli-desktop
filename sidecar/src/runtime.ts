@@ -1108,20 +1108,53 @@ export class SessionRuntime {
     const session = await this.ensureSession(sessionId);
     const result = await session.rpc.commands.invoke({ name, ...(input ? { input } : {}) });
 
+    /**
+     * Read before the switch, because the runtime attaches it to every kind of result.
+     *
+     * Reading it per branch is how it came to be dropped in the first place: it was looked
+     * for on `completed` alone, where the issue happened to notice it, while `text`,
+     * `agent-prompt` and `add-timeline-entry` carry it too. Taken from the result rather
+     * than from a narrowed type, so a kind this build does not model still reports it.
+     */
+    const changed =
+      'runtimeSettingsChanged' in result && result.runtimeSettingsChanged === true
+        ? { settingsChanged: true as const }
+        : {};
+
+    /**
+     * Apply a mode the command reported, whichever kind reported it.
+     *
+     * The runtime says what the host is to become, it does not become it (#167). That was
+     * fixed for `completed` and left undone for `agent-prompt`, which carries the same
+     * field for the same reason - a command that switches the mode and then writes a prompt
+     * would have sent the prompt in the mode it was already in.
+     */
+    const applyMode = async (mode: SessionMode | undefined) => {
+      if (mode) await session.rpc.mode.set({ mode });
+    };
+
     switch (result.kind) {
       case 'text':
         // Terminal escapes are asked for by commands that expect a terminal. This is not
         // one, and leaving them in would print their letters rather than their colours.
-        return { kind: 'text', text: stripAnsi(result.text), ...(result.markdown ? { markdown: true } : {}) };
+        return {
+          kind: 'text',
+          text: stripAnsi(result.text),
+          ...(result.markdown ? { markdown: true } : {}),
+          ...changed,
+        };
 
       case 'agent-prompt':
         // The prompt the command wrote is what the agent is given. Its display form is
         // dropped: the transcript already carries the command that produced it, which is
         // the record of what was asked for.
+        await applyMode(result.mode);
+
         return {
           kind: 'prompt',
           prompt: result.prompt,
           ...(result.notice ? { notice: result.notice } : {}),
+          ...changed,
         };
 
       case 'completed': {
@@ -1134,25 +1167,26 @@ export class SessionRuntime {
         // `/plan` is not one of these, whatever its name suggests: it is a prompt command
         // that prefixes the message with `[[PLAN]]` and has the agent write a plan.md. It
         // reports no mode and never enters plan mode.
-        if (result.mode) await session.rpc.mode.set({ mode: result.mode });
+        await applyMode(result.mode);
 
         return {
           kind: 'done',
           ...(result.message ? { message: result.message } : {}),
           ...(result.mode ? { mode: result.mode } : {}),
+          ...changed,
         };
       }
 
       // Not output so much as a row the runtime wants added, but the difference does not
       // survive into anything this app draws.
       case 'add-timeline-entry':
-        return { kind: 'text', text: stripAnsi(result.entry.text) };
+        return { kind: 'text', text: stripAnsi(result.entry.text), ...changed };
 
       // Sub-command pickers, model dialogues and the rest ask the client to run a piece of
       // its own interface. Named rather than swallowed, so an unsupported one reads as
       // missing rather than as a command that silently did nothing.
       default:
-        return { kind: 'unsupported', what: result.kind };
+        return { kind: 'unsupported', what: result.kind, ...changed };
     }
   }
 

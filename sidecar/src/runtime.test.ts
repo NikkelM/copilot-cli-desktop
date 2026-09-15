@@ -1116,6 +1116,71 @@ describe('a command that changes the mode', () => {
     expect(await runtime.invoke('s1', 'compact')).toEqual({ kind: 'done', message: 'done' });
     expect(session.rpc.mode.set).not.toHaveBeenCalled();
   });
+
+  /**
+   * The same field on a different kind of result, which was left undone when #167 was
+   * fixed on `completed` alone. A command that switches the mode and then writes a prompt
+   * would otherwise have had its prompt sent in the mode it was already in.
+   */
+  it('applies a mode reported alongside a prompt, not only alongside a completion', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'x');
+    const session = sessions.get('s1')!;
+    session.rpc.commands.invoke.mockResolvedValueOnce({
+      kind: 'agent-prompt',
+      prompt: 'do the thing',
+      displayPrompt: 'do the thing',
+      mode: 'autopilot',
+    });
+
+    expect(await runtime.invoke('s1', 'autopilot')).toEqual({ kind: 'prompt', prompt: 'do the thing' });
+    expect(session.rpc.mode.set).toHaveBeenCalledWith({ mode: 'autopilot' });
+  });
+});
+
+/**
+ * A command can change settings on its way past, whatever else it returns.
+ *
+ * The runtime says so with a flag it attaches to every kind of result, and this app shows
+ * settings in a panel that would otherwise go on showing the values from before the command
+ * ran. It was read on `completed` alone, which is where it happened to be noticed (#168).
+ */
+describe('a command that changes settings', () => {
+  const invoking = async (result: Record<string, unknown>) => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'x');
+    harness.sessions.get('s1')!.rpc.commands.invoke.mockResolvedValueOnce(result as never);
+    return harness.runtime.invoke('s1', 'settings');
+  };
+
+  it.each([
+    ['text', { kind: 'text', text: 'shown' }],
+    ['agent-prompt', { kind: 'agent-prompt', prompt: 'p', displayPrompt: 'p' }],
+    ['completed', { kind: 'completed' }],
+    ['add-timeline-entry', { kind: 'add-timeline-entry', entry: { type: 'note', text: 'row' } }],
+  ])('passes the flag on when it arrives with a %s result', async (_kind, result) => {
+    expect(await invoking({ ...result, runtimeSettingsChanged: true })).toMatchObject({ settingsChanged: true });
+  });
+
+  /** A kind this build does not model can still have changed something on its way past. */
+  it('passes it on even from a result it cannot otherwise use', async () => {
+    expect(await invoking({ kind: 'subcommand-select', runtimeSettingsChanged: true })).toEqual({
+      kind: 'unsupported',
+      what: 'subcommand-select',
+      settingsChanged: true,
+    });
+  });
+
+  // Most commands change nothing, and saying they did would re-read the settings on every
+  // command anyone runs.
+  it('says nothing when the command changed nothing', async () => {
+    expect(await invoking({ kind: 'completed', message: 'done' })).toEqual({ kind: 'done', message: 'done' });
+  });
+
+  /** False is the runtime saying it did not, which is not the same as declining to say. */
+  it('treats an explicit false as nothing changed', async () => {
+    expect(await invoking({ kind: 'completed', runtimeSettingsChanged: false })).toEqual({ kind: 'done' });
+  });
 });
 
 /**
