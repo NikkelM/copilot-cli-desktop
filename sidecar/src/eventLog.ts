@@ -77,28 +77,32 @@ export async function readTranscript(
       const buffer = Buffer.alloc(end - start);
       await file.read(buffer, 0, buffer.length, start);
 
-      const located = locateEvents(buffer, start, reachedStart);
+      /**
+       * Only what the transcript can draw counts towards the page.
+       *
+       * The budget exists to bound what a page costs to render, and only these events are
+       * rendered - so counting the rest would make a page mean different amounts of
+       * conversation depending on how much invisible traffic happened to sit in it. A
+       * delegating session made that concrete: its last hundred and fifty events were all
+       * one subagent's, so a page counted in raw events contained nothing to show at all.
+       *
+       * Filtered here rather than in `locateEvents`, which the model, agent and mode
+       * readers share: those exist to read events the transcript never shows.
+       */
+      const located = locateEvents(buffer, start, reachedStart).filter((entry) =>
+        showsInTranscript(entry.event.type, entry.event.agentId),
+      );
 
       if (located.length >= limit || reachedStart || window >= MAX_WINDOW) {
         const kept = located.slice(-limit);
         const more = !reachedStart || kept.length < located.length;
 
         return {
-          // Filtered after the window is chosen rather than before it, so the page still
-          // spans the same events it always did. Filtering first would make `limit` count
-          // only the events that draw something, which quietly hands back two and a half
-          // times as much conversation and the render cost that comes with it.
-          //
-          // Applied here rather than in `locateEvents`, which the model, agent and mode
-          // readers share: those exist to read events the transcript never shows.
-          events: kept.filter((entry) => showsInTranscript(entry.event.type)).map((entry) => entry.event),
+          events: kept.map((entry) => entry.event),
           truncated: more,
           // Where the next page should stop reading. Points at the first event actually
           // returned, not the window start, since the window's first line is normally
           // partial and further events may be dropped when slicing to the limit.
-          //
-          // Taken from the unfiltered page, so paging steps over the events that were
-          // dropped rather than reading them again on the next page.
           nextBefore: more ? (kept[0]?.offset ?? null) : null,
         };
       }

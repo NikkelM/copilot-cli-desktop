@@ -69,7 +69,81 @@ describe('readTranscript', () => {
    * Half of a real page is events the transcript has no case for and silently drops, and
    * the biggest of them carries the whole system prompt. Sending them costs a serialise,
    * two process boundaries and a parse to produce nothing.
-   */  describe('events the transcript cannot draw', () => {
+   */  /**
+   * A subagent's work is another agent's conversation, and it dominates a delegating
+   * session: measured across real logs it is 4% to 73% of the drawable events and up to
+   * 73% of their bytes. It carries an agentId, which the root agent's events never do.
+   */
+  describe('the work a subagent did', () => {
+    const delegating = [
+      JSON.stringify({ type: 'user.message', data: { content: 'delegate this' } }),
+      JSON.stringify({ type: 'tool.execution_start', data: { toolName: 'task', toolCallId: 'call-1' } }),
+      JSON.stringify({ type: 'subagent.started', agentId: 'agent-1', data: { toolCallId: 'call-1', agentName: 'explore' } }),
+      JSON.stringify({ type: 'assistant.message', agentId: 'agent-1', data: { content: 'the subagent thinking aloud' } }),
+      JSON.stringify({ type: 'tool.execution_start', agentId: 'agent-1', data: { toolName: 'grep' } }),
+      JSON.stringify({ type: 'tool.execution_complete', agentId: 'agent-1', data: { output: 'x'.repeat(4000) } }),
+      JSON.stringify({ type: 'subagent.completed', agentId: 'agent-1', data: { toolCallId: 'call-1', agentName: 'explore' } }),
+      JSON.stringify({ type: 'assistant.message', data: { content: 'the answer' } }),
+    ];
+
+    it('stays out of the parent transcript', async () => {
+      writeLog('s', delegating);
+      const { readTranscript } = await loadEventLog();
+
+      const contents = (await readTranscript('s')).events.map((e) => (e.data as { content?: string }).content);
+      expect(contents).not.toContain('the subagent thinking aloud');
+    });
+
+    /** The parent still has to say a task was delegated and how it went. */
+    it('keeps the lifecycle, which is what the delegating row reports', async () => {
+      writeLog('s', delegating);
+      const { readTranscript } = await loadEventLog();
+
+      expect((await readTranscript('s')).events.map((e) => e.type)).toEqual([
+        'user.message',
+        'tool.execution_start',
+        'subagent.started',
+        'subagent.completed',
+        'assistant.message',
+      ]);
+    });
+
+    it('keeps the parent conversation whole', async () => {
+      writeLog('s', delegating);
+      const { readTranscript } = await loadEventLog();
+
+      const contents = (await readTranscript('s')).events.map((e) => (e.data as { content?: string }).content);
+      expect(contents).toContain('delegate this');
+      expect(contents).toContain('the answer');
+    });
+
+    /**
+     * The case that forced the budget to count visible events. This session's newest
+     * hundred and fifty were all one subagent's, so a page counted in raw events contained
+     * nothing the reader could see at all.
+     */
+    it('reads past a run of subagent work rather than returning an empty page', async () => {
+      writeLog('s', delegating);
+      const { readTranscript } = await loadEventLog();
+
+      const page = await readTranscript('s', 3);
+      expect(page.events.map((e) => e.type)).toEqual([
+        'subagent.started',
+        'subagent.completed',
+        'assistant.message',
+      ]);
+    });
+
+    it('leaves a failed subagent to report itself as well', async () => {
+      writeLog('s', [
+        JSON.stringify({ type: 'subagent.failed', agentId: 'agent-1', data: { toolCallId: 'call-1' } }),
+      ]);
+      const { readTranscript } = await loadEventLog();
+
+      expect((await readTranscript('s')).events.map((e) => e.type)).toEqual(['subagent.failed']);
+    });
+  });
+  describe('events the transcript cannot draw', () => {
     /** A system prompt is the expensive one: measured at up to 305 KB in a single page. */
     const noisy = [
       JSON.stringify({ type: 'user.message', data: { content: 'asked' } }),
@@ -90,28 +164,31 @@ describe('readTranscript', () => {
     });
 
     /**
-     * The window is chosen before they are dropped, so a page still spans the events it
-     * always did. Counting only the ones that draw something would hand back far more
-     * conversation than was asked for, and the render cost that comes with it.
+     * The budget counts what the reader will see.
+     *
+     * It exists to bound what a page costs to render, and only visible events are rendered,
+     * so counting the invisible ones would make a page mean different amounts of
+     * conversation depending on how much traffic happened to sit in it. Asking for three
+     * gives three that can be drawn, reading further back for them if it must.
      */
-    it('does not spend the page budget replacing them', async () => {
+    it('spends the page budget on events that can be drawn', async () => {
       writeLog('s', noisy);
       const { readTranscript } = await loadEventLog();
 
-      // The last three lines are one shown event and two that are not.
       const result = await readTranscript('s', 3);
-      expect(result.events.map((e) => e.type)).toEqual(['assistant.message']);
+      expect(result.events.map((e) => e.type)).toEqual(['user.message', 'assistant.message']);
     });
 
     // Paging steps over what was dropped rather than reading it again next time.
-    it('pages from the oldest event the window covered, not the oldest one sent', async () => {
-      writeLog('s', noisy);
+    it('pages from the oldest event it returned', async () => {
+      writeLog('s', [...noisy, JSON.stringify({ type: 'assistant.message', data: { content: 'newest' } })]);
       const { readTranscript } = await loadEventLog();
 
-      const page = await readTranscript('s', 3);
-      const older = await readTranscript('s', 10, page.nextBefore ?? undefined);
+      const page = await readTranscript('s', 1);
+      expect(page.events.map((e) => e.type)).toEqual(['assistant.message']);
 
-      expect(older.events.map((e) => e.type)).toEqual(['user.message']);
+      const older = await readTranscript('s', 10, page.nextBefore ?? undefined);
+      expect(older.events.map((e) => e.type)).toEqual(['user.message', 'assistant.message']);
     });
 
     it('says nothing is left when a page holds none it can draw', async () => {

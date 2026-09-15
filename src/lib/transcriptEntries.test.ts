@@ -1047,3 +1047,100 @@ describe('a skill loading into the conversation', () => {
     expect((invoked({ name: 'a' })[0] as ToolEntry).output).toBeNull();
   });
 });
+/**
+ * A delegated task is drawn on the row that delegated it. The subagent's own work never
+ * reaches here - it is filtered out of the transcript before it is read - so this row is
+ * the whole account the parent conversation gets of it (#11).
+ */
+describe('a task handed to a subagent', () => {
+  const started = (over: Record<string, unknown> = {}) => ({
+    type: 'subagent.started',
+    id: 'e2',
+    agentId: 'agent-1',
+    data: { toolCallId: 'call-1', agentName: 'explore', agentDisplayName: 'Explore Agent', ...over },
+  });
+
+  const call = { type: 'tool.execution_start', id: 'e1', data: { toolName: 'task', toolCallId: 'call-1' } };
+
+  const delegated = (events: TranscriptEvent[]) =>
+    toEntries(events as TranscriptEvent[], null).find((entry) => entry.kind === 'tool')?.delegated;
+
+  it('names who took it', () => {
+    expect(delegated([call, started()])).toEqual({ agent: 'Explore Agent' });
+  });
+
+  /** The display name is what the reader chose; the bare name is the fallback. */
+  it('falls back to the agent name when there is no display name', () => {
+    expect(delegated([call, started({ agentDisplayName: undefined })])?.agent).toBe('explore');
+  });
+
+  it('reports what it cost once it finishes', () => {
+    const complete = {
+      type: 'subagent.completed',
+      id: 'e3',
+      agentId: 'agent-1',
+      data: { toolCallId: 'call-1', totalToolCalls: 47, totalTokens: 919206, durationMs: 139654 },
+    };
+
+    expect(delegated([call, started(), complete])).toEqual({
+      agent: 'Explore Agent',
+      outcome: 'completed',
+      toolCalls: 47,
+      tokens: 919206,
+      durationMs: 139654,
+    });
+  });
+
+  /** Sixteen of one real session's ninety-three subagents failed, so this is not an edge. */
+  it('says when it failed', () => {
+    const failed = { type: 'subagent.failed', id: 'e3', agentId: 'agent-1', data: { toolCallId: 'call-1' } };
+
+    expect(delegated([call, started(), failed])?.outcome).toBe('failed');
+  });
+
+  /**
+   * A session that stopped mid-run leaves a subagent that reached neither outcome - two of
+   * one real log's fifty-five. Absent says that; a default would claim it finished.
+   */
+  it('claims no outcome for one still running', () => {
+    expect(delegated([call, started()])?.outcome).toBeUndefined();
+  });
+
+  /**
+   * The agent's own id has changed form across CLI versions - older sessions reuse the id
+   * of the task tool call, newer ones mint a uuid, and one real log carries both. The tool
+   * call named in the payload is the one thing every version agrees on.
+   */
+  it('ties back to the row through the tool call, whatever the agent id looks like', () => {
+    const olderStyle = { ...started(), agentId: 'call-1' };
+    expect(delegated([call, olderStyle])?.agent).toBe('Explore Agent');
+
+    const newerStyle = { ...started(), agentId: '4bd05937-uuid' };
+    expect(delegated([call, newerStyle])?.agent).toBe('Explore Agent');
+  });
+
+  it('leaves an ordinary tool call alone', () => {
+    const shell = { type: 'tool.execution_start', id: 'e1', data: { toolName: 'powershell', toolCallId: 'call-2' } };
+
+    expect(delegated([shell])).toBeUndefined();
+  });
+
+  // An outcome for a task this page never saw start has no row to be written on.
+  it('ignores a completion whose delegation is not on this page', () => {
+    const orphan = { type: 'subagent.completed', id: 'e3', agentId: 'agent-1', data: { toolCallId: 'gone' } };
+
+    expect(() => toEntries([orphan] as TranscriptEvent[], null)).not.toThrow();
+    expect(delegated([orphan])).toBeUndefined();
+  });
+
+  /** The row is rebuilt on every render, so a finished task must not go on saying it runs. */
+  it('is compared field by field, so finishing redraws the row', () => {
+    const before = toEntries([call, started()] as TranscriptEvent[], null);
+    const after = toEntries(
+      [call, started(), { type: 'subagent.completed', id: 'e3', agentId: 'agent-1', data: { toolCallId: 'call-1' } }] as TranscriptEvent[],
+      null,
+    );
+
+    expect(sameEntry(before[0]!, after[0]!)).toBe(false);
+  });
+});

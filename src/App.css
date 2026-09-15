@@ -1856,6 +1856,13 @@ button.group:hover {
   color: var(--text-muted);
 }
 
+/* A delegation reports rather than warns, like a skill's note: it says who did the work,
+   which is ordinary. The name is the part worth reading, so it keeps the row's own colour
+   while the count beside it stays quiet. */
+.tool-note.delegated {
+  color: var(--text-muted);
+}
+
 .tool-lines {
   flex-shrink: 0;
   color: var(--text-muted);

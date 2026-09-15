@@ -173,6 +173,16 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
           )}
           {entry.answer && <span className="tool-answer">{entry.answer}</span>}
         </span>
+        {/* Who took the task, and what it cost. The subagent's own work is not in this
+            conversation - it is another agent's, and it is most of a delegating session's
+            transcript - so this row is the whole account of it the parent gets (#11). */}
+        {entry.delegated && (
+          <span className="tool-note delegated">
+            {entry.delegated.agent}
+            {entry.delegated.outcome === 'failed' && ' failed'}
+            {entry.delegated.toolCalls !== undefined && `, ${plural(entry.delegated.toolCalls, 'tool call')}`}
+          </span>
+        )}
         {entry.status === 'cancelled' && <span className="tool-note">interrupted</span>}
         {/* Why a skill is here, next to its name. Silent when the reader invoked it: they
             know, and the row would be saying it back to them. */}

@@ -42,6 +42,16 @@ export interface TranscriptEvent {
   id?: string;
   /** When the runtime recorded it. Present on live events as well as replayed ones. */
   timestamp?: string;
+  /**
+   * Which subagent produced it, absent for the root agent and for session-level events.
+   *
+   * Always at the top level rather than inside `data`, confirmed across every log on this
+   * machine. Its form has changed with the CLI: older sessions set it to the id of the
+   * `task` tool call that spawned the agent, newer ones to a uuid of the agent's own. One
+   * log carries both, so nothing may assume either - `subagent.started` names the tool call
+   * in its payload, and that is the way back to the row that delegated the work.
+   */
+  agentId?: string;
 }
 
 export interface ListSessionsResult {
@@ -682,13 +692,33 @@ export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
   'abort',
   'session.idle',
   'session.shutdown',
+  // What a delegated task did, which is drawn on the row that delegated it rather than as
+  // rows of its own. The work itself is the subagent's and is left out entirely (#11).
+  'subagent.started',
+  'subagent.completed',
+  'subagent.failed',
 ];
 
 const SHOWN = new Set(TRANSCRIPT_EVENT_TYPES);
 
-/** Whether the transcript would draw anything for this event. */
-export function showsInTranscript(type: string): boolean {
-  return SHOWN.has(type);
+/** The lifecycle of a delegated task, which the parent transcript draws. */
+const SUBAGENT_LIFECYCLE = new Set(['subagent.started', 'subagent.completed', 'subagent.failed']);
+
+/**
+ * Whether the parent transcript would draw anything for this event.
+ *
+ * A subagent's own work is not the parent conversation. It carries an `agentId`, which the
+ * root agent's events never do, and it dominates a delegating session: measured across real
+ * logs it is 4% to 73% of the drawable events and up to 73% of their bytes. Reading it into
+ * the parent transcript floods the conversation with another agent's tool calls and pays
+ * for them twice over, in transfer and in render.
+ *
+ * The three lifecycle events carry an `agentId` too and are kept anyway, because they are
+ * what the parent has to say: a task was delegated, and how it went.
+ */
+export function showsInTranscript(type: string, agentId?: string): boolean {
+  if (!SHOWN.has(type)) return false;
+  return !agentId || SUBAGENT_LIFECYCLE.has(type);
 }
 
 /**

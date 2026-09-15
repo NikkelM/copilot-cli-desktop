@@ -109,6 +109,26 @@ export interface ToolEntry {
   startedAt?: string;
   /** When it stopped, whether it finished or was cancelled. Absent while it runs. */
   endedAt?: string;
+  /**
+   * What a delegated task did, for the row that delegated it.
+   *
+   * The subagent's own work is not drawn in this conversation - it is another agent's, and
+   * it is most of a delegating session's transcript. What the parent shows instead is who
+   * was asked and what it cost (#11).
+   */
+  delegated?: Delegated;
+}
+
+/** A task handed to a subagent, as the delegating row reports it. */
+export interface Delegated {
+  /** The agent's own name for itself, which is what the reader chose to delegate to. */
+  agent: string;
+  /** How many tools it used, once it has finished. */
+  toolCalls?: number;
+  tokens?: number;
+  durationMs?: number;
+  /** Absent while it is still working, which is also what a session that stopped leaves. */
+  outcome?: 'completed' | 'failed';
 }
 
 export type Entry = MessageEntry | ReasoningEntry | ToolEntry;
@@ -306,6 +326,15 @@ export function toEntries(
   const streamed = new Set<string>();
   /** In-flight tool calls, so a completion can fill in the entry it belongs to. */
   const pending = new Map<string, ToolEntry>();
+  /**
+   * Delegating rows by the tool call that spawned the subagent, so its outcome can reach
+   * the row after the call has completed and left `pending`.
+   *
+   * Keyed on the tool call rather than on the agent, because the agent's own id has changed
+   * form across CLI versions - older sessions reuse the tool call id, newer ones mint a
+   * uuid, and one log carries both. `subagent.started` names the tool call in every version.
+   */
+  const delegating = new Map<string, ToolEntry>();
 
   for (const event of events) {
     const data = (event.data ?? {}) as Record<string, unknown>;
@@ -428,6 +457,50 @@ export function toEntries(
         const id = typeof data.toolCallId === 'string' ? data.toolCallId : null;
         if (id) pending.set(id, entry);
         entries.push(entry);
+        break;
+      }
+
+      /**
+       * A task was handed to a subagent.
+       *
+       * Recorded against the row that delegated it rather than added as a row of its own:
+       * the `task` tool call is already there, and this says who took it. The subagent's
+       * own messages and tool calls never reach here at all - they are filtered out of the
+       * transcript before it is read, because they are another agent's conversation.
+       */
+      case 'subagent.started': {
+        const call = text(data, 'toolCallId');
+        const agent = text(data, 'agentDisplayName') ?? text(data, 'agentName');
+        const row = call ? (pending.get(call) ?? delegating.get(call)) : undefined;
+        if (!call || !agent) break;
+
+        if (row) {
+          row.delegated = { agent };
+          delegating.set(call, row);
+        }
+        break;
+      }
+
+      /**
+       * How the delegated task went.
+       *
+       * Both outcomes are real and both are common: one session here failed sixteen of its
+       * ninety-three. A subagent left running by a session that stopped reaches neither,
+       * which is why the outcome is absent rather than assumed.
+       */
+      case 'subagent.completed':
+      case 'subagent.failed': {
+        const call = text(data, 'toolCallId');
+        const row = call ? delegating.get(call) : undefined;
+        if (!row?.delegated) break;
+
+        row.delegated = {
+          ...row.delegated,
+          outcome: event.type === 'subagent.completed' ? 'completed' : 'failed',
+          ...(typeof data.totalToolCalls === 'number' ? { toolCalls: data.totalToolCalls } : {}),
+          ...(typeof data.totalTokens === 'number' ? { tokens: data.totalTokens } : {}),
+          ...(typeof data.durationMs === 'number' ? { durationMs: data.durationMs } : {}),
+        };
         break;
       }
 
@@ -628,7 +701,27 @@ export function sameEntry(a: Entry, b: Entry): boolean {
     a.search === other.search &&
     a.startedAt === other.startedAt &&
     a.endedAt === other.endedAt &&
+    sameDelegated(a.delegated, other.delegated) &&
     sameChoices(a.choices, other.choices)
+  );
+}
+
+/**
+ * Whether two rows describe the same delegated task in the same state.
+ *
+ * Compared field by field for the same reason everything else here is: the list is rebuilt
+ * on every render, so a subagent that has just finished is a different object carrying the
+ * same identity, and a row left out of this comparison would go on saying it is running.
+ */
+function sameDelegated(a: Delegated | undefined, b: Delegated | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.agent === b.agent &&
+    a.outcome === b.outcome &&
+    a.toolCalls === b.toolCalls &&
+    a.tokens === b.tokens &&
+    a.durationMs === b.durationMs
   );
 }
 
