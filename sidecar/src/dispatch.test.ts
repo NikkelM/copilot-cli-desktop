@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { JsonRpcRequest, SidecarHandlers } from '../../shared/protocol.js';
+import { PROTOCOL_VERSION, SIDECAR_METHODS } from '../../shared/protocol.js';
 import { createHandlers, dispatch } from './dispatch.js';
 import type { SessionRuntime } from './runtime.js';
 
@@ -203,5 +204,43 @@ describe('what the sidecar answers', () => {
     await bare['agents.deselect']({ sessionId: 's1' });
 
     expect(selectAgent).toHaveBeenCalledWith('s1', null);
+  });
+});
+
+/**
+ * The handshake is only worth anything if the version it reports describes the methods this
+ * build actually answers. These are the tests that keep those two facts the same fact.
+ */
+describe('the contract the sidecar reports', () => {
+  const runtime = {} as unknown as SessionRuntime;
+
+  it('answers with the version compiled into it', () => {
+    const handlers = createHandlers(runtime);
+
+    expect(handlers['protocol.version']()).toEqual({ version: PROTOCOL_VERSION });
+  });
+
+  /**
+   * A missing handler is already a build error, since `SidecarHandlers` requires one per
+   * method. An extra is not, and would be a method the version never mentions.
+   */
+  it('answers exactly the methods the protocol declares, and no others', () => {
+    const answered = Object.keys(createHandlers(runtime)).sort();
+
+    expect(answered).toEqual([...SIDECAR_METHODS].sort());
+  });
+
+  /** The one handler that has to work on a sidecar too old to do anything else usefully. */
+  it('reports the version without touching the runtime', () => {
+    const exploded = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error('the version handler must not reach the runtime');
+        },
+      },
+    ) as SessionRuntime;
+
+    expect(createHandlers(exploded)['protocol.version']()).toHaveProperty('version');
   });
 });

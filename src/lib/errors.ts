@@ -29,7 +29,23 @@ export function messageOf(error: unknown): string {
  * at, because a wrong translation is worse than a technical sentence: it sends the reader
  * after the wrong problem, and unlike the raw text it cannot be searched for.
  */
-const PLAINLY: Array<{ when: RegExp; say: string }> = [
+const PLAINLY: Array<{ when: RegExp; say: string | ((match: RegExpMatchArray) => string) }> = [
+  /**
+   * The one error that is never about the feature it names (#169).
+   *
+   * The three pieces of this app ship separately, so either half can be older than the
+   * other with nothing to say so. What that looks like is a method the running sidecar has
+   * never heard of, which reads as a broken feature and sends the reader into its source,
+   * where the handler is plainly registered and plainly correct.
+   *
+   * The name is kept, because it is still the quickest way to see which change went
+   * missing; only the conclusion is supplied.
+   */
+  {
+    when: /unknown method:\s*(\S+)/i,
+    say: (match) =>
+      `The runtime does not know ${match[1]}, which means it was built before this window. Restart the app.`,
+  },
   {
     when: /first event must be session\.(start|resume)|cannot create session from empty events array/i,
     say: 'This session has no history left to reopen. Its record in the session store is empty or was removed.',
@@ -65,5 +81,8 @@ const PLAINLY: Array<{ when: RegExp; say: string }> = [
  */
 export function explain(error: unknown): string {
   const message = messageOf(error);
-  return PLAINLY.find(({ when }) => when.test(message))?.say ?? message;
+  const found = PLAINLY.find(({ when }) => when.test(message));
+  if (!found) return message;
+
+  return typeof found.say === 'string' ? found.say : found.say(message.match(found.when)!);
 }

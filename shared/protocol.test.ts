@@ -53,3 +53,46 @@ describe('notifications across the sidecar, shell and frontend', () => {
     expect(arms.filter((method) => !sent.has(method!))).toEqual([]);
   });
 });
+
+/**
+ * The version exists so that a frontend and a sidecar built from different method lists
+ * refuse each other instead of failing later as a feature that looks broken (#169). What it
+ * has to get right is narrow: change the contract and it changes, restate the same contract
+ * and it does not.
+ */
+describe('the protocol version', () => {
+  const { PROTOCOL_VERSION, SIDECAR_METHODS, protocolVersionOf } = protocol;
+
+  it('describes the methods this build declares', () => {
+    expect(protocolVersionOf(SIDECAR_METHODS)).toBe(PROTOCOL_VERSION);
+  });
+
+  // The list is written for reading, so its order is nobody's contract but its own.
+  it('is unmoved by the order the methods are listed in', () => {
+    expect(protocolVersionOf([...SIDECAR_METHODS].reverse())).toBe(PROTOCOL_VERSION);
+  });
+
+  it('changes when a method is added', () => {
+    expect(protocolVersionOf([...SIDECAR_METHODS, 'sessions.somethingNew'])).not.toBe(PROTOCOL_VERSION);
+  });
+
+  it('changes when a method is taken away', () => {
+    expect(protocolVersionOf(SIDECAR_METHODS.slice(1))).not.toBe(PROTOCOL_VERSION);
+  });
+
+  it('changes when a method is renamed', () => {
+    const renamed = SIDECAR_METHODS.map((method) => (method === 'sessions.mode' ? 'sessions.getMode' : method));
+
+    expect(protocolVersionOf(renamed)).not.toBe(PROTOCOL_VERSION);
+  });
+
+  /** Two names swapped is the same set, and the same set is the same contract. */
+  it('is a fact about the set rather than about the text', () => {
+    expect(protocolVersionOf(['a.one', 'b.two'])).toBe(protocolVersionOf(['b.two', 'a.one']));
+    expect(protocolVersionOf(['a.one', 'b.two'])).not.toBe(protocolVersionOf(['a.one', 'b.three']));
+  });
+
+  it('is short enough to read out of a log', () => {
+    expect(PROTOCOL_VERSION).toMatch(/^[0-9a-f]{8}$/);
+  });
+});

@@ -749,9 +749,103 @@ export interface SidecarRequests {
    * an image at all - because the caller does the same thing in all four cases.
    */
   'attachments.preview': { params: { path: string }; result: { dataUrl: string | null } };
+  /**
+   * The contract the answering sidecar was built against.
+   *
+   * Asked before anything else, because the answer decides whether the rest can be
+   * believed. A sidecar too old to have this method says so by not having it, which is
+   * the one error message in the whole protocol that means exactly what it says.
+   */
+  'protocol.version': { params: void; result: { version: string } };
 }
 
-export type SidecarMethod = keyof SidecarRequests;
+/**
+ * Every method there is, as values rather than as types.
+ *
+ * `SidecarMethod` used to be `keyof SidecarRequests`, which exists only while the compiler
+ * is running. Nothing could therefore ask at runtime what the contract was, and the two
+ * halves of this app ship separately: the frontend is replaced in place by Vite, the
+ * sidecar is a Node process started once from its own build. Either can be older than the
+ * other with nothing to say so (#169).
+ *
+ * Listed by hand and checked by the compiler from both ends. A name here that is not in
+ * `SidecarRequests` fails to resolve its parameters; a method there that is missing here is
+ * not part of `SidecarMethod`, so nothing can call it and no handler is required for it.
+ * Forgetting to add one therefore fails closed rather than silently leaving a method out of
+ * the version below.
+ */
+export const SIDECAR_METHODS = [
+  'sessions.list',
+  'sessions.find',
+  'sessions.exist',
+  'sessions.transcript',
+  'sessions.send',
+  'sessions.abort',
+  'sessions.shell',
+  'sessions.cancelShell',
+  'sessions.evict',
+  'sessions.resolvePermission',
+  'sessions.resolveElicitation',
+  'sessions.resolvePlan',
+  'sessions.create',
+  'sessions.changes',
+  'sessions.diff',
+  'git.state',
+  'models.list',
+  'commands.list',
+  'filesystem.directories',
+  'commands.invoke',
+  'commands.enqueue',
+  'agents.list',
+  'agents.current',
+  'agents.select',
+  'agents.deselect',
+  'environment.describe',
+  'skills.disabled',
+  'skills.set',
+  'sessions.queue',
+  'sessions.context',
+  'sessions.model',
+  'sessions.setModel',
+  'sessions.mode',
+  'sessions.setMode',
+  'runtime.status',
+  'attachments.stash',
+  'attachments.preview',
+  'protocol.version',
+] as const;
+
+export type SidecarMethod = (typeof SIDECAR_METHODS)[number];
+
+/** FNV-1a, for a short stable digest of the method list. Not security, just difference. */
+function digest(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+/**
+ * What the two halves compare at connect.
+ *
+ * Derived from the method names rather than written down, because a number somebody has to
+ * remember to raise is a number that will be forgotten exactly when it matters. Adding,
+ * removing or renaming a method changes this without anyone thinking about it, and those
+ * are precisely the changes that produce `Unknown method` against a stale build.
+ *
+ * Sorted first, so reordering the list above is not mistaken for a change to the contract.
+ *
+ * It says nothing about the shape of any method's parameters or result. Those are types and
+ * are gone by runtime, so a changed shape still crosses silently; this covers the drift that
+ * can be seen from here rather than pretending to cover all of it.
+ */
+export function protocolVersionOf(methods: readonly string[]): string {
+  return digest([...methods].sort().join('\n'));
+}
+
+export const PROTOCOL_VERSION = protocolVersionOf(SIDECAR_METHODS);
 
 /** Notifications the sidecar pushes to the frontend. */
 export interface SessionEventNotification {

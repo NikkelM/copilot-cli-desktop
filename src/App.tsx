@@ -40,6 +40,7 @@ import {
 import { CHANGES, ENVIRONMENT, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
+import { staleRuntime } from './lib/protocolCheck';
 import { revealPointerForPicker } from './lib/nativePicker';
 import { activityOf } from './lib/activity';
 import { clockFrom, intentOf } from './lib/timeline';
@@ -310,6 +311,20 @@ export default function App() {
     }),
   );
 
+  /**
+   * Refuse a runtime built from a different protocol, loudly, before it is used (#169).
+   *
+   * Shown the same way as a sidecar that has gone away, because it has the same shape: the
+   * reader cannot fix it from in here, everything below it is untrustworthy, and the one
+   * useful action is to restart. Left to itself it surfaces later as a single feature
+   * failing for reasons that are nothing to do with that feature.
+   */
+  const checkProtocol = useCallback(() => {
+    void staleRuntime().then((message) => message && setStopped(message));
+  }, []);
+
+  useEffect(checkProtocol, [checkProtocol]);
+
   // A replacement is up. Nothing it was told survives, so anything that was waiting on
   // the old one is dropped and the session list is read again.
   useTauriEvent(
@@ -320,8 +335,12 @@ export default function App() {
         setResuming(null);
         prompts.clear();
         sessions.refresh();
+        // A replacement is a different process, and on a dev machine often a different
+        // build: whatever was concluded about the last one says nothing about this one.
+        setStopped(null);
+        checkProtocol();
       }),
-    [sessions.refresh],
+    [sessions.refresh, checkProtocol],
   );
 
   /** Stop the turn, saying so rather than leaving the press looking unnoticed. */

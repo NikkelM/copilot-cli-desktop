@@ -59,6 +59,12 @@ async function request<M extends SidecarMethod>(
   return invoke('sidecar_request', { method, params: params ?? null });
 }
 
+/** The runtime is asked what it knows. Costs nothing: the sidecar reads a constant. */
+export async function runtimeProtocolVersion(): Promise<string> {
+  const { version } = await request('protocol.version');
+  return version;
+}
+
 /** Reads the sidebar model from session-store.db. Spawns no Copilot process. */
 export function listSessions(): Promise<ListSessionsResult> {
   return request('sessions.list');

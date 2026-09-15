@@ -6,6 +6,7 @@
  * app impossible to exercise except by running it.
  */
 import type { JsonRpcRequest, SidecarHandlers } from '../../shared/protocol.js';
+import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
 import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
 import { lastAgent, lastModel, readTranscript } from './eventLog.js';
@@ -17,6 +18,15 @@ import { existingSessions, findSessions, listSessions } from './sessionIndex.js'
 
 export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
   return {
+    /**
+     * Answered from the build this process came from, not from the request.
+     *
+     * Deliberately the cheapest handler there is, and one that touches no runtime state:
+     * it has to work on a sidecar that is otherwise too old to be useful, because saying
+     * so is its entire job.
+     */
+    'protocol.version': () => ({ version: PROTOCOL_VERSION }),
+
     'sessions.list': () => {
       // The sessions the runtime holds are listed even when the database would hide them:
       // one just started has no title and no turns yet.

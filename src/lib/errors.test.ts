@@ -102,4 +102,35 @@ describe('explain', () => {
 
     expect(explain(raw)).toBe(raw);
   });
+
+  /**
+   * The failure that never means what it says (#169). `Unknown method` is the sidecar
+   * reporting the frontend asked for something it has never heard of, which is always a
+   * build older than the window and never a fault in the feature it names.
+   */
+  describe('a method the runtime has never heard of', () => {
+    it('blames the build rather than the feature, and keeps the name', () => {
+      const raw = 'Request sidecar failed with message: Unknown method: sessions.setMode';
+
+      expect(explain(raw)).toBe(
+        'The runtime does not know sessions.setMode, which means it was built before this window. Restart the app.',
+      );
+    });
+
+    it('names whichever method it was', () => {
+      expect(explain('Unknown method: filesystem.directories')).toContain('filesystem.directories');
+    });
+
+    /** The message arrives from the sidecar's own log line, which is not capitalised. */
+    it('reads it however the sidecar spelt it', () => {
+      expect(explain('unknown method: sessions.mode')).toContain('sessions.mode');
+    });
+
+    // The agent discussing one is not the app failing to call one.
+    it('leaves a sentence that merely mentions the words alone', () => {
+      const raw = 'The unknown method of doing this is worse';
+
+      expect(explain(raw)).toBe(raw);
+    });
+  });
 });
