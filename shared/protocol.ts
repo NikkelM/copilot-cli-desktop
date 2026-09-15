@@ -618,6 +618,56 @@ export interface FileDiff {
   stale: boolean;
 }
 
+/**
+ * The event types the transcript can draw a row for.
+ *
+ * `toEntries` decides what the reader sees, and its own comment is the rule: anything it
+ * has no case for is invisible. Roughly half of a page was being read, serialised, carried
+ * across two process boundaries and handed to React so that it could be ignored - 49% of
+ * the bytes and 59% of the events, measured over the newest page of 25 real sessions.
+ *
+ * The worst of it is `system.message`, which carries the whole system prompt: up to 305 KB
+ * in a single page, 61% of that page on its own.
+ *
+ * So the transcript read sends only these. Nothing the reader would have seen is affected,
+ * because an event outside this list drew nothing in the first place: the page still spans
+ * the same events, it just stops carrying the ones that were only ever going to be dropped
+ * at the other end.
+ *
+ * This is not a general filter on the log. The model, agent and mode of a cold session are
+ * read from events that are deliberately absent from here, so only the transcript read
+ * applies it.
+ *
+ * Kept in step with `toEntries` by a test rather than by intention: the two are a switch
+ * statement in the frontend and a list in a shared module, with nothing but that test
+ * linking them. A case added there without a name added here would silently stop arriving.
+ */
+export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
+  'user.message',
+  'assistant.message',
+  'assistant.reasoning',
+  'assistant.reasoning_delta',
+  'assistant.message_delta',
+  'tool.execution_start',
+  'tool.user_requested',
+  'tool.execution_partial_result',
+  'tool.execution_complete',
+  'session.error',
+  'skill.invoked',
+  'command.output',
+  'command.failed',
+  'abort',
+  'session.idle',
+  'session.shutdown',
+];
+
+const SHOWN = new Set(TRANSCRIPT_EVENT_TYPES);
+
+/** Whether the transcript would draw anything for this event. */
+export function showsInTranscript(type: string): boolean {
+  return SHOWN.has(type);
+}
+
 /** Requests the frontend may issue. */
 export interface SidecarRequests {
   'sessions.list': { params: void; result: ListSessionsResult };

@@ -65,10 +65,67 @@ describe('readTranscript', () => {
     expect(result.truncated).toBe(true);
   });
 
+  /**
+   * Half of a real page is events the transcript has no case for and silently drops, and
+   * the biggest of them carries the whole system prompt. Sending them costs a serialise,
+   * two process boundaries and a parse to produce nothing.
+   */
+  describe('events the transcript cannot draw', () => {
+    /** A system prompt is the expensive one: measured at up to 305 KB in a single page. */
+    const noisy = [
+      JSON.stringify({ type: 'user.message', data: { content: 'asked' } }),
+      JSON.stringify({ type: 'system.message', data: { content: 'x'.repeat(2000) } }),
+      JSON.stringify({ type: 'hook.start', data: {} }),
+      JSON.stringify({ type: 'assistant.turn_start', data: {} }),
+      JSON.stringify({ type: 'assistant.message', data: { content: 'answered' } }),
+      JSON.stringify({ type: 'assistant.turn_end', data: {} }),
+      JSON.stringify({ type: 'hook.end', data: {} }),
+    ];
+
+    it('leaves them out of the page', async () => {
+      writeLog('s', noisy);
+      const { readTranscript } = await loadEventLog();
+
+      const result = await readTranscript('s');
+      expect(result.events.map((e) => e.type)).toEqual(['user.message', 'assistant.message']);
+    });
+
+    /**
+     * The window is chosen before they are dropped, so a page still spans the events it
+     * always did. Counting only the ones that draw something would hand back far more
+     * conversation than was asked for, and the render cost that comes with it.
+     */
+    it('does not spend the page budget replacing them', async () => {
+      writeLog('s', noisy);
+      const { readTranscript } = await loadEventLog();
+
+      // The last three lines are one shown event and two that are not.
+      const result = await readTranscript('s', 3);
+      expect(result.events.map((e) => e.type)).toEqual(['assistant.message']);
+    });
+
+    // Paging steps over what was dropped rather than reading it again next time.
+    it('pages from the oldest event the window covered, not the oldest one sent', async () => {
+      writeLog('s', noisy);
+      const { readTranscript } = await loadEventLog();
+
+      const page = await readTranscript('s', 3);
+      const older = await readTranscript('s', 10, page.nextBefore ?? undefined);
+
+      expect(older.events.map((e) => e.type)).toEqual(['user.message']);
+    });
+
+    it('says nothing is left when a page holds none it can draw', async () => {
+      writeLog('s', [JSON.stringify({ type: 'system.message', data: { content: 'only this' } })]);
+      const { readTranscript } = await loadEventLog();
+
+      expect(await readTranscript('s')).toEqual({ events: [], truncated: false, nextBefore: null });
+    });
+  });
+
   // The read starts at a byte offset, so the first line in view is usually incomplete.
   // Growing the window past a very large log is what this guards.
-  it('grows the window until it has enough events', async () => {
-    // Each line is padded so 500 events comfortably exceed the initial 256 KB window.
+  it('grows the window until it has enough events', async () => {    // Each line is padded so 500 events comfortably exceed the initial 256 KB window.
     const padded = Array.from({ length: 900 }, (_, i) =>
       JSON.stringify({ type: 'user.message', data: { content: `m${i}`, pad: 'x'.repeat(600) } }),
     );

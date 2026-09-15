@@ -96,3 +96,42 @@ describe('the protocol version', () => {
     expect(PROTOCOL_VERSION).toMatch(/^[0-9a-f]{8}$/);
   });
 });
+
+/**
+ * The transcript read sends only the events the transcript can draw, which is worth about
+ * half of every page. Nothing links the list to the renderer that defines it except this:
+ * one is a switch statement in the frontend, the other a list in a shared module, and a
+ * case added to the first without a name added to the second would silently stop arriving.
+ */
+describe('the events the transcript is sent', () => {
+  const entries = readFileSync(join(root, 'src', 'lib', 'transcriptEntries.ts'), 'utf8');
+
+  /**
+   * Only the cases inside `toEntries`. The file has other switches - the one naming why a
+   * turn stopped, for instance - whose labels are not event types at all.
+   */
+  const rendered = (() => {
+    const from = entries.indexOf('export function toEntries');
+    const to = entries.indexOf('export function sameEntry');
+    return [...entries.slice(from, to).matchAll(/case '([a-z_.]+)':/g)].map((match) => match[1]!);
+  })();
+
+  it('found the renderer to compare against', () => {
+    expect(rendered.length).toBeGreaterThan(10);
+  });
+
+  it('carries exactly what the renderer draws', () => {
+    expect([...protocol.TRANSCRIPT_EVENT_TYPES].sort()).toEqual([...rendered].sort());
+  });
+
+  it.each(['system.message', 'hook.start', 'hook.end', 'assistant.turn_start', 'assistant.turn_end'])(
+    'does not carry %s, which draws nothing and is the bulk of a page',
+    (type) => {
+      expect(protocol.showsInTranscript(type)).toBe(false);
+    },
+  );
+
+  it.each(['user.message', 'assistant.message', 'tool.execution_complete'])('carries %s', (type) => {
+    expect(protocol.showsInTranscript(type)).toBe(true);
+  });
+});

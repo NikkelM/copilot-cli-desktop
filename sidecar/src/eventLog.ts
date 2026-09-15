@@ -16,6 +16,7 @@ import type {
   SessionMode,
   TranscriptEvent,
 } from '../../shared/protocol.js';
+import { showsInTranscript } from '../../shared/protocol.js';
 import { sessionEventLog } from './paths.js';
 
 /** Default cap on events per read; logs reach hundreds of thousands of entries. */
@@ -82,11 +83,21 @@ export async function readTranscript(
         const more = !reachedStart || kept.length < located.length;
 
         return {
-          events: kept.map((entry) => entry.event),
+          // Filtered after the window is chosen rather than before it, so the page still
+          // spans the same events it always did. Filtering first would make `limit` count
+          // only the events that draw something, which quietly hands back two and a half
+          // times as much conversation and the render cost that comes with it.
+          //
+          // Applied here rather than in `locateEvents`, which the model, agent and mode
+          // readers share: those exist to read events the transcript never shows.
+          events: kept.filter((entry) => showsInTranscript(entry.event.type)).map((entry) => entry.event),
           truncated: more,
           // Where the next page should stop reading. Points at the first event actually
           // returned, not the window start, since the window's first line is normally
           // partial and further events may be dropped when slicing to the limit.
+          //
+          // Taken from the unfiltered page, so paging steps over the events that were
+          // dropped rather than reading them again on the next page.
           nextBefore: more ? (kept[0]?.offset ?? null) : null,
         };
       }
