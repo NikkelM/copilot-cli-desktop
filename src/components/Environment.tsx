@@ -14,6 +14,14 @@ interface EnvironmentProps {
   disabledSkills?: string[];
   /** Absent when there is no session to switch anything for, which leaves the list readable but fixed. */
   onToggleSkill?: (name: string, enabled: boolean) => void;
+  /**
+   * Turn an MCP server on or off for new sessions.
+   *
+   * Unlike the skills toggle this needs no session, since the disabled list is the reader's
+   * own configuration. Optional all the same, so a caller that cannot write it renders the
+   * list as a fixed one rather than offering a control that would fail.
+   */
+  onToggleMcp?: (name: string, enabled: boolean) => void;
 }
 
 /** Where a source came from, in the words someone would use to go and find it. */
@@ -60,6 +68,7 @@ export function Environment({
   onClose,
   disabledSkills = [],
   onToggleSkill,
+  onToggleMcp,
 }: EnvironmentProps) {
   const [open, setOpen] = useState<string | null>(null);
 
@@ -156,19 +165,43 @@ export function Environment({
             {mcpServers.length === 0 ? (
               <p className="changes-note">No MCP servers configured.</p>
             ) : (
-              <ul className="environment-list">
-                {mcpServers.map((server) => (
-                  <li key={server.name} className="environment-item">
-                    <span className={server.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                    <span className="environment-name">{server.name}</span>
-                    {server.type && <span className="environment-meta">{server.type}</span>}
-                    {/* Where it came from is where it would have to be changed, and a
-                        plugin's server cannot be edited where the reader's own can. */}
-                    <span className="environment-meta">{server.sourcePlugin ?? server.source}</span>
-                    {!server.enabled && <span className="environment-off">off</span>}
-                  </li>
-                ))}
-              </ul>
+              <>
+                {/* Not the same scope as the skills below, which are switched off for one
+                    session. This is the reader's own configuration, so it decides what
+                    every new session starts with - and changes nothing already running. */}
+                <p className="changes-note">
+                  Switching one off applies to new sessions. Anything already running keeps its connections.
+                </p>
+                <ul className="environment-list">
+                  {mcpServers.map((server) => (
+                    <li key={server.name} className="environment-item">
+                      <span className={server.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
+                      <span className="environment-name">{server.name}</span>
+                      {server.type && <span className="environment-meta">{server.type}</span>}
+                      {/* Where it came from is where it would have to be changed, and a
+                          plugin's server cannot be edited where the reader's own can. */}
+                      <span className="environment-meta">{server.sourcePlugin ?? server.source}</span>
+                      {onToggleMcp ? (
+                        <button
+                          type="button"
+                          className={server.enabled ? 'environment-toggle' : 'environment-toggle off'}
+                          onClick={() => onToggleMcp(server.name, !server.enabled)}
+                          aria-pressed={server.enabled}
+                          title={
+                            server.enabled
+                              ? `Stop starting ${server.name} in new sessions`
+                              : `Start ${server.name} in new sessions again`
+                          }
+                        >
+                          {server.enabled ? 'On' : 'Off'}
+                        </button>
+                      ) : (
+                        !server.enabled && <span className="environment-off">off</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </>
             )}
           </section>
 

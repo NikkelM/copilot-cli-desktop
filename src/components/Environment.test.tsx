@@ -401,3 +401,69 @@ describe('Environment, MCP servers', () => {
     expect(screen.getByText('user')).toBeTruthy();
   });
 });
+
+describe('Environment, switching an MCP server', () => {
+  const server = (over = {}) => ({ name: 'context7', type: 'http', source: 'user', enabled: true, ...over });
+
+  const shown = (over = {}, onToggleMcp?: (name: string, enabled: boolean) => void) =>
+    render(
+      <Environment
+        environment={environment({ mcpServers: [server(over)] })}
+        loading={false}
+        failed={null}
+        onReload={() => {}}
+        onClose={() => {}}
+        onToggleMcp={onToggleMcp}
+      />,
+    );
+
+  it('turns one off that is on', () => {
+    const onToggleMcp = vi.fn();
+    shown({}, onToggleMcp);
+
+    fireEvent.click(screen.getByTitle(/Stop starting context7/));
+    expect(onToggleMcp).toHaveBeenCalledWith('context7', false);
+  });
+
+  it('turns one back on', () => {
+    const onToggleMcp = vi.fn();
+    shown({ enabled: false }, onToggleMcp);
+
+    fireEvent.click(screen.getByTitle(/Start context7 in new sessions again/));
+    expect(onToggleMcp).toHaveBeenCalledWith('context7', true);
+  });
+
+  it('says which state it is in', () => {
+    const { rerender } = shown({}, vi.fn());
+    expect(screen.getByTitle(/context7/).getAttribute('aria-pressed')).toBe('true');
+
+    rerender(
+      <Environment
+        environment={environment({ mcpServers: [server({ enabled: false })] })}
+        loading={false}
+        failed={null}
+        onReload={() => {}}
+        onClose={() => {}}
+        onToggleMcp={vi.fn()}
+      />,
+    );
+    expect(screen.getByTitle(/context7/).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  /**
+   * The scope is not the skills toggle's. This writes the reader's own configuration, so it
+   * decides what every new session starts with and changes nothing already connected.
+   */
+  it('says the change applies to new sessions rather than running ones', () => {
+    shown({}, vi.fn());
+
+    expect(screen.getByText(/applies to new sessions/)).toBeTruthy();
+  });
+
+  it('offers no control when the caller cannot write the configuration', () => {
+    shown({ enabled: false }, undefined);
+
+    expect(screen.queryByTitle(/context7/)).toBeNull();
+    expect(screen.getByText('off')).toBeTruthy();
+  });
+});

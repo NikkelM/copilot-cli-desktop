@@ -1994,3 +1994,47 @@ describe('environment, MCP servers', () => {
     expect(parts.client.resumeSession).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Turning a server off is the reader's own configuration rather than anything about a
+ * conversation, so it costs no session on either side of the wire (#24).
+ */
+describe('switching an MCP server on and off', () => {
+  function withMcpConfig(parts: ReturnType<typeof makeRuntime>) {
+    const rpc = parts.client.rpc as unknown as Record<string, unknown>;
+    rpc.mcp = {
+      discover: vi.fn(async () => ({ servers: [] })),
+      config: { enable: vi.fn(async () => undefined), disable: vi.fn(async () => undefined) },
+    };
+    return rpc.mcp as { config: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> } };
+  }
+
+  it('disables by name', async () => {
+    const parts = makeRuntime();
+    const mcp = withMcpConfig(parts);
+
+    await parts.runtime.setMcpEnabled('context7', false);
+
+    expect(mcp.config.disable).toHaveBeenCalledWith({ names: ['context7'] });
+    expect(mcp.config.enable).not.toHaveBeenCalled();
+  });
+
+  it('enables by name', async () => {
+    const parts = makeRuntime();
+    const mcp = withMcpConfig(parts);
+
+    await parts.runtime.setMcpEnabled('context7', true);
+
+    expect(mcp.config.enable).toHaveBeenCalledWith({ names: ['context7'] });
+    expect(mcp.config.disable).not.toHaveBeenCalled();
+  });
+
+  it('resumes no session to do it', async () => {
+    const parts = makeRuntime();
+    withMcpConfig(parts);
+
+    await parts.runtime.setMcpEnabled('context7', false);
+
+    expect(parts.client.resumeSession).not.toHaveBeenCalled();
+  });
+});

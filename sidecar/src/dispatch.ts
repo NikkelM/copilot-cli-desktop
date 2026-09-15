@@ -117,6 +117,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'environment.describe': (params) => runtime.environment(params?.cwd),
 
+    'mcp.setEnabled': ({ name, enabled }) => runtime.setMcpEnabled(name, enabled),
+
     'skills.disabled': ({ sessionId }) => ({ disabled: runtime.disabledSkills(sessionId) }),
 
     'skills.set': async ({ sessionId, name, enabled }) => ({

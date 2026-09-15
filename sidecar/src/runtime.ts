@@ -987,6 +987,25 @@ export class SessionRuntime {
   }
 
   /**
+   * Turn an MCP server on or off for sessions started from now on.
+   *
+   * Costs no session, on either side of the wire: the disabled list is the reader's own
+   * configuration, and the runtime keeps it rather than any conversation. Sessions already
+   * running keep the servers they connected to until they end, which is the runtime's own
+   * behaviour and worth saying out loud wherever this is offered.
+   *
+   * Takes one name where the runtime takes a list. Nothing here has a reason to change
+   * several at once, and a caller that did would have to decide what a partial failure
+   * meant; one at a time either worked or did not.
+   */
+  async setMcpEnabled(name: string, enabled: boolean): Promise<void> {
+    const client = await this.ensureClient();
+
+    if (enabled) await client.rpc.mcp.config.enable({ names: [name] });
+    else await client.rpc.mcp.config.disable({ names: [name] });
+  }
+
+  /**
    * Put a session on a custom agent, or back on the default when no name is given.
    *
    * Resumes a cold session, as setting a model does. Browsing is where the saving belongs and

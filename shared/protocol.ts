@@ -831,6 +831,14 @@ export interface SidecarRequests {
    */
   'environment.describe': { params: { cwd?: string }; result: SessionEnvironment };
   /**
+   * Turn an MCP server on or off for sessions started from now on.
+   *
+   * Sessionless, like discovering them: the disabled list is the reader's own configuration
+   * rather than anything about a conversation. A session already running keeps the servers
+   * it connected to, which is the runtime's behaviour and not something this can change.
+   */
+  'mcp.setEnabled': { params: { name: string; enabled: boolean }; result: void };
+  /**
    * The skills a session has switched off, and the means to switch one.
    *
    * Both cost no process. The set belongs to the app rather than to the runtime, whose own
@@ -939,6 +947,7 @@ export const SIDECAR_METHODS = [
   'agents.select',
   'agents.deselect',
   'environment.describe',
+  'mcp.setEnabled',
   'skills.disabled',
   'skills.set',
   'sessions.queue',

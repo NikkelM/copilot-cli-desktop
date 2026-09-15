@@ -244,6 +244,15 @@ export function describeEnvironment(cwd?: string): Promise<SessionEnvironment> {
   return request('environment.describe', { cwd });
 }
 
+/**
+ * Turn an MCP server on or off for sessions started from now on.
+ *
+ * Costs no Copilot process. A session already running keeps the servers it connected to.
+ */
+export function setMcpEnabled(name: string, enabled: boolean): Promise<void> {
+  return request('mcp.setEnabled', { name, enabled });
+}
+
 /** The skills this session has switched off. Read from the app's own record, so it costs no process. */
 export function disabledSkills(sessionId: string): Promise<{ disabled: string[] }> {
   return request('skills.disabled', { sessionId });

@@ -36,6 +36,7 @@ import {
   enqueueCommand,
   runShell,
   sessionUsage,
+  setMcpEnabled,
   sendMessage,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, USAGE, wantsDirectory } from './lib/localCommands';
@@ -429,6 +430,22 @@ export default function App() {
   function closeEnvironment() {
     setShowEnvironment(false);
     toComposer();
+  }
+
+  /**
+   * Turn an MCP server on or off, then read the panel again so it shows what is now true.
+   *
+   * The runtime keeps the disabled list, not this app, so there is nothing here to update
+   * optimistically - the next read is the only account of what took.
+   */
+  async function toggleMcp(name: string, enabled: boolean) {
+    setError(null);
+    try {
+      await setMcpEnabled(name, enabled);
+      await environment.load();
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
   }
 
   /**
@@ -842,6 +859,7 @@ export default function App() {
                   onClose={closeEnvironment}
                   disabledSkills={skills.disabled}
                   onToggleSkill={selectedId ? (name, enabled) => void skills.toggle(name, enabled) : undefined}
+                  onToggleMcp={(name, enabled) => void toggleMcp(name, enabled)}
                 />
               )}
 
