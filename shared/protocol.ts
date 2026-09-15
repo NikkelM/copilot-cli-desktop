@@ -701,24 +701,20 @@ export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
 
 const SHOWN = new Set(TRANSCRIPT_EVENT_TYPES);
 
-/** The lifecycle of a delegated task, which the parent transcript draws. */
-const SUBAGENT_LIFECYCLE = new Set(['subagent.started', 'subagent.completed', 'subagent.failed']);
-
 /**
  * Whether the parent transcript would draw anything for this event.
  *
- * A subagent's own work is not the parent conversation. It carries an `agentId`, which the
- * root agent's events never do, and it dominates a delegating session: measured across real
- * logs it is 4% to 73% of the drawable events and up to 73% of their bytes. Reading it into
- * the parent transcript floods the conversation with another agent's tool calls and pays
- * for them twice over, in transfer and in render.
+ * `agentId` marks a subagent's own work, which the root agent's events never carry. It is
+ * kept rather than dropped: the transcript nests it inside the row that delegated it, which
+ * is what lets a delegating turn be watched as it happens rather than reported once it is
+ * over (#11).
  *
- * The three lifecycle events carry an `agentId` too and are kept anyway, because they are
- * what the parent has to say: a task was delegated, and how it went.
+ * That is a decision about what a transcript is, not about what a page costs. A subagent is
+ * 4% to 73% of a delegating session's drawable events, so it remains the largest thing in a
+ * page and the first candidate for anything that needs one smaller.
  */
-export function showsInTranscript(type: string, agentId?: string): boolean {
-  if (!SHOWN.has(type)) return false;
-  return !agentId || SUBAGENT_LIFECYCLE.has(type);
+export function showsInTranscript(type: string): boolean {
+  return SHOWN.has(type);
 }
 
 /**

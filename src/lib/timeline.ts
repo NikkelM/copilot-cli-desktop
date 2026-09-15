@@ -24,8 +24,19 @@ function trimmed(value: unknown): string | null {
  * turn. That is what the CLI shows beside its spinner.
  *
  * A message can request several tools at once, and the last one is the one being started.
+ *
+ * A subagent's work is named after the agent doing it. While one is running its tool calls
+ * are the only ones there are, so the line would otherwise report another agent's work as
+ * the session's - and with several at once it would flick between them saying whichever
+ * spoke last, with nothing to say they were different agents.
  */
-export function intentOf(event: TranscriptEvent): string | null {
+export function intentOf(event: TranscriptEvent, agentName?: string): string | null {
+  const said = intentIn(event);
+  if (!said) return null;
+  return event.agentId && agentName ? `${agentName}: ${said}` : said;
+}
+
+function intentIn(event: TranscriptEvent): string | null {
   if (event.type === 'assistant.intent') {
     return trimmed((event.data as { intent?: unknown } | null)?.intent);
   }
@@ -41,6 +52,13 @@ export function intentOf(event: TranscriptEvent): string | null {
   }
 
   return null;
+}
+
+/** The name a `subagent.started` gave the agent it announced, for the status line. */
+export function subagentNameIn(event: TranscriptEvent): string | null {
+  if (event.type !== 'subagent.started') return null;
+  const data = event.data as { agentDisplayName?: unknown; agentName?: unknown } | null;
+  return trimmed(data?.agentDisplayName) ?? trimmed(data?.agentName);
 }
 
 /**

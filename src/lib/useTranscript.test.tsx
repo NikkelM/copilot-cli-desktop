@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { useTranscript } from './useTranscript';
+import { toEntries } from './transcriptEntries';
 
 const getTranscript = vi.fn();
 vi.mock('./sidecar', () => ({ getTranscript: (...args: unknown[]) => getTranscript(...args) }));
@@ -451,15 +452,11 @@ describe('giving back history reached by scrolling up', () => {
   });
 });
 /**
- * A subagent's work is not this conversation, live any more than replayed.
- *
- * The replayed half is filtered in the sidecar, and for a while that was the only half: live
- * events are pushed straight to the timeline and never go near it, so a subagent running
- * right now still filled the conversation that delegated it while opening the same session
- * afterwards looked correct (#11).
+ * A subagent's work is nested inside the row that delegated it, so a delegating turn can be
+ * watched as it happens rather than reported once it is over (#11).
  *
  * The streaming deltas matter most here. They are ephemeral, so they reach no log at all and
- * nothing read from disk could ever have caught them.
+ * nothing verified by replaying a session could ever have covered them.
  */
 describe('a subagent streaming into the session that delegated it', () => {
   beforeEach(() => {
@@ -471,54 +468,66 @@ describe('a subagent streaming into the session that delegated it', () => {
       ReturnType<typeof useTranscript>['push']
     >[0];
 
-  it('keeps the subagent out of the conversation', () => {
+  /** The parent keeps its own thread: the subagent's rows belong to the task, not the flow. */
+  it('keeps the subagent out of the parent flow', () => {
     const { result } = renderHook(() => useTranscript('s1', () => {}));
 
     act(() => {
+      result.current.push(live('tool.execution_start', { toolName: 'task', toolCallId: 'c1' }));
+      result.current.push(live('subagent.started', { toolCallId: 'c1', agentName: 'explore' }, 'agent-1'));
+      result.current.push(live('assistant.message', { content: 'a subagent speaking' }, 'agent-1'));
       result.current.push(live('assistant.message', { content: 'the session speaking' }));
+    });
+
+    const entries = toEntries(result.current.events, null);
+    const bodies = entries.flatMap((e) => (e.kind === 'message' ? [e.body] : []));
+    expect(bodies).toContain('the session speaking');
+    expect(bodies).not.toContain('a subagent speaking');
+  });
+
+  it('nests the subagent inside the row that delegated it', () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    act(() => {
+      result.current.push(live('tool.execution_start', { toolName: 'task', toolCallId: 'c1' }));
+      result.current.push(live('subagent.started', { toolCallId: 'c1', agentName: 'explore' }, 'agent-1'));
       result.current.push(live('assistant.message', { content: 'a subagent speaking' }, 'agent-1'));
     });
 
-    const said = result.current.events.map((e) => (e.data as { content?: string }).content);
-    expect(said).toContain('the session speaking');
-    expect(said).not.toContain('a subagent speaking');
+    const task = toEntries(result.current.events, null).find((e) => e.kind === 'tool');
+    expect(task?.children?.some((c) => c.kind === 'message' && c.body === 'a subagent speaking')).toBe(true);
   });
 
-  it('keeps its streamed text out too, which reaches no log to be filtered from', () => {
+  /** These reach no log, so replaying a session could never have shown them arriving. */
+  it('carries its streamed text, which nothing read from disk would have', () => {
     const { result } = renderHook(() => useTranscript('s1', () => {}));
 
     act(() => {
-      result.current.push(live('assistant.message_delta', { messageId: 'm1', deltaContent: 'thinking aloud' }, 'agent-1'));
-      result.current.push(live('assistant.reasoning_delta', { reasoningId: 'r1', deltaContent: 'reasoning' }, 'agent-1'));
-    });
-
-    expect(result.current.events).toHaveLength(0);
-  });
-
-  it('keeps its tool calls out', () => {
-    const { result } = renderHook(() => useTranscript('s1', () => {}));
-
-    act(() => {
-      result.current.push(live('tool.execution_start', { toolName: 'powershell', toolCallId: 'c1' }, 'agent-1'));
-      result.current.push(live('tool.execution_complete', { toolCallId: 'c1' }, 'agent-1'));
-    });
-
-    expect(result.current.events).toHaveLength(0);
-  });
-
-  /** The parent still has to say a task was delegated and how it went. */
-  it('keeps the lifecycle, which is what the delegating row reports', () => {
-    const { result } = renderHook(() => useTranscript('s1', () => {}));
-
-    act(() => {
+      result.current.push(live('tool.execution_start', { toolName: 'task', toolCallId: 'c1' }));
       result.current.push(live('subagent.started', { toolCallId: 'c1', agentName: 'explore' }, 'agent-1'));
-      result.current.push(live('subagent.completed', { toolCallId: 'c1' }, 'agent-1'));
+      result.current.push(
+        live('assistant.message_delta', { messageId: 'm1', deltaContent: 'thinking aloud' }, 'agent-1'),
+      );
     });
 
-    expect(result.current.events.map((e) => e.type)).toEqual(['subagent.started', 'subagent.completed']);
+    const task = toEntries(result.current.events, null).find((e) => e.kind === 'tool');
+    expect(task?.children?.some((c) => c.kind === 'message' && c.body.includes('thinking aloud'))).toBe(true);
   });
 
-  // The rows the app writes itself carry no agentId and must survive the same guard.
+  it('nests its tool calls too', () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    act(() => {
+      result.current.push(live('tool.execution_start', { toolName: 'task', toolCallId: 'c1' }));
+      result.current.push(live('subagent.started', { toolCallId: 'c1', agentName: 'explore' }, 'agent-1'));
+      result.current.push(live('tool.execution_start', { toolName: 'powershell', toolCallId: 'c2' }, 'agent-1'));
+    });
+
+    const task = toEntries(result.current.events, null).find((e) => e.kind === 'tool');
+    expect(task?.children?.some((c) => c.kind === 'tool')).toBe(true);
+  });
+
+  // The rows the app writes itself carry no agentId and belong to the conversation.
   it('still shows what the app puts there itself', () => {
     const { result } = renderHook(() => useTranscript('s1', () => {}));
 

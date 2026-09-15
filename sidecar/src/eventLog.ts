@@ -90,7 +90,7 @@ export async function readTranscript(
        * readers share: those exist to read events the transcript never shows.
        */
       const located = locateEvents(buffer, start, reachedStart).filter((entry) =>
-        showsInTranscript(entry.event.type, entry.event.agentId),
+        showsInTranscript(entry.event.type),
       );
 
       if (located.length >= limit || reachedStart || window >= MAX_WINDOW) {

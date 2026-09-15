@@ -96,7 +96,24 @@ function firstLine(text: string | null): string | null {
 
 /** A single tool call, collapsed to one line until expanded. */
 function ToolRow({ entry }: { entry: ToolEntry }) {
-  const [open, setOpen] = useState(false);
+  /**
+   * A delegated task opens itself while it works.
+   *
+   * Watching a subagent is the reason to nest it at all, and a row that had to be opened
+   * first would hide the work for exactly as long as it was worth seeing. It stays as the
+   * reader leaves it once they touch it, and a finished one is closed to begin with: by
+   * then the row's own summary says how it went.
+   */
+  const running = entry.delegated !== undefined && entry.delegated.outcome === undefined;
+  const [open, setOpen] = useState(running);
+  /** Which state the row opened itself into, so a reader's choice is not undone by a redraw. */
+  const followed = useRef(running);
+
+  useEffect(() => {
+    if (followed.current === running) return;
+    followed.current = running;
+    setOpen(running);
+  }, [running]);
 
   // The offered options say more than the tool's own "User responded: x", which only
   // repeats what the header already shows. They are worth seeing even unanswered.
@@ -108,7 +125,12 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   const patch = entry.patch ? parsePatch(entry.patch) : null;
   const changed = patch ? countChanges(patch) : null;
 
-  const expandable = Boolean(entry.output) || Boolean(choices) || Boolean(entry.command) || Boolean(patch);
+  const expandable =
+    Boolean(entry.output) ||
+    Boolean(choices) ||
+    Boolean(entry.command) ||
+    Boolean(patch) ||
+    Boolean(entry.children?.length);
   const lines = entry.output ? entry.output.split('\n').length : 0;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 'es'}`;
 
@@ -199,7 +221,16 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         <Elapsed since={entry.startedAt} until={entry.endedAt} />
       </button>
       {open &&
-        (choices ? (
+        (entry.children?.length ? (
+          /* The subagent's own timeline, drawn by the same rows the parent uses: its
+             messages, thinking and tool calls read as they would anywhere else, and one
+             that delegates in turn nests again without this knowing how deep it goes. */
+          <ul className="tool-children">
+            {entry.children.map((child) => (
+              <EntryRow key={child.key} entry={child} />
+            ))}
+          </ul>
+        ) : choices ? (
           <ul className="tool-choices">
             {choices.map((choice) => {
               const chosen = choice === entry.answer;

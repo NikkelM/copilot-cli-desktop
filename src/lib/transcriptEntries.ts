@@ -2,6 +2,9 @@ import type { TranscriptEvent } from '../../shared/protocol';
 import { stripAnsi } from '../../shared/ansi';
 import { relativise } from './paths';
 
+/** The three events that describe a delegation rather than the work inside it. */
+const SUBAGENT_LIFECYCLE = new Set(['subagent.started', 'subagent.completed', 'subagent.failed']);
+
 /** Longest tool output kept for the expanded view. */
 const MAX_OUTPUT = 4000;
 
@@ -112,11 +115,19 @@ export interface ToolEntry {
   /**
    * What a delegated task did, for the row that delegated it.
    *
-   * The subagent's own work is not drawn in this conversation - it is another agent's, and
-   * it is most of a delegating session's transcript. What the parent shows instead is who
-   * was asked and what it cost (#11).
+   * The subagent's own work is not the parent's conversation, so it is nested inside this
+   * row rather than laid out beside it - which is what the CLI does, and what lets a
+   * delegating turn be watched without the parent losing its thread (#11).
    */
   delegated?: Delegated;
+  /**
+   * The subagent's own timeline, drawn inside this row.
+   *
+   * Present only for a session being watched live. A replayed one is filtered in the
+   * sidecar, where dropping it saves up to 73% of a page, so a finished task read back from
+   * disk shows its summary until the view that fetches a subagent's work on demand exists.
+   */
+  children?: Entry[];
 }
 
 /** A task handed to a subagent, as the delegating row reports it. */
@@ -320,6 +331,14 @@ export function toEntries(
   events: TranscriptEvent[],
   cwd: string | null,
   abandoned?: ReadonlyMap<string, string>,
+  /**
+   * Whose timeline is being built, when it is a subagent's rather than the session's.
+   *
+   * Without it the recursive call sets the very events it was given aside again, since they
+   * all carry an agentId, and every subagent's work came back empty. What separates the two
+   * streams is not having an agentId but having a *different* one.
+   */
+  ofAgent?: string,
 ): Entry[] {
   const entries: Entry[] = [];
   /** Thinking already shown as it was written, so the message repeating it is skipped. */
@@ -335,8 +354,29 @@ export function toEntries(
    * uuid, and one log carries both. `subagent.started` names the tool call in every version.
    */
   const delegating = new Map<string, ToolEntry>();
+  /** The row each subagent's work belongs inside, by the agent's own id. */
+  const rowOfAgent = new Map<string, ToolEntry>();
 
+  /**
+   * A subagent's work, set aside to be built into its own timeline.
+   *
+   * Partitioned before anything is drawn rather than filtered inside the loop, so the
+   * subagent's events keep their order and their pairing - a tool call and its completion
+   * have to meet, and they only do if they are handled together and apart from the parent's.
+   */
+  const ownWork = new Map<string, TranscriptEvent[]>();
+  const root: TranscriptEvent[] = [];
   for (const event of events) {
+    if (event.agentId && event.agentId !== ofAgent && !SUBAGENT_LIFECYCLE.has(event.type)) {
+      const bucket = ownWork.get(event.agentId) ?? [];
+      bucket.push(event);
+      ownWork.set(event.agentId, bucket);
+    } else {
+      root.push(event);
+    }
+  }
+
+  for (const event of root) {
     const data = (event.data ?? {}) as Record<string, unknown>;
     // Position is not identity: loading older history prepends events and shifts every
     // index, which would hand a row's local state to a different entry.
@@ -477,6 +517,7 @@ export function toEntries(
         if (row) {
           row.delegated = { agent };
           delegating.set(call, row);
+          if (event.agentId) rowOfAgent.set(event.agentId, row);
         }
         break;
       }
@@ -658,6 +699,19 @@ export function toEntries(
     }
   }
 
+  /**
+   * Build each subagent's own timeline and hang it inside the row that delegated it.
+   *
+   * Through this same function, so a subagent's messages, thinking and tool calls read
+   * exactly as the parent's do - and so a subagent that delegates in turn nests again
+   * without any of this knowing how deep it goes. Real sessions do that: one here has four
+   * task calls made from inside a subagent.
+   */
+  for (const [agentId, row] of rowOfAgent) {
+    const own = ownWork.get(agentId);
+    if (own?.length) row.children = toEntries(own, cwd, abandoned, agentId);
+  }
+
   return entries;
 }
 
@@ -702,6 +756,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
     a.startedAt === other.startedAt &&
     a.endedAt === other.endedAt &&
     sameDelegated(a.delegated, other.delegated) &&
+    sameChildren(a.children, other.children) &&
     sameChoices(a.choices, other.choices)
   );
 }
@@ -723,6 +778,20 @@ function sameDelegated(a: Delegated | undefined, b: Delegated | undefined): bool
     a.tokens === b.tokens &&
     a.durationMs === b.durationMs
   );
+}
+
+/**
+ * Whether a delegated task's nested timeline is unchanged.
+ *
+ * Compared row by row through the same rule, since the children are entries like any other
+ * and are rebuilt with their parent. Without this a subagent's work would freeze at
+ * whatever it had done when its row was first drawn - which is the whole of what the row
+ * exists to show while it runs.
+ */
+function sameChildren(a: Entry[] | undefined, b: Entry[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((entry, index) => sameEntry(entry, b[index]!));
 }
 
 function sameChoices(a: string[] | undefined, b: string[] | undefined): boolean {

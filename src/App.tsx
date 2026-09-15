@@ -46,7 +46,7 @@ import { staleRuntime } from './lib/protocolCheck';
 import { revealPointerForPicker } from './lib/nativePicker';
 import { usageReport } from './lib/usageReport';
 import { activityOf } from './lib/activity';
-import { clockFrom, intentOf } from './lib/timeline';
+import { clockFrom, intentOf, subagentNameIn } from './lib/timeline';
 import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
@@ -214,6 +214,15 @@ export default function App() {
   /** Read by a shortcut handler registered once, which would otherwise hold the first render's answer. */
   const busyRef = useRef(false);
   busyRef.current = busy;
+  /**
+   * What each running subagent is called, by its id.
+   *
+   * Only `subagent.started` names an agent; the events that drive the status line carry the
+   * id alone, so the name has to be remembered from the announcement to be shown with the
+   * work. Kept for the app's lifetime, which is cheap - a name apiece - and right, since a
+   * session returned to later is still the session that delegated them.
+   */
+  const subagentNames = useRef(new Map<string, string>());
 
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {
@@ -240,7 +249,11 @@ export default function App() {
       setBusySince((current) => clockFrom(event, current));
       // What the agent is up to, which it revises through a turn as the work changes shape.
       // Ephemeral, so this is the only chance to see it: it is never written to the log.
-      const said = intentOf(event);
+      // A subagent's is named after it, since while one runs its tool calls are the only
+      // ones there are and the line would otherwise report its work as the session's.
+      const named = subagentNameIn(event);
+      if (named && event.agentId) subagentNames.current.set(event.agentId, named);
+      const said = intentOf(event, event.agentId ? subagentNames.current.get(event.agentId) : undefined);
       if (said) setIntent(said);
       // A new answer, so the tool the last one ended on is no longer what is happening.
       if (event.type === 'user.message' || event.type === 'session.idle' || event.type === 'abort') {

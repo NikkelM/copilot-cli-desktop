@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-
-import { appendLive, clockFrom, intentOf, timelineOf, type TimelineEvent } from './timeline';
+import type { TranscriptEvent } from '../../shared/protocol';
+import { appendLive, clockFrom, intentOf, subagentNameIn, timelineOf, type TimelineEvent } from './timeline';
 
 const intended = (intent: unknown): TimelineEvent =>
   ({ type: 'assistant.intent', data: { intent } }) as unknown as TimelineEvent;
@@ -343,5 +343,61 @@ describe('a running tool reporting what it has produced', () => {
     live = appendLive(live, chunk('t1', 'first\nsecond'));
 
     expect(live.map((e) => e.type)).toEqual(['tool.execution_partial_result', 'assistant.message']);
+  });
+});
+
+/**
+ * A subagent's work is named after the agent doing it. While one runs its tool calls are the
+ * only ones there are, so the line would otherwise report another agent's work as the
+ * session's - and with several at once it would flick between them saying whichever spoke
+ * last, with nothing to say they were different agents (#11).
+ */
+describe('naming the agent a status line is describing', () => {
+  const calling = (summary: string, agentId?: string) =>
+    ({
+      type: 'assistant.message',
+      data: { toolRequests: [{ intentionSummary: summary }] },
+      ...(agentId ? { agentId } : {}),
+    }) as TranscriptEvent;
+
+  it('leaves the session own work unprefixed', () => {
+    expect(intentOf(calling('reading a file'))).toBe('reading a file');
+  });
+
+  it('names the subagent whose work it is', () => {
+    expect(intentOf(calling('running a command', 'agent-1'), 'explore')).toBe('explore: running a command');
+  });
+
+  /** Two agents at once are told apart by the line rather than left to alternate silently. */
+  it('tells two subagents apart', () => {
+    expect(intentOf(calling('searching', 'agent-1'), 'explore')).toBe('explore: searching');
+    expect(intentOf(calling('auditing', 'agent-2'), 'deep-audit')).toBe('deep-audit: auditing');
+  });
+
+  // Better an unattributed description than none: the name is a courtesy, the work is not.
+  it('still describes the work when the agent has no name yet', () => {
+    expect(intentOf(calling('running a command', 'agent-1'))).toBe('running a command');
+  });
+
+  it('says nothing for an event that describes no work', () => {
+    expect(intentOf({ type: 'session.idle', data: {} } as TranscriptEvent, 'explore')).toBeNull();
+  });
+
+  describe('the name an announcement carries', () => {
+    const announced = (data: unknown) => ({ type: 'subagent.started', data }) as TranscriptEvent;
+
+    it('prefers the display name, which is what the reader chose', () => {
+      expect(subagentNameIn(announced({ agentName: 'explore', agentDisplayName: 'Explore Agent' }))).toBe(
+        'Explore Agent',
+      );
+    });
+
+    it('falls back to the bare name', () => {
+      expect(subagentNameIn(announced({ agentName: 'explore' }))).toBe('explore');
+    });
+
+    it('has nothing to say about any other event', () => {
+      expect(subagentNameIn({ type: 'assistant.message', data: {} } as TranscriptEvent)).toBeNull();
+    });
   });
 });

@@ -1859,6 +1859,17 @@ button.group:hover {
 /* A delegation reports rather than warns, like a skill's note: it says who did the work,
    which is ordinary. The name is the part worth reading, so it keeps the row's own colour
    while the count beside it stays quiet. */
+/* The subagent's own timeline, inside the row that delegated it. Indented and ruled, so a
+   delegated task reads as work happening under that row rather than as the conversation
+   carrying on - which is the whole difference between watching a subagent and losing the
+   thread to it. */
+.tool-children {
+  margin: 0;
+  padding: 2px 0 2px 14px;
+  border-left: 1px solid var(--border);
+  list-style: none;
+}
+
 .tool-note.delegated {
   color: var(--text-muted);
 }

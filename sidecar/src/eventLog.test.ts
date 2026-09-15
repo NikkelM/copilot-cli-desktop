@@ -69,81 +69,69 @@ describe('readTranscript', () => {
    * Half of a real page is events the transcript has no case for and silently drops, and
    * the biggest of them carries the whole system prompt. Sending them costs a serialise,
    * two process boundaries and a parse to produce nothing.
-   */  /**
-   * A subagent's work is another agent's conversation, and it dominates a delegating
-   * session: measured across real logs it is 4% to 73% of the drawable events and up to
-   * 73% of their bytes. It carries an agentId, which the root agent's events never do.
-   */
-  describe('the work a subagent did', () => {
-    const delegating = [
-      JSON.stringify({ type: 'user.message', data: { content: 'delegate this' } }),
-      JSON.stringify({ type: 'tool.execution_start', data: { toolName: 'task', toolCallId: 'call-1' } }),
-      JSON.stringify({ type: 'subagent.started', agentId: 'agent-1', data: { toolCallId: 'call-1', agentName: 'explore' } }),
-      JSON.stringify({ type: 'assistant.message', agentId: 'agent-1', data: { content: 'the subagent thinking aloud' } }),
-      JSON.stringify({ type: 'tool.execution_start', agentId: 'agent-1', data: { toolName: 'grep' } }),
-      JSON.stringify({ type: 'tool.execution_complete', agentId: 'agent-1', data: { output: 'x'.repeat(4000) } }),
-      JSON.stringify({ type: 'subagent.completed', agentId: 'agent-1', data: { toolCallId: 'call-1', agentName: 'explore' } }),
-      JSON.stringify({ type: 'assistant.message', data: { content: 'the answer' } }),
-    ];
+   */     /**
+    * A subagent's work is carried, not dropped: the transcript nests it inside the row that
+    * delegated it, so a delegating turn can be watched as it happens. What the read still
+    * owes is the ordering and the lifecycle that make that nesting possible (#11).
+    */
+   describe('the work a subagent did', () => {
+     const delegating = [
+       JSON.stringify({ type: 'user.message', data: { content: 'delegate this' } }),
+       JSON.stringify({ type: 'tool.execution_start', data: { toolName: 'task', toolCallId: 'call-1' } }),
+       JSON.stringify({ type: 'subagent.started', agentId: 'agent-1', data: { toolCallId: 'call-1', agentName: 'explore' } }),
+       JSON.stringify({ type: 'assistant.message', agentId: 'agent-1', data: { content: 'the subagent thinking aloud' } }),
+       JSON.stringify({ type: 'tool.execution_start', agentId: 'agent-1', data: { toolName: 'grep' } }),
+       JSON.stringify({ type: 'tool.execution_complete', agentId: 'agent-1', data: { output: 'x'.repeat(4000) } }),
+       JSON.stringify({ type: 'subagent.completed', agentId: 'agent-1', data: { toolCallId: 'call-1', agentName: 'explore' } }),
+       JSON.stringify({ type: 'assistant.message', data: { content: 'the answer' } }),
+     ];
 
-    it('stays out of the parent transcript', async () => {
-      writeLog('s', delegating);
-      const { readTranscript } = await loadEventLog();
+     it('carries it, for the delegating row to nest', async () => {
+       writeLog('s', delegating);
+       const { readTranscript } = await loadEventLog();
 
-      const contents = (await readTranscript('s')).events.map((e) => (e.data as { content?: string }).content);
-      expect(contents).not.toContain('the subagent thinking aloud');
-    });
+       const contents = (await readTranscript('s')).events.map((e) => (e.data as { content?: string }).content);
+       expect(contents).toContain('the subagent thinking aloud');
+     });
 
-    /** The parent still has to say a task was delegated and how it went. */
-    it('keeps the lifecycle, which is what the delegating row reports', async () => {
-      writeLog('s', delegating);
-      const { readTranscript } = await loadEventLog();
+     /** Which subagent an event belongs to is the only thing that can nest it. */
+     it('keeps the mark that says whose work it is', async () => {
+       writeLog('s', delegating);
+       const { readTranscript } = await loadEventLog();
 
-      expect((await readTranscript('s')).events.map((e) => e.type)).toEqual([
-        'user.message',
-        'tool.execution_start',
-        'subagent.started',
-        'subagent.completed',
-        'assistant.message',
-      ]);
-    });
+       const inner = (await readTranscript('s')).events.find(
+         (e) => (e.data as { content?: string }).content === 'the subagent thinking aloud',
+       );
+       expect(inner?.agentId).toBe('agent-1');
+     });
 
-    it('keeps the parent conversation whole', async () => {
-      writeLog('s', delegating);
-      const { readTranscript } = await loadEventLog();
+     it('keeps the lifecycle, which is what the delegating row reports', async () => {
+       writeLog('s', delegating);
+       const { readTranscript } = await loadEventLog();
 
-      const contents = (await readTranscript('s')).events.map((e) => (e.data as { content?: string }).content);
-      expect(contents).toContain('delegate this');
-      expect(contents).toContain('the answer');
-    });
+       const types = (await readTranscript('s')).events.map((e) => e.type);
+       expect(types).toContain('subagent.started');
+       expect(types).toContain('subagent.completed');
+     });
 
-    /**
-     * The case that forced the budget to count visible events. This session's newest
-     * hundred and fifty were all one subagent's, so a page counted in raw events contained
-     * nothing the reader could see at all.
-     */
-    it('reads past a run of subagent work rather than returning an empty page', async () => {
-      writeLog('s', delegating);
-      const { readTranscript } = await loadEventLog();
+     it('keeps the parent conversation whole', async () => {
+       writeLog('s', delegating);
+       const { readTranscript } = await loadEventLog();
 
-      const page = await readTranscript('s', 3);
-      expect(page.events.map((e) => e.type)).toEqual([
-        'subagent.started',
-        'subagent.completed',
-        'assistant.message',
-      ]);
-    });
+       const contents = (await readTranscript('s')).events.map((e) => (e.data as { content?: string }).content);
+       expect(contents).toContain('delegate this');
+       expect(contents).toContain('the answer');
+     });
 
-    it('leaves a failed subagent to report itself as well', async () => {
-      writeLog('s', [
-        JSON.stringify({ type: 'subagent.failed', agentId: 'agent-1', data: { toolCallId: 'call-1' } }),
-      ]);
-      const { readTranscript } = await loadEventLog();
+     it('leaves a failed subagent to report itself as well', async () => {
+       writeLog('s', [
+         JSON.stringify({ type: 'subagent.failed', agentId: 'agent-1', data: { toolCallId: 'call-1' } }),
+       ]);
+       const { readTranscript } = await loadEventLog();
 
-      expect((await readTranscript('s')).events.map((e) => e.type)).toEqual(['subagent.failed']);
-    });
-  });
-  describe('events the transcript cannot draw', () => {
+       expect((await readTranscript('s')).events.map((e) => e.type)).toEqual(['subagent.failed']);
+     });
+   });  describe('events the transcript cannot draw', () => {
     /** A system prompt is the expensive one: measured at up to 305 KB in a single page. */
     const noisy = [
       JSON.stringify({ type: 'user.message', data: { content: 'asked' } }),

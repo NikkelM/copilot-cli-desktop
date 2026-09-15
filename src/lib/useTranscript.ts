@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getTranscript } from './sidecar';
-import { showsInTranscript } from '../../shared/protocol';
 import { appendLive, timelineOf, type TimelineEvent } from './timeline';
 
 /** How many stopped replies to keep per session. Whole replies, so a few is enough. */
@@ -130,15 +129,11 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
   /**
    * Record an event from the running session.
    *
-   * A subagent's work is filtered here rather than by the caller, because what belongs in a
-   * transcript is the transcript's own rule: every path that adds to it gets the same
-   * answer, and the replayed history it is spliced onto has already been filtered the same
-   * way in the sidecar. Leaving it to the caller is what let the live stream go unfiltered
-   * while the disk read was correct (#11).
+   * A subagent's work is kept, not dropped: it is nested inside the row that delegated it,
+   * so a delegating turn can be watched as it happens rather than reported once it is over.
+   * What decides where it goes is `toEntries`, which has the delegation to hang it on (#11).
    */
   const push = useCallback((event: TimelineEvent) => {
-    if (!showsInTranscript(event.type, event.agentId)) return;
-
     // Captured here rather than read inside the updater below, which React may run later
     // and more than once: the session on screen at that point is not necessarily the one
     // this event belongs to.
