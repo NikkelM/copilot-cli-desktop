@@ -40,6 +40,7 @@ import {
 import { CHANGES, ENVIRONMENT, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
+import { revealPointerForPicker } from './lib/nativePicker';
 import { activityOf } from './lib/activity';
 import { clockFrom, intentOf } from './lib/timeline';
 import { stashFiles } from './lib/paste';
@@ -493,6 +494,7 @@ export default function App() {
     if (wantsDirectory(command, input)) {
       let picked: string | string[] | null;
       try {
+        await revealPointerForPicker();
         picked = await pickFolder({ directory: true, title: `Choose a directory for /${command.name}` });
       } catch (e: unknown) {
         transcript.showLocal('command.failed', { text: messageOf(e) });
