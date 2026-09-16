@@ -50,19 +50,26 @@ export interface WatchedSubagent {
 export function useSubagents() {
   const [watched, setWatched] = useState<WatchedSubagent[]>([]);
   /**
-   * How many prompts each finished subagent has seen since, outside React state.
+   * How many prompts each session has seen, and the count each finished subagent finished
+   * at. Staleness is the difference, which makes it a subtraction rather than a tally that
+   * has to be kept up to date.
    *
-   * Counting in state would rewrite every entry on every prompt, which is a redraw of the
-   * sidebar to record something no row is showing.
+   * Outside React state, because counting in state would rewrite every entry on every
+   * prompt - a redraw of the sidebar to record something no row is showing. Both are
+   * written from the event handler itself rather than from inside a state updater: React
+   * invokes an updater twice under StrictMode and may replay one from a discarded render,
+   * and an increment written there is applied each time. That alone made three prompts
+   * behave as two in every development session.
    */
-  const promptsSince = useRef(new Map<string, number>());
+  const promptsIn = useRef(new Map<string, number>());
+  const finishedAt = useRef(new Map<string, { sessionId: string; at: number }>());
 
   /** Take a session event, and keep whatever it says about a subagent. */
   const observe = useCallback((sessionId: string, event: TranscriptEvent) => {
     const name = subagentNameIn(event);
     if (name && event.agentId) {
       const agentId = event.agentId;
-      promptsSince.current.delete(agentId);
+      finishedAt.current.delete(agentId);
       setWatched((current) =>
         current.some((entry) => entry.agentId === agentId)
           ? current
@@ -75,6 +82,8 @@ export function useSubagents() {
       const agentId = event.agentId;
       if (!agentId) return;
       const outcome = event.type === 'subagent.completed' ? 'completed' : 'failed';
+      // The prompt it finished on, so the prompts after it can be counted by subtraction.
+      finishedAt.current.set(agentId, { sessionId, at: promptsIn.current.get(sessionId) ?? 0 });
       setWatched((current) =>
         current.map((entry) => (entry.agentId === agentId ? { ...entry, outcome } : entry)),
       );
@@ -88,21 +97,16 @@ export function useSubagents() {
      * given, and counting it would age the very task it started.
      */
     if (event.type === 'user.message' && !event.agentId) {
-      let stale: string[] = [];
+      const seen = (promptsIn.current.get(sessionId) ?? 0) + 1;
+      promptsIn.current.set(sessionId, seen);
+
       setWatched((current) => {
         const kept = current.filter((entry) => {
           if (entry.sessionId !== sessionId || !entry.outcome) return true;
-
-          const seen = (promptsSince.current.get(entry.agentId) ?? 0) + 1;
-          promptsSince.current.set(entry.agentId, seen);
-          if (seen < PROMPTS_BEFORE_STALE) return true;
-
-          stale.push(entry.agentId);
-          return false;
+          return seen - (finishedAt.current.get(entry.agentId)?.at ?? seen) < PROMPTS_BEFORE_STALE;
         });
         return kept.length === current.length ? current : kept;
       });
-      for (const agentId of stale) promptsSince.current.delete(agentId);
       return;
     }
 
@@ -132,18 +136,19 @@ export function useSubagents() {
    * produce.
    */
   const forget = useCallback((sessionId: string) => {
+    promptsIn.current.delete(sessionId);
+    for (const [agentId, finished] of finishedAt.current) {
+      if (finished.sessionId === sessionId) finishedAt.current.delete(agentId);
+    }
     setWatched((current) => {
       const kept = current.filter((entry) => entry.sessionId !== sessionId);
-      for (const entry of current) {
-        if (entry.sessionId === sessionId) promptsSince.current.delete(entry.agentId);
-      }
       return kept.length === current.length ? current : kept;
     });
   }, []);
 
   /** Take one off the list, for a reader who is done with it before this app decides. */
   const dismiss = useCallback((agentId: string) => {
-    promptsSince.current.delete(agentId);
+    finishedAt.current.delete(agentId);
     setWatched((current) => current.filter((entry) => entry.agentId !== agentId));
   }, []);
 

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
+import { StrictMode } from 'react';
 
 import { useSubagents } from './useSubagents';
 import type { TranscriptEvent } from '../../shared/protocol';
@@ -95,6 +96,27 @@ describe('the subagents this app watched start', () => {
      */
     it('drops a finished one after three prompts', () => {
       const { result } = renderHook(() => useSubagents());
+      act(() => {
+        result.current.observe('s1', started('a1'));
+        result.current.observe('s1', finished('a1'));
+      });
+
+      act(() => result.current.observe('s1', prompt()));
+      act(() => result.current.observe('s1', prompt()));
+      expect(result.current.watched).toHaveLength(1);
+
+      act(() => result.current.observe('s1', prompt()));
+      expect(result.current.watched).toHaveLength(0);
+    });
+
+    /**
+     * The count was kept inside a state updater, which React invokes twice under StrictMode
+     * and may replay from a discarded render. Every development session therefore dropped a
+     * finished task after two prompts rather than three, and no test noticed because none of
+     * them rendered the way `main.tsx` does.
+     */
+    it('still takes three prompts when React double-invokes its updaters', () => {
+      const { result } = renderHook(() => useSubagents(), { wrapper: StrictMode });
       act(() => {
         result.current.observe('s1', started('a1'));
         result.current.observe('s1', finished('a1'));
