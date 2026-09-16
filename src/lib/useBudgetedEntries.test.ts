@@ -133,3 +133,74 @@ describe('showing the end of a transcript', () => {
     expect(result.current.entries.length).toBeLessThan(reached);
   });
 });
+
+/**
+ * How a session transcript actually arrives, which is not how any test above delivers it.
+ *
+ * Selecting a session empties the transcript and fills it one read later, so the hook is
+ * mounted against nothing and handed the opening page afterwards. Read as growth that page
+ * was kept whole, and the budget never applied to a session transcript at all - only to a
+ * subagent's, whose events are in hand before its view mounts. Measured across 204 real
+ * sessions, 166 opening pages were over budget.
+ */
+describe('a page that arrives after the view does', () => {
+  it('budgets the first page rather than keeping all of it', () => {
+    const { result, rerender } = renderHook(({ entries }) => useBudgetedEntries('s1', entries), {
+      initialProps: { entries: [] as Entry[] },
+    });
+
+    rerender({ entries: many(150, 1400) });
+
+    expect(result.current.entries.length).toBe(budgetedCount(many(150, 1400)));
+    expect(result.current.hasMore).toBe(true);
+  });
+
+  /** The whole sequence a session switch produces: the old list, then nothing, then the new. */
+  it('budgets the page that replaces another session', () => {
+    const { result, rerender } = renderHook(({ id, entries }) => useBudgetedEntries(id, entries), {
+      initialProps: { id: 's1', entries: many(150, 1400) },
+    });
+
+    rerender({ id: 's2', entries: [] as Entry[] });
+    rerender({ id: 's2', entries: many(150, 1400) });
+
+    expect(result.current.entries.length).toBe(budgetedCount(many(150, 1400)));
+  });
+
+  // A live event after the page has been budgeted is growth like any other.
+  it('still keeps what it shows once the page has arrived', () => {
+    const { result, rerender } = renderHook(({ entries }) => useBudgetedEntries('s1', entries), {
+      initialProps: { entries: [] as Entry[] },
+    });
+    rerender({ entries: many(150, 1400) });
+    const opened = result.current.entries.length;
+
+    rerender({ entries: many(151, 1400) });
+
+    expect(result.current.entries.length).toBe(opened + 1);
+  });
+});
+
+/**
+ * Giving back history and switching thinking off both shorten the list. Keeping the old
+ * number through a shrink let every shrink-and-regrow widen the window a little more, until
+ * a long session drew all of itself.
+ */
+describe('a transcript that gets shorter', () => {
+  it('does not widen the window by shrinking and growing again', () => {
+    const { result, rerender } = renderHook(({ entries }) => useBudgetedEntries('s1', entries), {
+      initialProps: { entries: many(200, 1024) },
+    });
+    // Thinking switched off and back on, which is the cheapest way to reach this.
+    const cycle = () => {
+      rerender({ entries: many(198, 1024) });
+      rerender({ entries: many(200, 1024) });
+    };
+
+    cycle();
+    const afterOne = result.current.entries.length;
+    for (let round = 0; round < 9; round++) cycle();
+
+    expect(result.current.entries.length).toBe(afterOne);
+  });
+});

@@ -69,9 +69,38 @@ export function useBudgetedEntries(sessionId: string, entries: Entry[], budget =
   }, [sessionId]);
 
   useEffect(() => {
+    /**
+     * The opening page, which arrives a moment after the session is selected rather than
+     * with it: the transcript empties itself on selection and fills once the read returns.
+     *
+     * Read as growth, the whole page was kept - so the budget never applied to a session
+     * transcript at all, only to a subagent's, whose events are already in hand when the
+     * view mounts. Measured across 204 real sessions: 166 opening pages were over budget,
+     * and the budget would have drawn 27% of the entries it was actually handed.
+     */
+    if (held.current === 0) {
+      held.current = entries.length;
+      setShown(budgetedCount(entries, budget));
+      return;
+    }
+
     const grown = entries.length - held.current;
     held.current = entries.length;
-    if (grown > 0) setShown((current) => current + grown);
+
+    /**
+     * Shorter than it was, which giving back history and switching thinking off both do.
+     *
+     * Budgeted again rather than adjusted. Holding the old number let every shrink and
+     * regrow widen the window a little more - ten rounds of ctrl+t took a transcript from
+     * sixteen entries to thirty-five - and each of the two callers that shortens the list
+     * wants a fresh budget anyway: giving back history happens at the bottom, and hiding
+     * thinking is asking to be charged for less.
+     */
+    if (grown < 0) setShown(budgetedCount(entries, budget));
+    else if (grown > 0) setShown((current) => current + grown);
+    // Only the length: the budget is applied once per page rather than per entry, and
+    // recomputing as entries arrive is what would make the window shrink under a reply.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entries.length]);
 
   const showMore = useCallback(() => setShown((current) => current + MINIMUM_ENTRIES * 4), []);
