@@ -59,7 +59,6 @@ import { useMode } from './lib/useMode';
 import { useContextUsage } from './lib/useContextUsage';
 import { useCommands } from './lib/useCommands';
 import { useSubagents } from './lib/useSubagents';
-import { usePagedEvents } from './lib/usePagedEvents';
 import { dispatch } from './lib/slash';
 import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
@@ -73,9 +72,6 @@ import './App.css';
 
 /** Where showing the model's thinking is remembered, so ctrl+t survives a restart. */
 const REASONING = 'copilot-desktop.reasoning';
-
-/** One array for every empty case, so a hook watching it is not restarted by a new one. */
-const EMPTY_EVENTS: TranscriptEvent[] = [];
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -159,14 +155,6 @@ export default function App() {
   const subagents = useSubagents();
   /** The delegated task being read, or nothing when the session itself is on screen. */
   const openSubagent = subagents.find(openSubagentId);
-  /**
-   * A screenful of it at a time.
-   *
-   * Its events are already held, so this is a window rather than a fetch - but a long task
-   * runs to hundreds of entries, and what makes a view slow to open is the rows rather than
-   * the events behind them.
-   */
-  const subagentPage = usePagedEvents(openSubagentId, openSubagent?.events ?? EMPTY_EVENTS);
   const changes = useChanges(selectedId);
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
@@ -861,14 +849,14 @@ export default function App() {
                 the notices go and the footer where the transcript belongs. */}
             <div className="notices" />
 
+            {/* Paged like any other transcript, by what a screenful costs to draw. Nothing
+                to fetch behind it - a watched task's events are all already held - so it
+                needs no older page, only the window the transcript keeps for itself. */}
             <Transcript
-              events={subagentPage.events}
+              events={openSubagent.events}
               sessionId={openSubagent.agentId}
               cwd={selected?.cwd ?? null}
               ofAgent={openSubagent.agentId}
-              hasOlder={subagentPage.hasOlder}
-              loadingOlder={false}
-              onLoadOlder={subagentPage.loadOlder}
               reasoning={reasoning}
             />
 

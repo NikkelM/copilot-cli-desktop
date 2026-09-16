@@ -257,10 +257,11 @@ interface TranscriptProps {
   cwd: string | null;
   /** What a stopped turn had already said, by the abort that ended it. */
   abandoned?: ReadonlyMap<string, string>;
-  /** Whether older history exists before the events supplied. */
-  hasOlder: boolean;
-  loadingOlder: boolean;
-  onLoadOlder: () => void;
+  /** Whether older history exists before the events supplied. Absent means this is all of it. */
+  hasOlder?: boolean;
+  loadingOlder?: boolean;
+  /** Fetch the page before the events supplied. Absent where they are already all held. */
+  onLoadOlder?: () => void;
   /** Whether anything was reached by scrolling up, and so whether there is anything to give back. */
   extraPages?: boolean;
   /** Give back the pages reached by scrolling up. Absent leaves them held for as long as the session is open. */
@@ -281,8 +282,8 @@ export function Transcript({
   sessionId,
   cwd,
   abandoned,
-  hasOlder,
-  loadingOlder,
+  hasOlder = false,
+  loadingOlder = false,
   onLoadOlder,
   extraPages = false,
   onDropOlder,
@@ -396,7 +397,7 @@ export function Transcript({
       // The entries already built come first: they cost nothing to show, where an older
       // page costs a read and a parse.
       if (budgeted.hasMore) budgeted.showMore();
-      else onLoadOlder();
+      else onLoadOlder?.();
     }
   }
 
