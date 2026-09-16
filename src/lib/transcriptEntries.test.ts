@@ -1165,8 +1165,17 @@ describe('building a subagent timeline on its own', () => {
     expect(entries.map((e) => e.kind)).toEqual(['message', 'message', 'tool']);
   });
 
-  it('comes out empty when it is not told, which is the bug this covers', () => {
-    expect(toEntries(own, null)).toEqual([]);
+  /**
+   * Not told whose it is, the work is still somebody else's and is set aside - but set
+   * aside is no longer the same as thrown away. It comes back under a row of its own.
+   */
+  it('gathers it under a row of its own when it is not told', () => {
+    const entries = toEntries(own, null);
+
+    expect(entries).toHaveLength(1);
+    const row = entries[0]!;
+    expect(row.kind).toBe('tool');
+    expect(row.kind === 'tool' && row.children?.map((e) => e.kind)).toEqual(['message', 'message', 'tool']);
   });
 
   /** A subagent that delegates in turn still nests, rather than flattening into its parent. */
@@ -1182,6 +1191,102 @@ describe('building a subagent timeline on its own', () => {
     const deeper = entries.find((e) => e.kind === 'tool' && e.delegated);
 
     expect(deeper?.kind === 'tool' && deeper.children?.length).toBe(1);
+    expect(entries.some((e) => e.kind === 'message' && e.body === 'the deeper agent')).toBe(false);
+  });
+});
+
+/**
+ * A page is a window on a conversation, so a delegation that began before it leaves its
+ * `task` call outside and its work with nothing to hang inside.
+ *
+ * That work used to be dropped, silently. Across 204 real sessions, 65 opening pages carry
+ * subagent work and every one of them lost some: the worst read 150 events and drew three
+ * rows.
+ */
+describe('subagent work whose delegating row is off the page', () => {
+  const page = [
+    { type: 'assistant.message', id: 'e1', agentId: 'a1', data: { content: 'still looking' } },
+    { type: 'tool.execution_start', id: 'e2', agentId: 'a1', data: { toolName: 'grep', toolCallId: 'c5' } },
+    { type: 'assistant.message', id: 'e3', data: { content: 'the session speaks' } },
+  ] as TranscriptEvent[];
+
+  it('keeps the work rather than dropping it', () => {
+    const entries = toEntries(page, null);
+    const row = entries.find((e) => e.kind === 'tool');
+
+    expect(row?.kind === 'tool' && row.children?.length).toBe(2);
+  });
+
+  // It began before anything this page can show, so it reads as having started first.
+  it('puts it above the work the page can account for', () => {
+    const entries = toEntries(page, null);
+
+    expect(entries[0]?.kind).toBe('tool');
+    expect(entries[1]?.kind === 'message' && entries[1].body).toBe('the session speaks');
+  });
+
+  /** Named when the announcement is in the page even though the row it named is not. */
+  it('says whose work it is when the page heard it start', () => {
+    const announced = [
+      { type: 'subagent.started', id: 'e0', agentId: 'a1', data: { toolCallId: 'gone', agentName: 'explore' } },
+      ...page,
+    ] as TranscriptEvent[];
+
+    const row = toEntries(announced, null).find((e) => e.kind === 'tool');
+    expect(row?.kind === 'tool' && row.delegated?.agent).toBe('explore');
+  });
+
+  /**
+   * Scrolling up brings the real row into range, and everything here is rebuilt from the
+   * events held - so the stand-in has to give way rather than sit beside it.
+   */
+  it('gives way once the delegating row is reached', () => {
+    const whole = [
+      { type: 'tool.execution_start', id: 'e0', data: { toolName: 'task', toolCallId: 'c1' } },
+      { type: 'subagent.started', id: 'e0b', agentId: 'a1', data: { toolCallId: 'c1', agentName: 'explore' } },
+      ...page,
+    ] as TranscriptEvent[];
+
+    const entries = toEntries(whole, null);
+    const rows = entries.filter((e) => e.kind === 'tool');
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind === 'tool' && rows[0].children?.length).toBe(2);
+  });
+});
+
+/**
+ * A subagent that delegates in turn, seen from the session rather than from inside it.
+ *
+ * A lifecycle event names the child, so routing it by its own agentId filed it under the
+ * agent it was announcing - and the inner agent's work reached no timeline at all. Real
+ * sessions do this: 24 delegations from inside another agent across 190 logs here.
+ */
+describe('a delegation made from inside a subagent', () => {
+  const events = [
+    { type: 'tool.execution_start', id: 'e1', data: { toolName: 'task', toolCallId: 'c1' } },
+    { type: 'subagent.started', id: 'e2', agentId: 'a1', data: { toolCallId: 'c1', agentName: 'outer' } },
+    { type: 'assistant.message', id: 'e3', agentId: 'a1', data: { content: 'delegating further' } },
+    { type: 'tool.execution_start', id: 'e4', agentId: 'a1', data: { toolName: 'task', toolCallId: 'c2' } },
+    { type: 'subagent.started', id: 'e5', agentId: 'a2', data: { toolCallId: 'c2', agentName: 'inner' } },
+    { type: 'assistant.message', id: 'e6', agentId: 'a2', data: { content: 'the deeper agent' } },
+  ] as TranscriptEvent[];
+
+  it('nests the inner agent inside the outer one', () => {
+    const entries = toEntries(events, null);
+    const outer = entries.find((e) => e.kind === 'tool');
+    const inner = outer?.kind === 'tool' && outer.children?.find((e) => e.kind === 'tool' && e.delegated);
+
+    expect(outer?.kind === 'tool' && outer.delegated?.agent).toBe('outer');
+    expect(inner && inner.kind === 'tool' && inner.delegated?.agent).toBe('inner');
+    expect(inner && inner.kind === 'tool' && inner.children?.length).toBe(1);
+  });
+
+  // One row at the top, not the inner agent's work loose beside its parent's.
+  it('leaves nothing of it in the session timeline', () => {
+    const entries = toEntries(events, null);
+
+    expect(entries.filter((e) => e.kind === 'tool')).toHaveLength(1);
     expect(entries.some((e) => e.kind === 'message' && e.body === 'the deeper agent')).toBe(false);
   });
 });

@@ -864,9 +864,84 @@ describe('Transcript showing a subagent', () => {
     expect(screen.getByText('looking now')).toBeTruthy();
   });
 
-  it('shows nothing without that, which is the bug this covers', () => {
-    shownFor(undefined);
+  /**
+   * Not told whose it is, the work is another agent's and belongs behind a row rather than
+   * in the timeline. The row is collapsed, so none of it is drawn until it is asked for.
+   */
+  it('folds it behind a row without that, rather than reading as the session own', () => {
+    const view = shownFor(undefined);
 
     expect(screen.queryByText('looking now')).toBeNull();
+    expect(view.container.querySelector('.tool')).toBeTruthy();
+  });
+});
+
+/**
+ * A page can draw far fewer rows than the events behind it: a delegation whose call is
+ * further back than the page reaches collapses into a single row however much work it did.
+ * A list shorter than its own box never scrolls, and reaching back is driven by scrolling,
+ * so without this there is no way to ask for what is above.
+ */
+describe('a page too short to scroll', () => {
+  const short = [{ type: 'assistant.message', id: 'e1', data: { content: 'hi' } }] as TranscriptEvent[];
+
+  const mountShort = (onLoadOlder: () => void, heights: { scroll: number; client: number }) => {
+    const view = render(
+      <Transcript
+        events={short}
+        sessionId="s1"
+        cwd={null}
+        hasOlder
+        loadingOlder={false}
+        onLoadOlder={onLoadOlder}
+        reasoning
+      />,
+    );
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => heights.scroll });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => heights.client });
+    return { view, list };
+  };
+
+  it('asks for more when the rows do not fill the view', () => {
+    const onLoadOlder = vi.fn();
+    const heights = { scroll: 0, client: 600 };
+    const { view } = mountShort(onLoadOlder, heights);
+
+    heights.scroll = 40;
+    act(() => view.rerender(
+      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} reasoning />,
+    ));
+
+    expect(onLoadOlder).toHaveBeenCalled();
+  });
+
+  it('leaves a page that already fills the view alone', () => {
+    const onLoadOlder = vi.fn();
+    const heights = { scroll: 0, client: 600 };
+    const { view } = mountShort(onLoadOlder, heights);
+
+    heights.scroll = 2000;
+    act(() => view.rerender(
+      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} reasoning />,
+    ));
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  /** A session made almost entirely of delegated work would otherwise load all of itself. */
+  it('gives up rather than fetching the whole session', () => {
+    const onLoadOlder = vi.fn();
+    const heights = { scroll: 0, client: 600 };
+    const { view } = mountShort(onLoadOlder, heights);
+    heights.scroll = 40;
+
+    for (let round = 0; round < 12; round++) {
+      act(() => view.rerender(
+        <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} reasoning />,
+      ));
+    }
+
+    expect(onLoadOlder.mock.calls.length).toBeLessThanOrEqual(4);
   });
 });

@@ -25,6 +25,17 @@ const BOTTOM_TOLERANCE_PX = 4;
 const LOAD_OLDER_THRESHOLD_PX = 120;
 
 /**
+ * How many times a page may extend itself to fill the view before the reader has to ask.
+ *
+ * A list that cannot scroll fires no scroll event, so a page drawing too few rows to fill
+ * the window leaves no way to reach what is above it - and a page can draw very few: a
+ * delegation whose call is further back than the page reaches collapses into one row
+ * however much work is behind it. Capped rather than repeated until it fills, because a
+ * session that is almost entirely delegated work would otherwise load all of itself.
+ */
+const AUTO_FILL_LIMIT = 4;
+
+/**
  * How long the view has to stay at the bottom before history reached by scrolling up is
  * given back.
  *
@@ -318,6 +329,8 @@ export function Transcript({
   const restoreFrom = useRef<number | null>(null);
   /** Counting down to giving back the pages reached by scrolling up, or null when not. */
   const dropAfter = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** How many times this session's page has already extended itself to fill the view. */
+  const filled = useRef(0);
 
   const cancelDrop = () => {
     if (dropAfter.current === null) return;
@@ -333,6 +346,7 @@ export function Transcript({
   useLayoutEffect(() => {
     pinned.current = true;
     restoreFrom.current = null;
+    filled.current = 0;
   }, [sessionId]);
 
   useLayoutEffect(() => {
@@ -370,6 +384,24 @@ export function Transcript({
     follow.observe(list, { childList: true, subtree: true, characterData: true });
     return () => follow.disconnect();
   }, []);
+
+  /**
+   * Fill the view when a page does not, so what is above it stays reachable.
+   *
+   * Reaching back is driven by scrolling, and a list shorter than its own box never
+   * scrolls. What is already held is extended first, since that costs nothing.
+   */
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || loadingOlder || !more || filled.current >= AUTO_FILL_LIMIT) return;
+    // Nothing measured yet, which is a list that has not been laid out rather than one
+    // that is too short.
+    if (list.scrollHeight === 0 || list.scrollHeight > list.clientHeight) return;
+
+    filled.current += 1;
+    if (budgeted.hasMore) budgeted.showMore();
+    else onLoadOlder?.();
+  });
 
   function onScroll() {
     const list = listRef.current;

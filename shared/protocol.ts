@@ -693,7 +693,7 @@ export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
   'session.idle',
   'session.shutdown',
   // What a delegated task did, which is drawn on the row that delegated it rather than as
-  // rows of its own. The work itself is the subagent's and is left out entirely (#11).
+  // rows of its own. The work itself is the subagent's and is nested inside that row.
   'subagent.started',
   'subagent.completed',
   'subagent.failed',

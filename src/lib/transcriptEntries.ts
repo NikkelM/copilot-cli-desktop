@@ -123,9 +123,10 @@ export interface ToolEntry {
   /**
    * The subagent's own timeline, drawn inside this row.
    *
-   * Present only for a session being watched live. A replayed one is filtered in the
-   * sidecar, where dropping it saves up to 73% of a page, so a finished task read back from
-   * disk shows its summary until the view that fetches a subagent's work on demand exists.
+   * Built here rather than filtered anywhere: the transcript partitions a subagent's events
+   * out of the parent's stream and hands them back through the same function, so a replayed
+   * session nests exactly as a watched one does. Work whose delegating row is further back
+   * than the page reaches gets a row of its own rather than being dropped.
    */
   children?: Entry[];
 }
@@ -356,6 +357,8 @@ export function toEntries(
   const delegating = new Map<string, ToolEntry>();
   /** The row each subagent's work belongs inside, by the agent's own id. */
   const rowOfAgent = new Map<string, ToolEntry>();
+  /** What each agent is called, for work whose delegating row this page does not reach. */
+  const namedAgent = new Map<string, string>();
 
   /**
    * A subagent's work, set aside to be built into its own timeline.
@@ -366,11 +369,64 @@ export function toEntries(
    */
   const ownWork = new Map<string, TranscriptEvent[]>();
   const root: TranscriptEvent[] = [];
+  /**
+   * Which agent made each tool call, so a lifecycle event can be given to whoever delegated
+   * rather than always to the session.
+   *
+   * A `subagent.started` names the child, not the parent - so routing it by its own agentId
+   * would file it under the agent it is announcing. The tool call it names is the one piece
+   * that belongs to the delegator, and a delegation made from inside a subagent is a real
+   * case: 24 of them across 190 logs here.
+   */
+  const callerOf = new Map<string, string | undefined>();
   for (const event of events) {
-    if (event.agentId && event.agentId !== ofAgent && !SUBAGENT_LIFECYCLE.has(event.type)) {
-      const bucket = ownWork.get(event.agentId) ?? [];
+    const id = (event.data as Record<string, unknown> | undefined)?.toolCallId;
+    if (typeof id === 'string' && !SUBAGENT_LIFECYCLE.has(event.type)) callerOf.set(id, event.agentId);
+  }
+
+  /** Who delegated to each agent, from the call its announcement names. */
+  const parentOf = new Map<string, string | undefined>();
+  for (const event of events) {
+    if (event.type !== 'subagent.started' || !event.agentId) continue;
+    const id = (event.data as Record<string, unknown> | undefined)?.toolCallId;
+    if (typeof id === 'string') parentOf.set(event.agentId, callerOf.get(id));
+  }
+
+  /**
+   * The agent this timeline delegated to, somewhere above the one that produced the event.
+   *
+   * A bucket holds a whole delegation subtree rather than one agent's own events, because
+   * the level below is what splits it again: handing the recursion only the direct child's
+   * events leaves a grandchild's work behind, with a row built for it here and nothing to
+   * put inside. The depth is not known in advance, so this climbs until it finds the agent
+   * this timeline itself delegated to.
+   */
+  const delegatedTo = (agent: string | undefined): string | undefined => {
+    let current = agent;
+    // Bounded, so a log that somehow describes a cycle cannot hang the transcript.
+    for (let step = 0; current && current !== ofAgent && step <= parentOf.size; step++) {
+      const parent = parentOf.get(current);
+      if (parent === ofAgent || parent === undefined) return current;
+      current = parent;
+    }
+    return current === ofAgent ? undefined : current;
+  };
+
+  for (const event of events) {
+    const spawning = SUBAGENT_LIFECYCLE.has(event.type)
+      ? (event.data as Record<string, unknown> | undefined)?.toolCallId
+      : undefined;
+    // A lifecycle event belongs to the timeline that made the call, which is the session
+    // unless a subagent did the delegating.
+    const owner = SUBAGENT_LIFECYCLE.has(event.type)
+      ? (typeof spawning === 'string' ? callerOf.get(spawning) : undefined)
+      : event.agentId;
+    const bucketed = owner === ofAgent ? undefined : delegatedTo(owner);
+
+    if (bucketed) {
+      const bucket = ownWork.get(bucketed) ?? [];
       bucket.push(event);
-      ownWork.set(event.agentId, bucket);
+      ownWork.set(bucketed, bucket);
     } else {
       root.push(event);
     }
@@ -513,6 +569,10 @@ export function toEntries(
         const agent = text(data, 'agentDisplayName') ?? text(data, 'agentName');
         const row = call ? (pending.get(call) ?? delegating.get(call)) : undefined;
         if (!call || !agent) break;
+
+        // Remembered whether or not the row that delegated is in this page, so work whose
+        // call is further back than the page reaches can still say whose it was.
+        if (event.agentId) namedAgent.set(event.agentId, agent);
 
         if (row) {
           row.delegated = { agent };
@@ -712,7 +772,39 @@ export function toEntries(
     if (own?.length) row.children = toEntries(own, cwd, abandoned, agentId);
   }
 
-  return entries;
+  /**
+   * Work whose delegating row this page does not reach, given a row of its own.
+   *
+   * A page is a window on a conversation, and a delegation that began before it leaves its
+   * `task` call outside - so there is nothing for the work to hang inside. Dropped, which
+   * is what used to happen, it went silently: across 204 real sessions, 65 opening pages
+   * carried subagent work and every one of them lost some, one of them drawing three rows
+   * out of a hundred and fifty events.
+   *
+   * At the top, because a delegation this page cannot see the start of began before
+   * anything else in it. Collapsed like any other task row, so it costs a line until it is
+   * asked for - and it stops being synthesised the moment scrolling up brings the real row
+   * into range, since all of this is rebuilt from whatever events are held.
+   */
+  const orphaned: Entry[] = [];
+  for (const [agentId, own] of ownWork) {
+    if (rowOfAgent.has(agentId) || own.length === 0) continue;
+
+    const agent = namedAgent.get(agentId) ?? 'a delegated task';
+    orphaned.push({
+      kind: 'tool',
+      key: `agent:${agentId}`,
+      name: 'Task',
+      summary: agent,
+      status: 'ok',
+      output: null,
+      startedAt: own[0]?.timestamp,
+      delegated: { agent },
+      children: toEntries(own, cwd, abandoned, agentId),
+    });
+  }
+
+  return orphaned.length > 0 ? [...orphaned, ...entries] : entries;
 }
 
 /**
