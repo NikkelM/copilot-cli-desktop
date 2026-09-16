@@ -16,7 +16,7 @@ import {
 import { cycled, erased, highlighted, opened, typed as searchTyped, type Search } from '../lib/reverseSearch';
 import { useDirectoryCompletion } from '../lib/useDirectoryCompletion';
 import { useMcpServers } from '../lib/useMcpServers';
-import { typedServerName } from '../lib/localCommands';
+import { takesServerName, typedServerName } from '../lib/localCommands';
 import { MODE_LABELS } from '../lib/useMode';
 import type { Attachment, SessionMode, SlashCommand } from '../../shared/protocol';
 
@@ -201,7 +201,15 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
   const directories = useDirectoryCompletion(named, typed?.input ?? null, cwd, onError);
   /** The half-typed server name, when the argument being written is one. */
   const serverPrefix = named && typed?.input != null ? typedServerName(named, typed.input) : null;
-  const servers = useMcpServers(cwd, serverPrefix !== null, onError);
+  /**
+   * Fetched as soon as the command is named rather than when the name position is reached.
+   *
+   * The reader spends the next second or so writing ` disable `, and that second is worth
+   * having: the first discovery is about 0.8 s, and several more when it is the thing that
+   * starts the runtime. Asked no earlier than this, because discovery is not free and most
+   * commands have nothing to do with MCP.
+   */
+  const servers = useMcpServers(cwd, named !== undefined && takesServerName(named), onError);
 
   /**
    * What the menu is offering, if anything.

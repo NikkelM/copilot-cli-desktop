@@ -2185,13 +2185,13 @@ button.group:hover {
 /*
  * Only the part that has not been typed is coloured.
  *
- * Nudged a fraction to the right of the characters it follows. That is deliberately not
- * where the letter would land once the name is completed, but a completion sitting flush
- * against the text reads as part of the word already written; a hair of space is what makes
- * it legible as a suggestion. In em, so it keeps its proportions if the text is resized.
+ * Flush against the characters it follows, with nothing between them. A gap was tried, on
+ * the grounds that a suggestion sitting against the word reads as part of it - but the
+ * colour already says which part is a suggestion, and once the ghost continued arguments
+ * rather than only names the gap landed in the middle of a value and read as the box
+ * being out of line with itself.
  */
 .composer .ghost-rest {
-  margin-left: 0.08em;
   color: var(--text-muted);
 }
 

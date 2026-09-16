@@ -117,6 +117,18 @@ const SERVER_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /**
+ * Whether this command takes a server name after any of its subcommands.
+ *
+ * Asked before a subcommand has been typed, so the list can be on its way while it is
+ * being written. The first discovery costs about 0.8 s once the runtime is up, and several
+ * seconds when it is not, which is far too long to begin paying at the moment the argument
+ * is reached.
+ */
+export function takesServerName(command: SlashCommand): boolean {
+  return SERVER_ARGUMENTS[command.name] !== undefined;
+}
+
+/**
  * The part of an argument that is a half-typed server name, if that is what it is.
  *
  * Null when the command wants no server, when no subcommand has been finished with a space,

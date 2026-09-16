@@ -478,6 +478,15 @@ describe('the slash command menu', () => {
     await waitFor(() => expect(ghost()).toBe('\\'));
   });
 
+  /** Discovery costs a running runtime, so nothing that has no use for it asks. */
+  it('asks nothing about MCP servers for a command that never takes one', async () => {
+    const { user } = menu();
+    await user.keyboard('/allow-all on');
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(listMcpServers).not.toHaveBeenCalled();
+  });
+
   it('closes on Escape and leaves what was typed alone', async () => {
     const { user } = menu();
     await user.keyboard('/mod{Escape}');
@@ -1308,7 +1317,18 @@ describe('naming an MCP server', () => {
       'disable' + 'Temporarily disable a server',
       'reload' + 'Reload all server configurations',
     ]);
-    expect(listMcpServers).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Discovery is about 0.8 s warm and several seconds when it is what starts the runtime,
+   * so it begins while the subcommand is being typed rather than when the name after it is
+   * reached. The reader spends that second writing ` disable `.
+   */
+  it('asks for the servers as soon as the command is named', async () => {
+    const { user } = menu();
+    await user.keyboard('/mcp');
+
+    await waitFor(() => expect(listMcpServers).toHaveBeenCalledWith('C:\\repo'));
   });
 
   it('offers the servers once a subcommand that takes one is finished', async () => {
@@ -1361,14 +1381,14 @@ describe('naming an MCP server', () => {
     await user.keyboard('/mcp reload ');
 
     expect(rows()).toHaveLength(0);
-    expect(listMcpServers).not.toHaveBeenCalled();
   });
 
-  /** The list costs a running server, so it waits for a command that actually wants it. */
-  it('asks for nothing while an unrelated command is written', async () => {
+  /** The list costs a running runtime, so it waits for the command to actually be named. */
+  it('waits until the name is finished before asking', async () => {
     const { user } = menu();
-    await user.keyboard('/mcp lis');
+    await user.keyboard('/mc');
 
+    expect(rows()[0]).toContain('mcp');
     expect(listMcpServers).not.toHaveBeenCalled();
   });
 });
