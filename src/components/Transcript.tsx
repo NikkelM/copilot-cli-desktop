@@ -96,24 +96,9 @@ function firstLine(text: string | null): string | null {
 
 /** A single tool call, collapsed to one line until expanded. */
 function ToolRow({ entry }: { entry: ToolEntry }) {
-  /**
-   * A delegated task opens itself while it works.
-   *
-   * Watching a subagent is the reason to nest it at all, and a row that had to be opened
-   * first would hide the work for exactly as long as it was worth seeing. It stays as the
-   * reader leaves it once they touch it, and a finished one is closed to begin with: by
-   * then the row's own summary says how it went.
-   */
-  const running = entry.delegated !== undefined && entry.delegated.outcome === undefined;
-  const [open, setOpen] = useState(running);
-  /** Which state the row opened itself into, so a reader's choice is not undone by a redraw. */
-  const followed = useRef(running);
-
-  useEffect(() => {
-    if (followed.current === running) return;
-    followed.current = running;
-    setOpen(running);
-  }, [running]);
+  // Collapsed like every other row, including a delegated task: its work is watched from
+  // the sidebar entry, which is somewhere that survives the row scrolling away.
+  const [open, setOpen] = useState(false);
 
   // The offered options say more than the tool's own "User responded: x", which only
   // repeats what the header already shows. They are worth seeing even unanswered.
