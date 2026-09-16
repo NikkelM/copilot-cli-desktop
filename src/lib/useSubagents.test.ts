@@ -210,4 +210,56 @@ describe('the subagents this app watched start', () => {
     expect(result.current.find('never')).toBeNull();
     expect(result.current.find(null)).toBeNull();
   });
+  /**
+   * A reply arrives as hundreds of deltas and then once more in full. Kept raw, each chunk
+   * was an event of its own and drew a row per fragment, which made a four-hundred-word
+   * answer several hundred rows to build - slow to open and unreadable once open.
+   */
+  describe('folding what a subagent streams', () => {
+    const delta = (agentId: string, messageId: string, deltaContent: string) =>
+      ({ type: 'assistant.message_delta', agentId, data: { messageId, deltaContent } }) as TranscriptEvent;
+
+    it('folds a run of deltas into one growing event', () => {
+      const { result } = renderHook(() => useSubagents());
+      act(() => {
+        result.current.observe('s1', started('a1'));
+        result.current.observe('s1', delta('a1', 'm1', 'Garbage '));
+        result.current.observe('s1', delta('a1', 'm1', 'collectors '));
+        result.current.observe('s1', delta('a1', 'm1', 'evolved.'));
+      });
+
+      const events = result.current.find('a1')?.events ?? [];
+      expect(events).toHaveLength(1);
+      expect((events[0]?.data as { deltaContent: string }).deltaContent).toBe('Garbage collectors evolved.');
+    });
+
+    /** The complete message says the same thing, so it replaces the run rather than following it. */
+    it('lets the finished message replace the run it completes', () => {
+      const { result } = renderHook(() => useSubagents());
+      act(() => {
+        result.current.observe('s1', started('a1'));
+        result.current.observe('s1', delta('a1', 'm1', 'half a '));
+        result.current.observe('s1', {
+          type: 'assistant.message',
+          agentId: 'a1',
+          data: { messageId: 'm1', content: 'half a sentence' },
+        } as TranscriptEvent);
+      });
+
+      const events = result.current.find('a1')?.events ?? [];
+      expect(events).toHaveLength(1);
+      expect(events[0]?.type).toBe('assistant.message');
+    });
+
+    it('keeps two replies apart', () => {
+      const { result } = renderHook(() => useSubagents());
+      act(() => {
+        result.current.observe('s1', started('a1'));
+        result.current.observe('s1', delta('a1', 'm1', 'first'));
+        result.current.observe('s1', delta('a1', 'm2', 'second'));
+      });
+
+      expect(result.current.find('a1')?.events).toHaveLength(2);
+    });
+  });
 });

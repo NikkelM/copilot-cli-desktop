@@ -801,7 +801,14 @@ export default function App() {
         activity={activity}
         subagents={subagents.watched}
         selectedSubagentId={openSubagentId}
-        onSelectSubagent={setOpenSubagentId}
+        onSelectSubagent={(agentId) => {
+          // A delegated task belongs to the conversation that delegated it, so opening one
+          // moves the sidebar there: leaving the previous session marked would say the
+          // reader is somewhere they are not.
+          const entry = subagents.find(agentId);
+          if (entry) open(entry.sessionId);
+          setOpenSubagentId(agentId);
+        }}
         onDismissSubagent={(agentId) => {
           if (agentId === openSubagentId) setOpenSubagentId(null);
           subagents.dismiss(agentId);
@@ -823,8 +830,8 @@ export default function App() {
           <>
             <header className="main-header">
               <h1>{openSubagent.name}</h1>
-              <div className="header-line">
-                <button type="button" className="ghost-button" onClick={() => setOpenSubagentId(null)}>
+              <div className="header-row">
+                <button type="button" className="changes-action" onClick={() => setOpenSubagentId(null)}>
                   Back to the session
                 </button>
                 <span className="session-meta">

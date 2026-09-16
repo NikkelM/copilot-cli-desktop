@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { subagentNameIn } from './timeline';
+import { appendLive } from './timeline';
 import type { TranscriptEvent } from '../../shared/protocol';
 
 /**
@@ -107,11 +108,17 @@ export function useSubagents() {
 
     // Everything else a subagent produced is its work, kept so its timeline can be shown
     // without going back to disk for what this app already has in hand.
+    //
+    // Folded the way the transcript folds it. A reply arrives as hundreds of deltas and
+    // then once more in full; appending them raw left each chunk as an event of its own,
+    // which drew a row per fragment and made a four-hundred-word answer several hundred
+    // rows to build. The same function the transcript uses, so the two cannot disagree
+    // about what a reply looks like.
     if (event.agentId) {
       const agentId = event.agentId;
       setWatched((current) =>
         current.map((entry) =>
-          entry.agentId === agentId ? { ...entry, events: [...entry.events, event] } : entry,
+          entry.agentId === agentId ? { ...entry, events: appendLive(entry.events, event) } : entry,
         ),
       );
     }
