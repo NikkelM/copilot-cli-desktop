@@ -75,6 +75,18 @@ export function findCommand(commands: SlashCommand[], name: string): SlashComman
 }
 
 /**
+ * The rest of a value, for the ghost drawn ahead of the cursor.
+ *
+ * Null when what is typed is not the start of it. A row reached by an alias or by a
+ * substring cannot be drawn as a continuation of what is in the box, and drawing it anyway
+ * would have the ghost contradicting the text. Empty means the value is already whole,
+ * which a caller adding a separator after it needs to tell apart from having no match.
+ */
+export function continuationOf(typed: string, full: string): string | null {
+  return full.toLowerCase().startsWith(typed.toLowerCase()) ? full.slice(typed.length) : null;
+}
+
+/**
  * The rest of the name, for the ghost the composer draws ahead of the cursor.
  *
  * Only offered when what is typed is the start of the name itself. Completing an alias
@@ -83,8 +95,7 @@ export function findCommand(commands: SlashCommand[], name: string): SlashComman
  */
 export function completionOf(name: string, command: SlashCommand | undefined): string {
   if (!command || !name) return '';
-  const full = command.name;
-  return full.toLowerCase().startsWith(name.toLowerCase()) ? full.slice(name.length) : '';
+  return continuationOf(name, command.name) ?? '';
 }
 
 /**

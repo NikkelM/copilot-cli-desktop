@@ -4,7 +4,15 @@ import { Attachments } from './Attachments';
 import { Elapsed } from './Elapsed';
 import { PlusIcon, SendIcon, StopIcon } from './Icons';
 import { Menu, type MenuItem } from './Menu';
-import { commandText, completionOf, findCommand, matchCommands, typedCommand } from '../lib/slash';
+import {
+  commandText,
+  completionOf,
+  continuationOf,
+  findCommand,
+  matchCommands,
+  typedCommand,
+  type Typed,
+} from '../lib/slash';
 import { cycled, erased, highlighted, opened, typed as searchTyped, type Search } from '../lib/reverseSearch';
 import { useDirectoryCompletion } from '../lib/useDirectoryCompletion';
 import { useMcpServers } from '../lib/useMcpServers';
@@ -86,6 +94,24 @@ function endOfLine(value: string, caret: number): number {
 
 /** Keys that move the caret, which is what ends a reverse search rather than feeding it. */
 const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End']);
+
+/**
+ * What the selected row would add to the text, for the ghost drawn ahead of the cursor.
+ *
+ * Silent when the row is not a continuation of what is typed: `matchCommands` ranks aliases
+ * and substring hits too, and a row reached that way cannot be drawn as the end of a word
+ * it does not start with.
+ */
+function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: SlashCommand[]): string {
+  if (!typed || !item) return '';
+  if (typed.input === null) return completionOf(typed.name, findCommand(commands, item.id));
+
+  const rest = continuationOf(typed.input, item.value ?? item.id);
+  if (rest === null) return '';
+  // Tab drills into a folder rather than merely filling it in, so the ghost promises the
+  // separator that would come with it - including for a folder already named in full.
+  return item.kind === 'directory' ? `${rest}${item.separator ?? ''}` : rest;
+}
 
 /**
  * Sending is the only action that costs memory: it resumes the session in the shared
@@ -248,11 +274,15 @@ const CARET_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', '
     if (wanted) onCommandsNeeded();
   }, [wanted, onCommandsNeeded]);
 
-  /** The rest of the selected command's name, drawn ahead of the cursor. */
-  const ghost =
-    typed?.input === null && items[selected]
-      ? completionOf(typed.name, findCommand(commands, items[selected]!.id))
-      : '';
+  /**
+   * The rest of the selected row, drawn ahead of the cursor.
+   *
+   * Arguments as well as command names. A menu is a keyboard interface, and the ghost is
+   * what makes the selected row and the text being typed one thing rather than two the
+   * reader has to hold together (#176). It continues the argument rather than the line, so
+   * what has been typed stays where it is.
+   */
+  const ghost = ghostFor(typed, items[selected], commands);
 
   function submit(next = value) {
     const prompt = next.trim();

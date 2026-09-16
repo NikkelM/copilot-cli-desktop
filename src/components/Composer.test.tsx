@@ -279,6 +279,9 @@ describe('the slash command menu', () => {
 
   const rows = () => screen.queryAllByRole('option').map((row) => row.textContent);
 
+  /** What the box draws ahead of the cursor, or nothing when it has nothing to offer. */
+  const ghost = () => document.querySelector('.ghost-rest')?.textContent ?? null;
+
   it('opens on a slash, offering everything', async () => {
     const { user } = menu();
     await user.keyboard('/');
@@ -435,6 +438,44 @@ describe('the slash command menu', () => {
 
     await user.keyboard('/cd s');
     await waitFor(() => expect(rows()).toEqual(['src\\' + 'directory']));
+  });
+
+  /**
+   * The ghost is what makes the selected row and the text being typed one thing rather
+   * than two the reader has to hold together, and it stopped at the command name (#176).
+   */
+  it('draws the rest of the selected value, not only of the name', async () => {
+    const { user } = menu();
+    await user.keyboard('/allow-all o');
+
+    await waitFor(() => expect(ghost()).toBe('n'));
+    await user.keyboard('{ArrowDown}');
+    expect(ghost()).toBe('ff');
+  });
+
+  it('draws the separator Tab would add to a folder', async () => {
+    listDirectories.mockResolvedValue({
+      entries: ['src'],
+      separator: '\\',
+      caseSensitive: false,
+    });
+    const { user } = menu();
+
+    await user.keyboard('/cwd s');
+    await waitFor(() => expect(ghost()).toBe('rc\\'));
+  });
+
+  /** Named in full there is nothing left to complete, but Tab would still drill into it. */
+  it('still promises the separator for a folder already named in full', async () => {
+    listDirectories.mockResolvedValue({
+      entries: ['src'],
+      separator: '\\',
+      caseSensitive: false,
+    });
+    const { user } = menu();
+
+    await user.keyboard('/cwd src');
+    await waitFor(() => expect(ghost()).toBe('\\'));
   });
 
   it('closes on Escape and leaves what was typed alone', async () => {
@@ -1285,6 +1326,15 @@ describe('naming an MCP server', () => {
 
     await waitFor(() => expect(rows()).toHaveLength(1));
     expect(rows()[0]).toContain('context7');
+  });
+
+  /** The ghost continues the server name rather than the line, so what is typed stays put. */
+  it('draws the rest of the selected server ahead of the cursor', async () => {
+    const { user } = menu();
+    await user.keyboard('/mcp disable con');
+
+    await waitFor(() => expect(document.querySelector('.ghost-rest')?.textContent).toBe('text7'));
+    expect(document.querySelector('.ghost')?.textContent).toBe('/mcp disable context7');
   });
 
   /** Says which are already off, since disabling one that is off is a wasted keystroke. */
