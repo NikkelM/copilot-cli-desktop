@@ -265,6 +265,13 @@ interface TranscriptProps {
   /** Give back the pages reached by scrolling up. Absent leaves them held for as long as the session is open. */
   onDropOlder?: () => void;
   /** Whether the model's thinking is shown at all, which ctrl+t turns off (#72). */
+  /**
+   * Whose timeline this is, when it belongs to a subagent rather than the session.
+   *
+   * Without it a subagent's own events are all read as somebody else's work and set aside,
+   * leaving the view empty - which is what a subagent's transcript looked like (#178).
+   */
+  ofAgent?: string;
   reasoning: boolean;
 }
 
@@ -278,12 +285,13 @@ export function Transcript({
   onLoadOlder,
   extraPages = false,
   onDropOlder,
+  ofAgent,
   reasoning,
 }: TranscriptProps) {
   // Rebuilt only when the events are, rather than on every render: a streamed reply
   // re-renders this component once per chunk, and the walk costs more the more history is
   // on screen.
-  const all = useMemo(() => toEntries(events, cwd, abandoned), [events, cwd, abandoned]);
+  const all = useMemo(() => toEntries(events, cwd, abandoned, ofAgent), [events, cwd, abandoned, ofAgent]);
   // Dropped rather than hidden with CSS: thinking is usually longer than the answer it
   // produced, and the point of turning it off is to stop paying to lay it out.
   const entries = useMemo(

@@ -139,6 +139,9 @@ export default function App() {
   const open = useCallback((sessionId: string, session?: SessionSummary) => {
     setSelectedId(sessionId);
     setOffList(session ?? null);
+    // Choosing a session is asking for that conversation, including the one whose delegated
+    // task is being read: the subagent view would otherwise be a room with one door.
+    setOpenSubagentId(null);
   }, []);
 
   const transcript = useTranscript(selectedId, setError);
@@ -834,10 +837,16 @@ export default function App() {
               </div>
             </header>
 
+            {/* The row .main reserves for notices. Empty here, but present: the grid assigns
+                its rows by position, and a branch one child short puts the transcript where
+                the notices go and the footer where the transcript belongs. */}
+            <div className="notices" />
+
             <Transcript
               events={openSubagent.events}
               sessionId={openSubagent.agentId}
               cwd={selected?.cwd ?? null}
+              ofAgent={openSubagent.agentId}
               hasOlder={false}
               loadingOlder={false}
               onLoadOlder={() => {}}

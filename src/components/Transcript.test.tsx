@@ -815,3 +815,41 @@ describe('giving back history once the reader is following again', () => {
     expect(list.scrollTop).toBe(list.scrollHeight);
   });
 });
+/**
+ * A subagent's transcript, opened from the sidebar. Its events are its own, so the view has
+ * to be told whose they are or every one of them is set aside as somebody else's and the
+ * pane comes out empty (#178).
+ */
+describe('Transcript showing a subagent', () => {
+  const own = [
+    { type: 'user.message', id: 'e1', agentId: 'a1', data: { content: 'go and look' } },
+    { type: 'assistant.message', id: 'e2', agentId: 'a1', data: { content: 'looking now' } },
+  ] as TranscriptEvent[];
+
+  const shownFor = (ofAgent?: string) =>
+    render(
+      <Transcript
+        events={own}
+        sessionId="a1"
+        cwd={null}
+        ofAgent={ofAgent}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        reasoning
+      />,
+    );
+
+  it('shows the work when told whose it is', () => {
+    shownFor('a1');
+
+    expect(screen.getByText('go and look')).toBeTruthy();
+    expect(screen.getByText('looking now')).toBeTruthy();
+  });
+
+  it('shows nothing without that, which is the bug this covers', () => {
+    shownFor(undefined);
+
+    expect(screen.queryByText('looking now')).toBeNull();
+  });
+});

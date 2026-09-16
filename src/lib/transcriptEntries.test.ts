@@ -1144,3 +1144,44 @@ describe('a task handed to a subagent', () => {
     expect(sameEntry(before[0]!, after[0]!)).toBe(false);
   });
 });
+
+/**
+ * A subagent's own timeline, built from its own events.
+ *
+ * Without being told whose it is, every one of them is read as somebody else's work and set
+ * aside, and the view comes out empty - which is exactly what a subagent's transcript
+ * looked like when it was first opened (#178).
+ */
+describe('building a subagent timeline on its own', () => {
+  const own = [
+    { type: 'user.message', id: 'e1', agentId: 'a1', data: { content: 'go and look' } },
+    { type: 'assistant.message', id: 'e2', agentId: 'a1', data: { content: 'looking now' } },
+    { type: 'tool.execution_start', id: 'e3', agentId: 'a1', data: { toolName: 'grep', toolCallId: 'c9' } },
+  ] as TranscriptEvent[];
+
+  it('draws the agent own work when told whose it is', () => {
+    const entries = toEntries(own, null, undefined, 'a1');
+
+    expect(entries.map((e) => e.kind)).toEqual(['message', 'message', 'tool']);
+  });
+
+  it('comes out empty when it is not told, which is the bug this covers', () => {
+    expect(toEntries(own, null)).toEqual([]);
+  });
+
+  /** A subagent that delegates in turn still nests, rather than flattening into its parent. */
+  it('still sets aside the work of an agent further down', () => {
+    const nested = [
+      ...own,
+      { type: 'tool.execution_start', id: 'e4', agentId: 'a1', data: { toolName: 'task', toolCallId: 'c2' } },
+      { type: 'subagent.started', id: 'e5', agentId: 'a2', data: { toolCallId: 'c2', agentName: 'explore' } },
+      { type: 'assistant.message', id: 'e6', agentId: 'a2', data: { content: 'the deeper agent' } },
+    ] as TranscriptEvent[];
+
+    const entries = toEntries(nested, null, undefined, 'a1');
+    const deeper = entries.find((e) => e.kind === 'tool' && e.delegated);
+
+    expect(deeper?.kind === 'tool' && deeper.children?.length).toBe(1);
+    expect(entries.some((e) => e.kind === 'message' && e.body === 'the deeper agent')).toBe(false);
+  });
+});
