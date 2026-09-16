@@ -620,6 +620,23 @@ describe('showing or hiding the model thinking', () => {
     expect(screen.queryByText('Thinking')).toBeNull();
   });
 
+  /**
+   * The caret is one shape turned rather than two glyphs, so the direction it points is a
+   * state the stylesheet reads. Nothing else here would notice it having stopped turning.
+   */
+  it('turns the caret with the row', async () => {
+    const user = userEvent.setup();
+    const { container } = withReasoning(true);
+    const caret = () => container.querySelector('.caret')?.getAttribute('data-open');
+
+    // Thinking arriving opens itself, so this row starts open and the caret must agree.
+    expect(caret()).toBe('true');
+    await user.click(screen.getByText('Thinking'));
+    expect(caret()).toBe('false');
+    await user.click(screen.getByText('Thinking'));
+    expect(caret()).toBe('true');
+  });
+
   // Turning off the thinking must not take the answer it produced with it.
   it('keeps the reply either way', () => {
     withReasoning(false);

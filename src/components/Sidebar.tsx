@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
 import { useRelative } from '../lib/useRelative';
+import { ChevronIcon } from './Icons';
 
 import type { SessionSummary } from '../../shared/protocol';
 import type { WatchedSubagent } from '../lib/useSubagents';
@@ -234,9 +235,7 @@ export function Sidebar({
                     onClick={() => toggle(group.key)}
                     title={shut ? `Show the ${group.sessions.length} sessions in this group` : 'Fold this group away'}
                   >
-                    <span className="group-fold" aria-hidden="true">
-                      {shut ? '▸' : '▾'}
-                    </span>
+                    <ChevronIcon open={!shut} />
                     {group.label}
                     {/* The count is what stops folding from hiding the fact that something
                         is there. The resident group carries it either way, because how many

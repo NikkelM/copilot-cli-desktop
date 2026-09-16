@@ -44,6 +44,16 @@
   --font-4xl: calc(var(--font-base) * 1.286);
   --font-5xl: calc(var(--font-base) * 1.43);
 
+  /*
+   * A disclosure control, sized as a control rather than as a piece of text.
+   *
+   * The rows that fold set their own text a size or two down - a sidebar group is
+   * --font-xs - and a caret that inherited that came out a few pixels across, which is
+   * hard to see and harder to aim at. Against the base it stays a legible shape wherever
+   * the scale above is set.
+   */
+  --caret: calc(var(--font-base) * 0.875);
+
   color-scheme: dark;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: var(--font-base);
@@ -1717,9 +1727,17 @@ button.group:hover {
 }
 
 /* Fixed width so the label does not shift sideways as the group folds. */
-.group-fold {
-  width: 9px;
-  font-size: 9px;
+.caret {
+  flex-shrink: 0;
+  width: var(--caret);
+  height: var(--caret);
+  /* Centred in its row rather than sat on the baseline, which is where an inline SVG lands. */
+  align-self: center;
+  transition: transform 120ms ease;
+}
+
+.caret[data-open='true'] {
+  transform: rotate(90deg);
 }
 
 .group-count {
@@ -2404,6 +2422,10 @@ button.group:hover {
   .composer-spinner {
     animation: none;
   }
+
+  .caret {
+    transition: none;
+  }
 }
 
 /*
@@ -2593,11 +2615,6 @@ button.group:hover {
 
 .reasoning-head:hover {
   background: var(--bg-raised);
-}
-
-.reasoning-caret {
-  flex-shrink: 0;
-  font-size: var(--font-xs);
 }
 
 .reasoning-label {

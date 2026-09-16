@@ -55,3 +55,26 @@ export function SendIcon() {
     </svg>
   );
 }
+
+/**
+ * Whether something folded away is open, which is the one icon here that is also a state.
+ *
+ * One shape turned rather than two glyphs, so the two states cannot drift apart and the
+ * move between them can be shown. Drawn rather than typed because a text triangle is
+ * whatever size the font decides a small triangle is - a few pixels across at the sizes
+ * these rows set - and it sits on a baseline rather than in the middle of its row (#177).
+ */
+export function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg {...shared} className="caret" data-open={open}>
+      <path
+        d="M6 3.5 10.5 8 6 12.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

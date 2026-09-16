@@ -9,6 +9,7 @@ import { formatClock, formatExact } from '../lib/time';
 import { CopyButton } from './CopyButton';
 import { Diff } from './Diff';
 import { Elapsed } from './Elapsed';
+import { ChevronIcon } from './Icons';
 import { Markdown } from './Markdown';
 
 /**
@@ -61,7 +62,7 @@ function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
   return (
     <div className={`reasoning${open ? ' open' : ''}`}>
       <button type="button" className="reasoning-head" onClick={() => setOpen((was) => !was)}>
-        <span className="reasoning-caret">{open ? '▾' : '▸'}</span>
+        <ChevronIcon open={open} />
         <span className="reasoning-label">Thinking</span>
         {/* Kept when open: it describes the row, not the fact that it is folded. */}
         <span className="reasoning-count">{words} words</span>
