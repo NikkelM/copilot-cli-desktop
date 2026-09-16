@@ -155,6 +155,14 @@ export default function App() {
   const subagents = useSubagents();
   /** The delegated task being read, or nothing when the session itself is on screen. */
   const openSubagent = subagents.find(openSubagentId);
+  /**
+   * Whose session that task belongs to, for the event handler to read.
+   *
+   * A ref because the handler is registered once and never rebuilt, and because the entry
+   * has to be identified before `forget` removes it.
+   */
+  const openSubagentSession = useRef<string | null>(null);
+  openSubagentSession.current = openSubagent?.sessionId ?? null;
   const changes = useChanges(selectedId);
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
@@ -313,10 +321,14 @@ export default function App() {
        *
        * Their work was only ever held here - nothing was read from disk to build it - so an
        * entry outliving its session would offer a transcript this app can no longer produce.
+       *
+       * Only this session's view is closed. Any session ageing out used to throw the reader
+       * out of whatever delegated task they were reading, and since the idle timer fires at
+       * ten minutes, reading one for long enough was itself the trigger.
        */
       if (!loaded) {
+        if (openSubagentSession.current === sessionId) setOpenSubagentId(null);
         subagents.forget(sessionId);
-        setOpenSubagentId(null);
       }
 
       // A session that is awake knows about a few commands the runtime at large does not,
