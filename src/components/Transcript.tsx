@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'rea
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
+import { useBudgetedEntries } from '../lib/useBudgetedEntries';
 import { fileBadge } from '../lib/fileBadge';
 import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
@@ -298,6 +299,17 @@ export function Transcript({
     () => (reasoning ? all : all.filter((entry) => entry.kind !== 'reasoning')),
     [all, reasoning],
   );
+  /**
+   * What is actually drawn, budgeted by how much text it comes to.
+   *
+   * The events a page holds are a poor guide to what it costs: the same hundred and fifty
+   * come to 14 KB on one session here and 207 KB on another. Reaching back through this
+   * window costs nothing - the entries are already built - so it is tried before asking the
+   * caller for an older page.
+   */
+  const budgeted = useBudgetedEntries(sessionId, entries);
+  const shown = budgeted.entries;
+  const more = budgeted.hasMore || hasOlder;
   const listRef = useRef<HTMLOListElement>(null);
   const pinned = useRef(true);
   /** Scroll height before older events were prepended, so the view can be held still. */
@@ -379,18 +391,21 @@ export function Transcript({
       cancelDrop();
     }
 
-    if (list.scrollTop <= LOAD_OLDER_THRESHOLD_PX && hasOlder && !loadingOlder) {
+    if (list.scrollTop <= LOAD_OLDER_THRESHOLD_PX && more && !loadingOlder) {
       restoreFrom.current = list.scrollHeight;
-      onLoadOlder();
+      // The entries already built come first: they cost nothing to show, where an older
+      // page costs a read and a parse.
+      if (budgeted.hasMore) budgeted.showMore();
+      else onLoadOlder();
     }
   }
 
   return (
     <ol className="transcript" ref={listRef} onScroll={onScroll}>
       <li className="history-edge">
-        {loadingOlder ? 'Loading earlier messages…' : hasOlder ? 'Scroll up for earlier messages' : 'Start of session'}
+        {loadingOlder ? 'Loading earlier messages…' : more ? 'Scroll up for earlier messages' : 'Start of session'}
       </li>
-      {entries.map((entry) => (
+      {shown.map((entry) => (
         <EntryRow key={entry.key} entry={entry} />
       ))}
     </ol>
