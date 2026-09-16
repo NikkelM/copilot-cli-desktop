@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 
-import { useTauriEvent } from './useTauriEvent';
+import { moduleReplaced, useTauriEvent } from './useTauriEvent';
 
 /**
  * A subscription whose registration can be resolved on demand.
@@ -111,5 +111,44 @@ describe('subscribing for the lifetime of a component', () => {
 
     expect(() => unmount()).not.toThrow();
     expect(unlisten).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * What Fast Refresh does to a subscription registered with fixed deps (#181).
+ *
+ * The component is replaced and re-rendered with a new handler, and without this the effect
+ * does not notice: the listener still receiving events is the one from before the edit.
+ */
+describe('surviving the module being replaced', () => {
+  it('registers the handler that exists now, and drops the one that did', async () => {
+    const before = deferred();
+    const after = deferred();
+    const { rerender } = renderHook(
+      ({ edited }: { edited: boolean }) => useTauriEvent(edited ? after.subscribe : before.subscribe),
+      { initialProps: { edited: false } },
+    );
+
+    before.register();
+    await Promise.resolve();
+    expect(after.subscribe).not.toHaveBeenCalled();
+
+    // Vite swaps the module, then announces it. Fast Refresh has already re-rendered by the
+    // time the announcement lands, which is why the new closure is the one picked up.
+    rerender({ edited: true });
+    act(() => moduleReplaced());
+
+    expect(before.unlisten).toHaveBeenCalledTimes(1);
+    expect(after.subscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves an unmounted component alone', () => {
+    const { subscribe } = deferred();
+    const { unmount } = renderHook(() => useTauriEvent(subscribe));
+
+    unmount();
+    act(() => moduleReplaced());
+
+    expect(subscribe).toHaveBeenCalledTimes(1);
   });
 });
