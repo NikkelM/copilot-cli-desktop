@@ -124,6 +124,81 @@ body {
   list-style: none;
 }
 
+/* A session's delegated tasks, indented under the row that delegated them. Only the ones
+   this app watched start, so the list says what is happening rather than what once did. */
+.subagent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.subagent-item {
+  display: flex;
+  align-items: stretch;
+}
+
+.subagent {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  /* Indented past the session title, so the nesting is read rather than explained. */
+  padding: 6px 4px 6px 26px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.subagent:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.subagent.selected {
+  background: var(--bg-selected, rgba(110, 118, 129, 0.18));
+  color: var(--text);
+}
+
+.subagent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-failed {
+  flex-shrink: 0;
+  color: var(--danger, #f85149);
+  font-size: var(--font-xs);
+}
+
+/* Only on hover or focus: a row of crosses down the sidebar would read as a list of things
+   to get rid of rather than a list of work. */
+.subagent-dismiss {
+  flex: none;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.subagent-item:hover .subagent-dismiss,
+.subagent-dismiss:focus-visible {
+  opacity: 1;
+}
+
+.subagent-dismiss:hover {
+  color: var(--text);
+}
+
 .session {
   display: flex;
   flex-direction: column;

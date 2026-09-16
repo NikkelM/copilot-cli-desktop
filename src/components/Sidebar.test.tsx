@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -347,5 +347,107 @@ describe('the state a row reports', () => {
       />,
     );
     expect(container.querySelector('.mark')).toBeNull();
+  });
+});
+
+/**
+ * A session's delegated tasks, under the row that delegated them.
+ *
+ * Only the ones this app watched start: finding the rest means reading a session's whole
+ * log, measured at 2.1 seconds for one 386 MB session against 204 sessions on this machine,
+ * and the sidebar is the part of this app that must cost nothing (#178).
+ */
+describe('Sidebar subagents', () => {
+  const watched = (over: Record<string, unknown> = {}) => ({
+    agentId: 'a1',
+    sessionId: 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8',
+    name: 'deep-audit',
+    events: [],
+    ...over,
+  });
+
+  const shown = (props: Record<string, unknown> = {}) =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        creating={false}
+        activity={{}}
+        onSelectSubagent={() => {}}
+        {...props}
+      />,
+    );
+
+  it('shows nothing when none have been watched', () => {
+    shown({ subagents: [] });
+    expect(screen.queryByTitle(/Open what/)).toBeNull();
+  });
+
+  it('names one that is running', () => {
+    shown({ subagents: [watched()] });
+    expect(screen.getByTitle('Open what deep-audit did')).toBeTruthy();
+  });
+
+  it('opens it when clicked', () => {
+    const onSelectSubagent = vi.fn();
+    shown({ subagents: [watched()], onSelectSubagent });
+
+    fireEvent.click(screen.getByTitle('Open what deep-audit did'));
+    expect(onSelectSubagent).toHaveBeenCalledWith('a1');
+  });
+
+  it('says when one failed', () => {
+    shown({ subagents: [watched({ outcome: 'failed' })] });
+    expect(screen.getByText('failed')).toBeTruthy();
+  });
+
+  it('says nothing extra when one simply finished', () => {
+    shown({ subagents: [watched({ outcome: 'completed' })] });
+    expect(screen.queryByText('failed')).toBeNull();
+  });
+
+  /** Each belongs to the session that delegated it, not to whichever row is first. */
+  it('puts each under its own session', () => {
+    const { container } = shown({
+      subagents: [watched(), watched({ agentId: 'a2', sessionId: '9ec04ce0-1361-4e11-ae34-9f8747cbac64', name: 'explore' })],
+    });
+
+    const lists = container.querySelectorAll('.subagent-list');
+    expect(lists).toHaveLength(2);
+    expect(lists[0]?.textContent).toContain('deep-audit');
+    expect(lists[1]?.textContent).toContain('explore');
+  });
+
+  it('marks the one being read', () => {
+    const { container } = shown({ subagents: [watched()], selectedSubagentId: 'a1' });
+    expect(container.querySelector('.subagent.selected')).toBeTruthy();
+  });
+
+  it('lets one be taken off the list', () => {
+    const onDismissSubagent = vi.fn();
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        creating={false}
+        activity={{}}
+        onSelectSubagent={() => {}}
+        subagents={[watched()]}
+        onDismissSubagent={onDismissSubagent}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText('Take deep-audit off this list'));
+    expect(onDismissSubagent).toHaveBeenCalledWith('a1');
+  });
+
+  // Without somewhere to open one, a row that cannot be opened is worse than no row.
+  it('draws none when there is nothing to open them with', () => {
+    shown({ subagents: [watched()], onSelectSubagent: undefined });
+    expect(screen.queryByText('deep-audit')).toBeNull();
   });
 });

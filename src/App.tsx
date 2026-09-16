@@ -58,6 +58,7 @@ import { useModel } from './lib/useModel';
 import { useMode } from './lib/useMode';
 import { useContextUsage } from './lib/useContextUsage';
 import { useCommands } from './lib/useCommands';
+import { useSubagents } from './lib/useSubagents';
 import { dispatch } from './lib/slash';
 import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
@@ -74,6 +75,13 @@ const REASONING = 'copilot-desktop.reasoning';
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * Which delegated task is being read instead of the session, if any.
+   *
+   * Held beside the selected session rather than in place of it: the subagent belongs to
+   * that conversation, and closing its transcript returns to where the reader was.
+   */
+  const [openSubagentId, setOpenSubagentId] = useState<string | null>(null);
   /** Whether the model's thinking is shown. Off is a preference, not a session's state. */
   const [reasoning, setReasoning] = useState(() => localStorage.getItem(REASONING) !== 'false');
   /**
@@ -141,6 +149,9 @@ export default function App() {
   const contextUsage = useContextUsage(selectedId);
   const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
   const slash = useCommands(selectedId);
+  const subagents = useSubagents();
+  /** The delegated task being read, or nothing when the session itself is on screen. */
+  const openSubagent = subagents.find(openSubagentId);
   const changes = useChanges(selectedId);
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
@@ -227,6 +238,9 @@ export default function App() {
   useTauriEvent(() =>
     onSessionEvent(({ sessionId, event }) => {
       sessions.observe(sessionId, event);
+      // Every session's, not just the one on screen: a delegation in a session the reader
+      // has looked away from is still work they asked for and may come back to.
+      subagents.observe(sessionId, event);
 
       // The queue belongs to whichever session owns it rather than to the one on screen: a
       // session left running keeps its queue while the reader is elsewhere, and it must be
@@ -291,6 +305,16 @@ export default function App() {
 
       // The queue lives in the session that was let go, so nothing is waiting any more.
       if (!loaded) queue.clear(sessionId);
+      /**
+       * A session let go takes its delegations with it.
+       *
+       * Their work was only ever held here - nothing was read from disk to build it - so an
+       * entry outliving its session would offer a transcript this app can no longer produce.
+       */
+      if (!loaded) {
+        subagents.forget(sessionId);
+        setOpenSubagentId(null);
+      }
 
       // A session that is awake knows about a few commands the runtime at large does not,
       // and a server is already running to ask, so this costs nothing to take.
@@ -772,6 +796,13 @@ export default function App() {
         creating={creating}
         maxLoaded={sessions.maxLoaded}
         activity={activity}
+        subagents={subagents.watched}
+        selectedSubagentId={openSubagentId}
+        onSelectSubagent={setOpenSubagentId}
+        onDismissSubagent={(agentId) => {
+          if (agentId === openSubagentId) setOpenSubagentId(null);
+          subagents.dismiss(agentId);
+        }}
       />
 
       <main className="main">
@@ -782,6 +813,43 @@ export default function App() {
           <div className="placeholder">
             <p className="error">{stopped}</p>
           </div>
+        ) : openSubagent ? (
+          /* A subagent's own transcript, in place of the session that delegated it.
+             Read-only: whether one can be spoken to at all is an open question about the
+             runtime rather than a decision this app has made (#179). */
+          <>
+            <header className="main-header">
+              <h1>{openSubagent.name}</h1>
+              <div className="header-line">
+                <button type="button" className="ghost-button" onClick={() => setOpenSubagentId(null)}>
+                  Back to the session
+                </button>
+                <span className="session-meta">
+                  {openSubagent.outcome === undefined
+                    ? 'working'
+                    : openSubagent.outcome === 'failed'
+                      ? 'failed'
+                      : 'finished'}
+                </span>
+              </div>
+            </header>
+
+            <Transcript
+              events={openSubagent.events}
+              sessionId={openSubagent.agentId}
+              cwd={selected?.cwd ?? null}
+              hasOlder={false}
+              loadingOlder={false}
+              onLoadOlder={() => {}}
+              reasoning={reasoning}
+            />
+
+            <div className="footer">
+              <p className="changes-note">
+                What this agent did, as it was watched. It cannot be written to from here.
+              </p>
+            </div>
+          </>
         ) : selected ? (
           <>
             <header className="main-header">

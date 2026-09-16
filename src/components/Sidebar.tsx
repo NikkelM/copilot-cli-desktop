@@ -5,6 +5,7 @@ import { describeActivity, type ActivityMark } from '../lib/activity';
 import { useRelative } from '../lib/useRelative';
 
 import type { SessionSummary } from '../../shared/protocol';
+import type { WatchedSubagent } from '../lib/useSubagents';
 
 interface SidebarProps {
   sessions: SessionSummary[];
@@ -21,6 +22,19 @@ interface SidebarProps {
   maxLoaded?: number;
   /** What each session is doing, keyed by id. Absent means resident and idle (#115). */
   activity: Record<string, ActivityMark>;
+  /**
+   * The subagents watched starting, to nest under the sessions that delegated them.
+   *
+   * Only ones this app saw begin. Finding the rest means reading a whole session log, which
+   * is seconds for a large one, and the sidebar is the part of this app that must cost
+   * nothing (#178).
+   */
+  subagents?: WatchedSubagent[];
+  /** Which subagent's transcript is open, so its row can say so. */
+  selectedSubagentId?: string | null;
+  onSelectSubagent?: (agentId: string) => void;
+  /** Take one off the list before it ages out on its own. */
+  onDismissSubagent?: (agentId: string) => void;
 }
 
 /**
@@ -119,7 +133,19 @@ function useHiddenMatches(query: string, enabled: boolean): SessionSummary[] {
 }
 
 /** Sessions ordered by last use. Rendering and filtering this list never loads a session. */
-export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, maxLoaded, activity }: SidebarProps) {
+export function Sidebar({
+  sessions,
+  selectedId,
+  onSelect,
+  onCreate,
+  creating,
+  maxLoaded,
+  activity,
+  subagents,
+  selectedSubagentId,
+  onSelectSubagent,
+  onDismissSubagent,
+}: SidebarProps) {
   const [query, setQuery] = useState('');
 
   // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
@@ -244,6 +270,13 @@ export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, ma
                           onSelect={onSelect}
                           activity={activity[session.sessionId]}
                         />
+                        <Delegated
+                          subagents={subagents}
+                          sessionId={session.sessionId}
+                          selectedSubagentId={selectedSubagentId}
+                          onSelectSubagent={onSelectSubagent}
+                          onDismissSubagent={onDismissSubagent}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -271,6 +304,62 @@ export function Sidebar({ sessions, selectedId, onSelect, onCreate, creating, ma
         </ul>
       )}
     </nav>
+  );
+}
+
+/**
+ * The subagents a session delegated, under the row that delegated them.
+ *
+ * Only the ones watched starting, so this is a list of what is happening rather than of
+ * everything that ever did - which is also what keeps it affordable, since the alternative
+ * is reading the session's whole log (#178).
+ */
+function Delegated({
+  subagents,
+  sessionId,
+  selectedSubagentId,
+  onSelectSubagent,
+  onDismissSubagent,
+}: {
+  subagents?: WatchedSubagent[];
+  sessionId: string;
+  selectedSubagentId?: string | null;
+  onSelectSubagent?: (agentId: string) => void;
+  onDismissSubagent?: (agentId: string) => void;
+}) {
+  const mine = subagents?.filter((entry) => entry.sessionId === sessionId) ?? [];
+  if (mine.length === 0 || !onSelectSubagent) return null;
+
+  return (
+    <ul className="subagent-list">
+      {mine.map((entry) => (
+        <li key={entry.agentId} className="subagent-item">
+          <button
+            type="button"
+            className={`subagent${entry.agentId === selectedSubagentId ? ' selected' : ''}`}
+            onClick={() => onSelectSubagent(entry.agentId)}
+            title={`Open what ${entry.name} did`}
+          >
+            {/* Running, finished or failed, in the shape the session rows already use for
+                the same question - a reader who can read one can read the other. */}
+            <span className={`activity activity-${entry.outcome === undefined ? 'working' : 'idle'}`} aria-hidden />
+            <span className="subagent-name">{entry.name}</span>
+            {entry.outcome === 'failed' && <span className="subagent-failed">failed</span>}
+          </button>
+          {onDismissSubagent && (
+            <button
+              type="button"
+              className="subagent-dismiss"
+              onClick={() => onDismissSubagent(entry.agentId)}
+              title={`Take ${entry.name} off this list`}
+              aria-label={`Take ${entry.name} off this list`}
+            >
+              ×
+            </button>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 
