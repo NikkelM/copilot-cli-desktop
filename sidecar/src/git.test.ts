@@ -982,6 +982,37 @@ describe('branches', () => {
     expect(found.map((branch) => branch.name)).toEqual(['main']);
   });
 
+  it('puts the branch worked on most recently first, not the one earliest in the alphabet', async () => {
+    // Named so that alphabetical order and recency disagree: `aaa` sorts first but was
+    // committed to first, so a list that still leads with it is not sorted by recency.
+    //
+    // The dates are set rather than taken from the clock. Committer dates have one-second
+    // granularity, and a full test run makes both commits inside the same second, which
+    // leaves the sort a tie and the test passing or failing by timing.
+    const dated = (when: string, ...args: string[]) =>
+      execFileSync('git', ['-C', dir, ...args], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_COMMITTER_DATE: when, GIT_AUTHOR_DATE: when },
+      });
+
+    git('switch', '-q', '-c', 'aaa');
+    write('a.txt', 'a\n');
+    git('add', '-A');
+    dated('2020-01-01T00:00:00Z', 'commit', '-qm', 'older');
+    git('switch', '-q', '-c', 'zzz');
+    write('z.txt', 'z\n');
+    git('add', '-A');
+    dated('2021-01-01T00:00:00Z', 'commit', '-qm', 'newer');
+    git('switch', '-q', 'main');
+
+    const found = await listBranches(dir);
+    const names = found.map((branch) => branch.name);
+
+    // Against each other rather than against the whole list: `main` was committed to by the
+    // setup at whatever time the test ran, so where it lands says nothing either way.
+    expect(names.indexOf('zzz')).toBeLessThan(names.indexOf('aaa'));
+  });
+
   it('says nothing about a folder outside a repository', async () => {
     const plain = mkdtempSync(join(tmpdir(), 'ccd-plain-'));
     try {

@@ -94,15 +94,24 @@ export function explainGit(error: unknown): string {
 const NETWORK_TIMEOUT = 2 * 60_000;
 
 /**
- * The local branches, and which one is checked out.
+ * The local branches, most recently worked on first, and which one is checked out.
  *
  * Local only. A remote-tracking branch is not somewhere you can be, and listing hundreds of
  * `origin/*` refs next to the handful someone actually works on buries the useful ones.
+ *
+ * Ordered by when each was last committed to rather than by name, because the branch someone
+ * wants next is almost always one they were on recently, and alphabetical order puts that
+ * wherever the alphabet happens to (#102).
  */
 export async function listBranches(cwd: string): Promise<{ name: string; current: boolean }[]> {
   let output: string;
   try {
-    output = await git(cwd, ['for-each-ref', '--format=%(refname:short)%09%(HEAD)', 'refs/heads']);
+    output = await git(cwd, [
+      'for-each-ref',
+      '--sort=-committerdate',
+      '--format=%(refname:short)%09%(HEAD)',
+      'refs/heads',
+    ]);
   } catch {
     return [];
   }
