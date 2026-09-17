@@ -471,9 +471,24 @@ export async function unstagePaths(cwd: string, paths: string[]): Promise<void> 
       // Before the first commit there is no HEAD to restore an entry from, and git refuses
       // rather than guessing. Everything staged then is an addition, so dropping the entry is
       // what unstaging means. `update-index` cannot write to the working tree either.
-      if (!String(error).includes('could not resolve HEAD')) throw error;
+      //
+      // Asked of the repository rather than read out of the message. This matched the words
+      // git uses at first, and git changed them: the runner's version says "could not
+      // resolve 'HEAD'" with quotes where the version here says it without, so the fallback
+      // silently stopped running and only CI noticed.
+      if (await hasCommits(cwd)) throw error;
       await git(cwd, ['update-index', '--force-remove', '--', ...run]);
     }
+  }
+}
+
+/** Whether anything has been committed yet, which is what makes HEAD resolvable. */
+async function hasCommits(cwd: string): Promise<boolean> {
+  try {
+    await git(cwd, ['rev-parse', '--verify', 'HEAD']);
+    return true;
+  } catch {
+    return false;
   }
 }
 
