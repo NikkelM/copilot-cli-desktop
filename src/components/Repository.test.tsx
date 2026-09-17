@@ -110,7 +110,36 @@ describe('the files it lists', () => {
   it('says so when nothing has changed', () => {
     shown(clean);
 
-    expect(screen.getByText('Nothing has changed.')).toBeTruthy();
+    expect(screen.getByText(/Nothing to commit/)).toBeTruthy();
+  });
+
+  /**
+   * A clean tree is not the same as nothing to do. Unpushed commits are as often the reason
+   * the panel is open as edits are, and calling that "nothing" is how a reader decides the
+   * panel is not working.
+   */
+  it('says what is waiting to be pushed on an otherwise clean tree', () => {
+    shown({ ...clean, upstream: 'origin/main', ahead: 4 });
+
+    expect(screen.getByText(/4 commits are waiting to be pushed/)).toBeTruthy();
+  });
+
+  it('counts a single commit as one', () => {
+    shown({ ...clean, upstream: 'origin/main', ahead: 1 });
+
+    expect(screen.getByText(/1 commit is waiting to be pushed/)).toBeTruthy();
+  });
+
+  it('says what is waiting to be pulled', () => {
+    shown({ ...clean, upstream: 'origin/main', behind: 2 });
+
+    expect(screen.getByText(/2 commits are waiting to be pulled/)).toBeTruthy();
+  });
+
+  it('says nothing further when the tree is clean and level', () => {
+    shown({ ...clean, upstream: 'origin/main' });
+
+    expect(screen.queryByText(/waiting/)).toBeNull();
   });
 });
 
@@ -159,7 +188,8 @@ describe('asking again', () => {
     const user = userEvent.setup();
     shown(clean, { onClose });
 
-    await user.click(screen.getByRole('button', { name: 'Close' }));
+    // The same cross every other panel here closes with, rather than a word of its own.
+    await user.click(screen.getByRole('button', { name: 'Close source control' }));
 
     expect(onClose).toHaveBeenCalled();
   });

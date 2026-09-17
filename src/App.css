@@ -3527,15 +3527,17 @@ button.group:hover {
   line-height: 1.4;
 }
 
-/* The source control panel, which reuses the changes panel's frame and adds a branch line. */
+/* Beside the panel's title, on the one line the head gives it - inline, or it would take a
+   row of its own and push the buttons onto a third. */
 .repo-branch {
-  display: flex;
+  display: inline-flex;
   align-items: baseline;
   gap: 4px;
   margin-left: 8px;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
   font-size: var(--font-sm);
+  font-weight: 400;
 }
 
 .repo-upstream {

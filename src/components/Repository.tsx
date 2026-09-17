@@ -71,29 +71,28 @@ export function Repository({ status, loading, cwd, onRefresh, onClose }: Reposit
 
   return (
     <div className="changes repository">
-      <div className="changes-header">
-        <strong>Source control</strong>
-        {status && (
-          <span className="repo-branch" title={status.detached ? 'No branch: HEAD is detached' : undefined}>
-            {status.branch}
-            {status.upstream && (
-              <span className="repo-upstream">
-                {' → '}
-                {status.upstream}
-              </span>
-            )}
-            {/* Only when there is something to say. A pair of zeroes on every clean
-                repository is punctuation. */}
-            {status.ahead > 0 && <span className="repo-count">↑{status.ahead}</span>}
-            {status.behind > 0 && <span className="repo-count">↓{status.behind}</span>}
-          </span>
-        )}
-        <button type="button" className="changes-action" onClick={onRefresh} disabled={loading}>
-          {loading ? 'Reading…' : 'Refresh'}
-        </button>
-        <button type="button" className="changes-action" onClick={onClose}>
-          Close
-        </button>
+      <div className="changes-head">
+        <span className="changes-title">
+          Source control
+          {status && (
+            <span className="repo-branch" title={status.detached ? 'No branch: HEAD is detached' : undefined}>
+              {status.branch}
+              {status.upstream && <span className="repo-upstream">→ {status.upstream}</span>}
+              {/* Only when there is something to say. A pair of zeroes on every clean
+                  repository is punctuation. */}
+              {status.ahead > 0 && <span className="repo-count">↑{status.ahead}</span>}
+              {status.behind > 0 && <span className="repo-count">↓{status.behind}</span>}
+            </span>
+          )}
+        </span>
+        <div className="changes-actions">
+          <button type="button" className="changes-action" onClick={onRefresh} disabled={loading}>
+            {loading ? 'Reading…' : 'Refresh'}
+          </button>
+          <button type="button" className="changes-close" onClick={onClose} aria-label="Close source control">
+            ✕
+          </button>
+        </div>
       </div>
 
       {!cwd ? (
@@ -103,7 +102,16 @@ export function Repository({ status, loading, cwd, onRefresh, onClose }: Reposit
           {loading ? 'Reading the repository…' : 'Not a git repository.'}
         </p>
       ) : status.files.length === 0 ? (
-        <p className="changes-note">Nothing has changed.</p>
+        /* A clean tree is not the same as nothing to do. Commits waiting to be pushed are
+           the reason this panel is open as often as edits are, and calling that "nothing"
+           is how a reader concludes the panel is not working. */
+        <p className="changes-note">
+          Nothing to commit.
+          {status.ahead > 0 &&
+            ` ${status.ahead} ${status.ahead === 1 ? 'commit is' : 'commits are'} waiting to be pushed.`}
+          {status.behind > 0 &&
+            ` ${status.behind} ${status.behind === 1 ? 'commit is' : 'commits are'} waiting to be pulled.`}
+        </p>
       ) : (
         <>
           {staged.length > 0 && (
