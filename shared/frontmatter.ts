@@ -15,6 +15,51 @@ export interface SplitPage {
 }
 
 /**
+ * The fields a frontmatter block declares, by key.
+ *
+ * A deliberately small reading of YAML - `key: value` and `- item` lists, which is all the
+ * convention uses. Every value is a list, because a key may carry one or many and a caller
+ * that had to ask which would be doing this parsing again.
+ *
+ * Shared because both sides need it and for different reasons: the app shows these fields
+ * beside a page, and the sidecar reads them to index a wiki that has no prebuilt index -
+ * which is every wiki but the one this was written against.
+ */
+export function readFields(frontmatter: string): Map<string, string[]> {
+  const fields = new Map<string, string[]>();
+  let last: string | null = null;
+
+  for (const line of frontmatter.split('\n')) {
+    const item = /^\s*-\s+(.*)$/.exec(line);
+    if (item && last) {
+      fields.get(last)!.push(unquote(item[1]!));
+      continue;
+    }
+
+    const field = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
+    if (!field) continue;
+
+    const [, key, value] = field;
+    last = key!;
+    const written = unquote(value!);
+    fields.set(key!, written ? [written] : []);
+  }
+
+  return fields;
+}
+
+/** Values are written quoted about as often as not, and the quotes are never the value. */
+function unquote(value: string): string {
+  return value.trim().replace(/^["']|["']$/g, '');
+}
+
+/** The first value a key carries, for the keys that only ever have one. */
+export function firstField(fields: Map<string, string[]>, key: string): string | undefined {
+  const value = fields.get(key)?.[0];
+  return value ? value : undefined;
+}
+
+/**
  * Split a page into its frontmatter and the prose below it.
  *
  * Wiki pages carry frontmatter by convention, and rendering it as body text puts a block of

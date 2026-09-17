@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -31,8 +31,13 @@ const withFrontmatter = (title: string, body = 'Some prose.') =>
  * resolved path. Linked here too, so the tests exercise the same shape.
  */
 function linkWiki(): boolean {
+  const link = join(home, 'wiki');
+  // Idempotent: tests call this both in a beforeEach and in the body, and a second attempt
+  // throwing made every one of them return early and assert nothing at all.
+  if (existsSync(link)) return true;
+
   try {
-    symlinkSync(store, join(home, 'wiki'), 'junction');
+    symlinkSync(store, link, 'junction');
     return true;
   } catch {
     // Windows without developer mode refuses to create links for an unprivileged process.
@@ -95,8 +100,8 @@ describe('listing the pages there are', () => {
 
     const found = await listWikiPages();
     expect(found.map((entry) => entry.path)).toEqual(['brand-new.md']);
-    // Named after its file until the index catches up, rather than left without a name.
-    expect(found[0]?.title).toBe('brand-new');
+    // And named by what it declares, rather than waiting on the index to catch up.
+    expect(found[0]?.title).toBe('Brand New');
   });
 
   it('takes the title and summary the index knows', async () => {
@@ -360,3 +365,103 @@ describe('starting a knowledge base', () => {
   });
 });
 
+
+/**
+ * A wiki with no prebuilt index, which is every wiki but the one this was written against.
+ * The index is one person's tooling; searching must not depend on having run it.
+ */
+describe('a wiki nobody has indexed', () => {
+  beforeEach(() => {
+    if (!linkWiki()) return;
+    page('Home.md', '# Home\n\nSome notes about hades and dialogue.');
+    page(
+      'notes/deploy.md',
+      ['---', 'title: Deploying', 'summary: how it ships', 'tags:', '  - ops', '---', '', '# Deploying', '', 'How we deploy the hades service.'].join('\n'),
+    );
+  });
+
+  it('names a page by what it declares, not by its file', async () => {
+    if (!linkWiki()) return;
+    const { listWikiPages } = await loadWiki();
+
+    const found = await listWikiPages();
+    expect(found.find((entry) => entry.path === 'notes/deploy.md')?.title).toBe('Deploying');
+  });
+
+  /** Notes kept as plain markdown carry no frontmatter, and their first line is their name. */
+  it('falls back to the first heading before the filename', async () => {
+    if (!linkWiki()) return;
+    // A filename the heading does not match, or the fallback would answer the same thing.
+    page('notes/2026-plan.md', '# Plans for the year\n\nnothing to do with hades');
+    const { listWikiPages } = await loadWiki();
+
+    const found = await listWikiPages();
+    expect(found.find((entry) => entry.path === 'notes/2026-plan.md')?.title).toBe('Plans for the year');
+  });
+
+  it('takes the summary and tags a page declares', async () => {
+    if (!linkWiki()) return;
+    const { listWikiPages } = await loadWiki();
+
+    const found = (await listWikiPages()).find((entry) => entry.path === 'notes/deploy.md');
+    expect(found?.summary).toBe('how it ships');
+    expect(found?.tags).toEqual(['ops']);
+  });
+
+  // Without this the search box answered nothing at all, and did it silently.
+  it('finds pages with nothing but the files to go on', async () => {
+    if (!linkWiki()) return;
+    const { searchWikiPages } = await loadWiki();
+
+    const found = await searchWikiPages('hades', 5);
+    expect(found.map((result) => result.path).sort()).toEqual(['Home.md', 'notes/deploy.md']);
+  });
+
+  it('ranks a title and a heading above a passing mention', async () => {
+    if (!linkWiki()) return;
+    const { searchWikiPages } = await loadWiki();
+
+    const found = await searchWikiPages('deploy', 5);
+    expect(found[0]?.path).toBe('notes/deploy.md');
+    expect(found[0]?.matchedIn).toEqual(expect.arrayContaining(['title', 'headings']));
+  });
+
+  it('quotes the prose it found the term in', async () => {
+    if (!linkWiki()) return;
+    const { searchWikiPages } = await loadWiki();
+
+    const found = await searchWikiPages('hades', 5);
+    expect(found.find((result) => result.path === 'notes/deploy.md')?.excerpt).toBe(
+      'How we deploy the hades service.',
+    );
+  });
+});
+
+/**
+ * With an index, it is what gets searched - the curation in it is deliberate, and a page it
+ * leaves out was left out on purpose.
+ */
+describe('a wiki that has been indexed', () => {
+  it('searches what the index carries rather than what is on disk', async () => {
+    if (!linkWiki()) return;
+    page('listed.md', '# Listed\n\nabout hades');
+    page('unlisted.md', '# Unlisted\n\nalso about hades');
+    page('_manifest.json', JSON.stringify({ pages: [{ path: 'listed.md', title: 'Listed' }] }));
+    const { searchWikiPages } = await loadWiki();
+
+    const found = await searchWikiPages('hades', 5);
+    expect(found.map((result) => result.path)).toEqual(['listed.md']);
+  });
+
+  /** A page the index describes without keywords has none, and must not have any invented. */
+  it('takes an absent field in the index as an answer', async () => {
+    if (!linkWiki()) return;
+    page('listed.md', '# Hades\n\nnothing else');
+    page('_manifest.json', JSON.stringify({ pages: [{ path: 'listed.md', title: 'Listed' }] }));
+    const { searchWikiPages } = await loadWiki();
+
+    // Content only: the heading would have scored had it been derived, and it must not be.
+    const found = await searchWikiPages('hades', 5);
+    expect(found[0]?.matchedIn).toEqual(['content']);
+  });
+});

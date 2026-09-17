@@ -3,6 +3,7 @@ import { join, relative, resolve, sep } from 'node:path';
 
 import { copilotHome } from './paths.js';
 import { searchWiki, type IndexedPage } from './wikiSearch.js';
+import { firstField, readFields, splitFrontmatter } from '../../shared/frontmatter.js';
 import type { WikiPage, WikiPageContent, WikiSearchResult } from '../../shared/protocol.js';
 
 /**
@@ -118,19 +119,19 @@ export async function createWiki(): Promise<string | null> {
 }
 
 /**
- * Answer a query from the pages the index carries.
+ * Answer a query from the pages that can be ranked.
  *
- * The index rather than the filesystem, which is the opposite rule to the tree's, and
- * deliberately: the index is curated. It leaves out README files, artifacts, date-stamped
+ * Where an index exists it is what gets searched - which is the opposite rule to the tree's,
+ * and deliberate. The index is curated: it leaves out README files, artifacts, date-stamped
  * output and anything marked `indexed: false`, and a page under `projects/` joins it by
- * declaring `indexed: true`. Ninety-five of this wiki's hundred and eleven pages are in it.
+ * declaring `indexed: true`. Browsing should show everything that exists; ranking should
+ * respect what its owner decided is worth finding. The consequence is that a page written
+ * since the index was last built is browsable but not findable, exactly as from the terminal.
  *
- * Browsing should show everything that exists; ranking should respect what its owner decided
- * is worth finding. Searching the filesystem instead would quietly overrule that, and would
- * also rank pages with no keywords or headings against pages that have them.
- *
- * The consequence worth knowing: a page written since the index was last built is browsable
- * but not findable, exactly as it is from the terminal.
+ * Where no index exists - which is every wiki but the one this was written against - the
+ * pages themselves are searched, ranked on what their own frontmatter declares. Without this
+ * the search box answered nothing at all to anyone who had never run the indexing script, and
+ * did it silently.
  */
 export async function searchWikiPages(query: string, limit: number): Promise<WikiSearchResult[]> {
   const root = await realRoot();
@@ -140,16 +141,33 @@ export async function searchWikiPages(query: string, limit: number): Promise<Wik
     Array.isArray(value) ? value.filter((each): each is string => typeof each === 'string') : undefined;
   const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
 
+  const known = await manifest();
   const indexed: IndexedPage[] = [];
-  for (const [path, entry] of await manifest()) {
-    indexed.push({
-      path,
-      title: text(entry.title) ?? path.split('/').pop()!.replace(/\.md$/, ''),
-      ...(text(entry.summary) ? { summary: text(entry.summary)! } : {}),
-      ...(strings(entry.keywords) ? { keywords: strings(entry.keywords)! } : {}),
-      ...(strings(entry.headings) ? { headings: strings(entry.headings)! } : {}),
-      ...(strings(entry.tags) ? { tags: strings(entry.tags)! } : {}),
-    });
+
+  if (known.size > 0) {
+    for (const [path, entry] of known) {
+      indexed.push({
+        path,
+        title: text(entry.title) ?? path.split('/').pop()!.replace(/\.md$/, ''),
+        ...(text(entry.summary) ? { summary: text(entry.summary)! } : {}),
+        // Empty rather than absent, so what the index says is taken as said. A page it
+        // describes without keywords has none, and must not have any invented for it.
+        keywords: strings(entry.keywords) ?? [],
+        headings: strings(entry.headings) ?? [],
+        tags: strings(entry.tags) ?? [],
+      });
+    }
+  } else {
+    // No index: the page list already carries what each page declares, and the headings are
+    // derived from the text while it is being read to be searched.
+    for (const page of await listWikiPages()) {
+      indexed.push({
+        path: page.path,
+        title: page.title,
+        ...(page.summary ? { summary: page.summary } : {}),
+        ...(page.tags ? { tags: page.tags } : {}),
+      });
+    }
   }
 
   return searchWiki(root, indexed, query, limit);
@@ -232,15 +250,41 @@ async function walk(root: string, directory: string, found: string[]): Promise<v
 }
 
 /**
- * Every page there is, with whatever the manifest can say about each.
+ * What a page says about itself, for the pages an index does not describe.
  *
- * The filesystem decides what exists and the manifest only describes it, so a page written
- * since the index was last built is still listed - under its filename until the index
- * catches up. The alternative, trusting the manifest, would hide a page that is on disk,
- * which is the one thing a browser must not do.
+ * Every wiki but the one this was written against has no prebuilt index, and a page named
+ * after its file when it plainly declares a title is the browser failing at the first thing
+ * it does. Reading a page costs about a fifth of a millisecond here; doing it only for the
+ * pages the index misses means a curated wiki pays nothing.
  *
- * Costs a directory walk and one JSON read. No Copilot process, like everything else that
- * only reads.
+ * The first heading counts as a title too. Notes kept as plain markdown carry no frontmatter
+ * at all - the category READMEs in this very wiki are that shape - and naming such a page
+ * after its file when its own first line says `# Projects` helps nobody.
+ */
+async function describedBy(file: string): Promise<{ fields: Map<string, string[]>; heading?: string }> {
+  try {
+    const { frontmatter, body } = splitFrontmatter(await readFile(file, 'utf8'));
+    const heading = /^\s{0,3}#\s+(.+)$/m.exec(body)?.[1]?.trim();
+
+    return {
+      fields: frontmatter ? readFields(frontmatter) : new Map(),
+      ...(heading ? { heading } : {}),
+    };
+  } catch {
+    return { fields: new Map() };
+  }
+}
+
+/**
+ * Every page there is, with whatever can be said about each.
+ *
+ * The filesystem decides what exists and the index only describes it, so a page written since
+ * the index was last built is still listed. Where the index has nothing to say - because the
+ * page is new, or excluded from it, or because there is no index at all - the page's own
+ * frontmatter is read instead.
+ *
+ * Costs a directory walk, one JSON read, and a read of each page the index misses. No Copilot
+ * process, like everything else that only reads.
  */
 export async function listWikiPages(): Promise<WikiPage[]> {
   const root = await realRoot();
@@ -254,20 +298,37 @@ export async function listWikiPages(): Promise<WikiPage[]> {
   }
 
   const known = await manifest();
-  return files.map((file) => {
-    const path = asPagePath(root, file);
-    const entry = known.get(path);
-    const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
+  const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
 
-    return {
-      path,
-      title: text(entry?.title) ?? path.split('/').pop()!.replace(/\.md$/, ''),
-      ...(text(entry?.summary) ? { summary: text(entry?.summary)! } : {}),
-      ...(text(entry?.category) ? { category: text(entry?.category)! } : {}),
-      ...(text(entry?.updated) ? { updated: text(entry?.updated)! } : {}),
-      ...(Array.isArray(entry?.tags) ? { tags: entry.tags.filter((tag): tag is string => typeof tag === 'string') } : {}),
-    };
-  });
+  return Promise.all(
+    files.map(async (file): Promise<WikiPage> => {
+      const path = asPagePath(root, file);
+      const entry = known.get(path);
+      const described = entry ? { fields: new Map<string, string[]>() } : await describedBy(file);
+      const declared = described.fields;
+
+      const title =
+        text(entry?.title) ??
+        firstField(declared, 'title') ??
+        described.heading ??
+        path.split('/').pop()!.replace(/\.md$/, '');
+      const summary = text(entry?.summary) ?? firstField(declared, 'summary');
+      const category = text(entry?.category) ?? firstField(declared, 'category');
+      const updated = text(entry?.updated) ?? firstField(declared, 'updated');
+      const tags = Array.isArray(entry?.tags)
+        ? entry.tags.filter((tag): tag is string => typeof tag === 'string')
+        : declared.get('tags');
+
+      return {
+        path,
+        title,
+        ...(summary ? { summary } : {}),
+        ...(category ? { category } : {}),
+        ...(updated ? { updated } : {}),
+        ...(tags?.length ? { tags } : {}),
+      };
+    }),
+  );
 }
 
 /**
@@ -311,6 +372,9 @@ export async function writeWikiPage(page: string, source: string): Promise<boole
     return false;
   }
 }
+
+
+
 
 
 

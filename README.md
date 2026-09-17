@@ -247,12 +247,18 @@ own rather than falling out of that one. The same resolution is why a page canno
 or written from outside the wiki even when the root is a symlink.
 
 Search ranks with the same weights as the wiki's own `Search-Wiki.ps1`, so a question asked
-here and in a terminal answers the same way. It searches the index rather than the
-filesystem, which is the opposite of how the tree is built and deliberate: the index is
-curated - README files, artifacts and date-stamped output are left out, and a page under
-`projects/` joins it by declaring `indexed: true` - and ranking should respect what its owner
-decided is worth finding. A page written since the index was last built is therefore
-browsable but not findable, exactly as from the terminal.
+here and in a terminal answers the same way.
+
+Nothing needs to be installed or generated for it. If the wiki has a `_manifest.json`, that
+is what gets searched - the index is curated, leaving out README files, artifacts and
+date-stamped output, and ranking should respect what its owner decided is worth finding. A
+page written since that index was last built is therefore browsable but not findable, exactly
+as from the terminal. Where there is no index, the pages themselves are searched and ranked
+on what their own frontmatter declares, with headings read from the text.
+
+Page titles work the same way: the index if there is one, then the page's own `title`, then
+its first heading, then the filename. So notes kept as plain markdown with no frontmatter at
+all still read as pages rather than as filenames.
 
 With no wiki on the machine, the button explains what one is and offers to create it - a
 folder and a first page, which is then editable in place.

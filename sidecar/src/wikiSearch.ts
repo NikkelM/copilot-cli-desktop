@@ -37,9 +37,24 @@ export interface IndexedPage {
   path: string;
   title: string;
   summary?: string;
+  /**
+   * Absent means unknown, and is not the same as empty.
+   *
+   * An index that describes a page without keywords has said it has none, and none must be
+   * invented for it - that would rank it differently here than from the terminal. A page no
+   * index describes has said nothing, so its own text is read for them.
+   */
   keywords?: string[];
   headings?: string[];
   tags?: string[];
+}
+
+/** The headings a page carries, for ranking a wiki that has no prebuilt index. */
+export function headingsIn(body: string): string[] {
+  return body
+    .split('\n')
+    .map((line) => /^\s{0,3}#{1,6}\s+(.*)$/.exec(line)?.[1]?.trim())
+    .filter((heading): heading is string => Boolean(heading));
 }
 
 /** The terms a query asks about, which are the words long enough to mean something. */
@@ -205,7 +220,12 @@ export async function searchWiki(
   );
 
   return read
-    .map(({ page, body }) => ({ page, body, ...scorePage(page, body, terms) }))
+    .map(({ page, body }) => {
+      // Said nothing about its headings, so the text says instead. An index that described
+      // the page has already answered, even if the answer was none.
+      const described = page.headings === undefined ? { ...page, headings: headingsIn(body) } : page;
+      return { page: described, body, ...scorePage(described, body, terms) };
+    })
     .filter((result) => result.score > 0)
     // Path second, so an equal score gives the same order every time rather than whichever
     // one the filesystem happened to list first.
@@ -223,6 +243,8 @@ export async function searchWiki(
       };
     });
 }
+
+
 
 
 
