@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import type { WikiPage, WikiPageContent } from '../../shared/protocol';
+import type { WikiPage, WikiPageContent, WikiSearchResult } from '../../shared/protocol';
 import { splitFrontmatter } from '../../shared/frontmatter';
 import { isWikiLink, resolveWikiLink, withResolvedLinks } from '../lib/wikiLinks';
 import { ChevronIcon } from './Icons';
@@ -23,6 +23,10 @@ interface WikiProps {
   onSave: (path: string) => void;
   /** Start a knowledge base where there is none, and open what it starts with. */
   onCreate: () => void;
+  /** What is being searched for, and what came back. Null results mean nothing is being asked. */
+  query: string;
+  onQuery: (query: string) => void;
+  results: WikiSearchResult[] | null;
   onOpen: (path: string) => void;
   onBack: () => void;
   onForward: () => void;
@@ -289,6 +293,44 @@ function Onboarding({
 }
 
 /**
+ * What a search found, in place of the tree.
+ *
+ * In place of rather than beside it: they answer the same question - which page do I want -
+ * and two lists offering pages at once would be two things to look at instead of one.
+ */
+function Results({
+  results,
+  openPath,
+  onOpen,
+}: {
+  results: WikiSearchResult[];
+  openPath: string | null;
+  onOpen: (path: string) => void;
+}) {
+  if (results.length === 0) return <p className="wiki-empty">Nothing matches that.</p>;
+
+  return (
+    <ul className="wiki-results">
+      {results.map((result) => (
+        <li key={result.path}>
+          <button
+            type="button"
+            className={result.path === openPath ? 'wiki-result on' : 'wiki-result'}
+            onClick={() => onOpen(result.path)}
+          >
+            <span className="wiki-result-title">{result.title}</span>
+            {/* Where it matched, which is what separates a page about the term from one
+                that merely mentions it - and is what the ranking is built on. */}
+            <span className="wiki-result-where">{result.matchedIn.join(' · ')}</span>
+            {result.excerpt && <span className="wiki-result-excerpt">{result.excerpt}</span>}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
  * The local knowledge base, browsable without leaving the app.
  *
  * Read-only. The helper scripts remain the way to write pages, and a viewer that could
@@ -307,6 +349,9 @@ export function Wiki({
   onRevert,
   onSave,
   onCreate,
+  query,
+  onQuery,
+  results,
   onOpen,
   onBack,
   onForward,
@@ -493,7 +538,20 @@ export function Wiki({
       ) : (
         <div className="wiki">
           <nav className="wiki-nav" aria-label="Wiki pages">
-            {tree === null ? (
+            <div className="wiki-search">
+              <input
+                type="search"
+                value={query}
+                onChange={(event) => onQuery(event.target.value)}
+                placeholder="Search the wiki"
+                spellCheck={false}
+                aria-label="Search the wiki"
+              />
+            </div>
+
+            {results !== null ? (
+              <Results results={results} openPath={page?.path ?? null} onOpen={onOpen} />
+            ) : tree === null ? (
               <p className="wiki-empty">Reading the wiki…</p>
             ) : (
               <FolderBody folder={tree} openPath={page?.path ?? null} onOpen={onOpen} unsaved={unsaved} depth={0} />

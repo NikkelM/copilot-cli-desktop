@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { messageOf } from './errors';
-import { createWiki as createWikiHere, listWikiPages, readWikiPage, saveWikiPage } from './sidecar';
-import type { WikiPage, WikiPageContent } from '../../shared/protocol';
+import { createWiki as createWikiHere, listWikiPages, readWikiPage, saveWikiPage, searchWiki as searchWikiHere } from './sidecar';
+import type { WikiPage, WikiPageContent, WikiSearchResult } from '../../shared/protocol';
 
 /** Where a reader who opens the wiki without naming a page starts. */
 const ENTRY = ['index.md', 'Home.md', 'README.md'];
+
+/** How long to wait after a keystroke before searching, so typing is not a read per letter. */
+const SEARCH_AFTER_MS = 150;
 
 /**
  * The knowledge base, and the page being read.
@@ -33,6 +36,11 @@ export function useWiki(open: boolean) {
    * Cleared once written, so a page with a draft is exactly a page with unsaved changes.
    */
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  /** What is being searched for, and what came back for it. */
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<WikiSearchResult[] | null>(null);
+  /** Which query the held results describe, so a slow answer cannot replace a newer one. */
+  const asked = useRef('');
   /**
    * Where the reader has been, and where they were before going back.
    *
@@ -208,6 +216,35 @@ export function useWiki(open: boolean) {
     if (entry) go(entry);
   }, [open, pages, page, go]);
 
+  /**
+   * What is being searched for, and what came back.
+   *
+   * Asked a moment after typing stops rather than per keystroke: one search reads every page
+   * in the index, which is 13 to 30 milliseconds here but is still a read per letter typed.
+   */
+  useEffect(() => {
+    const wanted = query.trim();
+    asked.current = wanted;
+
+    if (!wanted) {
+      setResults(null);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      searchWikiHere(wanted)
+        .then((found) => {
+          // A slower answer to an older question must not replace a newer one.
+          if (asked.current === wanted) setResults(found);
+        })
+        .catch((error: unknown) => {
+          if (asked.current === wanted) setFailed(`Could not search the wiki: ${messageOf(error)}`);
+        });
+    }, SEARCH_AFTER_MS);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
   return {
     pages,
     where,
@@ -215,6 +252,10 @@ export function useWiki(open: boolean) {
     loading,
     failed,
     saving,
+    query,
+    setQuery,
+    /** The pages answering the query, or nothing when none is being asked. */
+    results,
     /** What an editor holds for the page being read, or nothing when it has no unsaved edits. */
     draft: page ? drafts[page.path] : undefined,
     /** Every page with edits not yet written, so the reader can be told before they are lost. */

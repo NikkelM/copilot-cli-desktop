@@ -2,7 +2,8 @@ import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises'
 import { join, relative, resolve, sep } from 'node:path';
 
 import { copilotHome } from './paths.js';
-import type { WikiPage, WikiPageContent } from '../../shared/protocol.js';
+import { searchWiki, type IndexedPage } from './wikiSearch.js';
+import type { WikiPage, WikiPageContent, WikiSearchResult } from '../../shared/protocol.js';
 
 /**
  * The knowledge base this app can browse.
@@ -117,6 +118,44 @@ export async function createWiki(): Promise<string | null> {
 }
 
 /**
+ * Answer a query from the pages the index carries.
+ *
+ * The index rather than the filesystem, which is the opposite rule to the tree's, and
+ * deliberately: the index is curated. It leaves out README files, artifacts, date-stamped
+ * output and anything marked `indexed: false`, and a page under `projects/` joins it by
+ * declaring `indexed: true`. Ninety-five of this wiki's hundred and eleven pages are in it.
+ *
+ * Browsing should show everything that exists; ranking should respect what its owner decided
+ * is worth finding. Searching the filesystem instead would quietly overrule that, and would
+ * also rank pages with no keywords or headings against pages that have them.
+ *
+ * The consequence worth knowing: a page written since the index was last built is browsable
+ * but not findable, exactly as it is from the terminal.
+ */
+export async function searchWikiPages(query: string, limit: number): Promise<WikiSearchResult[]> {
+  const root = await realRoot();
+  if (!root) return [];
+
+  const strings = (value: unknown): string[] | undefined =>
+    Array.isArray(value) ? value.filter((each): each is string => typeof each === 'string') : undefined;
+  const text = (value: unknown): string | undefined => (typeof value === 'string' && value ? value : undefined);
+
+  const indexed: IndexedPage[] = [];
+  for (const [path, entry] of await manifest()) {
+    indexed.push({
+      path,
+      title: text(entry.title) ?? path.split('/').pop()!.replace(/\.md$/, ''),
+      ...(text(entry.summary) ? { summary: text(entry.summary)! } : {}),
+      ...(strings(entry.keywords) ? { keywords: strings(entry.keywords)! } : {}),
+      ...(strings(entry.headings) ? { headings: strings(entry.headings)! } : {}),
+      ...(strings(entry.tags) ? { tags: strings(entry.tags)! } : {}),
+    });
+  }
+
+  return searchWiki(root, indexed, query, limit);
+}
+
+/**
  * The absolute path a page argument names, or null when it names somewhere else entirely.
  *
  * Every read goes through here, and the check is on the resolved real path rather than on
@@ -152,6 +191,8 @@ interface ManifestEntry {
   category?: unknown;
   updated?: unknown;
   tags?: unknown;
+  keywords?: unknown;
+  headings?: unknown;
 }
 
 /** What the manifest knows about each page, by path, or an empty map when there is none. */

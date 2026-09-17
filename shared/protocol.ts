@@ -652,6 +652,23 @@ export interface WikiPageContent {
   source: string;
 }
 
+/**
+ * One page answering a search, with enough to decide whether to open it.
+ *
+ * The score is the one `Search-Wiki.ps1` produces, so the ranking a reader already knows
+ * from the terminal is the ranking they get here.
+ */
+export interface WikiSearchResult {
+  path: string;
+  title: string;
+  score: number;
+  /** Which of keywords, title, headings, summary, tags or content matched. */
+  matchedIn: string[];
+  summary?: string;
+  /** The prose around the first match, for a reader deciding whether to open the page. */
+  excerpt?: string;
+}
+
 /** The diff for one changed file, or why there is not one. */
 export interface FileDiff {
   /** Unified diff from what the session found to what it left. */
@@ -873,6 +890,8 @@ export interface SidecarRequests {
    * nothing could be made. Never overwrites a page that is already there.
    */
   'wiki.create': { params: void; result: { page: string | null } };
+  /** The pages answering a query, best first, ranked as the wiki's own search script ranks. */
+  'wiki.search': { params: { query: string; limit?: number }; result: { results: WikiSearchResult[] } };
   /** Run a command in a session, resuming it if it is cold. */
   'commands.invoke': {
     params: { sessionId: string; name: string; input?: string };
@@ -1032,6 +1051,7 @@ export const SIDECAR_METHODS = [
   'wiki.page',
   'wiki.save',
   'wiki.create',
+  'wiki.search',
   'commands.invoke',
   'commands.enqueue',
   'agents.list',

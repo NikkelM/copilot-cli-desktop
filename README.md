@@ -246,6 +246,14 @@ path, which a file that does not exist has none of, so creating pages needs a ru
 own rather than falling out of that one. The same resolution is why a page cannot be read
 or written from outside the wiki even when the root is a symlink.
 
+Search ranks with the same weights as the wiki's own `Search-Wiki.ps1`, so a question asked
+here and in a terminal answers the same way. It searches the index rather than the
+filesystem, which is the opposite of how the tree is built and deliberate: the index is
+curated - README files, artifacts and date-stamped output are left out, and a page under
+`projects/` joins it by declaring `indexed: true` - and ranking should respect what its owner
+decided is worth finding. A page written since the index was last built is therefore
+browsable but not findable, exactly as from the terminal.
+
 With no wiki on the machine, the button explains what one is and offers to create it - a
 folder and a first page, which is then editable in place.
 
@@ -316,3 +324,4 @@ See [LICENSE](LICENSE).
 Every dependency is permissively licensed - MIT, ISC, BSD, Apache-2.0 or MPL-2.0 -
 so nothing here conflicts with that choice. Note that Apache-2.0 is compatible with
 GPL version 3 but not version 2, which is one reason this is v3.
+

@@ -3450,3 +3450,79 @@ button.group:hover {
   margin-left: 10px;
 }
 
+
+/* Over the tree, because it replaces the tree: both answer "which page do I want". */
+.wiki-search {
+  padding: 0 0 8px;
+}
+
+.wiki-search input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-md);
+}
+
+.wiki-search input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.wiki-results {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wiki-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wiki-result:hover {
+  background: var(--bg-raised);
+}
+
+.wiki-result.on {
+  background: var(--bg-raised);
+}
+
+.wiki-result-title {
+  color: var(--text);
+  font-size: var(--font-md);
+}
+
+.wiki-result.on .wiki-result-title {
+  color: var(--accent);
+}
+
+/* Where it matched, which is what separates a page about a term from one that mentions it. */
+.wiki-result-where {
+  font-size: var(--font-xs);
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+
+/* Two lines of the prose around the match, clipped rather than wrapped without end. */
+.wiki-result-excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}

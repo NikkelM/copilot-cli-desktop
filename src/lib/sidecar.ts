@@ -43,6 +43,7 @@ import type {
   TreeState,
   WikiPage,
   WikiPageContent,
+  WikiSearchResult,
 } from '../../shared/protocol';
 
 /**
@@ -283,6 +284,12 @@ export async function saveWikiPage(path: string, source: string): Promise<boolea
 export async function createWiki(): Promise<string | null> {
   const { page } = await request('wiki.create');
   return page;
+}
+
+/** The pages answering a query, best first. A disk read, so it costs no Copilot process. */
+export async function searchWiki(query: string, limit?: number): Promise<WikiSearchResult[]> {
+  const { results } = await request('wiki.search', { query, limit });
+  return results;
 }
 
 /** The skills this session has switched off. Read from the app's own record, so it costs no process. */

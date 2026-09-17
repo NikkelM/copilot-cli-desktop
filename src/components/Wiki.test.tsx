@@ -53,6 +53,9 @@ const shown = (page: PageFixture | null, over: Partial<Parameters<typeof Wiki>[0
       onRevert={() => {}}
       onSave={() => {}}
       onCreate={() => {}}
+      query=""
+      onQuery={() => {}}
+      results={null}
       onOpen={() => {}}
       onBack={() => {}}
       onForward={() => {}}
@@ -587,6 +590,9 @@ describe('showing a page as the file it is', () => {
         onRevert={() => {}}
         onSave={() => {}}
       onCreate={() => {}}
+      query=""
+      onQuery={() => {}}
+      results={null}
         onOpen={() => {}}
         onBack={() => {}}
         onForward={() => {}}
@@ -752,3 +758,88 @@ describe('starting a knowledge base from the onboarding', () => {
   });
 });
 
+
+
+/**
+ * Search, which replaces the tree rather than sitting beside it: both answer the same
+ * question - which page do I want - and two lists of pages at once is two things to look at.
+ */
+describe('searching the wiki', () => {
+  const found = [
+    {
+      path: 'projects/app/overview.md',
+      title: 'App overview',
+      score: 26,
+      matchedIn: ['keywords', 'content'],
+      excerpt: '…the sentence the term appeared in…',
+    },
+    { path: 'Home.md', title: 'Knowledge Base Home', score: 4, matchedIn: ['content'] },
+  ];
+
+  it('shows the tree until something is asked', () => {
+    const view = shown({ path: 'index.md', body: 'prose' });
+
+    expect(view.container.querySelector('.wiki-tree')).toBeTruthy();
+    expect(view.container.querySelector('.wiki-results')).toBeNull();
+  });
+
+  it('hands every keystroke up', async () => {
+    const onQuery = vi.fn();
+    const user = userEvent.setup();
+    shown({ path: 'index.md', body: 'prose' }, { onQuery });
+
+    await user.type(screen.getByLabelText('Search the wiki'), 'h');
+
+    expect(onQuery).toHaveBeenCalledWith('h');
+  });
+
+  it('puts the results where the tree was', () => {
+    const view = shown({ path: 'index.md', body: 'prose' }, { query: 'hades', results: found });
+
+    expect(view.container.querySelector('.wiki-results')).toBeTruthy();
+    expect(view.container.querySelector('.wiki-tree')).toBeNull();
+  });
+
+  it('names each page it found', () => {
+    shown({ path: 'index.md', body: 'prose' }, { query: 'hades', results: found });
+
+    expect(screen.getByText('App overview')).toBeTruthy();
+    expect(screen.getByText('Knowledge Base Home')).toBeTruthy();
+  });
+
+  /** What separates a page about the term from one that merely mentions it. */
+  it('says where each page matched', () => {
+    shown({ path: 'index.md', body: 'prose' }, { query: 'hades', results: found });
+
+    expect(screen.getByText('keywords · content')).toBeTruthy();
+  });
+
+  it('shows the prose around the match', () => {
+    shown({ path: 'index.md', body: 'prose' }, { query: 'hades', results: found });
+
+    expect(screen.getByText(/the sentence the term appeared in/)).toBeTruthy();
+  });
+
+  it('opens a page chosen from the results', async () => {
+    const onOpen = vi.fn();
+    const user = userEvent.setup();
+    shown({ path: 'index.md', body: 'prose' }, { query: 'hades', results: found, onOpen });
+
+    await user.click(screen.getByText('App overview'));
+
+    expect(onOpen).toHaveBeenCalledWith('projects/app/overview.md');
+  });
+
+  // An empty list is an answer, and saying so beats showing nothing at all.
+  it('says so when nothing matches', () => {
+    shown({ path: 'index.md', body: 'prose' }, { query: 'nothing', results: [] });
+
+    expect(screen.getByText('Nothing matches that.')).toBeTruthy();
+  });
+
+  it('gives the tree back when the search is cleared', () => {
+    const view = shown({ path: 'index.md', body: 'prose' }, { query: '', results: null });
+
+    expect(view.container.querySelector('.wiki-tree')).toBeTruthy();
+  });
+});
