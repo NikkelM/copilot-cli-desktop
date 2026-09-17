@@ -21,14 +21,18 @@ static LOG: OnceLock<Mutex<Option<File>>> = OnceLock::new();
  * diagnostics nowhere, so a sidecar that died on startup left no trace of why. Everything
  * that could explain a failure now goes to a file next to the app's data.
  *
- * Printing as well costs nothing and keeps `tauri dev` behaving as it did.
+ * Printing as well is a convenience for `tauri dev`, and it must stay one. `println!` panics
+ * when the pipe it writes to has closed, which happens whenever the terminal running the dev
+ * server goes away first - and the task that panicked was the one reading the sidecar's
+ * output, so a closed pipe stopped the app logging anything at all. The file is the record;
+ * a failure to echo it is not worth a line, let alone a task.
  */
 fn log(line: &str) {
     let stamped = format!(
         "{} {line}",
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f")
     );
-    println!("{stamped}");
+    let _ = writeln!(std::io::stdout(), "{stamped}");
 
     if let Some(handle) = LOG.get() {
         if let Ok(mut file) = handle.lock() {
