@@ -6,9 +6,11 @@
  * to be right for a session nobody has opened, and the SDK cannot answer without loading it.
  */
 import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { RepoFile, RepoStatus, TreeState } from '../../shared/protocol.js';
+import type { FileDiff, RepoFile, RepoStatus, TreeState } from '../../shared/protocol.js';
 
 const run = promisify(execFile);
 
@@ -204,6 +206,47 @@ export async function statusOf(cwd: string): Promise<RepoStatus | null> {
     // Not a repository, or no git on the machine. Both are things to degrade around rather
     // than report: a session in a plain folder is an ordinary session.
     return null;
+  }
+}
+
+/**
+ * The diff for one path, on the side the reader asked about.
+ *
+ * Two questions rather than one, because the panel draws two lists and a file can be in
+ * both: staged compares the index against HEAD, unstaged compares the working tree against
+ * the index. Asking the wrong one shows the reader a diff for the half they are not
+ * looking at, which is worse than none.
+ *
+ * An untracked file has nothing to compare against, so it is read from disk and reported as
+ * an addition - which is what it is, and what the reader expects to see.
+ */
+export async function diffOf(cwd: string, path: string, staged: boolean): Promise<FileDiff> {
+  // `--no-ext-diff` and `--no-color` because the reader's own git config may install an
+  // external differ or colour codes, and this output is parsed rather than printed.
+  const base = ['diff', '--no-ext-diff', '--no-color', '--no-textconv'];
+
+  try {
+    const patch = await git(cwd, [...base, ...(staged ? ['--cached'] : []), '--', path]);
+    if (patch.trim()) return { patch, stale: false };
+  } catch {
+    return { patch: null, reason: 'gone', stale: false };
+  }
+
+  // No patch and not staged: either nothing differs, or git has never heard of the file.
+  if (staged) return { patch: null, stale: false };
+
+  try {
+    const contents = await readFile(join(cwd, path), 'utf8');
+    if (contents.includes('\0')) return { patch: null, reason: 'binary', stale: false };
+
+    const lines = contents.split('\n');
+    // A trailing newline leaves an empty last element, which is not a line of the file.
+    if (lines[lines.length - 1] === '') lines.pop();
+
+    const header = `--- /dev/null\n+++ b/${path}\n@@ -0,0 +1,${lines.length} @@\n`;
+    return { patch: header + lines.map((line) => `+${line}`).join('\n'), stale: false };
+  } catch {
+    return { patch: null, reason: 'gone', stale: false };
   }
 }
 

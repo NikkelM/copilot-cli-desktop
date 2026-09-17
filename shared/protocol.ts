@@ -858,6 +858,14 @@ export interface SidecarRequests {
    * opened and costs no Copilot process. Null when the directory is not in a repository.
    */
   'git.status': { params: { cwd: string }; result: { status: RepoStatus | null } };
+  /**
+   * The diff for one path, on the side asked about.
+   *
+   * Staged compares the index against HEAD; unstaged compares the working tree against the
+   * index. A file can be in both lists with different contents in each, so which one is
+   * wanted has to be said rather than guessed.
+   */
+  'git.diff': { params: { cwd: string; path: string; staged: boolean }; result: { diff: FileDiff } };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**
    * The slash commands there are.
@@ -1057,6 +1065,7 @@ export const SIDECAR_METHODS = [
   'sessions.diff',
   'git.state',
   'git.status',
+  'git.diff',
   'models.list',
   'commands.list',
   'filesystem.directories',

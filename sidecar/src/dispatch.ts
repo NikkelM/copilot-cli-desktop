@@ -10,7 +10,7 @@ import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
 import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
 import { lastAgent, lastModel, readTranscript } from './eventLog.js';
-import { statusOf, treeStateOf } from './git.js';
+import { diffOf, statusOf, treeStateOf } from './git.js';
 import { previewImage } from './images.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
@@ -168,6 +168,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'git.state': async ({ cwd }) => ({ state: await treeStateOf(cwd) }),
 
     'git.status': async ({ cwd }) => ({ status: await statusOf(cwd) }),
+
+    'git.diff': async ({ cwd, path, staged }) => ({ diff: await diffOf(cwd, path, staged) }),
 
     'runtime.status': () => runtime.status(),
   };

@@ -1028,6 +1028,8 @@ export default function App() {
                   status={repository.status}
                   loading={repository.loading}
                   cwd={selected.cwd}
+                  diffs={repository.diffs}
+                  onDiff={repository.diff}
                   onRefresh={repository.refresh}
                   onClose={() => {
                     setShowRepository(false);

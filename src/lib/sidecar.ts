@@ -315,6 +315,12 @@ export async function gitStatus(cwd: string): Promise<RepoStatus | null> {
   return status;
 }
 
+/** One file's diff, on the side the row belongs to: the index against HEAD, or the tree against the index. */
+export async function gitDiff(cwd: string, path: string, staged: boolean): Promise<FileDiff> {
+  const { diff } = await request('git.diff', { cwd, path, staged });
+  return diff;
+}
+
 /** Replays a session transcript from events.jsonl without resuming it. */
 export function getTranscript(
   sessionId: string,

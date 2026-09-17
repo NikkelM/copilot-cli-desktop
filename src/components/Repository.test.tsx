@@ -14,6 +14,8 @@ const shown = (status: RepoStatus | null, over: Partial<Parameters<typeof Reposi
       status={status}
       loading={false}
       cwd={'C:\\repo'}
+      diffs={{}}
+      onDiff={() => {}}
       onRefresh={() => {}}
       onClose={() => {}}
       {...over}
@@ -194,3 +196,103 @@ describe('asking again', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+/**
+ * Opening a file to its diff, which works the way the changes panel works - a reader who
+ * has learnt one of these panels should not have to learn the other.
+ */
+describe('opening a file to its diff', () => {
+  const both: RepoStatus = {
+    ...clean,
+    files: [{ path: 'src/both.ts', staged: 'modified', unstaged: 'modified' }],
+  };
+
+  const patch = '--- a/src/both.ts\n+++ b/src/both.ts\n@@ -1 +1 @@\n-before\n+after';
+
+  it('asks for the diff when a row is opened', async () => {
+    const onDiff = vi.fn();
+    const user = userEvent.setup();
+    shown({ ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] }, { onDiff });
+
+    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+
+    expect(onDiff).toHaveBeenCalledWith('a.ts', false);
+  });
+
+  /**
+   * The same file in both lists is two different diffs - the index against HEAD, and the
+   * tree against the index - so the side has to be asked for rather than guessed.
+   */
+  it('asks for the side the row belongs to', async () => {
+    const onDiff = vi.fn();
+    const user = userEvent.setup();
+    shown(both, { onDiff });
+
+    const rows = screen.getAllByRole('button', { name: /both\.ts/ });
+    await user.click(rows[0]!);
+    await user.click(rows[1]!);
+
+    expect(onDiff).toHaveBeenNthCalledWith(1, 'src/both.ts', true);
+    expect(onDiff).toHaveBeenNthCalledWith(2, 'src/both.ts', false);
+  });
+
+  it('draws the diff it was given', async () => {
+    const user = userEvent.setup();
+    const view = shown(
+      { ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] },
+      { diffs: { 'unstaged:a.ts': { patch, stale: false } } },
+    );
+
+    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+
+    expect(view.container.querySelector('.tool-diff')).toBeTruthy();
+  });
+
+  /** Opening one row of a file must not open the other, or the two diffs would be confused. */
+  it('opens one side without opening the other', async () => {
+    const user = userEvent.setup();
+    const view = shown(both, {
+      diffs: { 'staged:src/both.ts': { patch, stale: false }, 'unstaged:src/both.ts': { patch, stale: false } },
+    });
+
+    await user.click(screen.getAllByRole('button', { name: /both\.ts/ })[0]!);
+
+    expect(view.container.querySelectorAll('.tool-diff')).toHaveLength(1);
+  });
+
+  it('closes the row when it is clicked again', async () => {
+    const user = userEvent.setup();
+    const view = shown(
+      { ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] },
+      { diffs: { 'unstaged:a.ts': { patch, stale: false } } },
+    );
+
+    const row = screen.getByRole('button', { name: /a\.ts/ });
+    await user.click(row);
+    await user.click(row);
+
+    expect(view.container.querySelector('.tool-diff')).toBeNull();
+  });
+
+  it('says it is reading until the diff arrives', async () => {
+    const user = userEvent.setup();
+    shown({ ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] });
+
+    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+
+    expect(screen.getByText('Reading the diff.')).toBeTruthy();
+  });
+
+  it('says why there is no diff rather than showing an empty row', async () => {
+    const user = userEvent.setup();
+    shown(
+      { ...clean, files: [{ path: 'image.png', unstaged: 'modified' }] },
+      { diffs: { 'unstaged:image.png': { patch: null, reason: 'binary', stale: false } } },
+    );
+
+    await user.click(screen.getByRole('button', { name: /image\.png/ }));
+
+    expect(screen.getByText('Not a text file.')).toBeTruthy();
+  });
+});
+

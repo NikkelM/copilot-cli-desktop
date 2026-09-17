@@ -1,11 +1,20 @@
-import type { RepoFile, RepoStatus } from '../../shared/protocol';
+import { useState } from 'react';
+
+import type { FileDiff, RepoFile, RepoStatus } from '../../shared/protocol';
 import { fileBadge } from '../lib/fileBadge';
+import { parsePatch } from '../lib/patch';
+import { diffKey } from '../lib/useRepoStatus';
+import { Diff } from './Diff';
 
 interface RepositoryProps {
   status: RepoStatus | null;
   loading: boolean;
   /** Absent when the session has no working directory at all. */
   cwd: string | null;
+  /** Diffs already fetched, by side and path. */
+  diffs: Record<string, FileDiff>;
+  /** Fetch one, when a row is opened. */
+  onDiff: (path: string, staged: boolean) => void;
   onRefresh: () => void;
   onClose: () => void;
 }
@@ -27,32 +36,80 @@ const MARK: Record<string, string> = {
   unmerged: '!',
 };
 
-/** One path, shown under whichever heading it belongs to. */
-function FileRow({ file, change }: { file: RepoFile; change: string }) {
+/** One path, shown under whichever heading it belongs to, opening to its diff. */
+function FileRow({
+  file,
+  change,
+  staged,
+  open,
+  diff,
+  onToggle,
+}: {
+  file: RepoFile;
+  change: string;
+  staged: boolean;
+  open: boolean;
+  diff: FileDiff | undefined;
+  onToggle: () => void;
+}) {
   const badge = fileBadge(file.path);
   const name = file.path.split('/').pop() ?? file.path;
   const folder = file.path.slice(0, file.path.length - name.length);
 
   return (
-    <li className={`repo-file ${change}`}>
-      <span className="repo-mark" title={change}>
-        {MARK[change] ?? '?'}
-      </span>
-      {badge ? (
-        <span className="tool-badge" data-tone={badge.tone}>
-          {badge.label}
+    <li>
+      <button
+        type="button"
+        className={open ? 'changes-row open' : 'changes-row'}
+        onClick={onToggle}
+        aria-expanded={open}
+        title={file.from ? `${file.path} (was ${file.from})` : file.path}
+      >
+        <span className={`repo-mark ${change}`}>{MARK[change] ?? '?'}</span>
+        {badge ? (
+          <span className="changes-badge" data-tone={badge.tone}>
+            {badge.label}
+          </span>
+        ) : (
+          <span className="changes-badge" />
+        )}
+        <span className="repo-path">
+          <span className="repo-name">{name}</span>
+          {/* The folder after the name and quieter: a list of paths is read by filename, and
+              the leading directories are the part every row has in common. */}
+          {folder && <span className="repo-folder">{folder}</span>}
         </span>
-      ) : (
-        <span className="tool-badge" />
-      )}
-      <span className="repo-path" title={file.from ? `${file.path} (was ${file.from})` : file.path}>
-        <span className="repo-name">{name}</span>
-        {/* The folder after the name and quieter: a list of paths is read by filename, and
-            the leading directories are the part every row has in common. */}
-        {folder && <span className="repo-folder">{folder}</span>}
-      </span>
+      </button>
+
+      {open && <Expanded diff={diff} staged={staged} />}
     </li>
   );
+}
+
+/**
+ * What opening a row shows.
+ *
+ * The same three states the changes panel has - still reading, nothing to show, or the
+ * diff - because a reader who has learnt one of these panels should not have to learn the
+ * other.
+ */
+function Expanded({ diff, staged }: { diff: FileDiff | undefined; staged: boolean }) {
+  if (!diff) return <p className="changes-note">Reading the diff.</p>;
+  if (!diff.patch) {
+    return (
+      <p className="changes-note">
+        {diff.reason === 'binary'
+          ? 'Not a text file.'
+          : diff.reason === 'gone'
+            ? 'This file is not on disk any more.'
+            : staged
+              ? 'Nothing staged for this file.'
+              : 'No difference to show.'}
+      </p>
+    );
+  }
+
+  return <Diff lines={parsePatch(diff.patch)} />;
 }
 
 /**
@@ -65,9 +122,22 @@ function FileRow({ file, change }: { file: RepoFile; change: string }) {
  * one shows the real working tree including the reader's own edits, and conflating the two
  * would suggest that acting here is scoped to the agent's work when it is not.
  */
-export function Repository({ status, loading, cwd, onRefresh, onClose }: RepositoryProps) {
+export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onClose }: RepositoryProps) {
   const staged = status?.files.filter((file) => file.staged) ?? [];
   const unstaged = status?.files.filter((file) => file.unstaged) ?? [];
+  /** Which row is open, by side and path, since one file can appear under both headings. */
+  const [open, setOpen] = useState<string | null>(null);
+
+  const toggle = (path: string, isStaged: boolean) => {
+    const key = diffKey(path, isStaged);
+    if (open === key) {
+      setOpen(null);
+      return;
+    }
+
+    setOpen(key);
+    onDiff(path, isStaged);
+  };
 
   return (
     <div className="changes repository">
@@ -119,7 +189,15 @@ export function Repository({ status, loading, cwd, onRefresh, onClose }: Reposit
               <p className="repo-group">Staged</p>
               <ul className="changes-list">
                 {staged.map((file) => (
-                  <FileRow key={`staged:${file.path}`} file={file} change={file.staged!} />
+                  <FileRow
+                    key={`staged:${file.path}`}
+                    file={file}
+                    change={file.staged!}
+                    staged
+                    open={open === diffKey(file.path, true)}
+                    diff={diffs[diffKey(file.path, true)]}
+                    onToggle={() => toggle(file.path, true)}
+                  />
                 ))}
               </ul>
             </>
@@ -128,11 +206,20 @@ export function Repository({ status, loading, cwd, onRefresh, onClose }: Reposit
           {unstaged.length > 0 && (
             <>
               {/* A file staged and then changed again appears under both, which is what it
-                  is: part of it is going into the commit and part of it is not. */}
+                  is: part of it is going into the commit and part of it is not. The two
+                  rows open different diffs, because they describe different things. */}
               <p className="repo-group">Changes</p>
               <ul className="changes-list">
                 {unstaged.map((file) => (
-                  <FileRow key={`unstaged:${file.path}`} file={file} change={file.unstaged!} />
+                  <FileRow
+                    key={`unstaged:${file.path}`}
+                    file={file}
+                    change={file.unstaged!}
+                    staged={false}
+                    open={open === diffKey(file.path, false)}
+                    diff={diffs[diffKey(file.path, false)]}
+                    onToggle={() => toggle(file.path, false)}
+                  />
                 ))}
               </ul>
             </>
