@@ -623,6 +623,31 @@ export interface SessionChange {
   diffable: boolean;
 }
 
+/**
+ * One page of the local knowledge base, as the browser's tree lists it.
+ *
+ * The path is relative to the wiki root and always uses forward slashes, so it reads the
+ * same on either side of the wire and can be compared against the links inside a page.
+ */
+export interface WikiPage {
+  path: string;
+  /** From the page's frontmatter, falling back to its filename. */
+  title: string;
+  summary?: string;
+  category?: string;
+  /** ISO date the page last recorded, which is its own claim rather than the file's mtime. */
+  updated?: string;
+  tags?: string[];
+}
+
+/** One page's contents, with its frontmatter kept apart from the prose. */
+export interface WikiPageContent {
+  path: string;
+  /** As it was written, for the reader to make sense of. Absent when the page carries none. */
+  frontmatter?: string;
+  body: string;
+}
+
 /** The diff for one changed file, or why there is not one. */
 export interface FileDiff {
   /** Unified diff from what the session found to what it left. */
@@ -818,6 +843,15 @@ export interface SidecarRequests {
     params: { cwd?: string; path: string };
     result: { entries: string[]; separator: string; caseSensitive: boolean };
   };
+  /**
+   * Every page in the local knowledge base, for the browser's tree.
+   *
+   * A directory walk and one read of the prebuilt index. Like the session list, it costs no
+   * Copilot process: the wiki is files, and reading files is all this does.
+   */
+  'wiki.pages': { params: void; result: { pages: WikiPage[] } };
+  /** One page, by its path relative to the wiki root. Null for anything outside it. */
+  'wiki.page': { params: { path: string }; result: { page: WikiPageContent | null } };
   /** Run a command in a session, resuming it if it is cold. */
   'commands.invoke': {
     params: { sessionId: string; name: string; input?: string };
@@ -973,6 +1007,8 @@ export const SIDECAR_METHODS = [
   'models.list',
   'commands.list',
   'filesystem.directories',
+  'wiki.pages',
+  'wiki.page',
   'commands.invoke',
   'commands.enqueue',
   'agents.list',

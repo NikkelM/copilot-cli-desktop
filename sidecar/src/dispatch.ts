@@ -15,6 +15,7 @@ import { previewImage } from './images.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
 import { existingSessions, findSessions, listSessions } from './sessionIndex.js';
+import { listWikiPages, readWikiPage } from './wiki.js';
 
 export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
   return {
@@ -94,6 +95,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
       separator: directorySeparator,
       caseSensitive: directoryCaseSensitive,
     }),
+
+    'wiki.pages': async () => ({ pages: await listWikiPages() }),
+
+    'wiki.page': async ({ path }) => ({ page: await readWikiPage(path) }),
 
     'commands.invoke': async ({ sessionId, name, input }) => ({
       outcome: await runtime.invoke(sessionId, name, input),
