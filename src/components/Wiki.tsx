@@ -278,27 +278,8 @@ function Onboarding({
         </span>
       </p>
 
-      <p>It starts with one page, which you can edit here or anywhere else. After that:</p>
-
-      <ul>
-        <li>
-          Any layout works. Sub-folders become the tree, so the structure is whatever you
-          already keep.
-        </li>
-        <li>
-          A page called <code>index.md</code>, <code>Home.md</code> or <code>README.md</code>{' '}
-          opens first.
-        </li>
-        <li>
-          Frontmatter is optional. A <code>title</code> and <code>summary</code> are shown
-          beside the page; without them a page is named after its file.
-        </li>
-        <li>
-          Pages may link to each other as <code>[[wikilinks]]</code> or as ordinary markdown
-          links, and both are followed here.
-        </li>
-      </ul>
-
+      {/* How a page is put together is not listed here: the page this writes says it, and
+          saying it twice a click apart is asking to be read twice. */}
       <p className="wiki-onboarding-note">
         Somewhere else suits you better? Set <code>COPILOT_WIKI_DIR</code> and this reads from
         there instead.
@@ -466,9 +447,8 @@ export function Wiki({
             <div className="wiki-edit-actions">
               {draft !== undefined && (
                 <>
-                  <span className="wiki-dirty" title="Not written to disk yet">
-                    unsaved
-                  </span>
+                  {/* No label saying "unsaved" beside them: two buttons offering to save or
+                      discard are what having something unsaved looks like. */}
                   <button
                     type="button"
                     className="changes-action"
@@ -492,11 +472,6 @@ export function Wiki({
                 className={raw ? 'changes-action on' : 'changes-action'}
                 onClick={() => setRaw((was) => !was)}
                 aria-pressed={raw}
-                title={
-                  raw
-                    ? 'Show the page as it renders, including anything unsaved'
-                    : 'Show the file as it is written, and edit it'
-                }
               >
                 {raw ? 'Preview' : 'Raw'}
               </button>
@@ -573,11 +548,10 @@ export function Wiki({
         </div>
       )}
 
+      {/* Where the pages come from, which nothing else on screen says. The rest of what
+          this view can do is said by the buttons that do it. */}
       <div className="footer">
-        <p className="changes-note">
-          {where ? `Read from ${where.root}.` : 'Reading…'} Raw shows a page as the file it is
-          and lets you edit it; Preview renders what you have written. Ctrl+S saves.
-        </p>
+        <p className="changes-note">{where ? where.root : ''}</p>
       </div>
     </>
   );

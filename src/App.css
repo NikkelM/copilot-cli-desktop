@@ -3407,13 +3407,7 @@ button.group:hover {
   opacity: 0.6;
 }
 
-/* Says the file on disk is not what is on screen, which is the whole reason to say it. */
-.wiki-dirty {
-  color: var(--warning, #d29922);
-  font-size: var(--font-sm);
-}
-
-/* The same fact in the tree, for a page left behind with edits waiting on it. */
+/* A page left behind with edits waiting on it, which nothing else on screen would show. */
 .wiki-dirty-mark {
   margin-left: auto;
   padding-left: 6px;
@@ -3455,3 +3449,4 @@ button.group:hover {
 .wiki-onboarding-where {
   margin-left: 10px;
 }
+

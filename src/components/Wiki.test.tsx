@@ -431,10 +431,12 @@ describe('meeting the wiki for the first time', () => {
     expect(screen.queryByText('No knowledge base yet')).toBeNull();
   });
 
-  it('says a page may be laid out however the reader already keeps it', () => {
-    nothing(false);
+  /** The page it writes says how a page is put together, so this does not say it too. */
+  it('leaves the conventions to the page it creates', () => {
+    const view = nothing(false);
 
-    expect(screen.getByText(/Any layout works/)).toBeTruthy();
+    expect(view.container.querySelector('.wiki-onboarding ul')).toBeNull();
+    expect(screen.queryByText(/wikilinks/)).toBeNull();
   });
 
   // An empty tree beside it would be the thing that reads as broken.
@@ -664,10 +666,12 @@ describe('writing a page back', () => {
     expect(onRevert).toHaveBeenCalledWith('index.md');
   });
 
-  it('says the file on disk is not what is on screen', () => {
+  /** Two buttons offering to save or discard are what having something unsaved looks like. */
+  it('offers to save and discard once something is edited', () => {
     shown(file, { draft: 'edited' });
 
-    expect(screen.getByText('unsaved')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy();
   });
 
   it('says so while it is being written', () => {

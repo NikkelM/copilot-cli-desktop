@@ -63,10 +63,8 @@ summary: The first page of this knowledge base
 
 # Home
 
-This is a knowledge base: a folder of markdown files, browsable from the app.
-
-Press **Raw** above to edit this page, and Ctrl+S to save it. Everything here is an
-ordinary file, so an editor, a script or an agent can write pages too.
+This is a knowledge base: a folder of markdown files, browsable from the app. Press **Raw**
+above to edit this page, and Ctrl+S to save it.
 
 ## How it is put together
 
@@ -76,10 +74,7 @@ ordinary file, so an editor, a script or an agent can write pages too.
 - Pages link to each other as \`[[wikilinks]]\` or as ordinary markdown links
 - A page called \`index.md\`, \`Home.md\` or \`README.md\` opens first
 
-## What to keep here
-
-Things worth knowing again: what a system does and why, a decision and what it turned on,
-a procedure that took an afternoon to work out the first time.
+Everything here is an ordinary file, so an editor, a script or an agent can write pages too.
 `;
 
 /**
