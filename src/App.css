@@ -3141,3 +3141,130 @@ button.group:hover {
   border-color: var(--accent);
   color: var(--text);
 }
+/*
+ * The knowledge base, as a tree beside the page being read.
+ *
+ * Occupies the transcript's row of .main, so the grid is unchanged and the header and
+ * footer stay where they are in every other view.
+ */
+.wiki {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wiki-nav {
+  overflow-y: auto;
+  padding-right: 8px;
+  border-right: 1px solid var(--border);
+}
+
+.wiki-tree {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Indented by depth rather than by nesting, so a page five directories down still has
+   most of the column to put its title in. */
+.wiki-tree .wiki-tree {
+  padding-left: 10px;
+}
+
+.wiki-folder-head,
+.wiki-page {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.wiki-folder-head:hover,
+.wiki-page:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.wiki-page.on {
+  background: var(--bg-raised);
+  color: var(--accent);
+}
+
+.wiki-folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* How much is behind a folded directory, so folding never hides that there is anything. */
+.wiki-folder-count {
+  margin-left: auto;
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-xs);
+  opacity: 0.7;
+}
+
+.wiki-page {
+  padding-left: 22px;
+}
+
+.wiki-page-body {
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/*
+ * What a page declares about itself, above what it says.
+ *
+ * A definition list because that is what it is, and because the keys are worth reading as
+ * keys - a page's own tags and date are how the wiki is navigated by hand.
+ */
+.wiki-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0 0 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  font-size: var(--font-sm);
+}
+
+.wiki-meta > div {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wiki-meta dt {
+  color: var(--text-muted);
+}
+
+.wiki-meta dt::after {
+  content: ':';
+}
+
+.wiki-meta dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wiki-empty {
+  margin: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}

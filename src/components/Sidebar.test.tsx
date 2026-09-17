@@ -31,7 +31,8 @@ const sessions = [
 ];
 
 const show = (query?: string) => {
-  render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}} creating={false} activity={{}} />);
+  render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+      onWiki={() => {}} creating={false} activity={{}} />);
   return query ? userEvent.type(screen.getByRole('searchbox'), query) : Promise.resolve();
 };
 
@@ -105,7 +106,8 @@ describe('Sidebar finding a session the list hides', () => {
     findSessions.mockResolvedValue({ sessions: [hidden] });
     const onSelect = vi.fn();
     render(
-      <Sidebar sessions={sessions} selectedId={null} onSelect={onSelect} onCreate={() => {}} creating={false} activity={{}} />,
+      <Sidebar sessions={sessions} selectedId={null} onSelect={onSelect} onCreate={() => {}}
+      onWiki={() => {}} creating={false} activity={{}} />,
     );
     await userEvent.type(screen.getByRole('searchbox'), '0bd2d807');
 
@@ -155,6 +157,7 @@ describe('Sidebar grouping', () => {
         selectedId={null}
         onSelect={() => {}}
         onCreate={() => {}}
+      onWiki={() => {}}
         creating={false}
         activity={{}}
         {...props}
@@ -201,6 +204,7 @@ describe('Sidebar grouping', () => {
         selectedId={null}
         onSelect={() => {}}
         onCreate={() => {}}
+      onWiki={() => {}}
         creating={false}
         activity={{}}
       />,
@@ -226,6 +230,7 @@ describe('folding a group', () => {
         selectedId={null}
         onSelect={() => {}}
         onCreate={() => {}}
+      onWiki={() => {}}
         creating={false}
         activity={{}}
         {...props}
@@ -307,6 +312,7 @@ describe('the state a row reports', () => {
         selectedId={null}
         onSelect={() => {}}
         onCreate={() => {}}
+      onWiki={() => {}}
         creating={false}
         activity={activity}
       />,
@@ -342,6 +348,7 @@ describe('the state a row reports', () => {
         selectedId={null}
         onSelect={() => {}}
         onCreate={() => {}}
+      onWiki={() => {}}
         creating={false}
         activity={{ a: { state: 'working', queued: 0 } }}
       />,
@@ -373,6 +380,7 @@ describe('Sidebar subagents', () => {
         selectedId={null}
         onSelect={() => {}}
         onCreate={() => {}}
+      onWiki={() => {}}
         creating={false}
         activity={{}}
         onSelectSubagent={() => {}}
@@ -433,6 +441,7 @@ describe('Sidebar subagents', () => {
         selectedId={null}
         onSelect={() => {}}
         onCreate={() => {}}
+      onWiki={() => {}}
         creating={false}
         activity={{}}
         onSelectSubagent={() => {}}
@@ -451,3 +460,4 @@ describe('Sidebar subagents', () => {
     expect(screen.queryByText('deep-audit')).toBeNull();
   });
 });
+

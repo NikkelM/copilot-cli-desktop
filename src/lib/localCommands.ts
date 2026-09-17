@@ -73,12 +73,26 @@ export const USAGE: SlashCommand = {
 };
 
 /**
+ * Browse the local knowledge base, which the runtime has never heard of.
+ *
+ * Ours entirely: the wiki is files beside the CLI's own state rather than anything a
+ * session knows about, so this costs a directory walk and no Copilot process - the same
+ * price as reading a session's history.
+ */
+export const WIKI: SlashCommand = {
+  name: 'wiki',
+  description: 'browse the local knowledge base',
+  aliases: [],
+  allowDuringTurn: true,
+};
+
+/**
  * The commands this app answers itself.
  *
  * Folded into the runtime's list so they are offered by the menu alongside it - the reader
  * has no reason to care which side of the wire answers them.
  */
-export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT, USAGE];
+export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT, USAGE, WIKI];
 
 /** Whether a command is one of ours, and so must not be sent to the runtime. */
 export function isLocal(name: string): boolean {

@@ -12,6 +12,7 @@ import { Changes } from './components/Changes';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { Environment } from './components/Environment';
+import { Wiki } from './components/Wiki';
 import { AgentPicker } from './components/AgentPicker';
 import { ModelPicker } from './components/ModelPicker';
 import { OpenIn } from './components/OpenIn';
@@ -39,7 +40,7 @@ import {
   setMcpEnabled,
   sendMessage,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, USAGE, wantsDirectory } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, USAGE, WIKI, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
 import { staleRuntime } from './lib/protocolCheck';
@@ -59,6 +60,7 @@ import { useMode } from './lib/useMode';
 import { useContextUsage } from './lib/useContextUsage';
 import { useCommands } from './lib/useCommands';
 import { useSubagents } from './lib/useSubagents';
+import { useWiki } from './lib/useWiki';
 import { dispatch } from './lib/slash';
 import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
@@ -82,6 +84,14 @@ export default function App() {
    * that conversation, and closing its transcript returns to where the reader was.
    */
   const [openSubagentId, setOpenSubagentId] = useState<string | null>(null);
+  /**
+   * Whether the knowledge base is being read instead of a session.
+   *
+   * A destination rather than a panel over a session: it belongs to no session, is read for
+   * minutes at a time, and wants the width. Kept beside the selected session so closing it
+   * returns to where the reader was.
+   */
+  const [showWiki, setShowWiki] = useState(false);
   /** Whether the model's thinking is shown. Off is a preference, not a session's state. */
   const [reasoning, setReasoning] = useState(() => localStorage.getItem(REASONING) !== 'false');
   /**
@@ -142,6 +152,9 @@ export default function App() {
     // Choosing a session is asking for that conversation, including the one whose delegated
     // task is being read: the subagent view would otherwise be a room with one door.
     setOpenSubagentId(null);
+    // The wiki is somewhere else entirely, and a session chosen while reading it is a
+    // request to go back to work.
+    setShowWiki(false);
   }, []);
 
   const transcript = useTranscript(selectedId, setError);
@@ -153,6 +166,7 @@ export default function App() {
   const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
   const slash = useCommands(selectedId);
   const subagents = useSubagents();
+  const wiki = useWiki(showWiki);
   /** The delegated task being read, or nothing when the session itself is on screen. */
   const openSubagent = subagents.find(openSubagentId);
   /**
@@ -545,6 +559,7 @@ export default function App() {
       if (what.command.name === CHANGES.name) openChanges();
       else if (what.command.name === ENVIRONMENT.name) openEnvironment();
       else if (what.command.name === USAGE.name) void showUsage(selectedId);
+      else if (what.command.name === WIKI.name) setShowWiki(true);
       else setHelp('full');
       return;
     }
@@ -808,6 +823,7 @@ export default function App() {
         selectedId={selectedId}
         onSelect={open}
         onCreate={() => void handleCreate()}
+        onWiki={() => setShowWiki(true)}
         creating={creating}
         maxLoaded={sessions.maxLoaded}
         activity={activity}
@@ -835,6 +851,19 @@ export default function App() {
           <div className="placeholder">
             <p className="error">{stopped}</p>
           </div>
+        ) : showWiki ? (
+          /* The local knowledge base, which belongs to no session and so replaces the
+             whole pane rather than sitting under one. */
+          <Wiki
+            pages={wiki.pages}
+            page={wiki.page}
+            loading={wiki.loading}
+            failed={wiki.failed}
+            onOpen={wiki.go}
+            onBack={wiki.back}
+            canGoBack={wiki.canGoBack}
+            onClose={() => setShowWiki(false)}
+          />
         ) : openSubagent ? (
           /* A subagent's own transcript, in place of the session that delegated it.
              Read-only: whether one can be spoken to at all is an open question about the

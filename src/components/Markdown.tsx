@@ -73,11 +73,21 @@ export const Markdown = memo(function Markdown({
   body,
   anchor,
   streaming,
+  onLink,
 }: {
   body: string;
   anchor?: string;
   /** Still arriving, so anything that needs the whole of it should wait. */
   streaming?: boolean;
+  /**
+   * Follow a link inside the app, when the caller knows where it leads.
+   *
+   * Returning false leaves the link to the ordinary rules below, so a caller that handles
+   * some links does not have to handle all of them. Without one, a relative link goes
+   * nowhere: in a transcript it names a file on disk, which is #78's to open, and following
+   * it would navigate the webview away from the only window there is.
+   */
+  onLink?: (href: string) => boolean;
 }) {
   return (
     <div className="markdown">
@@ -144,6 +154,13 @@ export const Markdown = memo(function Markdown({
                 if (href?.startsWith('#')) {
                   event.preventDefault();
                   document.getElementById(href.slice(1))?.scrollIntoView({ block: 'center' });
+                  return;
+                }
+
+                // Somewhere the caller can go itself, which is how one wiki page reaches
+                // another without either of them leaving the app.
+                if (href && onLink?.(href)) {
+                  event.preventDefault();
                   return;
                 }
 

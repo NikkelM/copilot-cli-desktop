@@ -18,6 +18,8 @@ interface SidebarProps {
   onSelect: (sessionId: string, session?: SessionSummary) => void;
   /** Starting a session needs a directory to start it in, which only the reader knows. */
   onCreate: () => void;
+  /** Open the local knowledge base, which belongs to no session. */
+  onWiki: () => void;
   creating: boolean;
   /** How many sessions may be resident at once; zero or absent means no cap. */
   maxLoaded?: number;
@@ -139,6 +141,7 @@ export function Sidebar({
   selectedId,
   onSelect,
   onCreate,
+  onWiki,
   creating,
   maxLoaded,
   activity,
@@ -194,6 +197,11 @@ export function Sidebar({
         <span className="badge">
           {query ? `${matches.length + hidden.length}/${sessions.length}` : sessions.length}
         </span>
+        {/* The wiki is a destination rather than something about a session, so it is
+            reached from the app's own chrome rather than from a session's header. */}
+        <button type="button" className="new-session" onClick={onWiki} title="Browse the local wiki">
+          Wiki
+        </button>
         <button
           type="button"
           className="new-session"

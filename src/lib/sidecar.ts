@@ -41,6 +41,8 @@ import type {
   SlashCommand,
   StashParams,
   TreeState,
+  WikiPage,
+  WikiPageContent,
 } from '../../shared/protocol';
 
 /**
@@ -258,6 +260,18 @@ export function setMcpEnabled(name: string, enabled: boolean): Promise<void> {
 export async function listMcpServers(cwd?: string): Promise<McpServerSummary[]> {
   const { servers } = await request('mcp.servers', { cwd });
   return servers;
+}
+
+/** Every page in the local knowledge base. A disk read, so it costs no Copilot process. */
+export async function listWikiPages(): Promise<WikiPage[]> {
+  const { pages } = await request('wiki.pages');
+  return pages;
+}
+
+/** One page by its path relative to the wiki root. Null for a path outside it, or a page that has gone. */
+export async function readWikiPage(path: string): Promise<WikiPageContent | null> {
+  const { page } = await request('wiki.page', { path });
+  return page;
 }
 
 /** The skills this session has switched off. Read from the app's own record, so it costs no process. */
