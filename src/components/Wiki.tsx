@@ -289,10 +289,10 @@ export function Wiki({
       <header className="main-header">
         <h1>{title}</h1>
         <div className="header-row">
-          {/* Named for where it goes rather than as "back", which the page history beside
-              it also means: two buttons saying back would each be explaining the other. */}
+          {/* Named for where it goes. It sits beside an arrow rather than another word, so
+              there is no second "back" for it to be confused with. */}
           <button type="button" className="changes-action" onClick={onClose}>
-            Sessions
+            Back to session
           </button>
           {/* Disabled rather than absent, so the header does not move as the reader
               navigates. The gestures above do the same thing. */}

@@ -176,24 +176,24 @@ describe('browsing the wiki', () => {
     expect(screen.getByText('No page at gone.md')).toBeTruthy();
   });
 
-  it('goes back to the sessions', async () => {
+  it('goes back to the session', async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
     shown({ path: 'index.md', body: 'prose' }, { onClose });
 
-    await user.click(screen.getByRole('button', { name: 'Sessions' }));
+    await user.click(screen.getByRole('button', { name: 'Back to session' }));
 
     expect(onClose).toHaveBeenCalled();
   });
 
   /**
-   * Two buttons both saying back would each be explaining the other, so the one that leaves
-   * the wiki is named for where it goes.
+   * The way out is named for where it goes, and the two ways through the wiki are arrows -
+   * so the only word saying "back" belongs to exactly one of them.
    */
-  it('names the way out for where it goes', () => {
+  it('names the way out and draws the ways through', () => {
     shown({ path: 'index.md', body: 'prose' });
 
-    expect(screen.getByRole('button', { name: 'Sessions' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back to session' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '←' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '→' })).toBeTruthy();
   });
@@ -376,3 +376,4 @@ describe('the trail showing how a reader got here', () => {
     expect(crumbs().queryByRole('button', { name: 'Knowledge Base Home' })).toBeTruthy();
   });
 });
+
