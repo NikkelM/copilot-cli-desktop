@@ -10,7 +10,7 @@ import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
 import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
 import { lastAgent, lastModel, readTranscript } from './eventLog.js';
-import { commitStaged, diffOf, stagePath, statusOf, treeStateOf, unstagePath } from './git.js';
+import { commitStaged, diffOf, stagePaths, statusOf, treeStateOf, unstagePaths } from './git.js';
 import { previewImage } from './images.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
@@ -176,9 +176,9 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
      * state that was assumed: what it shows afterwards is what git says, not what the app
      * expected the operation to do.
      */
-    'git.stage': async ({ cwd, path, staged }) => {
-      if (staged) await stagePath(cwd, path);
-      else await unstagePath(cwd, path);
+    'git.stage': async ({ cwd, paths, staged }) => {
+      if (staged) await stagePaths(cwd, paths);
+      else await unstagePaths(cwd, paths);
       return { status: await statusOf(cwd) };
     },
 
@@ -204,3 +204,4 @@ export async function dispatch(handlers: SidecarHandlers, request: JsonRpcReques
   // `result` is not the same thing as an empty one once it has been through JSON.
   return (await handler(request.params)) ?? null;
 }
+

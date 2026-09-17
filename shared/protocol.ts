@@ -875,7 +875,7 @@ export interface SidecarRequests {
    * Unstaging never touches the working tree: it is written with `update-index`, which has
    * no way to write a file, rather than with `reset` or `restore`, which do.
    */
-  'git.stage': { params: { cwd: string; path: string; staged: boolean }; result: { status: RepoStatus | null } };
+  'git.stage': { params: { cwd: string; paths: string[]; staged: boolean }; result: { status: RepoStatus | null } };
   /**
    * Commit what is staged, or amend the commit at HEAD.
    *

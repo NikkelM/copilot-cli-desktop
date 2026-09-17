@@ -17,8 +17,8 @@ interface RepositoryProps {
   onDiff: (path: string, staged: boolean) => void;
   /** Paths with a staging operation in flight, so a row cannot be clicked twice. */
   busy: string[];
-  /** Put a path into the index, or take it back out. */
-  onStage: (path: string, staged: boolean) => void;
+  /** Put paths into the index, or take them back out. */
+  onStage: (paths: string[], staged: boolean) => void;
   /** Commit what is staged, or amend the commit at HEAD. */
   onCommit: (message: string, amend: boolean) => void;
   committing: boolean;
@@ -364,7 +364,17 @@ export function Repository({
         <>
           {staged.length > 0 && (
             <>
-              <p className="repo-group">Staged</p>
+              <p className="repo-group">
+                Staged
+                <button
+                  type="button"
+                  className="repo-all"
+                  onClick={() => onStage(staged.map((file) => file.path), false)}
+                  disabled={staged.some((file) => busy.includes(file.path))}
+                >
+                  Unstage all
+                </button>
+              </p>
               <ul className="changes-list">
                 {staged.map((file) => (
                   <FileRow
@@ -376,7 +386,7 @@ export function Repository({
                     diff={diffs[diffKey(file.path, true)]}
                     busy={busy.includes(file.path)}
                     onToggle={() => toggle(file.path, true)}
-                    onStage={() => onStage(file.path, false)}
+                    onStage={() => onStage([file.path], false)}
                   />
                 ))}
               </ul>
@@ -388,7 +398,17 @@ export function Repository({
               {/* A file staged and then changed again appears under both, which is what it
                   is: part of it is going into the commit and part of it is not. The two
                   rows open different diffs, because they describe different things. */}
-              <p className="repo-group">Changes</p>
+              <p className="repo-group">
+                Changes
+                <button
+                  type="button"
+                  className="repo-all"
+                  onClick={() => onStage(unstaged.map((file) => file.path), true)}
+                  disabled={unstaged.some((file) => busy.includes(file.path))}
+                >
+                  Stage all
+                </button>
+              </p>
               <ul className="changes-list">
                 {unstaged.map((file) => (
                   <FileRow
@@ -400,7 +420,7 @@ export function Repository({
                     diff={diffs[diffKey(file.path, false)]}
                     busy={busy.includes(file.path)}
                     onToggle={() => toggle(file.path, false)}
-                    onStage={() => onStage(file.path, true)}
+                    onStage={() => onStage([file.path], true)}
                   />
                 ))}
               </ul>

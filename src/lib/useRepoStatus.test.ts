@@ -209,9 +209,9 @@ describe('staging a path', () => {
     const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
     await waitFor(() => expect(result.current.status).toEqual(clean));
 
-    await act(async () => void (await result.current.stage('a.ts', true)));
+    await act(async () => void (await result.current.stage(['a.ts'], true)));
 
-    expect(gitStage).toHaveBeenCalledWith('C:\\repo', 'a.ts', true);
+    expect(gitStage).toHaveBeenCalledWith('C:\\repo', ['a.ts'], true);
     expect(result.current.status).toEqual(afterStaging);
   });
 
@@ -221,7 +221,7 @@ describe('staging a path', () => {
     const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
     await waitFor(() => expect(result.current.status).toEqual(clean));
 
-    act(() => void result.current.stage('a.ts', true));
+    act(() => void result.current.stage(['a.ts'], true));
     await waitFor(() => expect(result.current.busy).toEqual(['a.ts']));
 
     await act(async () => {
@@ -239,7 +239,7 @@ describe('staging a path', () => {
     act(() => result.current.diff('a.ts', false));
     await waitFor(() => expect(Object.keys(result.current.diffs)).toHaveLength(1));
 
-    await act(async () => void (await result.current.stage('a.ts', true)));
+    await act(async () => void (await result.current.stage(['a.ts'], true)));
 
     expect(result.current.diffs).toEqual({});
   });
@@ -249,7 +249,7 @@ describe('staging a path', () => {
     const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
     await waitFor(() => expect(result.current.status).toEqual(clean));
 
-    await act(async () => void (await result.current.stage('a.ts', true)));
+    await act(async () => void (await result.current.stage(['a.ts'], true)));
 
     expect(result.current.failed).toContain('the index is locked');
     expect(result.current.busy).toEqual([]);
@@ -258,7 +258,7 @@ describe('staging a path', () => {
   it('does nothing for a session with no directory', async () => {
     const { result } = renderHook(() => useRepoStatus(null, true));
 
-    await act(async () => void (await result.current.stage('a.ts', true)));
+    await act(async () => void (await result.current.stage(['a.ts'], true)));
 
     expect(gitStage).not.toHaveBeenCalled();
   });
@@ -366,3 +366,64 @@ describe('making a commit', () => {
   });
 });
 
+
+
+describe('staging many paths at once', () => {
+  it('sends them as one call rather than one each', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.stage(['a.ts', 'b.ts', 'c.ts'], true)));
+
+    expect(gitStage).toHaveBeenCalledTimes(1);
+    expect(gitStage).toHaveBeenCalledWith('C:\\repo', ['a.ts', 'b.ts', 'c.ts'], true);
+  });
+
+  it('marks every one of them busy while they move', async () => {
+    let release: (value: RepoStatus) => void = () => {};
+    gitStage.mockReturnValue(new Promise<RepoStatus>((resolve) => (release = resolve)));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    act(() => void result.current.stage(['a.ts', 'b.ts'], true));
+    await waitFor(() => expect(result.current.busy).toEqual(['a.ts', 'b.ts']));
+
+    await act(async () => release(clean));
+    expect(result.current.busy).toEqual([]);
+  });
+
+  it('frees them all again when git refuses', async () => {
+    gitStage.mockRejectedValue(new Error('nope'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.stage(['a.ts', 'b.ts'], true)));
+
+    expect(result.current.busy).toEqual([]);
+  });
+
+  it('keeps a path busy for the other call still holding it', async () => {
+    let release: (value: RepoStatus) => void = () => {};
+    gitStage
+      .mockReturnValueOnce(new Promise<RepoStatus>((resolve) => (release = resolve)))
+      .mockResolvedValue(clean);
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    act(() => void result.current.stage(['a.ts'], true));
+    await act(async () => void (await result.current.stage(['a.ts'], false)));
+
+    expect(result.current.busy).toEqual(['a.ts']);
+    await act(async () => release(clean));
+  });
+
+  it('asks git nothing for an empty list', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+    gitStage.mockClear();
+
+    await act(async () => void (await result.current.stage([], true)));
+
+    expect(gitStage).not.toHaveBeenCalled();
+  });
+});

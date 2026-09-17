@@ -217,17 +217,54 @@ export async function statusOf(cwd: string): Promise<RepoStatus | null> {
 }
 
 /**
- * Put a path's changes into the index.
+ * Paths split into runs short enough for one command line.
  *
- * `git add` covers every case including a deletion: staging a file that is gone from disk
- * records the removal, which is what a reader clicking a `D` row is asking for.
+ * Windows caps a command at about 32k characters and node reports the overflow as
+ * `ENAMETOOLONG`, which says nothing about staging, so a repository with a few hundred
+ * changed files would break "stage all" in a way that looked like git's fault. Half the cap
+ * leaves room for the executable, the subcommand, and the flags.
  */
-export async function stagePath(cwd: string, path: string): Promise<void> {
-  await git(cwd, ['add', '--', path]);
+export function inRuns(paths: string[]): string[][] {
+  const LIMIT = 16_000;
+  const runs: string[][] = [];
+  let run: string[] = [];
+  let length = 0;
+
+  for (const path of paths) {
+    // A single path over the limit still has to go somewhere: git can refuse it, but this
+    // must not silently drop it.
+    if (run.length > 0 && length + path.length + 3 > LIMIT) {
+      runs.push(run);
+      run = [];
+      length = 0;
+    }
+    run.push(path);
+    length += path.length + 3;
+  }
+
+  if (run.length > 0) runs.push(run);
+  return runs;
 }
 
 /**
- * Take a path's changes back out of the index, without touching the working tree.
+ * Put paths' changes into the index.
+ *
+ * `git add` covers every case including a deletion: staging a file that is gone from disk
+ * records the removal, which is what a reader clicking a `D` row is asking for.
+ *
+ * Takes a list rather than a path so that staging everything is one git call rather than
+ * one per file, and so that the paths staged are the ones the reader was looking at. `git
+ * add -A` would be shorter and wrong: it stages whatever is there now, which after an agent
+ * has written three more files is not what the panel showed.
+ */
+export async function stagePaths(cwd: string, paths: string[]): Promise<void> {
+  for (const run of inRuns(paths)) {
+    await git(cwd, ['add', '--', ...run]);
+  }
+}
+
+/**
+ * Take paths' changes back out of the index, without touching the working tree.
  *
  * `--staged` is the whole of the safety here: it is what confines `restore` to the index.
  * Without it, or with `--worktree`, the same command overwrites files - so the flag is not a
@@ -236,15 +273,17 @@ export async function stagePath(cwd: string, path: string): Promise<void> {
  * A file whose staged change was its deletion keeps that deletion in the working tree. It is
  * the index this puts back, never the file.
  */
-export async function unstagePath(cwd: string, path: string): Promise<void> {
-  try {
-    await git(cwd, ['restore', '--staged', '--', path]);
-  } catch (error: unknown) {
-    // Before the first commit there is no HEAD to restore an entry from, and git refuses
-    // rather than guessing. Everything staged then is an addition, so dropping the entry is
-    // what unstaging means. `update-index` cannot write to the working tree either.
-    if (!String(error).includes('could not resolve HEAD')) throw error;
-    await git(cwd, ['update-index', '--force-remove', '--', path]);
+export async function unstagePaths(cwd: string, paths: string[]): Promise<void> {
+  for (const run of inRuns(paths)) {
+    try {
+      await git(cwd, ['restore', '--staged', '--', ...run]);
+    } catch (error: unknown) {
+      // Before the first commit there is no HEAD to restore an entry from, and git refuses
+      // rather than guessing. Everything staged then is an addition, so dropping the entry is
+      // what unstaging means. `update-index` cannot write to the working tree either.
+      if (!String(error).includes('could not resolve HEAD')) throw error;
+      await git(cwd, ['update-index', '--force-remove', '--', ...run]);
+    }
   }
 }
 

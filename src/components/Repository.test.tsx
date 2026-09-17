@@ -422,7 +422,7 @@ describe('putting a file into the next commit', () => {
 
     await user.click(screen.getByRole('button', { name: 'Stage a.ts' }));
 
-    expect(onStage).toHaveBeenCalledWith('a.ts', true);
+    expect(onStage).toHaveBeenCalledWith(['a.ts'], true);
   });
 
   it('offers to take back a file that is staged', async () => {
@@ -432,7 +432,7 @@ describe('putting a file into the next commit', () => {
 
     await user.click(screen.getByRole('button', { name: 'Unstage a.ts' }));
 
-    expect(onStage).toHaveBeenCalledWith('a.ts', false);
+    expect(onStage).toHaveBeenCalledWith(['a.ts'], false);
   });
 
   /** Each row acts on its own side, so the file in both lists can be moved either way. */
@@ -663,3 +663,77 @@ describe('writing a commit', () => {
     expect(screen.queryByLabelText('Commit message')).toBeNull();
   });
 });
+
+
+describe('staging and unstaging a whole group', () => {
+  const mixed = {
+    ...clean,
+    files: [
+      { path: 'a.ts', staged: 'modified' as const },
+      { path: 'b.ts', staged: 'added' as const },
+      { path: 'c.ts', unstaged: 'modified' as const },
+      { path: 'd.ts', unstaged: 'deleted' as const },
+    ],
+  };
+
+  it('stages every changed file at once', async () => {
+    const onStage = vi.fn();
+    shown(mixed, { onStage });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stage all' }));
+
+    expect(onStage).toHaveBeenCalledWith(['c.ts', 'd.ts'], true);
+  });
+
+  it('unstages every staged file at once', async () => {
+    const onStage = vi.fn();
+    shown(mixed, { onStage });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Unstage all' }));
+
+    expect(onStage).toHaveBeenCalledWith(['a.ts', 'b.ts'], false);
+  });
+
+  it('offers no unstage all when nothing is staged', () => {
+    shown({ ...clean, files: [{ path: 'c.ts', unstaged: 'modified' }] });
+
+    expect(screen.queryByRole('button', { name: 'Unstage all' })).toBeNull();
+  });
+
+  it('offers no stage all when nothing is changed', () => {
+    shown({ ...clean, files: [{ path: 'a.ts', staged: 'modified' }] });
+
+    expect(screen.queryByRole('button', { name: 'Stage all' })).toBeNull();
+  });
+
+  it('takes a file that is in both lists from the side the button belongs to', async () => {
+    const onStage = vi.fn();
+    shown(
+      {
+        ...clean,
+        files: [
+          { path: 'both.ts', staged: 'modified', unstaged: 'modified' },
+          { path: 'staged-only.ts', staged: 'added' },
+        ],
+      },
+      { onStage },
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stage all' }));
+
+    expect(onStage).toHaveBeenCalledWith(['both.ts'], true);
+  });
+
+  it('will not stage all again while one of its files is still moving', () => {
+    shown(mixed, { busy: ['c.ts'] });
+
+    expect((screen.getByRole('button', { name: 'Stage all' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('leaves the other group usable while one is busy', () => {
+    shown(mixed, { busy: ['c.ts'] });
+
+    expect((screen.getByRole('button', { name: 'Unstage all' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+

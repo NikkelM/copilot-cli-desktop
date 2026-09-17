@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { commitStaged, githubSlug, stagePath, statusOf, treeStateOf, unstagePath } from './git.js';
+import { commitStaged, githubSlug, inRuns, stagePaths, statusOf, treeStateOf, unstagePaths } from './git.js';
 import { canAmend } from '../../shared/protocol.js';
 import type { RepoStatus } from '../../shared/protocol.js';
 
@@ -332,7 +332,7 @@ describe('staging a path', () => {
   it('puts a working tree change into the index', async () => {
     write('tracked.txt', 'changed\n');
 
-    await stagePath(dir, 'tracked.txt');
+    await stagePaths(dir, ['tracked.txt']);
 
     expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', staged: 'modified' }]);
   });
@@ -340,7 +340,7 @@ describe('staging a path', () => {
   it('puts a new file into the index', async () => {
     write('new.txt', 'hello\n');
 
-    await stagePath(dir, 'new.txt');
+    await stagePaths(dir, ['new.txt']);
 
     expect((await statusOf(dir))?.files).toEqual([{ path: 'new.txt', staged: 'added' }]);
   });
@@ -349,7 +349,7 @@ describe('staging a path', () => {
   it('records a deletion', async () => {
     unlinkSync(join(dir, 'tracked.txt'));
 
-    await stagePath(dir, 'tracked.txt');
+    await stagePaths(dir, ['tracked.txt']);
 
     expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', staged: 'deleted' }]);
   });
@@ -358,7 +358,7 @@ describe('staging a path', () => {
     write('one.txt', 'one\n');
     write('two.txt', 'two\n');
 
-    await stagePath(dir, 'one.txt');
+    await stagePaths(dir, ['one.txt']);
 
     const files = (await statusOf(dir))?.files ?? [];
     expect(files.find((file) => file.path === 'two.txt')).toEqual({ path: 'two.txt', unstaged: 'untracked' });
@@ -370,7 +370,7 @@ describe('unstaging a path', () => {
     write('tracked.txt', 'changed\n');
     git('add', 'tracked.txt');
 
-    await unstagePath(dir, 'tracked.txt');
+    await unstagePaths(dir, ['tracked.txt']);
 
     expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', unstaged: 'modified' }]);
   });
@@ -380,7 +380,7 @@ describe('unstaging a path', () => {
     write('new.txt', 'hello\n');
     git('add', 'new.txt');
 
-    await unstagePath(dir, 'new.txt');
+    await unstagePaths(dir, ['new.txt']);
 
     expect((await statusOf(dir))?.files).toEqual([{ path: 'new.txt', unstaged: 'untracked' }]);
     expect(readFileSync(join(dir, 'new.txt'), 'utf8')).toBe('hello\n');
@@ -395,7 +395,7 @@ describe('unstaging a path', () => {
     git('add', 'tracked.txt');
     write('tracked.txt', 'working version\n');
 
-    await unstagePath(dir, 'tracked.txt');
+    await unstagePaths(dir, ['tracked.txt']);
 
     expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', unstaged: 'modified' }]);
     expect(readFileSync(join(dir, 'tracked.txt'), 'utf8')).toBe('working version\n');
@@ -410,7 +410,7 @@ describe('unstaging a path', () => {
     unlinkSync(join(dir, 'tracked.txt'));
     git('add', 'tracked.txt');
 
-    await unstagePath(dir, 'tracked.txt');
+    await unstagePaths(dir, ['tracked.txt']);
 
     expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', unstaged: 'deleted' }]);
     expect(existsSync(join(dir, 'tracked.txt'))).toBe(false);
@@ -421,7 +421,7 @@ describe('unstaging a path', () => {
     write('two.txt', 'two\n');
     git('add', '-A');
 
-    await unstagePath(dir, 'one.txt');
+    await unstagePaths(dir, ['one.txt']);
 
     const files = (await statusOf(dir))?.files ?? [];
     expect(files.find((file) => file.path === 'two.txt')).toEqual({ path: 'two.txt', staged: 'added' });
@@ -434,7 +434,7 @@ describe('unstaging a path', () => {
     writeFileSync(join(fresh, 'first.txt'), 'hello\n');
     execFileSync('git', ['-C', fresh, 'add', 'first.txt'], { encoding: 'utf8' });
 
-    await unstagePath(fresh, 'first.txt');
+    await unstagePaths(fresh, ['first.txt']);
 
     expect((await statusOf(fresh))?.files).toEqual([{ path: 'first.txt', unstaged: 'untracked' }]);
     expect(readFileSync(join(fresh, 'first.txt'), 'utf8')).toBe('hello\n');
@@ -445,7 +445,7 @@ describe('unstaging a path', () => {
     write('with space.txt', 'hello\n');
     git('add', 'with space.txt');
 
-    await unstagePath(dir, 'with space.txt');
+    await unstagePaths(dir, ['with space.txt']);
 
     expect((await statusOf(dir))?.files).toEqual([{ path: 'with space.txt', unstaged: 'untracked' }]);
   });
@@ -587,4 +587,149 @@ describe('whether the last commit may be amended', () => {
   });
 });
 
+
+
+
+describe('staging and unstaging many paths at once', () => {
+  it('stages every path it is given', async () => {
+    write('a.txt', 'a\n');
+    write('b.txt', 'b\n');
+    write('c.txt', 'c\n');
+
+    await stagePaths(dir, ['a.txt', 'b.txt', 'c.txt']);
+
+    const status = await statusOf(dir);
+    expect(status?.files.map((file) => file.path).sort()).toEqual(['a.txt', 'b.txt', 'c.txt']);
+    expect(status?.files.every((file) => file.staged)).toBe(true);
+  });
+
+  it('leaves a path it was not given alone', async () => {
+    write('a.txt', 'a\n');
+    write('untouched.txt', 'u\n');
+
+    await stagePaths(dir, ['a.txt']);
+
+    const status = await statusOf(dir);
+    expect(status?.files.find((file) => file.path === 'untouched.txt')?.staged).toBeUndefined();
+  });
+
+  it('unstages every path it is given', async () => {
+    write('a.txt', 'a\n');
+    write('b.txt', 'b\n');
+    await stagePaths(dir, ['a.txt', 'b.txt']);
+
+    await unstagePaths(dir, ['a.txt', 'b.txt']);
+
+    const status = await statusOf(dir);
+    expect(status?.files.every((file) => file.staged === undefined)).toBe(true);
+  });
+
+  it('leaves the working tree alone when it unstages many', async () => {
+    write('tracked.txt', 'changed\n');
+    await stagePaths(dir, ['tracked.txt']);
+
+    await unstagePaths(dir, ['tracked.txt']);
+
+    expect(readFileSync(join(dir, 'tracked.txt'), 'utf8')).toBe('changed\n');
+  });
+
+  it('unstages many before the first commit, where there is no HEAD to restore from', async () => {
+    const empty = mkdtempSync(join(tmpdir(), 'ccd-git-empty-'));
+    try {
+      execFileSync('git', ['-C', empty, 'init', '-q', '-b', 'main']);
+      writeFileSync(join(empty, 'a.txt'), 'a\n');
+      writeFileSync(join(empty, 'b.txt'), 'b\n');
+      await stagePaths(empty, ['a.txt', 'b.txt']);
+
+      await unstagePaths(empty, ['a.txt', 'b.txt']);
+
+      const status = await statusOf(empty);
+      expect(status?.files.every((file) => file.staged === undefined)).toBe(true);
+      expect(readFileSync(join(empty, 'a.txt'), 'utf8')).toBe('a\n');
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
+  });
+
+  it('does nothing at all when given nothing', async () => {
+    write('a.txt', 'a\n');
+
+    await stagePaths(dir, []);
+
+    const status = await statusOf(dir);
+    expect(status?.files.find((file) => file.path === 'a.txt')?.staged).toBeUndefined();
+  });
+
+  /**
+   * Nine hundred of these names is about 46k characters, and node refuses to spawn a command
+   * over roughly 32k with `ENAMETOOLONG`. Measured rather than assumed: six hundred was tried
+   * first and squeaked under the limit, which made the test pass whether or not the paths
+   * were ever split.
+   */
+  const manyNames = () =>
+    Array.from({ length: 900 }, (_, at) => `${'file-with-a-long-name'.repeat(2)}-${at}.txt`);
+
+  it('stages more paths than one command line could hold', async () => {
+    const names = manyNames();
+    for (const name of names) write(name, 'x\n');
+
+    await stagePaths(dir, names);
+
+    const status = await statusOf(dir);
+    expect(status?.files.filter((file) => file.staged)).toHaveLength(names.length);
+  });
+
+  it('unstages more paths than one command line could hold', async () => {
+    const names = manyNames();
+    for (const name of names) write(name, 'x\n');
+    await stagePaths(dir, names);
+
+    await unstagePaths(dir, names);
+
+    const status = await statusOf(dir);
+    expect(status?.files.filter((file) => file.staged)).toHaveLength(0);
+  });
+});
+
+describe('splitting paths into runs short enough to spawn', () => {
+  it('keeps a short list in one run', () => {
+    expect(inRuns(['a.txt', 'b.txt', 'c.txt'])).toEqual([['a.txt', 'b.txt', 'c.txt']]);
+  });
+
+  it('gives nothing back for nothing', () => {
+    expect(inRuns([])).toEqual([]);
+  });
+
+  it('splits a list too long for one command', () => {
+    const names = Array.from({ length: 900 }, (_, at) => `${'x'.repeat(40)}-${at}.txt`);
+
+    expect(inRuns(names).length).toBeGreaterThan(1);
+  });
+
+  it('keeps every path when it splits', () => {
+    const names = Array.from({ length: 900 }, (_, at) => `${'x'.repeat(40)}-${at}.txt`);
+
+    expect(inRuns(names).flat()).toEqual(names);
+  });
+
+  it('keeps every run under what a command line can take', () => {
+    const names = Array.from({ length: 900 }, (_, at) => `${'x'.repeat(40)}-${at}.txt`);
+
+    for (const run of inRuns(names)) {
+      expect(run.join(' ').length).toBeLessThan(32_000);
+    }
+  });
+
+  it('carries a single path longer than the limit rather than dropping it', () => {
+    const huge = 'x'.repeat(20_000);
+
+    expect(inRuns([huge])).toEqual([[huge]]);
+  });
+
+  it('gives an over-long path a run of its own', () => {
+    const huge = 'x'.repeat(20_000);
+
+    expect(inRuns(['a.txt', huge])).toEqual([['a.txt'], [huge]]);
+  });
+});
 

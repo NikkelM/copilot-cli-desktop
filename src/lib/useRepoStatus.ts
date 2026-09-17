@@ -108,13 +108,13 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
    * assuming what staging did. Git is the authority on what happened, and a panel that drew
    * its own guess would eventually draw something that is not true.
    */
-  const stage = useCallback(async (path: string, staged: boolean) => {
+  const stage = useCallback(async (paths: string[], staged: boolean) => {
     const directory = showing.current;
-    if (!directory) return;
+    if (!directory || paths.length === 0) return;
 
-    setBusy((current) => [...current, path]);
+    setBusy((current) => [...current, ...paths]);
     try {
-      const found = await gitStage(directory, path, staged);
+      const found = await gitStage(directory, paths, staged);
       if (showing.current !== directory) return;
 
       // The file has moved between the two lists, so any diff held for it describes where
@@ -126,7 +126,15 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     } catch (error: unknown) {
       if (showing.current === directory) setFailed(messageOf(error));
     } finally {
-      setBusy((current) => current.filter((each) => each !== path));
+      // Removes one occurrence of each, so a path staged twice at once is not freed early.
+      setBusy((current) => {
+        const left = [...current];
+        for (const path of paths) {
+          const at = left.indexOf(path);
+          if (at >= 0) left.splice(at, 1);
+        }
+        return left;
+      });
     }
   }, []);
 

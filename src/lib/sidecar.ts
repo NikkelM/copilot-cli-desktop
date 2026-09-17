@@ -327,8 +327,8 @@ export async function gitDiff(cwd: string, path: string, staged: boolean): Promi
  * Unstaging never touches the working tree: the sidecar writes the index directly rather
  * than through a command that is also capable of overwriting files.
  */
-export async function gitStage(cwd: string, path: string, staged: boolean): Promise<RepoStatus | null> {
-  const { status } = await request('git.stage', { cwd, path, staged });
+export async function gitStage(cwd: string, paths: string[], staged: boolean): Promise<RepoStatus | null> {
+  const { status } = await request('git.stage', { cwd, paths, staged });
   return status;
 }
 
