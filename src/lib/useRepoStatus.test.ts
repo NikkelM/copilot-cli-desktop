@@ -5,12 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRepoStatus } from './useRepoStatus';
 import type { RepoStatus } from '../../shared/protocol';
 
-const { gitStatus, gitDiff, gitStage, gitCommit, gitSync } = vi.hoisted(() => ({
+const { gitStatus, gitDiff, gitStage, gitCommit, gitSync, gitBranches, gitSwitch } = vi.hoisted(() => ({
   gitStatus: vi.fn(),
   gitDiff: vi.fn(),
   gitStage: vi.fn(),
   gitCommit: vi.fn(),
   gitSync: vi.fn(),
+  gitBranches: vi.fn(),
+  gitSwitch: vi.fn(),
 }));
 
 vi.mock('./sidecar', () => ({
@@ -19,6 +21,8 @@ vi.mock('./sidecar', () => ({
   gitStage: (cwd: string, path: string, staged: boolean) => gitStage(cwd, path, staged),
   gitCommit: (cwd: string, message: string, amend: boolean) => gitCommit(cwd, message, amend),
   gitSync: (cwd: string, direction: 'push' | 'pull') => gitSync(cwd, direction),
+  gitBranches: (cwd: string) => gitBranches(cwd),
+  gitSwitch: (cwd: string, name: string, create: boolean) => gitSwitch(cwd, name, create),
 }));
 
 const clean: RepoStatus = { branch: 'main', detached: false, ahead: 0, behind: 0, files: [] };
@@ -27,6 +31,10 @@ beforeEach(() => {
   gitStatus.mockReset().mockResolvedValue(clean);
   gitDiff.mockReset().mockResolvedValue({ patch: 'a patch', stale: false });
   gitStage.mockReset().mockResolvedValue(clean);
+  gitCommit.mockReset().mockResolvedValue(clean);
+  gitSync.mockReset().mockResolvedValue(clean);
+  gitBranches.mockReset().mockResolvedValue([{ name: 'main', current: true }]);
+  gitSwitch.mockReset().mockResolvedValue(clean);
 });
 
 describe('reading the repository only when it is being looked at', () => {
@@ -493,5 +501,94 @@ describe('syncing with the remote', () => {
     await act(async () => void (await result.current.sync('push')));
 
     expect(gitSync).not.toHaveBeenCalled();
+  });
+});
+
+describe('branches', () => {
+  it('reads none until the picker is opened', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    expect(gitBranches).not.toHaveBeenCalled();
+    expect(result.current.branches).toEqual([]);
+  });
+
+  it('reads them when asked', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.readBranches()));
+
+    expect(result.current.branches).toEqual([{ name: 'main', current: true }]);
+  });
+
+  it('says nothing over the file list when the branches cannot be read', async () => {
+    gitBranches.mockRejectedValue(new Error('nope'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.readBranches()));
+
+    expect(result.current.failed).toBeNull();
+  });
+
+  it('takes the tree git reports after a checkout', async () => {
+    gitSwitch.mockResolvedValue({ ...clean, branch: 'feature' });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.switchTo('feature', false)));
+
+    expect(gitSwitch).toHaveBeenCalledWith('C:\\repo', 'feature', false);
+    expect(result.current.status?.branch).toBe('feature');
+  });
+
+  it('drops the diffs, because they described the branch it left', async () => {
+    gitStatus.mockResolvedValue({ ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toBeTruthy());
+    await act(async () => void result.current.diff('a.ts', false));
+    await waitFor(() => expect(Object.keys(result.current.diffs)).toHaveLength(1));
+
+    await act(async () => void (await result.current.switchTo('feature', false)));
+
+    expect(result.current.diffs).toEqual({});
+  });
+
+  it('reads the branches again, because one of them may be new', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.switchTo('brand-new', true)));
+
+    await waitFor(() => expect(gitBranches).toHaveBeenCalled());
+  });
+
+  it('reports what git refused', async () => {
+    gitSwitch.mockRejectedValue(new Error('Uncommitted changes are in the way.'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.switchTo('feature', false)));
+
+    expect(result.current.failed).toMatch(/in the way/);
+  });
+
+  it('stops switching once it has finished failing', async () => {
+    gitSwitch.mockRejectedValue(new Error('nope'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.switchTo('feature', false)));
+
+    expect(result.current.switching).toBe(false);
+  });
+
+  it('does nothing outside a repository', async () => {
+    const { result } = renderHook(() => useRepoStatus(null, true));
+
+    await act(async () => void (await result.current.switchTo('feature', false)));
+
+    expect(gitSwitch).not.toHaveBeenCalled();
   });
 });

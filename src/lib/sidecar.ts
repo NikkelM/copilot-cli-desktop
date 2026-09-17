@@ -342,6 +342,23 @@ export async function gitSync(cwd: string, direction: 'push' | 'pull'): Promise<
   return status;
 }
 
+/** The local branches, and which one is checked out. */
+export async function gitBranches(cwd: string): Promise<{ name: string; current: boolean }[]> {
+  const { branches } = await request('git.branches', { cwd });
+  return branches;
+}
+
+/**
+ * Check out a branch, or make one and check it out.
+ *
+ * Uncommitted work comes along, because git carries it across when it can and refuses when
+ * a file would be overwritten.
+ */
+export async function gitSwitch(cwd: string, name: string, create: boolean): Promise<RepoStatus | null> {
+  const { status } = await request('git.switch', { cwd, name, create });
+  return status;
+}
+
 /**
  * Commit what is staged, or amend the commit at HEAD, and get the tree as it stands after.
  *

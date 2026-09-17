@@ -898,6 +898,19 @@ export interface SidecarRequests {
     params: { cwd: string; direction: 'push' | 'pull' };
     result: { status: RepoStatus | null };
   };
+  /** The local branches, and which one is checked out. */
+  'git.branches': { params: { cwd: string }; result: { branches: { name: string; current: boolean }[] } };
+  /**
+   * Check out a branch, or make one and check it out.
+   *
+   * Uncommitted work is left to git, which carries it across when it can and refuses when a
+   * file would be overwritten - a better check than anything here could make, because it
+   * knows which files are in the way.
+   */
+  'git.switch': {
+    params: { cwd: string; name: string; create: boolean };
+    result: { status: RepoStatus | null };
+  };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**
    * The slash commands there are.
@@ -1101,6 +1114,8 @@ export const SIDECAR_METHODS = [
   'git.stage',
   'git.commit',
   'git.sync',
+  'git.branches',
+  'git.switch',
   'models.list',
   'commands.list',
   'filesystem.directories',

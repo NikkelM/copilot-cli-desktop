@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { gitCommit, gitDiff, gitStage, gitStatus, gitSync } from './sidecar';
+import { gitBranches, gitCommit, gitDiff, gitStage, gitStatus, gitSwitch, gitSync } from './sidecar';
 import { messageOf } from './errors';
 import type { FileDiff, RepoStatus } from '../../shared/protocol';
 
@@ -34,6 +34,10 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
   const [committing, setCommitting] = useState(false);
   /** Which way the repository is being synced, so neither can be asked for twice. */
   const [syncing, setSyncing] = useState<'push' | 'pull' | null>(null);
+  /** The local branches, read only when the picker is opened. */
+  const [branches, setBranches] = useState<{ name: string; current: boolean }[]>([]);
+  /** Whether a checkout is in flight, so two cannot race each other. */
+  const [switching, setSwitching] = useState(false);
   /** Which directory is being shown, so a slow reply for another cannot land here. */
   const showing = useRef(cwd);
   showing.current = cwd;
@@ -189,7 +193,69 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     }
   }, []);
 
-  return { status, loading, failed, diffs, diff, busy, stage, committing, commit, syncing, sync, refresh: load };
+  /**
+   * The local branches, read only when the reader asks to see them.
+   *
+   * Not part of the status walk: most sessions never open the picker, and a repository with
+   * a few hundred branches would pay for the list on every refresh.
+   */
+  const readBranches = useCallback(async () => {
+    const directory = showing.current;
+    if (!directory) return;
+
+    try {
+      const found = await gitBranches(directory);
+      if (showing.current === directory) setBranches(found);
+    } catch {
+      // A branch list nobody can read is not worth an error line over the file list.
+    }
+  }, []);
+
+  /**
+   * Check one out, or make one and check it out.
+   *
+   * Everything on screen describes the branch being left, so the diffs go with it.
+   */
+  const switchTo = useCallback(async (name: string, create: boolean) => {
+    const directory = showing.current;
+    if (!directory) return;
+
+    setSwitching(true);
+    setFailed(null);
+    try {
+      const found = await gitSwitch(directory, name, create);
+      if (showing.current !== directory) return;
+
+      reading.current += 1;
+      asking.current.clear();
+      setDiffs({});
+      setStatus(found);
+      void readBranches();
+    } catch (error: unknown) {
+      if (showing.current === directory) setFailed(messageOf(error));
+    } finally {
+      setSwitching(false);
+    }
+  }, [readBranches]);
+
+  return {
+    status,
+    loading,
+    failed,
+    diffs,
+    diff,
+    busy,
+    stage,
+    committing,
+    commit,
+    syncing,
+    sync,
+    branches,
+    readBranches,
+    switching,
+    switchTo,
+    refresh: load,
+  };
 }
 
 

@@ -22,6 +22,10 @@ const shown = (status: RepoStatus | null, over: Partial<Parameters<typeof Reposi
       committing={false}
       onSync={() => {}}
       syncing={null}
+      branches={[]}
+      onBranches={() => {}}
+      onSwitch={() => {}}
+      switching={false}
       failed={null}
       onRefresh={() => {}}
       onClose={() => {}}
@@ -345,6 +349,10 @@ describe('an open row when the tree is read again', () => {
         committing={false}
         onSync={() => {}}
         syncing={null}
+        branches={[]}
+        onBranches={() => {}}
+        onSwitch={() => {}}
+        switching={false}
         failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -373,6 +381,10 @@ describe('an open row when the tree is read again', () => {
       committing={false}
       onSync={() => {}}
       syncing={null}
+      branches={[]}
+      onBranches={() => {}}
+      onSwitch={() => {}}
+      switching={false}
       failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -403,6 +415,10 @@ describe('an open row when the tree is read again', () => {
         committing={false}
         onSync={() => {}}
         syncing={null}
+        branches={[]}
+        onBranches={() => {}}
+        onSwitch={() => {}}
+        switching={false}
         failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -811,3 +827,134 @@ describe('syncing with the remote', () => {
     expect(screen.queryByText(/force/i)).toBeNull();
   });
 });
+
+
+
+describe('choosing a branch', () => {
+  const some = [
+    { name: 'main', current: true },
+    { name: 'feature', current: false },
+  ];
+
+  it('says which branch it is on, where a screen reader can hear it', () => {
+    shown(clean);
+
+    expect(screen.getByLabelText('Switch branch, on main')).toBeTruthy();
+  });
+
+  it('reads the branches only when the picker is opened', async () => {
+    const onBranches = vi.fn();
+    shown(clean, { onBranches });
+    expect(onBranches).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+
+    expect(onBranches).toHaveBeenCalled();
+  });
+
+  it('lists them once it is open', async () => {
+    shown(clean, { branches: some });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+
+    expect(screen.getByRole('button', { name: 'feature' })).toBeTruthy();
+  });
+
+  it('switches to the one that is clicked', async () => {
+    const onSwitch = vi.fn();
+    shown(clean, { branches: some, onSwitch });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+    await userEvent.click(screen.getByRole('button', { name: 'feature' }));
+
+    expect(onSwitch).toHaveBeenCalledWith('feature', false);
+  });
+
+  it('does not switch to the branch it is already on', async () => {
+    const onSwitch = vi.fn();
+    shown(clean, { branches: some, onSwitch });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+    await userEvent.click(screen.getByRole('button', { name: 'main' }));
+
+    expect(onSwitch).not.toHaveBeenCalled();
+  });
+
+  it('closes once a branch is chosen', async () => {
+    shown(clean, { branches: some });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+    await userEvent.click(screen.getByRole('button', { name: 'feature' }));
+
+    expect(screen.queryByRole('button', { name: 'feature' })).toBeNull();
+  });
+
+  it('makes a branch and checks it out', async () => {
+    const onSwitch = vi.fn();
+    shown(clean, { branches: some, onSwitch });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+    await userEvent.type(screen.getByLabelText('New branch name'), 'try-something');
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(onSwitch).toHaveBeenCalledWith('try-something', true);
+  });
+
+  it('will not create a branch with no name', async () => {
+    shown(clean, { branches: some });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+
+    expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('will not create a branch named only with spaces', async () => {
+    shown(clean, { branches: some });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+    await userEvent.type(screen.getByLabelText('New branch name'), '   ');
+
+    expect((screen.getByRole('button', { name: 'Create' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('says that uncommitted work comes along', async () => {
+    shown({ ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] }, { branches: some });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+
+    expect(screen.getByText('1 changed file comes with you')).toBeTruthy();
+  });
+
+  it('counts more than one of them', async () => {
+    shown(
+      { ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }, { path: 'b.ts', staged: 'added' }] },
+      { branches: some },
+    );
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+
+    expect(screen.getByText('2 changed files come with you')).toBeTruthy();
+  });
+
+  it('says nothing about work when there is none', async () => {
+    shown(clean, { branches: some });
+
+    await userEvent.click(screen.getByLabelText(/Switch branch/));
+
+    expect(screen.queryByText(/comes? with you/)).toBeNull();
+  });
+
+  it('offers no picker on a detached HEAD, which is a commit rather than a branch', () => {
+    shown({ ...clean, detached: true, branch: 'a1b2c3d' });
+
+    expect(screen.queryByLabelText(/Switch branch/)).toBeNull();
+    expect(screen.getByText('a1b2c3d')).toBeTruthy();
+  });
+
+  it('cannot be opened while a checkout is running', () => {
+    shown(clean, { switching: true });
+
+    expect((screen.getByLabelText(/Switch branch/) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+

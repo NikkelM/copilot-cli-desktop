@@ -9,10 +9,12 @@ import {
   explainGit,
   githubSlug,
   inRuns,
+  listBranches,
   pullBranch,
   pushBranch,
   stagePaths,
   statusOf,
+  switchBranch,
   treeStateOf,
   unstagePaths,
 } from './git.js';
@@ -944,3 +946,121 @@ describe('saying what git said, to someone who was not watching a terminal', () 
   });
 });
 
+
+describe('branches', () => {
+  it('lists the ones there are', async () => {
+    git('switch', '-q', '-c', 'feature');
+    git('switch', '-q', 'main');
+
+    const found = await listBranches(dir);
+
+    expect(found.map((branch) => branch.name).sort()).toEqual(['feature', 'main']);
+  });
+
+  it('says which one is checked out', async () => {
+    git('switch', '-q', '-c', 'feature');
+
+    const found = await listBranches(dir);
+
+    expect(found.find((branch) => branch.current)?.name).toBe('feature');
+  });
+
+  it('marks exactly one as checked out', async () => {
+    git('switch', '-q', '-c', 'feature');
+    git('switch', '-q', '-c', 'another');
+
+    const found = await listBranches(dir);
+
+    expect(found.filter((branch) => branch.current)).toHaveLength(1);
+  });
+
+  it('leaves out remote-tracking branches, which are not places to be', async () => {
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+
+    const found = await listBranches(dir);
+
+    expect(found.map((branch) => branch.name)).toEqual(['main']);
+  });
+
+  it('says nothing about a folder outside a repository', async () => {
+    const plain = mkdtempSync(join(tmpdir(), 'ccd-plain-'));
+    try {
+      expect(await listBranches(plain)).toEqual([]);
+    } finally {
+      rmSync(plain, { recursive: true, force: true });
+    }
+  });
+
+  it('checks one out', async () => {
+    git('switch', '-q', '-c', 'feature');
+    git('switch', '-q', 'main');
+
+    await switchBranch(dir, 'feature', false);
+
+    expect((await statusOf(dir))?.branch).toBe('feature');
+  });
+
+  it('makes one and checks it out', async () => {
+    await switchBranch(dir, 'brand-new', true);
+
+    expect((await statusOf(dir))?.branch).toBe('brand-new');
+  });
+
+  it('carries uncommitted work across with it, as git does', async () => {
+    git('switch', '-q', '-c', 'feature');
+    git('switch', '-q', 'main');
+    write('tracked.txt', 'work in progress\n');
+
+    await switchBranch(dir, 'feature', false);
+
+    expect(readFileSync(join(dir, 'tracked.txt'), 'utf8')).toBe('work in progress\n');
+    expect((await statusOf(dir))?.files.some((file) => file.path === 'tracked.txt')).toBe(true);
+  });
+
+  it('passes on git refusing to overwrite a file', async () => {
+    git('switch', '-q', '-c', 'feature');
+    write('only-here.txt', 'from the branch\n');
+    git('add', '-A');
+    git('commit', '-qm', 'branch file');
+    git('switch', '-q', 'main');
+    write('only-here.txt', 'mine, untracked\n');
+
+    await expect(switchBranch(dir, 'feature', false)).rejects.toThrow();
+  });
+
+  it('leaves the reader where they were when it refuses', async () => {
+    git('switch', '-q', '-c', 'feature');
+    write('only-here.txt', 'from the branch\n');
+    git('add', '-A');
+    git('commit', '-qm', 'branch file');
+    git('switch', '-q', 'main');
+    write('only-here.txt', 'mine, untracked\n');
+
+    await expect(switchBranch(dir, 'feature', false)).rejects.toThrow();
+
+    expect((await statusOf(dir))?.branch).toBe('main');
+    expect(readFileSync(join(dir, 'only-here.txt'), 'utf8')).toBe('mine, untracked\n');
+  });
+
+  it('refuses a name that is only whitespace', async () => {
+    await expect(switchBranch(dir, '   ', true)).rejects.toThrow(/needs a name/i);
+  });
+
+  it('refuses a name that would read as a flag', async () => {
+    await expect(switchBranch(dir, '--orphan', true)).rejects.toThrow(/dash/i);
+  });
+
+  it('does not create a branch when it refuses the name', async () => {
+    await expect(switchBranch(dir, '-f', true)).rejects.toThrow();
+
+    expect((await listBranches(dir)).map((branch) => branch.name)).toEqual(['main']);
+  });
+
+  it('passes on git refusing a name it considers invalid', async () => {
+    await expect(switchBranch(dir, 'has a space', true)).rejects.toThrow();
+  });
+
+  it('says a branch that is not there is not there', async () => {
+    await expect(switchBranch(dir, 'never-existed', false)).rejects.toThrow();
+  });
+});

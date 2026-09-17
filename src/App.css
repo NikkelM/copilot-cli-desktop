@@ -3540,6 +3540,119 @@ button.group:hover {
   font-weight: 400;
 }
 
+/* The branch name is a control now, so it has to look like one without becoming a button in
+   a header that already has three. */
+.repo-branches {
+  position: relative;
+  display: inline-flex;
+}
+
+.repo-branch-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.repo-branch-button:hover:not(:disabled) {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.repo-branch-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Over the file list rather than pushing it down: the list is what the reader came for, and
+   a menu that moved it would lose their place every time they looked at the branch. */
+.repo-branch-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  min-width: 200px;
+  max-width: 320px;
+  margin-top: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.repo-branch-menu ul {
+  max-height: 240px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+/* Said, not warned about: git carries the work across or refuses, and neither of those is
+   something going wrong. */
+.repo-branch-note {
+  margin: 2px 6px 6px;
+  color: var(--text-dim);
+  font-size: var(--font-xs);
+}
+
+.repo-branch-item {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.repo-branch-item:hover {
+  background: var(--bg);
+}
+
+.repo-branch-item.current {
+  color: var(--accent);
+  cursor: default;
+}
+
+.repo-branch-new {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.repo-branch-new input {
+  min-width: 0;
+  flex: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+}
+
+.repo-branch-new input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .repo-upstream {
   opacity: 0.7;
 }

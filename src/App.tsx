@@ -1036,6 +1036,10 @@ export default function App() {
                   committing={repository.committing}
                   onSync={(direction) => void repository.sync(direction)}
                   syncing={repository.syncing}
+                  branches={repository.branches}
+                  onBranches={() => void repository.readBranches()}
+                  onSwitch={(name, create) => void repository.switchTo(name, create)}
+                  switching={repository.switching}
                   failed={repository.failed}
                   onRefresh={repository.refresh}
                   onClose={() => {
@@ -1137,6 +1141,7 @@ function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }
+
 
 
 

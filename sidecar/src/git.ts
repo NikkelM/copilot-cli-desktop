@@ -94,6 +94,53 @@ export function explainGit(error: unknown): string {
 const NETWORK_TIMEOUT = 2 * 60_000;
 
 /**
+ * The local branches, and which one is checked out.
+ *
+ * Local only. A remote-tracking branch is not somewhere you can be, and listing hundreds of
+ * `origin/*` refs next to the handful someone actually works on buries the useful ones.
+ */
+export async function listBranches(cwd: string): Promise<{ name: string; current: boolean }[]> {
+  let output: string;
+  try {
+    output = await git(cwd, ['for-each-ref', '--format=%(refname:short)%09%(HEAD)', 'refs/heads']);
+  } catch {
+    return [];
+  }
+
+  return output
+    .split('\n')
+    .filter((line) => line.trim())
+    .map((line) => {
+      const [name, head] = line.split('\t');
+      return { name: name!.trim(), current: head?.trim() === '*' };
+    });
+}
+
+/**
+ * Check out a branch, or make one and check it out.
+ *
+ * Uncommitted work is left to git, which carries it across when it can and refuses when a
+ * file would be overwritten. That refusal is a better check than anything written here: it
+ * knows exactly which files are in the way, and this would only be guessing at them. The
+ * panel's job is to say beforehand that the work comes along, and to pass the refusal on in
+ * a sentence when it happens.
+ */
+export async function switchBranch(cwd: string, name: string, create: boolean): Promise<void> {
+  const wanted = name.trim();
+  if (!wanted) throw new Error('A branch needs a name.');
+  // `git switch` has no `--` that separates a branch from a flag - there it introduces
+  // pathspecs, and `switch -c -- name` fails with "invalid reference". So a leading dash is
+  // refused here instead, and git's own ref rules cover everything else.
+  if (wanted.startsWith('-')) throw new Error('A branch name cannot start with a dash.');
+
+  try {
+    await git(cwd, ['switch', ...(create ? ['-c'] : []), wanted]);
+  } catch (error: unknown) {
+    throw new Error(explainGit(error));
+  }
+}
+
+/**
  * Send the current branch to its remote.
  *
  * A branch that tracks nothing is given an upstream on the way, which is what every reader
