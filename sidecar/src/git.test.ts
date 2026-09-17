@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { githubSlug, stagePath, statusOf, treeStateOf, unstagePath } from './git.js';
+import { commitStaged, githubSlug, stagePath, statusOf, treeStateOf, unstagePath } from './git.js';
+import { canAmend } from '../../shared/protocol.js';
+import type { RepoStatus } from '../../shared/protocol.js';
 
 /**
  * Every test here spawns git, several times over.
@@ -448,4 +450,141 @@ describe('unstaging a path', () => {
     expect((await statusOf(dir))?.files).toEqual([{ path: 'with space.txt', unstaged: 'untracked' }]);
   });
 });
+
+
+/**
+ * Committing (#44). Messages are the reader's own - nothing here writes one - and the one
+ * irreversible thing on offer, amending published history, is refused rather than warned
+ * about.
+ */
+describe('committing what is staged', () => {
+  const log = () => git('log', '--oneline').trim().split('\n');
+
+  it('records the staged work under the message it was given', async () => {
+    write('tracked.txt', 'changed\n');
+    git('add', 'tracked.txt');
+
+    await commitStaged(dir, 'A message of my own', false);
+
+    expect(log()[0]).toContain('A message of my own');
+    expect((await statusOf(dir))?.files).toEqual([]);
+  });
+
+  /** Half the point of staging is deciding what goes in, so the rest must stay out. */
+  it('leaves unstaged work where it is', async () => {
+    write('staged.txt', 'in\n');
+    write('unstaged.txt', 'out\n');
+    git('add', 'staged.txt');
+
+    await commitStaged(dir, 'Only the staged one', false);
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'unstaged.txt', unstaged: 'untracked' }]);
+  });
+
+  it('keeps every line of a multi-line message', async () => {
+    write('tracked.txt', 'changed\n');
+    git('add', 'tracked.txt');
+
+    await commitStaged(dir, 'A subject\n\nAnd a body explaining it.', false);
+
+    expect(git('log', '-1', '--format=%B')).toContain('And a body explaining it.');
+  });
+
+  it('refuses a message that says nothing', async () => {
+    write('tracked.txt', 'changed\n');
+    git('add', 'tracked.txt');
+
+    await expect(commitStaged(dir, '   \n  ', false)).rejects.toThrow('needs a message');
+    expect(log()).toHaveLength(1);
+  });
+
+  /** Git's own error for this says less, and the reader has a panel that could have told them. */
+  it('says so when nothing is staged', async () => {
+    write('tracked.txt', 'changed\n');
+
+    await expect(commitStaged(dir, 'Nothing to say', false)).rejects.toThrow('Nothing is staged');
+  });
+});
+
+describe('amending the last commit', () => {
+  it('replaces the message without making a second commit', async () => {
+    const before = git('log', '--oneline').trim().split('\n').length;
+
+    await commitStaged(dir, 'Said better', true);
+
+    expect(git('log', '--oneline').trim().split('\n')).toHaveLength(before);
+    expect(git('log', '-1', '--format=%s').trim()).toBe('Said better');
+  });
+
+  /** Rewording the last commit with nothing staged is a real thing to want. */
+  it('amends with nothing staged', async () => {
+    await expect(commitStaged(dir, 'Just the wording', true)).resolves.toBeUndefined();
+  });
+
+  it('folds staged work into the commit that is there', async () => {
+    write('extra.txt', 'forgot this\n');
+    git('add', 'extra.txt');
+
+    await commitStaged(dir, 'base, with the bit I forgot', true);
+
+    expect(git('log', '--oneline').trim().split('\n')).toHaveLength(1);
+    expect(git('show', '--name-only', '--format=', 'HEAD')).toContain('extra.txt');
+  });
+
+  /**
+   * The one irreversible thing this panel could do. A published commit belongs to everyone
+   * who has fetched it, and rewriting it is not something to warn about and then allow.
+   */
+  it('refuses to amend a commit that has been pushed', async () => {
+    const remote = mkdtempSync(join(tmpdir(), 'ccd-git-remote-'));
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote], { encoding: 'utf8' });
+    git('remote', 'add', 'origin', remote);
+    git('push', '-q', '-u', 'origin', 'main');
+
+    await expect(commitStaged(dir, 'Rewriting history', true)).rejects.toThrow('already been pushed');
+    expect(git('log', '-1', '--format=%s').trim()).toBe('base');
+    rmSync(remote, { recursive: true, force: true });
+  });
+
+  it('allows amending a commit that is not pushed yet', async () => {
+    const remote = mkdtempSync(join(tmpdir(), 'ccd-git-remote-'));
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote], { encoding: 'utf8' });
+    git('remote', 'add', 'origin', remote);
+    git('push', '-q', '-u', 'origin', 'main');
+    write('tracked.txt', 'more\n');
+    git('commit', '-qam', 'not pushed yet');
+
+    await expect(commitStaged(dir, 'reworded', true)).resolves.toBeUndefined();
+    expect(git('log', '-1', '--format=%s').trim()).toBe('reworded');
+    rmSync(remote, { recursive: true, force: true });
+  });
+});
+
+describe('whether the last commit may be amended', () => {
+  const at = (over: Partial<RepoStatus>): RepoStatus => ({
+    branch: 'main',
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    files: [],
+    ...over,
+  });
+
+  it('allows it when the branch tracks nothing', () => {
+    expect(canAmend(at({}))).toBe(true);
+  });
+
+  it('allows it when the branch is ahead of what it tracks', () => {
+    expect(canAmend(at({ upstream: 'origin/main', ahead: 1 }))).toBe(true);
+  });
+
+  it('refuses when the branch is level with what it tracks', () => {
+    expect(canAmend(at({ upstream: 'origin/main', ahead: 0 }))).toBe(false);
+  });
+
+  it('refuses when there is nothing to amend', () => {
+    expect(canAmend(null)).toBe(false);
+  });
+});
+
 

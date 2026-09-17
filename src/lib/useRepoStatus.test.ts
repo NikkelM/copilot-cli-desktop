@@ -5,16 +5,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRepoStatus } from './useRepoStatus';
 import type { RepoStatus } from '../../shared/protocol';
 
-const { gitStatus, gitDiff, gitStage } = vi.hoisted(() => ({
+const { gitStatus, gitDiff, gitStage, gitCommit } = vi.hoisted(() => ({
   gitStatus: vi.fn(),
   gitDiff: vi.fn(),
   gitStage: vi.fn(),
+  gitCommit: vi.fn(),
 }));
 
 vi.mock('./sidecar', () => ({
   gitStatus: (cwd: string) => gitStatus(cwd),
   gitDiff: (cwd: string, path: string, staged: boolean) => gitDiff(cwd, path, staged),
   gitStage: (cwd: string, path: string, staged: boolean) => gitStage(cwd, path, staged),
+  gitCommit: (cwd: string, message: string, amend: boolean) => gitCommit(cwd, message, amend),
 }));
 
 const clean: RepoStatus = { branch: 'main', detached: false, ahead: 0, behind: 0, files: [] };
@@ -259,6 +261,108 @@ describe('staging a path', () => {
     await act(async () => void (await result.current.stage('a.ts', true)));
 
     expect(gitStage).not.toHaveBeenCalled();
+  });
+});
+
+
+
+describe('making a commit', () => {
+  it('takes the tree git reports afterwards', async () => {
+    gitStatus.mockResolvedValue(clean);
+    gitCommit.mockResolvedValue({ ...clean, ahead: 1 });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => {
+      await result.current.commit('Fix the thing', false);
+    });
+
+    expect(gitCommit).toHaveBeenCalledWith('C:\\repo', 'Fix the thing', false);
+    expect(result.current.status?.ahead).toBe(1);
+  });
+
+  it('drops the diffs it was showing, because they have all just moved', async () => {
+    gitStatus.mockResolvedValue({ ...clean, files: [{ path: 'a.ts', staged: 'modified' }] });
+    gitDiff.mockResolvedValue({ patch: 'a patch', stale: false });
+    gitCommit.mockResolvedValue(clean);
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toBeTruthy());
+
+    await act(async () => {
+      result.current.diff('a.ts', true);
+    });
+    await waitFor(() => expect(Object.keys(result.current.diffs)).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.commit('Fix the thing', false);
+    });
+
+    expect(result.current.diffs).toEqual({});
+  });
+
+  it('says what went wrong when git refuses', async () => {
+    gitStatus.mockResolvedValue(clean);
+    gitCommit.mockRejectedValue(new Error('A hook rejected this commit.'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => {
+      await result.current.commit('Fix the thing', false);
+    });
+
+    expect(result.current.failed).toBe('A hook rejected this commit.');
+  });
+
+  it('is not committing once it has finished failing', async () => {
+    gitStatus.mockResolvedValue(clean);
+    gitCommit.mockRejectedValue(new Error('nope'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => {
+      await result.current.commit('Fix the thing', false);
+    });
+
+    expect(result.current.committing).toBe(false);
+  });
+
+  it('clears an older failure when a commit works', async () => {
+    gitStatus.mockResolvedValue(clean);
+    gitCommit.mockRejectedValueOnce(new Error('nope')).mockResolvedValue(clean);
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => {
+      await result.current.commit('Fix the thing', false);
+    });
+    await act(async () => {
+      await result.current.commit('Fix the thing', false);
+    });
+
+    expect(result.current.failed).toBeNull();
+  });
+
+  it('passes an amend through as an amend', async () => {
+    gitStatus.mockResolvedValue(clean);
+    gitCommit.mockResolvedValue(clean);
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => {
+      await result.current.commit('A better message', true);
+    });
+
+    expect(gitCommit).toHaveBeenCalledWith('C:\\repo', 'A better message', true);
+  });
+
+  it('does nothing outside a repository', async () => {
+    const { result } = renderHook(() => useRepoStatus(null, true));
+
+    await act(async () => {
+      await result.current.commit('Fix the thing', false);
+    });
+
+    expect(gitCommit).not.toHaveBeenCalled();
   });
 });
 

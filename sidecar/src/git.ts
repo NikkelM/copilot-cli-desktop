@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import type { FileDiff, RepoFile, RepoStatus, TreeState } from '../../shared/protocol.js';
+import { canAmend, type FileDiff, type RepoFile, type RepoStatus, type TreeState } from '../../shared/protocol.js';
 
 const run = promisify(execFile);
 
@@ -19,9 +19,16 @@ const run = promisify(execFile);
  *
  * Shared rather than written per caller so the buffer limit holds everywhere: reading a
  * large repository's status overruns the default buffer.
+ *
+ * The timeout is for the calls that can wait on a person rather than on a process - a commit
+ * that signs may raise a passphrase prompt. Everything else is given git's own patience,
+ * which is none.
  */
-export async function git(root: string, args: string[]): Promise<string> {
-  const { stdout } = await run('git', ['-C', root, ...args], { maxBuffer: 64 * 1024 * 1024 });
+export async function git(root: string, args: string[], options: { timeoutMs?: number } = {}): Promise<string> {
+  const { stdout } = await run('git', ['-C', root, ...args], {
+    maxBuffer: 64 * 1024 * 1024,
+    ...(options.timeoutMs ? { timeout: options.timeoutMs } : {}),
+  });
   return stdout;
 }
 
@@ -242,6 +249,35 @@ export async function unstagePath(cwd: string, path: string): Promise<void> {
 }
 
 /**
+ * Commit what is staged.
+ *
+ * Runs `git commit` as the reader would, so the repository's own hooks and signing
+ * configuration apply. Nothing here suppresses either: a repository that signs its commits
+ * should sign the ones made from this panel, and a hook that rejects a commit should reject
+ * this one too.
+ *
+ * Signing can wait on a passphrase prompt, which is a person rather than a process, so this
+ * is given several minutes rather than the usual patience. Left unbounded a locked keyring
+ * would hang the sidecar for as long as the app was open.
+ */
+export async function commitStaged(cwd: string, message: string, amend: boolean): Promise<void> {
+  const text = message.trim();
+  if (!text) throw new Error('A commit needs a message.');
+
+  const status = await statusOf(cwd);
+  if (amend && !canAmend(status)) {
+    throw new Error('That commit has already been pushed. Amending it would rewrite history others may have.');
+  }
+  // Amending with nothing staged is a real thing to do - it rewords the last commit - but
+  // committing with nothing staged is not, and git's own error for it says less than this.
+  if (!amend && !status?.files.some((file) => file.staged)) {
+    throw new Error('Nothing is staged.');
+  }
+
+  await git(cwd, ['commit', ...(amend ? ['--amend'] : []), '-m', text], { timeoutMs: 5 * 60_000 });
+}
+
+/**
  * The diff for one path, on the side the reader asked about.
  *
  * Two questions rather than one, because the panel draws two lists and a file can be in
@@ -334,6 +370,9 @@ export async function treeStateOf(cwd: string): Promise<TreeState | null> {
     remote: remote.status === 'fulfilled' ? remote.value : null,
   };
 }
+
+
+
 
 
 

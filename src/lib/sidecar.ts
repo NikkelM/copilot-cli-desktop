@@ -332,6 +332,17 @@ export async function gitStage(cwd: string, path: string, staged: boolean): Prom
   return status;
 }
 
+/**
+ * Commit what is staged, or amend the commit at HEAD, and get the tree as it stands after.
+ *
+ * The message is the reader's own. Repository hooks and signing configuration apply, because
+ * the sidecar runs git as they would.
+ */
+export async function gitCommit(cwd: string, message: string, amend: boolean): Promise<RepoStatus | null> {
+  const { status } = await request('git.commit', { cwd, message, amend });
+  return status;
+}
+
 /** Replays a session transcript from events.jsonl without resuming it. */
 export function getTranscript(
   sessionId: string,

@@ -1032,6 +1032,8 @@ export default function App() {
                   onDiff={repository.diff}
                   busy={repository.busy}
                   onStage={(path, staged) => void repository.stage(path, staged)}
+                  onCommit={(message, amend) => void repository.commit(message, amend)}
+                  committing={repository.committing}
                   failed={repository.failed}
                   onRefresh={repository.refresh}
                   onClose={() => {
@@ -1133,4 +1135,5 @@ function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }
+
 

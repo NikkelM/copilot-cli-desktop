@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { gitDiff, gitStage, gitStatus } from './sidecar';
+import { gitCommit, gitDiff, gitStage, gitStatus } from './sidecar';
 import { messageOf } from './errors';
 import type { FileDiff, RepoStatus } from '../../shared/protocol';
 
@@ -30,6 +30,8 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
   const [failed, setFailed] = useState<string | null>(null);
   /** Paths with a staging operation in flight, so a row cannot be clicked twice. */
   const [busy, setBusy] = useState<string[]>([]);
+  /** Whether a commit is being made, so it cannot be made twice. */
+  const [committing, setCommitting] = useState(false);
   /** Which directory is being shown, so a slow reply for another cannot land here. */
   const showing = useRef(cwd);
   showing.current = cwd;
@@ -128,7 +130,34 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     }
   }, []);
 
-  return { status, loading, failed, diffs, diff, busy, stage, refresh: load };
+  /**
+   * Commit what is staged, or amend the commit at HEAD.
+   *
+   * The message is the reader's, passed through untouched. Git is the authority on what
+   * happened afterwards, so the tree it reports is taken as the new state.
+   */
+  const commit = useCallback(async (message: string, amend: boolean) => {
+    const directory = showing.current;
+    if (!directory) return;
+
+    setCommitting(true);
+    setFailed(null);
+    try {
+      const found = await gitCommit(directory, message, amend);
+      if (showing.current !== directory) return;
+
+      reading.current += 1;
+      asking.current.clear();
+      setDiffs({});
+      setStatus(found);
+    } catch (error: unknown) {
+      if (showing.current === directory) setFailed(messageOf(error));
+    } finally {
+      setCommitting(false);
+    }
+  }, []);
+
+  return { status, loading, failed, diffs, diff, busy, stage, committing, commit, refresh: load };
 }
 
 

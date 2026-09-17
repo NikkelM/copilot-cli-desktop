@@ -18,6 +18,8 @@ const shown = (status: RepoStatus | null, over: Partial<Parameters<typeof Reposi
       onDiff={() => {}}
       busy={[]}
       onStage={() => {}}
+      onCommit={() => {}}
+      committing={false}
       failed={null}
       onRefresh={() => {}}
       onClose={() => {}}
@@ -337,6 +339,8 @@ describe('an open row when the tree is read again', () => {
         onDiff={onDiff}
         busy={[]}
         onStage={() => {}}
+        onCommit={() => {}}
+        committing={false}
         failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -361,6 +365,8 @@ describe('an open row when the tree is read again', () => {
         onDiff={() => {}}
       busy={[]}
       onStage={() => {}}
+      onCommit={() => {}}
+      committing={false}
       failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -387,6 +393,8 @@ describe('an open row when the tree is read again', () => {
         onDiff={onDiff}
         busy={[]}
         onStage={() => {}}
+        onCommit={() => {}}
+        committing={false}
         failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -470,5 +478,188 @@ describe('putting a file into the next commit', () => {
     await user.click(screen.getByRole('button', { name: 'Stage a.ts' }));
 
     expect(view.container.querySelector('.tool-diff')).toBeNull();
+  });
+});
+
+
+
+
+const staged = (path: string) => ({ path, staged: 'modified' as const });
+
+const box = () => screen.getByLabelText('Commit message') as HTMLTextAreaElement;
+const commitButton = () => screen.getByRole('button', { name: /^Commit/ });
+
+describe('writing a commit', () => {
+  it('will not commit without a message', () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    expect((commitButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('will not commit a message that is only whitespace', async () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    await userEvent.type(box(), '   ');
+
+    expect((commitButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('will not commit with nothing staged', async () => {
+    shown(clean);
+
+    await userEvent.type(box(), 'Fix the thing');
+
+    expect((commitButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('commits what was written', async () => {
+    const onCommit = vi.fn();
+    shown({ ...clean, files: [staged('a.ts')] }, { onCommit });
+
+    await userEvent.type(box(), 'Fix the thing');
+    await userEvent.click(commitButton());
+
+    expect(onCommit).toHaveBeenCalledWith('Fix the thing', false);
+  });
+
+  it('empties the box once the commit is made', async () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    await userEvent.type(box(), 'Fix the thing');
+    await userEvent.click(commitButton());
+
+    expect(box().value).toBe('');
+  });
+
+  it('commits on Ctrl+Enter', async () => {
+    const onCommit = vi.fn();
+    shown({ ...clean, files: [staged('a.ts')] }, { onCommit });
+
+    await userEvent.type(box(), 'Fix the thing');
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+
+    expect(onCommit).toHaveBeenCalledWith('Fix the thing', false);
+  });
+
+  it('does not commit on Ctrl+Enter when it could not be clicked either', async () => {
+    const onCommit = vi.fn();
+    shown({ ...clean, files: [staged('a.ts')] }, { onCommit });
+
+    box().focus();
+    await userEvent.keyboard('{Control>}{Enter}{/Control}');
+
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('leaves a plain Enter as a newline', async () => {
+    const onCommit = vi.fn();
+    shown({ ...clean, files: [staged('a.ts')] }, { onCommit });
+
+    await userEvent.type(box(), 'Subject{Enter}{Enter}Body');
+
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(box().value).toBe('Subject\n\nBody');
+  });
+
+  it('says how many files are going in', () => {
+    shown({ ...clean, files: [staged('a.ts'), staged('b.ts')] });
+
+    expect(screen.getByText('2 staged files')).toBeTruthy();
+  });
+
+  it('counts one file as one file', () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    expect(screen.getByText('1 staged file')).toBeTruthy();
+  });
+
+  it('counts the subject, not the whole message', async () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    await userEvent.type(box(), 'Subject{Enter}{Enter}A much longer body than the subject line is');
+
+    expect(screen.getByText('7')).toBeTruthy();
+  });
+
+  it('marks a subject that is getting wide', async () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    await userEvent.type(box(), 'x'.repeat(60));
+
+    expect(screen.getByText('60').className).toBe('repo-subject wide');
+  });
+
+  it('marks a subject that is too long', async () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    await userEvent.type(box(), 'x'.repeat(80));
+
+    expect(screen.getByText('80').className).toBe('repo-subject long');
+  });
+
+  it('leaves a comfortable subject unmarked', async () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    await userEvent.type(box(), 'x'.repeat(20));
+
+    expect(screen.getByText('20').className).toBe('repo-subject');
+  });
+
+  it('offers no amend for a commit that is already published', () => {
+    shown({ ...clean, upstream: 'origin/main', ahead: 0, files: [staged('a.ts')] });
+
+    expect(screen.queryByLabelText(/Amend/)).toBeNull();
+  });
+
+  it('offers to amend a commit that has not been pushed', () => {
+    shown({ ...clean, upstream: 'origin/main', ahead: 1, files: [staged('a.ts')] });
+
+    expect(screen.getByLabelText(/Amend/)).toBeTruthy();
+  });
+
+  it('offers to amend in a repository with no upstream at all', () => {
+    shown({ ...clean, files: [staged('a.ts')] });
+
+    expect(screen.getByLabelText(/Amend/)).toBeTruthy();
+  });
+
+  it('amends when asked to', async () => {
+    const onCommit = vi.fn();
+    shown({ ...clean, files: [staged('a.ts')] }, { onCommit });
+
+    await userEvent.click(screen.getByLabelText(/Amend/));
+    await userEvent.type(box(), 'A better message');
+    await userEvent.click(commitButton());
+
+    expect(onCommit).toHaveBeenCalledWith('A better message', true);
+  });
+
+  it('lets a message be reworded with nothing staged', async () => {
+    shown(clean);
+
+    await userEvent.click(screen.getByLabelText(/Amend/));
+    await userEvent.type(box(), 'A better message');
+
+    expect((commitButton() as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('says that an amend with nothing staged only touches the message', async () => {
+    shown(clean);
+
+    await userEvent.click(screen.getByLabelText(/Amend/));
+
+    expect(screen.getByText('Amending the message only')).toBeTruthy();
+  });
+
+  it('will not commit twice while the first is still going', () => {
+    shown({ ...clean, files: [staged('a.ts')] }, { committing: true });
+
+    expect((commitButton() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('offers nothing to commit outside a repository', () => {
+    shown(null);
+
+    expect(screen.queryByLabelText('Commit message')).toBeNull();
   });
 });

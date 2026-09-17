@@ -876,6 +876,17 @@ export interface SidecarRequests {
    * no way to write a file, rather than with `reset` or `restore`, which do.
    */
   'git.stage': { params: { cwd: string; path: string; staged: boolean }; result: { status: RepoStatus | null } };
+  /**
+   * Commit what is staged, or amend the commit at HEAD.
+   *
+   * Runs git as the reader would, so the repository's hooks and signing configuration apply.
+   * Amending is refused once the commit has been pushed: rewriting history others may have
+   * is the one irreversible thing this panel could do.
+   */
+  'git.commit': {
+    params: { cwd: string; message: string; amend: boolean };
+    result: { status: RepoStatus | null };
+  };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**
    * The slash commands there are.
@@ -1077,6 +1088,7 @@ export const SIDECAR_METHODS = [
   'git.status',
   'git.diff',
   'git.stage',
+  'git.commit',
   'models.list',
   'commands.list',
   'filesystem.directories',
@@ -1286,4 +1298,19 @@ export interface RepoStatus {
   ahead: number;
   behind: number;
   files: RepoFile[];
+}
+
+/**
+ * Whether the commit at HEAD can still be amended.
+ *
+ * Amending is the one irreversible thing the source control panel offers, so the rule lives
+ * here rather than on either side of the wire: the panel hides the option and the sidecar
+ * refuses the operation, and they must not be able to disagree about when.
+ *
+ * Safe when the branch is ahead of its upstream, or has no upstream at all. In both cases
+ * nothing downstream has seen the commit yet.
+ */
+export function canAmend(status: RepoStatus | null): boolean {
+  if (!status) return false;
+  return status.upstream === undefined || status.ahead > 0;
 }

@@ -3549,6 +3549,84 @@ button.group:hover {
   color: var(--accent);
 }
 
+/* Between the head and the file lists, so the message sits next to what it will record. */
+.repo-commit {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.repo-message {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-md);
+  line-height: 1.4;
+  resize: vertical;
+}
+
+.repo-message:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.repo-commit-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repo-commit-count {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+/* The subject's length, coloured rather than enforced. It shifts as the reader types, so it
+   is monospaced: a number that moved the words beside it would be worse than no number. */
+.repo-subject {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.repo-subject.wide {
+  color: var(--warning);
+}
+
+.repo-subject.long {
+  color: var(--danger);
+}
+
+/* Pushed to the right only when there is no counter to do it. */
+.repo-subject ~ .repo-amend {
+  margin-left: 0;
+}
+
+.repo-amend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.repo-amend input {
+  margin: 0;
+  cursor: pointer;
+}
+
 /* Staged and Changes, which is what git calls the two halves of a working tree. */
 .repo-group {
   margin: 8px 0 2px;
@@ -3665,4 +3743,5 @@ button.group:hover {
   opacity: 0.4;
   cursor: default;
 }
+
 
