@@ -222,43 +222,23 @@ export async function stagePath(cwd: string, path: string): Promise<void> {
 /**
  * Take a path's changes back out of the index, without touching the working tree.
  *
- * Deliberately not `git reset` or `git restore --staged`, which is how this is usually
- * written. Both have modes that overwrite files, so a mistake in either - a wrong flag, a
- * path that resolves elsewhere - can destroy work that was never committed. `update-index`
- * cannot: it edits the index and has no way to write to the working tree at all. The safety
- * here comes from the tool being incapable of the damage rather than from calling it
- * carefully.
- *
- * Two cases, because unstaging means "make the index agree with HEAD again":
- * a path HEAD knows gets its entry from there, and one HEAD has never heard of is dropped
- * from the index entirely, which leaves it on disk as an untracked file.
+ * `--staged` is the whole of the safety here: it is what confines `restore` to the index.
+ * Without it, or with `--worktree`, the same command overwrites files - so the flag is not a
+ * detail of this call but the reason this call is allowed to exist.
  *
  * A file whose staged change was its deletion keeps that deletion in the working tree. It is
- * the index this puts back, never the file - resurrecting it would be exactly the kind of
- * write this avoids.
+ * the index this puts back, never the file.
  */
 export async function unstagePath(cwd: string, path: string): Promise<void> {
-  let entry: string;
   try {
-    entry = (await git(cwd, ['ls-tree', 'HEAD', '--', path])).trim();
-  } catch {
-    // No HEAD at all, so nothing can be in it: every staged path here is an addition.
-    entry = '';
-  }
-
-  if (!entry) {
+    await git(cwd, ['restore', '--staged', '--', path]);
+  } catch (error: unknown) {
+    // Before the first commit there is no HEAD to restore an entry from, and git refuses
+    // rather than guessing. Everything staged then is an addition, so dropping the entry is
+    // what unstaging means. `update-index` cannot write to the working tree either.
+    if (!String(error).includes('could not resolve HEAD')) throw error;
     await git(cwd, ['update-index', '--force-remove', '--', path]);
-    return;
   }
-
-  // `<mode> <type> <oid>\t<path>`, and the path may contain spaces, so only the fields
-  // before the tab are split.
-  const [fields] = entry.split('\t');
-  const [mode, , oid] = (fields ?? '').split(/\s+/);
-  if (!mode || !oid) throw new Error(`Could not read the committed version of ${path}`);
-
-  // `--add` because a staged deletion has no index entry to update, only one to put back.
-  await git(cwd, ['update-index', '--add', '--cacheinfo', `${mode},${oid},${path}`]);
 }
 
 /**
@@ -354,6 +334,8 @@ export async function treeStateOf(cwd: string): Promise<TreeState | null> {
     remote: remote.status === 'fulfilled' ? remote.value : null,
   };
 }
+
+
 
 
 

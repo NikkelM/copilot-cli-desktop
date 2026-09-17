@@ -3631,13 +3631,15 @@ button.group:hover {
 }
 
 /*
- * Plus to stage, minus to take back out - the same pair a source control panel always uses,
- * and quiet until the row is under the pointer: a column of them down the panel would read
- * as the point of the list rather than as something available on each row.
+ * Plus to stage, minus to take back out - the same pair a source control panel always uses.
+ *
+ * Leftmost and always visible. It sat at the far end of the row first, which is where these
+ * usually go, and on a wide window that is several hundred pixels from the filename nobody
+ * was looking away from.
  */
 .repo-stage {
   flex-shrink: 0;
-  width: 24px;
+  width: 22px;
   padding: 2px 0;
   border: none;
   border-radius: 4px;
@@ -3646,13 +3648,12 @@ button.group:hover {
   font-family: ui-monospace, monospace;
   font-size: var(--font-lg);
   line-height: 1;
-  opacity: 0;
   cursor: pointer;
 }
 
-.repo-row:hover .repo-stage,
-.repo-stage:focus-visible {
-  opacity: 1;
+/* An unmerged row has no button, but still needs the column so the paths line up. */
+.repo-stage.empty {
+  cursor: default;
 }
 
 .repo-stage:hover {
@@ -3664,3 +3665,4 @@ button.group:hover {
   opacity: 0.4;
   cursor: default;
 }
+

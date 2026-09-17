@@ -69,6 +69,27 @@ function FileRow({
   return (
     <li>
       <div className="repo-row">
+        {/* Leftmost and always drawn, rather than at the far end of a row that is as wide as
+            the window: on a wide screen nobody looks over there, and a control nobody finds
+            is a control that is not there. */}
+        {change !== 'unmerged' ? (
+          <button
+            type="button"
+            className="repo-stage"
+            onClick={onStage}
+            disabled={busy}
+            title={staged ? `Take ${name} out of the next commit` : `Put ${name} into the next commit`}
+            aria-label={staged ? `Unstage ${file.path}` : `Stage ${file.path}`}
+          >
+            {staged ? '−' : '+'}
+          </button>
+        ) : (
+          /* Unmerged files are left alone: staging one would record a half-resolved conflict
+             as if it were the answer, and this panel has no way to resolve it. The space is
+             kept so the paths beside it still line up. */
+          <span className="repo-stage empty" />
+        )}
+
         <button
           type="button"
           className={open ? 'changes-row open' : 'changes-row'}
@@ -91,21 +112,6 @@ function FileRow({
             {folder && <span className="repo-folder">{folder}</span>}
           </span>
         </button>
-
-        {/* Unmerged files are left alone: staging one would record a half-resolved conflict
-            as if it were the answer, and this panel has no way to resolve it. */}
-        {change !== 'unmerged' && (
-          <button
-            type="button"
-            className="repo-stage"
-            onClick={onStage}
-            disabled={busy}
-            title={staged ? `Take ${name} out of the next commit` : `Put ${name} into the next commit`}
-            aria-label={staged ? `Unstage ${file.path}` : `Stage ${file.path}`}
-          >
-            {staged ? '−' : '+'}
-          </button>
-        )}
       </div>
 
       {open && <Expanded diff={diff} staged={staged} />}
