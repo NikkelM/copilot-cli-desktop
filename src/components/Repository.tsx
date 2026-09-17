@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { FileDiff, RepoFile, RepoStatus } from '../../shared/protocol';
 import { fileBadge } from '../lib/fileBadge';
@@ -125,18 +125,27 @@ function Expanded({ diff, staged }: { diff: FileDiff | undefined; staged: boolea
 export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onClose }: RepositoryProps) {
   const staged = status?.files.filter((file) => file.staged) ?? [];
   const unstaged = status?.files.filter((file) => file.unstaged) ?? [];
-  /** Which row is open, by side and path, since one file can appear under both headings. */
-  const [open, setOpen] = useState<string | null>(null);
+  /** Which row is open, since one file can appear under both headings with different diffs. */
+  const [open, setOpen] = useState<{ path: string; staged: boolean } | null>(null);
+
+  /**
+   * Ask for the open row's diff whenever it does not have one.
+   *
+   * Covers opening a row and, less obviously, reading the tree again: a refresh drops every
+   * held diff, because a diff describes the state the status was read in. Without this the
+   * open row said it was reading and then never was, until it was collapsed and reopened.
+   *
+   * Settles rather than loops, because a diff that cannot be read is still recorded - the
+   * absence is what this reacts to, and it is filled either way.
+   */
+  useEffect(() => {
+    if (open && !diffs[diffKey(open.path, open.staged)]) onDiff(open.path, open.staged);
+  }, [open, diffs, onDiff]);
 
   const toggle = (path: string, isStaged: boolean) => {
-    const key = diffKey(path, isStaged);
-    if (open === key) {
-      setOpen(null);
-      return;
-    }
-
-    setOpen(key);
-    onDiff(path, isStaged);
+    setOpen((current) =>
+      current && current.path === path && current.staged === isStaged ? null : { path, staged: isStaged },
+    );
   };
 
   return (
@@ -194,7 +203,7 @@ export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onC
                     file={file}
                     change={file.staged!}
                     staged
-                    open={open === diffKey(file.path, true)}
+                    open={open?.path === file.path && open.staged}
                     diff={diffs[diffKey(file.path, true)]}
                     onToggle={() => toggle(file.path, true)}
                   />
@@ -216,7 +225,7 @@ export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onC
                     file={file}
                     change={file.unstaged!}
                     staged={false}
-                    open={open === diffKey(file.path, false)}
+                    open={open?.path === file.path && !open.staged}
                     diff={diffs[diffKey(file.path, false)]}
                     onToggle={() => toggle(file.path, false)}
                   />
@@ -229,3 +238,5 @@ export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onC
     </div>
   );
 }
+
+

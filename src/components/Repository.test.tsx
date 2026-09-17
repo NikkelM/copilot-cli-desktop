@@ -296,3 +296,80 @@ describe('opening a file to its diff', () => {
   });
 });
 
+
+/**
+ * Reading the tree again drops every held diff, because a diff describes the state the
+ * status was read in. The open row has to notice and ask again - without that it said it
+ * was reading and then never was, until it was collapsed and reopened.
+ */
+describe('an open row when the tree is read again', () => {
+  const one: RepoStatus = { ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] };
+  const patch = '--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before\n+after';
+
+  it('asks again when its diff is dropped', async () => {
+    const onDiff = vi.fn();
+    const user = userEvent.setup();
+    const view = shown(one, { onDiff, diffs: { 'unstaged:a.ts': { patch, stale: false } } });
+    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+    onDiff.mockClear();
+
+    // What a refresh does: the status stands, the diffs are gone.
+    view.rerender(
+      <Repository
+        status={one}
+        loading={false}
+        cwd={'C:\\repo'}
+        diffs={{}}
+        onDiff={onDiff}
+        onRefresh={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(onDiff).toHaveBeenCalledWith('a.ts', false);
+  });
+
+  it('draws the new diff once it arrives', async () => {
+    const user = userEvent.setup();
+    const view = shown(one, { diffs: { 'unstaged:a.ts': { patch, stale: false } } });
+    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+
+    const after = '--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before\n+something else entirely';
+    view.rerender(
+      <Repository
+        status={one}
+        loading={false}
+        cwd={'C:\\repo'}
+        diffs={{ 'unstaged:a.ts': { patch: after, stale: false } }}
+        onDiff={() => {}}
+        onRefresh={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/something else entirely/)).toBeTruthy();
+  });
+
+  /** A diff that cannot be read is still recorded, so the absence this reacts to is filled. */
+  it('stops asking once the answer is that there is no diff', async () => {
+    const onDiff = vi.fn();
+    const user = userEvent.setup();
+    const view = shown(one, { onDiff, diffs: { 'unstaged:a.ts': { patch: null, stale: false } } });
+    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+    onDiff.mockClear();
+
+    view.rerender(
+      <Repository
+        status={one}
+        loading={false}
+        cwd={'C:\\repo'}
+        diffs={{ 'unstaged:a.ts': { patch: null, stale: false } }}
+        onDiff={onDiff}
+        onRefresh={() => {}}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(onDiff).not.toHaveBeenCalled();
+  });
+});
