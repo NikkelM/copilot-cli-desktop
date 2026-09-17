@@ -235,10 +235,11 @@ you already keep is the structure you get.
 | `_manifest.json` | Optional. Supplies titles and summaries when present; the filesystem always decides what exists |
 | Ignored | `.obsidian`, `.git`, `assets`, `_templates` |
 
-**Raw** shows a page as the file it is, and that view is editable - a typo noticed while
-reading is fixable where it was noticed. Ctrl+S writes it. The file is handed to the editor
-and back whole, so saving never reformats anything it was not asked to touch, and edits
-left unsaved survive walking to another page: the tree marks which pages are waiting.
+**Raw** shows a page as the file it is, and that view is editable; **Preview** switches
+back. Preview renders unsaved edits too, so a page can be written, looked at, and saved
+without leaving the browser - Ctrl+S saves from either view. The file is handed to the
+editor and back whole, so saving never reformats anything it was not asked to touch, and
+edits left unsaved survive walking to another page: the tree marks which pages are waiting.
 
 Only pages that already exist can be written. Containment is judged by resolving the real
 path, which a file that does not exist has none of, so creating pages needs a rule of its

@@ -640,18 +640,15 @@ export interface WikiPage {
   tags?: string[];
 }
 
-/** One page's contents, with its frontmatter kept apart from the prose. */
+/**
+ * One page's contents: the file, as it is.
+ *
+ * Not split here. The app splits it anyway so it can preview a page being edited without a
+ * round trip, and sending the parts as well would put the same file on the wire three times
+ * with two copies never read.
+ */
 export interface WikiPageContent {
   path: string;
-  /** As it was written, for the reader to make sense of. Absent when the page carries none. */
-  frontmatter?: string;
-  body: string;
-  /**
-   * The whole file, unsplit.
-   *
-   * What an editor edits. Handing back a reconstruction would rewrite spacing and line
-   * endings the app was never asked to touch, in a file its owner also edits elsewhere.
-   */
   source: string;
 }
 

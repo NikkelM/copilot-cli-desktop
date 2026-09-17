@@ -235,61 +235,22 @@ export async function listWikiPages(): Promise<WikiPage[]> {
 }
 
 /**
- * Split a page into its frontmatter and the prose below it.
- *
- * Wiki pages carry frontmatter by convention, and rendering it as body text puts a block of
- * `title:` and `tags:` above every page. Only a block opening on the very first line counts,
- * which is what keeps a horizontal rule partway down a page from being read as one.
- */
-export function splitFrontmatter(source: string): { frontmatter: string | null; body: string } {
-  const text = source.startsWith('\ufeff') ? source.slice(1) : source;
-  if (!/^---\r?\n/.test(text)) return { frontmatter: null, body: text };
-
-  const end = text.indexOf('\n---', text.indexOf('\n'));
-  if (end === -1) return { frontmatter: null, body: text };
-
-  const after = text.indexOf('\n', end + 1);
-  if (after === -1) return { frontmatter: text.slice(text.indexOf('\n') + 1, end), body: '' };
-
-  // The blank line conventionally written under the closing delimiter belongs to the block
-  // rather than to the prose, so the body begins where the reading does. Exactly one: a
-  // page that genuinely opens on blank lines keeps the rest of them.
-  const prose = text.slice(after + 1);
-  return {
-    frontmatter: text.slice(text.indexOf('\n') + 1, end),
-    body: prose.startsWith('\r\n') ? prose.slice(2) : prose.startsWith('\n') ? prose.slice(1) : prose,
-  };
-}
-
-/**
  * One page, as it is on disk.
  *
- * The frontmatter is handed over as it was written rather than parsed here: what the fields
- * mean is the reader's business, and a page whose frontmatter this cannot make sense of
- * should still be readable.
- *
- * The whole file comes too. The split is what gets rendered, but an editor has to hand back
- * exactly what it was given or saving would rewrite formatting nobody asked it to touch.
+ * Handed over whole rather than split. What a page renders to is the app's question, and it
+ * has to split a page being edited anyway - so splitting here as well would mean two
+ * implementations that could disagree, and the same file sent three times.
  */
 export async function readWikiPage(page: string): Promise<WikiPageContent | null> {
   const root = await realRoot();
   const file = await resolveWikiPath(page);
   if (!root || !file) return null;
 
-  let source: string;
   try {
-    source = await readFile(file, 'utf8');
+    return { path: asPagePath(root, file), source: await readFile(file, 'utf8') };
   } catch {
     return null;
   }
-
-  const { frontmatter, body } = splitFrontmatter(source);
-  return {
-    path: asPagePath(root, file),
-    ...(frontmatter === null ? {} : { frontmatter }),
-    body,
-    source,
-  };
 }
 
 /**
@@ -314,6 +275,7 @@ export async function writeWikiPage(page: string, source: string): Promise<boole
     return false;
   }
 }
+
 
 
 

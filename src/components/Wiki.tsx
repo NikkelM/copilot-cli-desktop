@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { WikiPage, WikiPageContent } from '../../shared/protocol';
+import { splitFrontmatter } from '../../shared/frontmatter';
 import { isWikiLink, resolveWikiLink, withResolvedLinks } from '../lib/wikiLinks';
 import { ChevronIcon } from './Icons';
 import { Markdown } from './Markdown';
@@ -334,7 +335,36 @@ export function Wiki({
   onClose,
 }: WikiProps) {
   const tree = useMemo(() => (pages ? asTree(pages) : null), [pages]);
-  const fields = useMemo(() => (page?.frontmatter ? readFrontmatter(page.frontmatter) : []), [page?.frontmatter]);
+  const title = pages?.find((each) => each.path === page?.path)?.title ?? page?.path ?? 'Wiki';
+  /** Nothing to browse, which is the case the browser has to explain itself for. */
+  const empty = where !== null && pages !== null && pages.length === 0;
+  /**
+   * Whether the page is shown as the file it is rather than as what it renders to.
+   *
+   * Per page rather than a mode the whole browser is in: turning it on to fix a typo and
+   * then reading three pages of source is not what was asked for.
+   *
+   * Unsaved edits do not force it either way. Previewing what has been written before
+   * committing it is most of the reason to have both views, so the toggle keeps working
+   * while a page is dirty and the preview renders the draft rather than the file.
+   */
+  const [raw, setRaw] = useState(false);
+  const source = draft ?? page?.source ?? '';
+  useEffect(() => setRaw(false), [page?.path]);
+
+  /**
+   * What is rendered, which is the draft when there is one.
+   *
+   * Split here rather than asked of the sidecar, so previewing an edit costs nothing and
+   * works on text that has never been written. Through the same function the sidecar uses,
+   * or a page would render differently depending on whether it had been saved yet.
+   */
+  const shownSource = useMemo(() => splitFrontmatter(source), [source]);
+  const fields = useMemo(
+    () => (shownSource.frontmatter ? readFrontmatter(shownSource.frontmatter) : []),
+    [shownSource.frontmatter],
+  );
+
   /**
    * The body with its wikilinks rewritten as ordinary links.
    *
@@ -343,23 +373,9 @@ export function Wiki({
    * cross-references as punctuation.
    */
   const body = useMemo(
-    () => (page && pages ? withResolvedLinks(page.body, page.path, pages) : (page?.body ?? '')),
-    [page, pages],
+    () => (page && pages ? withResolvedLinks(shownSource.body, page.path, pages) : shownSource.body),
+    [shownSource.body, page, pages],
   );
-  const title = pages?.find((each) => each.path === page?.path)?.title ?? page?.path ?? 'Wiki';
-  /** Nothing to browse, which is the case the browser has to explain itself for. */
-  const empty = where !== null && pages !== null && pages.length === 0;
-  /**
-   * Whether the page is shown as the file it is rather than as what it renders to.
-   *
-   * Per page rather than a mode the whole browser is in: turning it on to fix a typo and
-   * then reading three pages of source is not what was asked for. Kept on while there are
-   * unsaved edits, because leaving the editor would put them out of sight.
-   */
-  const [raw, setRaw] = useState(false);
-  const editing = raw || draft !== undefined;
-  const source = draft ?? page?.source ?? '';
-  useEffect(() => setRaw(false), [page?.path]);
 
   /**
    * The gestures that already mean back, wherever the reader's hands are.
@@ -371,6 +387,14 @@ export function Wiki({
    */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      // Saving works from either view, because previewing an edit is part of writing it and
+      // the key should not stop meaning save the moment the text goes out of sight.
+      if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault();
+        if (page && draft !== undefined) onSave(page.path);
+        return;
+      }
+
       if (!event.altKey) return;
       if (event.key === 'ArrowLeft' && canGoBack) {
         event.preventDefault();
@@ -402,7 +426,7 @@ export function Wiki({
       window.removeEventListener('mousedown', claim);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [canGoBack, canGoForward, onBack, onForward]);
+  }, [canGoBack, canGoForward, onBack, onForward, page, draft, onSave]);
 
   return (
     <>
@@ -465,17 +489,16 @@ export function Wiki({
               )}
               <button
                 type="button"
-                className={editing ? 'changes-action on' : 'changes-action'}
+                className={raw ? 'changes-action on' : 'changes-action'}
                 onClick={() => setRaw((was) => !was)}
-                disabled={draft !== undefined}
-                aria-pressed={editing}
+                aria-pressed={raw}
                 title={
-                  draft !== undefined
-                    ? 'Save or discard the edits first'
+                  raw
+                    ? 'Show the page as it renders, including anything unsaved'
                     : 'Show the file as it is written, and edit it'
                 }
               >
-                Raw
+                {raw ? 'Preview' : 'Raw'}
               </button>
             </div>
           )}
@@ -505,20 +528,13 @@ export function Wiki({
           <article className="wiki-page-body">
             {/* The page as the file it is, which is also how it is edited. No metadata
                 strip above it: the frontmatter is in the text being edited. */}
-            {editing && page ? (
+            {raw && page ? (
               <textarea
                 className="wiki-source"
                 value={source}
                 spellCheck={false}
                 aria-label={`Source of ${page.path}`}
                 onChange={(event) => onEdit(page.path, event.target.value)}
-                onKeyDown={(event) => {
-                  // The one key every editor answers to, so saving is not a trip to the header.
-                  if ((event.ctrlKey || event.metaKey) && event.key === 's') {
-                    event.preventDefault();
-                    if (draft !== undefined) onSave(page.path);
-                  }
-                }}
               />
             ) : (
               <>
@@ -559,12 +575,14 @@ export function Wiki({
 
       <div className="footer">
         <p className="changes-note">
-          {where ? `Read from ${where.root}.` : 'Reading…'} Raw shows a page as the file it is,
-          and that view is editable. Ctrl+S writes it.
+          {where ? `Read from ${where.root}.` : 'Reading…'} Raw shows a page as the file it is
+          and lets you edit it; Preview renders what you have written. Ctrl+S saves.
         </p>
       </div>
     </>
   );
 }
+
+
 
 

@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { splitFrontmatter } from '../../shared/frontmatter.js';
+
 let home: string;
 /** Where the wiki's files really live, which is not where the app looks for them. */
 let store: string;
@@ -157,14 +159,14 @@ describe('saying whether there is a wiki at all', () => {
 });
 
 describe('reading one page', () => {
-  it('hands back the prose without the frontmatter above it', async () => {
+  // Whole, frontmatter and all: what a page renders to is the app's question, not this one.
+  it('hands back the file as it is written', async () => {
     if (!linkWiki()) return;
     page('index.md', withFrontmatter('Index', '# Heading\n\nthe body'));
     const { readWikiPage } = await loadWiki();
 
     const found = await readWikiPage('index.md');
-    expect(found?.body).toBe('# Heading\n\nthe body');
-    expect(found?.frontmatter).toContain('title: Index');
+    expect(found?.source).toBe(withFrontmatter('Index', '# Heading\n\nthe body'));
   });
 
   it('reads a page that carries no frontmatter at all', async () => {
@@ -173,8 +175,7 @@ describe('reading one page', () => {
     const { readWikiPage } = await loadWiki();
 
     const found = await readWikiPage('plain.md');
-    expect(found?.body).toBe('# Just a heading');
-    expect(found?.frontmatter).toBeUndefined();
+    expect(found?.source).toBe('# Just a heading');
   });
 
   it('says nothing for a page that is not there', async () => {
@@ -221,7 +222,7 @@ describe('staying inside the wiki', () => {
     page('index.md', withFrontmatter('Index', 'through the link'));
     const { readWikiPage } = await loadWiki();
 
-    expect((await readWikiPage('index.md'))?.body).toBe('through the link');
+    expect((await readWikiPage('index.md'))?.source).toContain('through the link');
   });
 
   // A link inside the wiki pointing out of it is the case the text of a path cannot catch.
@@ -240,47 +241,6 @@ describe('staying inside the wiki', () => {
   });
 });
 
-describe('separating frontmatter from prose', () => {
-  it('takes a block that opens the page', async () => {
-    const { splitFrontmatter } = await loadWiki();
-
-    expect(splitFrontmatter('---\ntitle: A\n---\nbody')).toEqual({ frontmatter: 'title: A', body: 'body' });
-  });
-
-  /** The blank under the closing delimiter is the block's own formatting, not the prose. */
-  it('begins the body where the reading begins', async () => {
-    const { splitFrontmatter } = await loadWiki();
-
-    expect(splitFrontmatter('---\ntitle: A\n---\n\n# Heading').body).toBe('# Heading');
-  });
-
-  it('keeps blank lines a page genuinely opens with', async () => {
-    const { splitFrontmatter } = await loadWiki();
-
-    expect(splitFrontmatter('---\ntitle: A\n---\n\n\n\n# Heading').body).toBe('\n\n# Heading');
-  });
-
-  /** A rule partway down a page is prose, and reading it as frontmatter would eat the page. */
-  it('leaves a rule further down the page alone', async () => {
-    const { splitFrontmatter } = await loadWiki();
-    const source = '# Heading\n\n---\n\nmore prose';
-
-    expect(splitFrontmatter(source)).toEqual({ frontmatter: null, body: source });
-  });
-
-  it('leaves a page whose block never closes alone', async () => {
-    const { splitFrontmatter } = await loadWiki();
-    const source = '---\ntitle: A\n\nbody that never closes it';
-
-    expect(splitFrontmatter(source)).toEqual({ frontmatter: null, body: source });
-  });
-
-  it('reads a block written with carriage returns', async () => {
-    const { splitFrontmatter } = await loadWiki();
-
-    expect(splitFrontmatter('---\r\ntitle: A\r\n---\r\nbody').body).toBe('body');
-  });
-});
 
 /**
  * Writing a page back, which is what makes the browser an editor. The same containment rule
@@ -298,14 +258,14 @@ describe('writing a page back', () => {
     expect((await readWikiPage('index.md'))?.source).toBe('---\ntitle: Edited\n---\n\nnew prose');
   });
 
-  it('hands the whole file back beside the split of it', async () => {
+  it('hands the file back exactly as it is written', async () => {
     if (!linkWiki()) return;
     page('index.md', '---\ntitle: Index\n---\n\n\n\nspaced out\n\n');
     const { readWikiPage } = await loadWiki();
 
+    // Every blank line kept, so saving cannot reformat what it was never asked to touch.
     const found = await readWikiPage('index.md');
     expect(found?.source).toBe('---\ntitle: Index\n---\n\n\n\nspaced out\n\n');
-    expect(found?.body).toBe('\n\nspaced out\n\n');
   });
 
   it('refuses a page outside the wiki', async () => {
@@ -350,7 +310,7 @@ describe('starting a knowledge base', () => {
 
     expect(made).toBe('Home.md');
     expect((await listWikiPages()).map((entry) => entry.path)).toEqual(['Home.md']);
-    expect((await readWikiPage('Home.md'))?.body).toContain('# Home');
+    expect((await readWikiPage('Home.md'))?.source).toContain('# Home');
     delete process.env.COPILOT_WIKI_DIR;
   });
 
@@ -360,9 +320,9 @@ describe('starting a knowledge base', () => {
     const { createWiki, readWikiPage } = await loadWiki();
     await createWiki();
 
-    const found = await readWikiPage('Home.md');
-    expect(found?.frontmatter).toContain('title: Home');
-    expect(found?.body.startsWith('# Home')).toBe(true);
+    const { frontmatter, body } = splitFrontmatter((await readWikiPage('Home.md'))!.source);
+    expect(frontmatter).toContain('title: Home');
+    expect(body.startsWith('# Home')).toBe(true);
     delete process.env.COPILOT_WIKI_DIR;
   });
 
@@ -385,7 +345,7 @@ describe('starting a knowledge base', () => {
     const made = await createWiki();
 
     expect(made).toBe('index.md');
-    expect((await readWikiPage('index.md'))?.body).toBe('the original');
+    expect((await readWikiPage('index.md'))?.source).toContain('the original');
   });
 
   it('says so when the folder cannot be made', async () => {
@@ -399,3 +359,4 @@ describe('starting a knowledge base', () => {
     delete process.env.COPILOT_WIKI_DIR;
   });
 });
+

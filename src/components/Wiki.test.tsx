@@ -16,11 +16,27 @@ const pages: WikiPage[] = [
   { path: 'resources/guides/rtk.md', title: 'RTK Install' },
 ];
 
-/** A page as the sidecar hands it over: the split, plus the file the split came from. */
-const asPage = (page: PageFixture | null): WikiPageContent | null =>
-  page === null ? null : { ...page, source: page.source ?? page.body };
+/**
+ * A page as the sidecar hands it over: the file, whole.
+ *
+ * Tests say what a page contains in the terms they care about - some frontmatter, some
+ * prose - and this composes the file they would make. Given a `source` outright it uses
+ * that instead, for the cases that are about exact spacing.
+ */
+const asPage = (page: PageFixture | null): WikiPageContent | null => {
+  if (page === null) return null;
+  if (page.source !== undefined) return { path: page.path, source: page.source };
 
-type PageFixture = Omit<WikiPageContent, 'source'> & { source?: string };
+  const front = page.frontmatter ? `---\n${page.frontmatter}\n---\n\n` : '';
+  return { path: page.path, source: `${front}${page.body ?? ''}` };
+};
+
+interface PageFixture {
+  path: string;
+  frontmatter?: string;
+  body?: string;
+  source?: string;
+}
 
 const shown = (page: PageFixture | null, over: Partial<Parameters<typeof Wiki>[0]> = {}) =>
   render(
@@ -502,17 +518,42 @@ describe('showing a page as the file it is', () => {
     const user = userEvent.setup();
     shown(file, { draft: 'edited elsewhere' });
 
-    await user.click(screen.getByRole('button', { name: 'Raw' })).catch(() => {});
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
 
     expect((editor() as HTMLTextAreaElement).value).toBe('edited elsewhere');
   });
 
-  /** Unsaved work put out of sight is unsaved work about to be lost. */
-  it('stays open while there are edits, and cannot be toggled away', () => {
-    shown(file, { draft: 'half written' });
+  /** Unsaved work put out of sight is unsaved work about to be lost - but previewing it is
+   * most of the reason to have both views, so the toggle keeps working while dirty. */
+  it('previews what is being written without saving it first', async () => {
+    const user = userEvent.setup();
+    shown(file, { draft: '---\ntitle: Index\n---\n\n# Rewritten' });
 
-    expect(editor()).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Raw' })).toHaveProperty('disabled', true);
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
+    await user.click(screen.getByRole('button', { name: 'Preview' }));
+
+    expect(screen.getByText('Rewritten')).toBeTruthy();
+    expect(editor()).toBeNull();
+  });
+
+  /** A page must not render differently depending on whether it has been saved yet. */
+  it('reads the draft frontmatter as frontmatter rather than as prose', () => {
+    const view = shown(file, { draft: '---\ntitle: Edited\ncategory: notes\n---\n\nthe prose' });
+
+    expect(screen.getByText('category')).toBeTruthy();
+    expect(screen.getByText('notes')).toBeTruthy();
+    expect(view.container.querySelector('.markdown')?.textContent).toBe('the prose');
+  });
+
+  it('says which view it would switch to', async () => {
+    const user = userEvent.setup();
+    shown(file);
+    expect(screen.getByRole('button', { name: 'Raw' })).toBeTruthy();
+
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
+
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Raw' })).toBeNull();
   });
 
   it('goes back to reading when the toggle is pressed again', async () => {
@@ -520,7 +561,7 @@ describe('showing a page as the file it is', () => {
     shown(file);
 
     await user.click(screen.getByRole('button', { name: 'Raw' }));
-    await user.click(screen.getByRole('button', { name: 'Raw' }));
+    await user.click(screen.getByRole('button', { name: 'Preview' }));
 
     expect(editor()).toBeNull();
     expect(screen.getByText('The index')).toBeTruthy();
@@ -534,7 +575,7 @@ describe('showing a page as the file it is', () => {
       <Wiki
         pages={pages}
         where={{ root: '/w', exists: true }}
-        page={{ path: 'Home.md', body: 'prose', source: 'prose' }}
+        page={{ path: 'Home.md', source: 'prose' }}
         loading={false}
         failed={null}
         saving={false}
@@ -578,16 +619,39 @@ describe('writing a page back', () => {
     expect(onSave).toHaveBeenCalledWith('index.md');
   });
 
-  /** The key every editor answers to, so saving is not a trip to the header. */
-  it('saves on ctrl and s', async () => {
+  /** The key every editor answers to, and previewing an edit is part of writing it - so it
+   * must not stop meaning save the moment the text goes out of sight. */
+  it('saves on ctrl and s from the editor', async () => {
     const onSave = vi.fn();
     const user = userEvent.setup();
     shown(file, { draft: 'edited', onSave });
 
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
     await user.click(screen.getByRole('textbox'));
     await user.keyboard('{Control>}s{/Control}');
 
     expect(onSave).toHaveBeenCalledWith('index.md');
+  });
+
+  it('saves on ctrl and s from the preview', async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    shown(file, { draft: 'edited', onSave });
+
+    expect(screen.queryByRole('textbox')).toBeNull();
+    await user.keyboard('{Control>}s{/Control}');
+
+    expect(onSave).toHaveBeenCalledWith('index.md');
+  });
+
+  it('saves nothing when there is nothing to save', async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    shown(file, { onSave });
+
+    await user.keyboard('{Control>}s{/Control}');
+
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it('gives up the edits when they are discarded', async () => {
@@ -683,3 +747,4 @@ describe('starting a knowledge base from the onboarding', () => {
     expect(screen.getByText('COPILOT_WIKI_DIR')).toBeTruthy();
   });
 });
+
