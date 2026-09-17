@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { Wiki, asTree, readFrontmatter } from './Wiki';
@@ -178,16 +178,28 @@ describe('browsing the wiki', () => {
     const user = userEvent.setup();
     shown({ path: 'index.md', body: 'prose' }, { onClose });
 
-    await user.click(screen.getByRole('button', { name: 'Back to sessions' }));
+    await user.click(screen.getByRole('button', { name: 'Sessions' }));
 
     expect(onClose).toHaveBeenCalled();
   });
 
+  /**
+   * Two buttons both saying back would each be explaining the other, so the one that leaves
+   * the wiki is named for where it goes.
+   */
+  it('names the way out and the way back differently', () => {
+    shown({ path: 'index.md', body: 'prose' });
+
+    expect(screen.getByRole('button', { name: 'Sessions' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '← Back' })).toBeTruthy();
+  });
+
+  // Disabled rather than absent, so the header does not move as the reader navigates.
   it('offers a way back only once there is somewhere to go', async () => {
     const onBack = vi.fn();
     const user = userEvent.setup();
     const view = shown({ path: 'index.md', body: 'prose' }, { onBack });
-    expect(screen.queryByRole('button', { name: 'Back a page' })).toBeNull();
+    expect(screen.getByRole('button', { name: '← Back' })).toHaveProperty('disabled', true);
 
     view.rerender(
       <Wiki
@@ -201,8 +213,125 @@ describe('browsing the wiki', () => {
         onClose={() => {}}
       />,
     );
-    await user.click(screen.getByRole('button', { name: 'Back a page' }));
+    await user.click(screen.getByRole('button', { name: '← Back' }));
 
     expect(onBack).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The gestures that already mean back, so retracing is not a trip to the header.
+ */
+describe('going back without the button', () => {
+  it('goes back on alt and the left arrow', () => {
+    const onBack = vi.fn();
+    shown({ path: 'projects/README.md', body: 'prose' }, { onBack, canGoBack: true });
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft', altKey: true });
+
+    expect(onBack).toHaveBeenCalled();
+  });
+
+  it('goes back on the mouse back button', () => {
+    const onBack = vi.fn();
+    shown({ path: 'projects/README.md', body: 'prose' }, { onBack, canGoBack: true });
+
+    fireEvent.mouseUp(window, { button: 3 });
+
+    expect(onBack).toHaveBeenCalled();
+  });
+
+  /** Left alone the webview follows it and leaves the app, which there is no way back from. */
+  it('claims the mouse back button so the webview cannot navigate', () => {
+    shown({ path: 'projects/README.md', body: 'prose' }, { canGoBack: true });
+
+    const claimed = !fireEvent.mouseDown(window, { button: 3, cancelable: true });
+
+    expect(claimed).toBe(true);
+  });
+
+  it('does nothing when there is nowhere to go back to', () => {
+    const onBack = vi.fn();
+    shown({ path: 'index.md', body: 'prose' }, { onBack, canGoBack: false });
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft', altKey: true });
+    fireEvent.mouseUp(window, { button: 3 });
+
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  it('leaves an ordinary left arrow alone', () => {
+    const onBack = vi.fn();
+    shown({ path: 'projects/README.md', body: 'prose' }, { onBack, canGoBack: true });
+
+    fireEvent.keyDown(window, { key: 'ArrowLeft' });
+
+    expect(onBack).not.toHaveBeenCalled();
+  });
+
+  // The listeners are the window's, so they must not outlive the view that set them up.
+  it('stops listening once the wiki is closed', () => {
+    const onBack = vi.fn();
+    const view = shown({ path: 'projects/README.md', body: 'prose' }, { onBack, canGoBack: true });
+
+    view.unmount();
+    fireEvent.keyDown(window, { key: 'ArrowLeft', altKey: true });
+
+    expect(onBack).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Where the page sits, which is the way up rather than the way back - what a reader who has
+ * followed three links into a subject actually wants.
+ */
+describe('the trail showing where a page sits', () => {
+  /** The tree shows the same names, so these are asked of the trail rather than the page. */
+  const crumbs = () => within(screen.getByLabelText('Where this page sits'));
+
+  it('shows each part of the path', () => {
+    shown({ path: 'projects/app/overview.md', body: 'prose' });
+
+    expect(crumbs().getByRole('button', { name: 'projects' })).toBeTruthy();
+    expect(crumbs().getByText('overview.md')).toBeTruthy();
+  });
+
+  it('opens the page a directory stands for', async () => {
+    const onOpen = vi.fn();
+    const user = userEvent.setup();
+    shown({ path: 'projects/app/overview.md', body: 'prose' }, { onOpen });
+
+    await user.click(crumbs().getByRole('button', { name: 'projects' }));
+
+    expect(onOpen).toHaveBeenCalledWith('projects/README.md');
+  });
+
+  /**
+   * A crumb pointing at the page already open is a link that does nothing, and it is the
+   * common case rather than a corner: a directory's own page is usually the one read on
+   * the way into it.
+   */
+  it('does not link a directory back to the page being read', () => {
+    shown({ path: 'projects/app/overview.md', body: 'prose' });
+
+    expect(crumbs().queryByRole('button', { name: 'app' })).toBeNull();
+    expect(crumbs().getByText('app')).toBeTruthy();
+  });
+
+  /** A grouping rather than a subject, and saying so beats inventing a destination. */
+  it('leaves a directory with no page of its own as plain text', () => {
+    shown(
+      { path: 'areas/loose/note.md', body: 'prose' },
+      { pages: [...pages, { path: 'areas/loose/note.md', title: 'Note' }] },
+    );
+
+    expect(crumbs().queryByRole('button', { name: 'loose' })).toBeNull();
+    expect(crumbs().getByText('loose')).toBeTruthy();
+  });
+
+  it('never makes the page itself a link', () => {
+    shown({ path: 'projects/README.md', body: 'prose' });
+
+    expect(crumbs().queryByRole('button', { name: 'README.md' })).toBeNull();
   });
 });

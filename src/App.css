@@ -3268,3 +3268,54 @@ button.group:hover {
   color: var(--text-muted);
   font-size: var(--font-md);
 }
+
+/*
+ * Where the page sits, as parts that go somewhere.
+ *
+ * Pushed to the right of the buttons, so the header reads as actions then position - and
+ * so the crumbs are beside the page rather than competing with the way out of the wiki.
+ */
+.wiki-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: auto;
+  min-width: 0;
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+}
+
+.wiki-crumb {
+  padding: 1px 3px;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.wiki-crumb:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/* A directory with no page of its own, and the page already being read. */
+.wiki-crumb.plain {
+  cursor: default;
+}
+
+.wiki-crumb.plain:hover {
+  background: none;
+  color: var(--text-muted);
+}
+
+.wiki-crumbs > span:last-child .wiki-crumb,
+.wiki-crumbs > .wiki-crumb:last-child {
+  color: var(--text);
+}
+
+.wiki-crumb-sep {
+  color: var(--border);
+}

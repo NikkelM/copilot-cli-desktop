@@ -101,3 +101,25 @@ export function withResolvedLinks(body: string, from: string, pages: WikiPage[])
 export function isWikiLink(href: string): boolean {
   return !/^[a-z][a-z0-9+.-]*:/i.test(href) && !href.startsWith('#');
 }
+
+/**
+ * What a directory opens on, when something in it reads as the page for the whole.
+ *
+ * Named by convention rather than declared anywhere, so the candidates are the conventions
+ * this wiki actually uses: `README.md` at the top of each PARA category, `overview.md`
+ * inside a project or a guide, and a page sharing the directory's own name. Fifteen of the
+ * real wiki's twenty-one directories have one; the rest are groupings rather than subjects,
+ * and saying so by not being a link is better than inventing a page for them.
+ */
+export function landingPage(folder: string, pages: WikiPage[]): string | null {
+  const name = folder.split('/').pop() ?? '';
+  const candidates = ['README.md', 'index.md', 'overview.md', `${name}.md`];
+
+  for (const candidate of candidates) {
+    const wanted = `${folder}/${candidate}`.toLowerCase();
+    const found = pages.find((page) => page.path.toLowerCase() === wanted);
+    if (found) return found.path;
+  }
+
+  return null;
+}

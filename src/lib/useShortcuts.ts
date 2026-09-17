@@ -49,6 +49,7 @@ export const BINDINGS: readonly Binding[] = [
   { keys: 'shift+enter', what: 'insert newline' },
   { keys: 'up/down', what: 'previous or next prompt' },
   { keys: 'ctrl+r', what: 'reverse search history' },
+  { keys: 'alt+left', what: 'back a page in the wiki' },
   { keys: 'ctrl+u', what: 'delete to start of line' },
   { keys: 'ctrl+k', what: 'delete to end of line' },
 ];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isWikiLink, resolveWikiLink, withResolvedLinks } from './wikiLinks';
+import { isWikiLink, landingPage, resolveWikiLink, withResolvedLinks } from './wikiLinks';
 import type { WikiPage } from '../../shared/protocol';
 
 const pages: WikiPage[] = [
@@ -135,6 +135,48 @@ describe('rewriting the links a page carries', () => {
     const body = 'see [the guide](resources/guides/rtk-install.md)';
 
     expect(withResolvedLinks(body, 'index.md', pages)).toBe(body);
+  });
+});
+
+/**
+ * A directory's own page, named by convention rather than declared. The candidates are the
+ * conventions the real wiki uses: README at the top of each category, overview inside a
+ * project or guide.
+ */
+describe('the page a directory stands for', () => {
+  it('takes the readme a category keeps', () => {
+    expect(landingPage('projects', pages)).toBe('projects/README.md');
+  });
+
+  it('takes the overview a project keeps', () => {
+    expect(landingPage('projects/copilot-cli-desktop', pages)).toBe(
+      'projects/copilot-cli-desktop/overview.md',
+    );
+  });
+
+  it('takes a page sharing the directory own name', () => {
+    const named: WikiPage[] = [{ path: 'areas/health/health.md', title: 'Health' }];
+
+    expect(landingPage('areas/health', named)).toBe('areas/health/health.md');
+  });
+
+  /** A grouping rather than a subject: saying so beats inventing a destination for it. */
+  it('says nothing for a directory that is only a grouping', () => {
+    expect(landingPage('resources/guides', pages)).toBeNull();
+  });
+
+  // A page below a subdirectory is not that directory's own page.
+  it('does not reach into a directory below', () => {
+    expect(landingPage('resources', pages)).toBeNull();
+  });
+
+  it('prefers the readme when a directory has more than one', () => {
+    const both: WikiPage[] = [
+      { path: 'projects/overview.md', title: 'Overview' },
+      { path: 'projects/README.md', title: 'Projects' },
+    ];
+
+    expect(landingPage('projects', both)).toBe('projects/README.md');
   });
 });
 
