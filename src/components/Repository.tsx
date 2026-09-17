@@ -365,15 +365,17 @@ export function Repository({
           {staged.length > 0 && (
             <>
               <p className="repo-group">
-                Staged
                 <button
                   type="button"
-                  className="repo-all"
+                  className="repo-stage"
                   onClick={() => onStage(staged.map((file) => file.path), false)}
                   disabled={staged.some((file) => busy.includes(file.path))}
+                  title="Take everything out of the next commit"
+                  aria-label="Unstage all"
                 >
-                  Unstage all
+                  −
                 </button>
+                Staged
               </p>
               <ul className="changes-list">
                 {staged.map((file) => (
@@ -399,15 +401,17 @@ export function Repository({
                   is: part of it is going into the commit and part of it is not. The two
                   rows open different diffs, because they describe different things. */}
               <p className="repo-group">
-                Changes
                 <button
                   type="button"
-                  className="repo-all"
+                  className="repo-stage"
                   onClick={() => onStage(unstaged.map((file) => file.path), true)}
                   disabled={unstaged.some((file) => busy.includes(file.path))}
+                  title="Put everything into the next commit"
+                  aria-label="Stage all"
                 >
-                  Stage all
+                  +
                 </button>
+                Changes
               </p>
               <ul className="changes-list">
                 {unstaged.map((file) => (

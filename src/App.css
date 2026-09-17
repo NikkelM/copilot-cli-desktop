@@ -3627,10 +3627,12 @@ button.group:hover {
   cursor: pointer;
 }
 
-/* Staged and Changes, which is what git calls the two halves of a working tree. */
+/* Staged and Changes, which is what git calls the two halves of a working tree. The heading
+   sits in the same two columns as the rows below it, so the group's own button lines up with
+   the one on every file it covers. */
 .repo-group {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   margin: 8px 0 2px;
   padding: 0 10px;
@@ -3640,35 +3642,18 @@ button.group:hover {
   letter-spacing: 0.06em;
 }
 
+/* Smaller than a row's, because it acts on the group rather than a file, and a heading that
+   shouted would read as the more important of the two. */
+.repo-group .repo-stage {
+  font-size: var(--font-md);
+}
+
 .repo-file {
   display: flex;
   align-items: baseline;
   gap: 8px;
   padding: 3px 10px;
   font-size: var(--font-md);
-}
-
-/* Beside the group it acts on, in the group's own smaller type: it is a second way to do
-   what every row already offers, not a heading of its own. Quiet until pointed at, because
-   staging everything is the larger of the two actions on the panel. */
-.repo-all {
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--text-dim);
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  cursor: pointer;
-}
-
-.repo-all:hover:not(:disabled) {
-  color: var(--accent);
-}
-
-.repo-all:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 /* Git's own letters: anyone who has read a status already knows them, and a word per row
