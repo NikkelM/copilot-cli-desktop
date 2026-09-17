@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { messageOf } from './errors';
-import { listWikiPages, readWikiPage, saveWikiPage } from './sidecar';
+import { createWiki as createWikiHere, listWikiPages, readWikiPage, saveWikiPage } from './sidecar';
 import type { WikiPage, WikiPageContent } from '../../shared/protocol';
 
 /** Where a reader who opens the wiki without naming a page starts. */
@@ -171,6 +171,34 @@ export function useWiki(open: boolean) {
     [drafts, read, revert],
   );
 
+  /**
+   * Start a knowledge base, and open what it starts with.
+   *
+   * The list is read again rather than assumed, because what was made is the sidecar's
+   * account rather than this one's - and the folder may have gained pages by other means
+   * between the browser opening and the button being pressed.
+   */
+  const create = useCallback(async () => {
+    setSaving(true);
+    setFailed(null);
+    try {
+      const made = await createWikiHere();
+      if (!made) {
+        setFailed('Could not create the knowledge base. The folder may not be writable.');
+        return;
+      }
+
+      const found = await listWikiPages();
+      setPages(found.pages);
+      setWhere({ root: found.root, exists: found.exists });
+      go(made);
+    } catch (error: unknown) {
+      setFailed(`Could not create the knowledge base: ${messageOf(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  }, [go]);
+
   // The first page the reader sees, chosen from what this wiki actually has rather than
   // assumed: a knowledge base may be laid out around any of these.
   useEffect(() => {
@@ -194,6 +222,7 @@ export function useWiki(open: boolean) {
     edit,
     revert,
     save,
+    create,
     go,
     back,
     forward,

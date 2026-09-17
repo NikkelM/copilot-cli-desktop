@@ -869,6 +869,13 @@ export interface SidecarRequests {
    * is sent, because the editor holds the file rather than a view of it.
    */
   'wiki.save': { params: { path: string; source: string }; result: { saved: boolean } };
+  /**
+   * Start a knowledge base where one was expected, and answer with the page to open.
+   *
+   * Makes the folder if it is missing and writes a first page if there is none. Null when
+   * nothing could be made. Never overwrites a page that is already there.
+   */
+  'wiki.create': { params: void; result: { page: string | null } };
   /** Run a command in a session, resuming it if it is cold. */
   'commands.invoke': {
     params: { sessionId: string; name: string; input?: string };
@@ -1027,6 +1034,7 @@ export const SIDECAR_METHODS = [
   'wiki.pages',
   'wiki.page',
   'wiki.save',
+  'wiki.create',
   'commands.invoke',
   'commands.enqueue',
   'agents.list',

@@ -20,6 +20,8 @@ interface WikiProps {
   onEdit: (path: string, source: string) => void;
   onRevert: (path: string) => void;
   onSave: (path: string) => void;
+  /** Start a knowledge base where there is none, and open what it starts with. */
+  onCreate: () => void;
   onOpen: (path: string) => void;
   onBack: () => void;
   onForward: () => void;
@@ -245,7 +247,17 @@ function Trail({
  * An empty wiki and a missing one are told apart, because they need different sentences:
  * one needs the folder made, the other only needs a page put in it.
  */
-function Onboarding({ root, exists }: { root: string; exists: boolean }) {
+function Onboarding({
+  root,
+  exists,
+  onCreate,
+  creating,
+}: {
+  root: string;
+  exists: boolean;
+  onCreate: () => void;
+  creating: boolean;
+}) {
   return (
     <div className="wiki-onboarding">
       <h2>{exists ? 'No pages here yet' : 'No knowledge base yet'}</h2>
@@ -254,10 +266,18 @@ function Onboarding({ root, exists }: { root: string; exists: boolean }) {
         keeping between sessions, where the work is rather than in another window.
       </p>
 
+      {/* The instruction was a folder to go and make by hand, which is a strange thing to
+          be told by an app that could make it. */}
       <p>
-        {exists ? 'It reads from' : 'Make a folder at'} <code>{root}</code>
-        {exists ? ', which is empty. Put a markdown file in it.' : ' and put markdown files in it.'}
+        <button type="button" className="changes-action primary" onClick={onCreate} disabled={creating}>
+          {creating ? 'Creating…' : exists ? 'Write a first page' : 'Create it'}
+        </button>
+        <span className="wiki-onboarding-where">
+          {exists ? 'in' : 'at'} <code>{root}</code>
+        </span>
       </p>
+
+      <p>It starts with one page, which you can edit here or anywhere else. After that:</p>
 
       <ul>
         <li>
@@ -279,7 +299,8 @@ function Onboarding({ root, exists }: { root: string; exists: boolean }) {
       </ul>
 
       <p className="wiki-onboarding-note">
-        Pages are read and, through the Raw view, written. Nothing else here touches them.
+        Somewhere else suits you better? Set <code>COPILOT_WIKI_DIR</code> and this reads from
+        there instead.
       </p>
     </div>
   );
@@ -303,6 +324,7 @@ export function Wiki({
   onEdit,
   onRevert,
   onSave,
+  onCreate,
   onOpen,
   onBack,
   onForward,
@@ -468,7 +490,7 @@ export function Wiki({
           empty tree beside an empty page is a feature that looks broken. */}
       {empty ? (
         <div className="wiki">
-          <Onboarding root={where.root} exists={where.exists} />
+          <Onboarding root={where.root} exists={where.exists} onCreate={onCreate} creating={saving} />
         </div>
       ) : (
         <div className="wiki">

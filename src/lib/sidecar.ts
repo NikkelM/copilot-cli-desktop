@@ -279,6 +279,12 @@ export async function saveWikiPage(path: string, source: string): Promise<boolea
   return saved;
 }
 
+/** Start a knowledge base where one was expected, answering with the page to open. */
+export async function createWiki(): Promise<string | null> {
+  const { page } = await request('wiki.create');
+  return page;
+}
+
 /** The skills this session has switched off. Read from the app's own record, so it costs no process. */
 export function disabledSkills(sessionId: string): Promise<{ disabled: string[] }> {
   return request('skills.disabled', { sessionId });

@@ -336,3 +336,66 @@ describe('writing a page back', () => {
   });
 });
 
+
+/**
+ * Starting one, which is what the onboarding button does. It must never be the thing that
+ * overwrote something, because it is offered whenever the wiki is empty.
+ */
+describe('starting a knowledge base', () => {
+  it('makes the folder and writes a first page', async () => {
+    process.env.COPILOT_WIKI_DIR = join(store, 'fresh');
+    const { createWiki, listWikiPages, readWikiPage } = await loadWiki();
+
+    const made = await createWiki();
+
+    expect(made).toBe('Home.md');
+    expect((await listWikiPages()).map((entry) => entry.path)).toEqual(['Home.md']);
+    expect((await readWikiPage('Home.md'))?.body).toContain('# Home');
+    delete process.env.COPILOT_WIKI_DIR;
+  });
+
+  /** The page it writes has to be readable by the browser that is about to open it. */
+  it('writes a page the browser can make sense of', async () => {
+    process.env.COPILOT_WIKI_DIR = join(store, 'fresh');
+    const { createWiki, readWikiPage } = await loadWiki();
+    await createWiki();
+
+    const found = await readWikiPage('Home.md');
+    expect(found?.frontmatter).toContain('title: Home');
+    expect(found?.body.startsWith('# Home')).toBe(true);
+    delete process.env.COPILOT_WIKI_DIR;
+  });
+
+  it('writes a first page into a folder that is already there', async () => {
+    if (!linkWiki()) return;
+    const { createWiki, listWikiPages } = await loadWiki();
+
+    const made = await createWiki();
+
+    expect(made).toBe('Home.md');
+    expect((await listWikiPages()).map((entry) => entry.path)).toEqual(['Home.md']);
+  });
+
+  // Offered whenever the wiki is empty, so it has to be harmless when it is not.
+  it('touches nothing when there are already pages', async () => {
+    if (!linkWiki()) return;
+    page('index.md', withFrontmatter('Index', 'the original'));
+    const { createWiki, readWikiPage } = await loadWiki();
+
+    const made = await createWiki();
+
+    expect(made).toBe('index.md');
+    expect((await readWikiPage('index.md'))?.body).toBe('the original');
+  });
+
+  it('says so when the folder cannot be made', async () => {
+    // A file where the folder should go, so creating a directory there cannot work.
+    const blocked = join(store, 'blocked');
+    writeFileSync(blocked, 'not a directory');
+    process.env.COPILOT_WIKI_DIR = blocked;
+    const { createWiki } = await loadWiki();
+
+    expect(await createWiki()).toBeNull();
+    delete process.env.COPILOT_WIKI_DIR;
+  });
+});

@@ -245,8 +245,8 @@ path, which a file that does not exist has none of, so creating pages needs a ru
 own rather than falling out of that one. The same resolution is why a page cannot be read
 or written from outside the wiki even when the root is a symlink.
 
-With no wiki on the machine, the button explains what one is and where to put it rather
-than opening an empty tree.
+With no wiki on the machine, the button explains what one is and offers to create it - a
+folder and a first page, which is then editable in place.
 
 ## Design constraints
 

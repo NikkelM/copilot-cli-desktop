@@ -3450,3 +3450,8 @@ button.group:hover {
 .wiki-page-body:has(.wiki-source) {
   overflow: hidden;
 }
+
+/* The path sits beside the button that acts on it, not as a sentence about it. */
+.wiki-onboarding-where {
+  margin-left: 10px;
+}

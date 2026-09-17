@@ -36,6 +36,7 @@ const shown = (page: PageFixture | null, over: Partial<Parameters<typeof Wiki>[0
       onEdit={() => {}}
       onRevert={() => {}}
       onSave={() => {}}
+      onCreate={() => {}}
       onOpen={() => {}}
       onBack={() => {}}
       onForward={() => {}}
@@ -542,6 +543,7 @@ describe('showing a page as the file it is', () => {
         onEdit={() => {}}
         onRevert={() => {}}
         onSave={() => {}}
+      onCreate={() => {}}
         onOpen={() => {}}
         onBack={() => {}}
         onForward={() => {}}
@@ -623,5 +625,61 @@ describe('writing a page back', () => {
     shown(file, { draft: 'edited', failed: 'Could not write index.md. It may be read-only.' });
 
     expect(screen.getByText(/Could not write index.md/)).toBeTruthy();
+  });
+});
+
+
+/**
+ * The onboarding used to name a folder and leave the reader to make it by hand, which is a
+ * strange thing to be told by an app that could make it.
+ */
+describe('starting a knowledge base from the onboarding', () => {
+  const nothing = (exists: boolean, over: Partial<Parameters<typeof Wiki>[0]> = {}) =>
+    shown(null, { pages: [], where: { root: '/home/someone/.copilot/wiki', exists }, ...over });
+
+  it('offers to create it rather than describing how', async () => {
+    const onCreate = vi.fn();
+    const user = userEvent.setup();
+    nothing(false, { onCreate });
+
+    await user.click(screen.getByRole('button', { name: 'Create it' }));
+
+    expect(onCreate).toHaveBeenCalled();
+  });
+
+  /** The folder is already there, so what is missing is a page rather than the base. */
+  it('offers a first page when the folder is there but empty', async () => {
+    const onCreate = vi.fn();
+    const user = userEvent.setup();
+    nothing(true, { onCreate });
+
+    await user.click(screen.getByRole('button', { name: 'Write a first page' }));
+
+    expect(onCreate).toHaveBeenCalled();
+  });
+
+  it('still says where it will go', () => {
+    nothing(false);
+
+    expect(screen.getAllByText('/home/someone/.copilot/wiki').length).toBeGreaterThan(0);
+  });
+
+  it('says so while it is being made', () => {
+    nothing(false, { saving: true });
+
+    expect(screen.getByRole('button', { name: 'Creating…' })).toHaveProperty('disabled', true);
+  });
+
+  it('reports a base it could not create', () => {
+    nothing(false, { failed: 'Could not create the knowledge base. The folder may not be writable.' });
+
+    expect(screen.getByText(/Could not create the knowledge base/)).toBeTruthy();
+  });
+
+  /** Somewhere already synced or already open in an editor beats a second copy here. */
+  it('says the folder can be somewhere else', () => {
+    nothing(false);
+
+    expect(screen.getByText('COPILOT_WIKI_DIR')).toBeTruthy();
   });
 });

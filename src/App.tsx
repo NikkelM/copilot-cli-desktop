@@ -866,6 +866,7 @@ export default function App() {
             onEdit={wiki.edit}
             onRevert={wiki.revert}
             onSave={(path) => void wiki.save(path)}
+            onCreate={() => void wiki.create()}
             onOpen={wiki.go}
             onBack={wiki.back}
             onForward={wiki.forward}

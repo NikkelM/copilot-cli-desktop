@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
 import { copilotHome } from './paths.js';
@@ -46,6 +46,79 @@ async function realRoot(): Promise<string | null> {
  */
 export async function wikiExists(): Promise<boolean> {
   return (await realRoot()) !== null;
+}
+
+/**
+ * What a wiki starts as.
+ *
+ * A page rather than an empty folder, because an empty folder is the same dead end one step
+ * further on: it would say "no pages here yet" and still leave the reader to work out how to
+ * make one. This is also a demonstration of the two conventions worth knowing - frontmatter,
+ * and that the prose is ordinary markdown - in the one place they are certain to be read.
+ */
+const FIRST_PAGE = `---
+title: Home
+summary: The first page of this knowledge base
+---
+
+# Home
+
+This is a knowledge base: a folder of markdown files, browsable from the app.
+
+Press **Raw** above to edit this page, and Ctrl+S to save it. Everything here is an
+ordinary file, so an editor, a script or an agent can write pages too.
+
+## How it is put together
+
+- Sub-folders become the tree on the left, so arrange them however suits you
+- \`title\` and \`summary\` in the frontmatter name a page; without them it is named
+  after its file
+- Pages link to each other as \`[[wikilinks]]\` or as ordinary markdown links
+- A page called \`index.md\`, \`Home.md\` or \`README.md\` opens first
+
+## What to keep here
+
+Things worth knowing again: what a system does and why, a decision and what it turned on,
+a procedure that took an afternoon to work out the first time.
+`;
+
+/**
+ * Start a knowledge base where one was expected.
+ *
+ * Makes the folder if it is missing and writes a first page if there is none. Refuses to
+ * touch a page that is already there, so this can be offered whenever the wiki is empty
+ * without it ever being the thing that overwrote something.
+ *
+ * Returns the page to open, or null when nothing could be made.
+ */
+export async function createWiki(): Promise<string | null> {
+  try {
+    await mkdir(wikiDir, { recursive: true });
+  } catch {
+    return null;
+  }
+
+  const existing = await listWikiPages();
+  if (existing.length > 0) return existing[0]!.path;
+
+  const root = await realRoot();
+  if (!root) return null;
+
+  try {
+    /**
+     * Exclusive, so a page written between the listing above and this line survives.
+     *
+     * Unlike the containment check, which was removed for being a rule no test could tell
+     * apart from its absence, this one is not redundant - it is simply the only part of
+     * this function a test cannot reach, because reaching it means interleaving two writers.
+     * Untestable and pointless are different things.
+     */
+    await writeFile(join(root, 'Home.md'), FIRST_PAGE, { encoding: 'utf8', flag: 'wx' });
+  } catch {
+    return null;
+  }
+
+  return 'Home.md';
 }
 
 /**
@@ -241,3 +314,7 @@ export async function writeWikiPage(page: string, source: string): Promise<boole
     return false;
   }
 }
+
+
+
+
