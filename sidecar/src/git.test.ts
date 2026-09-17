@@ -1,10 +1,10 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { githubSlug, statusOf, treeStateOf } from './git.js';
+import { githubSlug, stagePath, statusOf, treeStateOf, unstagePath } from './git.js';
 
 /**
  * Every test here spawns git, several times over.
@@ -314,6 +314,138 @@ describe('statusOf', () => {
     git('commit', '-qm', 'ignore');
 
     expect((await statusOf(dir))?.files).toEqual([]);
+  });
+});
+
+
+/**
+ * Staging and unstaging, the first operations here that change anything (#43).
+ *
+ * The rule this epic is built on is that nothing may destroy uncommitted work. Every test
+ * below therefore checks the working tree as well as the index - an unstage that quietly
+ * rewrote a file would otherwise pass every assertion about git's status and still be the
+ * worst bug this app could have.
+ */
+describe('staging a path', () => {
+  it('puts a working tree change into the index', async () => {
+    write('tracked.txt', 'changed\n');
+
+    await stagePath(dir, 'tracked.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', staged: 'modified' }]);
+  });
+
+  it('puts a new file into the index', async () => {
+    write('new.txt', 'hello\n');
+
+    await stagePath(dir, 'new.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'new.txt', staged: 'added' }]);
+  });
+
+  /** Clicking a `D` row is asking for the removal to be part of the commit. */
+  it('records a deletion', async () => {
+    unlinkSync(join(dir, 'tracked.txt'));
+
+    await stagePath(dir, 'tracked.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', staged: 'deleted' }]);
+  });
+
+  it('leaves every other path alone', async () => {
+    write('one.txt', 'one\n');
+    write('two.txt', 'two\n');
+
+    await stagePath(dir, 'one.txt');
+
+    const files = (await statusOf(dir))?.files ?? [];
+    expect(files.find((file) => file.path === 'two.txt')).toEqual({ path: 'two.txt', unstaged: 'untracked' });
+  });
+});
+
+describe('unstaging a path', () => {
+  it('takes a staged change back out', async () => {
+    write('tracked.txt', 'changed\n');
+    git('add', 'tracked.txt');
+
+    await unstagePath(dir, 'tracked.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', unstaged: 'modified' }]);
+  });
+
+  /** The file stays on disk, which is what makes it untracked rather than gone. */
+  it('returns a newly added file to being untracked', async () => {
+    write('new.txt', 'hello\n');
+    git('add', 'new.txt');
+
+    await unstagePath(dir, 'new.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'new.txt', unstaged: 'untracked' }]);
+    expect(readFileSync(join(dir, 'new.txt'), 'utf8')).toBe('hello\n');
+  });
+
+  /**
+   * The case a careless implementation gets wrong: the index holds one version, the working
+   * tree another, and unstaging must return the first without disturbing the second.
+   */
+  it('keeps the working tree version of a file staged and then edited again', async () => {
+    write('tracked.txt', 'staged version\n');
+    git('add', 'tracked.txt');
+    write('tracked.txt', 'working version\n');
+
+    await unstagePath(dir, 'tracked.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', unstaged: 'modified' }]);
+    expect(readFileSync(join(dir, 'tracked.txt'), 'utf8')).toBe('working version\n');
+  });
+
+  /**
+   * A staged deletion has no index entry to update, only one to put back - and putting it
+   * back must not bring the file with it. Unstaging is about the index; the working tree is
+   * the reader's.
+   */
+  it('takes back a staged deletion without resurrecting the file', async () => {
+    unlinkSync(join(dir, 'tracked.txt'));
+    git('add', 'tracked.txt');
+
+    await unstagePath(dir, 'tracked.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', unstaged: 'deleted' }]);
+    expect(existsSync(join(dir, 'tracked.txt'))).toBe(false);
+  });
+
+  it('leaves other staged work staged', async () => {
+    write('one.txt', 'one\n');
+    write('two.txt', 'two\n');
+    git('add', '-A');
+
+    await unstagePath(dir, 'one.txt');
+
+    const files = (await statusOf(dir))?.files ?? [];
+    expect(files.find((file) => file.path === 'two.txt')).toEqual({ path: 'two.txt', staged: 'added' });
+  });
+
+  /** A repository whose first commit is still to come has no HEAD to read an entry from. */
+  it('unstages in a repository with no commits yet', async () => {
+    const fresh = mkdtempSync(join(tmpdir(), 'ccd-git-fresh-'));
+    execFileSync('git', ['-C', fresh, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+    writeFileSync(join(fresh, 'first.txt'), 'hello\n');
+    execFileSync('git', ['-C', fresh, 'add', 'first.txt'], { encoding: 'utf8' });
+
+    await unstagePath(fresh, 'first.txt');
+
+    expect((await statusOf(fresh))?.files).toEqual([{ path: 'first.txt', unstaged: 'untracked' }]);
+    expect(readFileSync(join(fresh, 'first.txt'), 'utf8')).toBe('hello\n');
+    rmSync(fresh, { recursive: true, force: true });
+  });
+
+  it('handles a path with a space in it', async () => {
+    write('with space.txt', 'hello\n');
+    git('add', 'with space.txt');
+
+    await unstagePath(dir, 'with space.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'with space.txt', unstaged: 'untracked' }]);
   });
 });
 

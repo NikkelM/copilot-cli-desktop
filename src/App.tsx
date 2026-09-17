@@ -1030,6 +1030,9 @@ export default function App() {
                   cwd={selected.cwd}
                   diffs={repository.diffs}
                   onDiff={repository.diff}
+                  busy={repository.busy}
+                  onStage={(path, staged) => void repository.stage(path, staged)}
+                  failed={repository.failed}
                   onRefresh={repository.refresh}
                   onClose={() => {
                     setShowRepository(false);
@@ -1130,3 +1133,4 @@ function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }
+

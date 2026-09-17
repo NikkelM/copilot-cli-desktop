@@ -10,7 +10,7 @@ import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
 import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
 import { lastAgent, lastModel, readTranscript } from './eventLog.js';
-import { diffOf, statusOf, treeStateOf } from './git.js';
+import { diffOf, stagePath, statusOf, treeStateOf, unstagePath } from './git.js';
 import { previewImage } from './images.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
@@ -170,6 +170,17 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'git.status': async ({ cwd }) => ({ status: await statusOf(cwd) }),
 
     'git.diff': async ({ cwd, path, staged }) => ({ diff: await diffOf(cwd, path, staged) }),
+
+    /**
+     * The tree is read again here rather than by the caller, so the panel can never draw a
+     * state that was assumed: what it shows after staging is what git says, not what the
+     * app expected staging to do.
+     */
+    'git.stage': async ({ cwd, path, staged }) => {
+      if (staged) await stagePath(cwd, path);
+      else await unstagePath(cwd, path);
+      return { status: await statusOf(cwd) };
+    },
 
     'runtime.status': () => runtime.status(),
   };

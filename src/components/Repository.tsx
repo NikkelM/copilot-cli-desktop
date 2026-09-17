@@ -15,6 +15,12 @@ interface RepositoryProps {
   diffs: Record<string, FileDiff>;
   /** Fetch one, when a row is opened. */
   onDiff: (path: string, staged: boolean) => void;
+  /** Paths with a staging operation in flight, so a row cannot be clicked twice. */
+  busy: string[];
+  /** Put a path into the index, or take it back out. */
+  onStage: (path: string, staged: boolean) => void;
+  /** What could not be done, so a button never appears to do nothing. */
+  failed: string | null;
   onRefresh: () => void;
   onClose: () => void;
 }
@@ -43,14 +49,18 @@ function FileRow({
   staged,
   open,
   diff,
+  busy,
   onToggle,
+  onStage,
 }: {
   file: RepoFile;
   change: string;
   staged: boolean;
   open: boolean;
   diff: FileDiff | undefined;
+  busy: boolean;
   onToggle: () => void;
+  onStage: () => void;
 }) {
   const badge = fileBadge(file.path);
   const name = file.path.split('/').pop() ?? file.path;
@@ -58,28 +68,45 @@ function FileRow({
 
   return (
     <li>
-      <button
-        type="button"
-        className={open ? 'changes-row open' : 'changes-row'}
-        onClick={onToggle}
-        aria-expanded={open}
-        title={file.from ? `${file.path} (was ${file.from})` : file.path}
-      >
-        <span className={`repo-mark ${change}`}>{MARK[change] ?? '?'}</span>
-        {badge ? (
-          <span className="changes-badge" data-tone={badge.tone}>
-            {badge.label}
+      <div className="repo-row">
+        <button
+          type="button"
+          className={open ? 'changes-row open' : 'changes-row'}
+          onClick={onToggle}
+          aria-expanded={open}
+          title={file.from ? `${file.path} (was ${file.from})` : file.path}
+        >
+          <span className={`repo-mark ${change}`}>{MARK[change] ?? '?'}</span>
+          {badge ? (
+            <span className="changes-badge" data-tone={badge.tone}>
+              {badge.label}
+            </span>
+          ) : (
+            <span className="changes-badge" />
+          )}
+          <span className="repo-path">
+            <span className="repo-name">{name}</span>
+            {/* The folder after the name and quieter: a list of paths is read by filename,
+                and the leading directories are the part every row has in common. */}
+            {folder && <span className="repo-folder">{folder}</span>}
           </span>
-        ) : (
-          <span className="changes-badge" />
+        </button>
+
+        {/* Unmerged files are left alone: staging one would record a half-resolved conflict
+            as if it were the answer, and this panel has no way to resolve it. */}
+        {change !== 'unmerged' && (
+          <button
+            type="button"
+            className="repo-stage"
+            onClick={onStage}
+            disabled={busy}
+            title={staged ? `Take ${name} out of the next commit` : `Put ${name} into the next commit`}
+            aria-label={staged ? `Unstage ${file.path}` : `Stage ${file.path}`}
+          >
+            {staged ? '−' : '+'}
+          </button>
         )}
-        <span className="repo-path">
-          <span className="repo-name">{name}</span>
-          {/* The folder after the name and quieter: a list of paths is read by filename, and
-              the leading directories are the part every row has in common. */}
-          {folder && <span className="repo-folder">{folder}</span>}
-        </span>
-      </button>
+      </div>
 
       {open && <Expanded diff={diff} staged={staged} />}
     </li>
@@ -122,7 +149,7 @@ function Expanded({ diff, staged }: { diff: FileDiff | undefined; staged: boolea
  * one shows the real working tree including the reader's own edits, and conflating the two
  * would suggest that acting here is scoped to the agent's work when it is not.
  */
-export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onClose }: RepositoryProps) {
+export function Repository({ status, loading, cwd, diffs, onDiff, busy, onStage, failed, onRefresh, onClose }: RepositoryProps) {
   const staged = status?.files.filter((file) => file.staged) ?? [];
   const unstaged = status?.files.filter((file) => file.unstaged) ?? [];
   /** Which row is open, since one file can appear under both headings with different diffs. */
@@ -174,6 +201,10 @@ export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onC
         </div>
       </div>
 
+      {/* Said where the action was taken rather than at the top: a button that appears to
+          have done nothing is the thing worth explaining. */}
+      {failed && <p className="error">{failed}</p>}
+
       {!cwd ? (
         <p className="changes-note">This session has no working directory.</p>
       ) : !status ? (
@@ -205,7 +236,9 @@ export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onC
                     staged
                     open={open?.path === file.path && open.staged}
                     diff={diffs[diffKey(file.path, true)]}
+                    busy={busy.includes(file.path)}
                     onToggle={() => toggle(file.path, true)}
+                    onStage={() => onStage(file.path, false)}
                   />
                 ))}
               </ul>
@@ -227,7 +260,9 @@ export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onC
                     staged={false}
                     open={open?.path === file.path && !open.staged}
                     diff={diffs[diffKey(file.path, false)]}
+                    busy={busy.includes(file.path)}
                     onToggle={() => toggle(file.path, false)}
+                    onStage={() => onStage(file.path, true)}
                   />
                 ))}
               </ul>
@@ -238,5 +273,6 @@ export function Repository({ status, loading, cwd, diffs, onDiff, onRefresh, onC
     </div>
   );
 }
+
 
 

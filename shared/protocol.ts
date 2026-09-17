@@ -866,6 +866,16 @@ export interface SidecarRequests {
    * wanted has to be said rather than guessed.
    */
   'git.diff': { params: { cwd: string; path: string; staged: boolean }; result: { diff: FileDiff } };
+  /**
+   * Put one path's changes into the index, or take them back out.
+   *
+   * Answers with the tree as it stands afterwards, so the panel redraws from what git says
+   * rather than from what it assumed would happen.
+   *
+   * Unstaging never touches the working tree: it is written with `update-index`, which has
+   * no way to write a file, rather than with `reset` or `restore`, which do.
+   */
+  'git.stage': { params: { cwd: string; path: string; staged: boolean }; result: { status: RepoStatus | null } };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**
    * The slash commands there are.
@@ -1066,6 +1076,7 @@ export const SIDECAR_METHODS = [
   'git.state',
   'git.status',
   'git.diff',
+  'git.stage',
   'models.list',
   'commands.list',
   'filesystem.directories',

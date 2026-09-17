@@ -3618,3 +3618,49 @@ button.group:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* The row and the button that acts on it, side by side. */
+.repo-row {
+  display: flex;
+  align-items: center;
+}
+
+.repo-row .changes-row {
+  min-width: 0;
+  flex: 1;
+}
+
+/*
+ * Plus to stage, minus to take back out - the same pair a source control panel always uses,
+ * and quiet until the row is under the pointer: a column of them down the panel would read
+ * as the point of the list rather than as something available on each row.
+ */
+.repo-stage {
+  flex-shrink: 0;
+  width: 24px;
+  padding: 2px 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-lg);
+  line-height: 1;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.repo-row:hover .repo-stage,
+.repo-stage:focus-visible {
+  opacity: 1;
+}
+
+.repo-stage:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+.repo-stage:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

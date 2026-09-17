@@ -16,11 +16,25 @@ const shown = (status: RepoStatus | null, over: Partial<Parameters<typeof Reposi
       cwd={'C:\\repo'}
       diffs={{}}
       onDiff={() => {}}
+      busy={[]}
+      onStage={() => {}}
+      failed={null}
       onRefresh={() => {}}
       onClose={() => {}}
       {...over}
     />,
   );
+
+/**
+ * The row that opens a diff, told apart from the stage button beside it - both carry the
+ * file's name, so asking for a button by name alone finds two.
+ */
+const rows = (path: string) =>
+  screen
+    .getAllByRole('button', { name: new RegExp(path.replace(/\./g, '\\.')) })
+    .filter((button) => button.classList.contains('changes-row'));
+
+const row = (path: string) => rows(path)[0]!;
 
 describe('what the repository is doing', () => {
   it('names the branch', () => {
@@ -214,7 +228,7 @@ describe('opening a file to its diff', () => {
     const user = userEvent.setup();
     shown({ ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] }, { onDiff });
 
-    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+    await user.click(row('a.ts'));
 
     expect(onDiff).toHaveBeenCalledWith('a.ts', false);
   });
@@ -228,9 +242,9 @@ describe('opening a file to its diff', () => {
     const user = userEvent.setup();
     shown(both, { onDiff });
 
-    const rows = screen.getAllByRole('button', { name: /both\.ts/ });
-    await user.click(rows[0]!);
-    await user.click(rows[1]!);
+    const sides = rows('both.ts');
+    await user.click(sides[0]!);
+    await user.click(sides[1]!);
 
     expect(onDiff).toHaveBeenNthCalledWith(1, 'src/both.ts', true);
     expect(onDiff).toHaveBeenNthCalledWith(2, 'src/both.ts', false);
@@ -243,7 +257,7 @@ describe('opening a file to its diff', () => {
       { diffs: { 'unstaged:a.ts': { patch, stale: false } } },
     );
 
-    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+    await user.click(row('a.ts'));
 
     expect(view.container.querySelector('.tool-diff')).toBeTruthy();
   });
@@ -255,7 +269,7 @@ describe('opening a file to its diff', () => {
       diffs: { 'staged:src/both.ts': { patch, stale: false }, 'unstaged:src/both.ts': { patch, stale: false } },
     });
 
-    await user.click(screen.getAllByRole('button', { name: /both\.ts/ })[0]!);
+    await user.click(rows('both.ts')[0]!);
 
     expect(view.container.querySelectorAll('.tool-diff')).toHaveLength(1);
   });
@@ -267,9 +281,9 @@ describe('opening a file to its diff', () => {
       { diffs: { 'unstaged:a.ts': { patch, stale: false } } },
     );
 
-    const row = screen.getByRole('button', { name: /a\.ts/ });
-    await user.click(row);
-    await user.click(row);
+    const opened = row('a.ts');
+    await user.click(opened);
+    await user.click(opened);
 
     expect(view.container.querySelector('.tool-diff')).toBeNull();
   });
@@ -278,7 +292,7 @@ describe('opening a file to its diff', () => {
     const user = userEvent.setup();
     shown({ ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] });
 
-    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+    await user.click(row('a.ts'));
 
     expect(screen.getByText('Reading the diff.')).toBeTruthy();
   });
@@ -290,7 +304,7 @@ describe('opening a file to its diff', () => {
       { diffs: { 'unstaged:image.png': { patch: null, reason: 'binary', stale: false } } },
     );
 
-    await user.click(screen.getByRole('button', { name: /image\.png/ }));
+    await user.click(row('image.png'));
 
     expect(screen.getByText('Not a text file.')).toBeTruthy();
   });
@@ -310,7 +324,7 @@ describe('an open row when the tree is read again', () => {
     const onDiff = vi.fn();
     const user = userEvent.setup();
     const view = shown(one, { onDiff, diffs: { 'unstaged:a.ts': { patch, stale: false } } });
-    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+    await user.click(row('a.ts'));
     onDiff.mockClear();
 
     // What a refresh does: the status stands, the diffs are gone.
@@ -321,6 +335,9 @@ describe('an open row when the tree is read again', () => {
         cwd={'C:\\repo'}
         diffs={{}}
         onDiff={onDiff}
+        busy={[]}
+        onStage={() => {}}
+        failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
       />,
@@ -332,7 +349,7 @@ describe('an open row when the tree is read again', () => {
   it('draws the new diff once it arrives', async () => {
     const user = userEvent.setup();
     const view = shown(one, { diffs: { 'unstaged:a.ts': { patch, stale: false } } });
-    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+    await user.click(row('a.ts'));
 
     const after = '--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-before\n+something else entirely';
     view.rerender(
@@ -342,6 +359,9 @@ describe('an open row when the tree is read again', () => {
         cwd={'C:\\repo'}
         diffs={{ 'unstaged:a.ts': { patch: after, stale: false } }}
         onDiff={() => {}}
+      busy={[]}
+      onStage={() => {}}
+      failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
       />,
@@ -355,7 +375,7 @@ describe('an open row when the tree is read again', () => {
     const onDiff = vi.fn();
     const user = userEvent.setup();
     const view = shown(one, { onDiff, diffs: { 'unstaged:a.ts': { patch: null, stale: false } } });
-    await user.click(screen.getByRole('button', { name: /a\.ts/ }));
+    await user.click(row('a.ts'));
     onDiff.mockClear();
 
     view.rerender(
@@ -365,11 +385,90 @@ describe('an open row when the tree is read again', () => {
         cwd={'C:\\repo'}
         diffs={{ 'unstaged:a.ts': { patch: null, stale: false } }}
         onDiff={onDiff}
+        busy={[]}
+        onStage={() => {}}
+        failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
       />,
     );
 
     expect(onDiff).not.toHaveBeenCalled();
+  });
+});
+
+
+
+
+/**
+ * Staging, the first thing this panel does that changes anything (#43).
+ */
+describe('putting a file into the next commit', () => {
+  const one: RepoStatus = { ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] };
+  const already: RepoStatus = { ...clean, files: [{ path: 'a.ts', staged: 'modified' }] };
+
+  it('offers to stage a file that is not staged', async () => {
+    const onStage = vi.fn();
+    const user = userEvent.setup();
+    shown(one, { onStage });
+
+    await user.click(screen.getByRole('button', { name: 'Stage a.ts' }));
+
+    expect(onStage).toHaveBeenCalledWith('a.ts', true);
+  });
+
+  it('offers to take back a file that is staged', async () => {
+    const onStage = vi.fn();
+    const user = userEvent.setup();
+    shown(already, { onStage });
+
+    await user.click(screen.getByRole('button', { name: 'Unstage a.ts' }));
+
+    expect(onStage).toHaveBeenCalledWith('a.ts', false);
+  });
+
+  /** Each row acts on its own side, so the file in both lists can be moved either way. */
+  it('offers both directions for a file in both lists', () => {
+    shown({ ...clean, files: [{ path: 'a.ts', staged: 'modified', unstaged: 'modified' }] });
+
+    expect(screen.getByRole('button', { name: 'Stage a.ts' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Unstage a.ts' })).toBeTruthy();
+  });
+
+  it('cannot be clicked twice while it is working', () => {
+    shown(one, { busy: ['a.ts'] });
+
+    expect(screen.getByRole('button', { name: 'Stage a.ts' })).toHaveProperty('disabled', true);
+  });
+
+  it('leaves other rows alone while one is working', () => {
+    shown({ ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }, { path: 'b.ts', unstaged: 'modified' }] }, {
+      busy: ['a.ts'],
+    });
+
+    expect(screen.getByRole('button', { name: 'Stage b.ts' })).toHaveProperty('disabled', false);
+  });
+
+  /** Staging half a conflict would record it as the resolution, and this panel cannot resolve one. */
+  it('does not offer to stage an unmerged file', () => {
+    shown({ ...clean, files: [{ path: 'a.ts', unstaged: 'unmerged' }] });
+
+    expect(screen.queryByRole('button', { name: /Stage a\.ts/ })).toBeNull();
+  });
+
+  it('says what could not be done rather than appearing to do nothing', () => {
+    shown(one, { failed: 'Could not stage a.ts' });
+
+    expect(screen.getByText('Could not stage a.ts')).toBeTruthy();
+  });
+
+  // Opening the diff and staging are different intentions, on different controls.
+  it('does not open the diff when the stage button is clicked', async () => {
+    const user = userEvent.setup();
+    const view = shown(one, { diffs: { 'unstaged:a.ts': { patch: 'x', stale: false } } });
+
+    await user.click(screen.getByRole('button', { name: 'Stage a.ts' }));
+
+    expect(view.container.querySelector('.tool-diff')).toBeNull();
   });
 });

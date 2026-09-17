@@ -5,11 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRepoStatus } from './useRepoStatus';
 import type { RepoStatus } from '../../shared/protocol';
 
-const { gitStatus, gitDiff } = vi.hoisted(() => ({ gitStatus: vi.fn(), gitDiff: vi.fn() }));
+const { gitStatus, gitDiff, gitStage } = vi.hoisted(() => ({
+  gitStatus: vi.fn(),
+  gitDiff: vi.fn(),
+  gitStage: vi.fn(),
+}));
 
 vi.mock('./sidecar', () => ({
   gitStatus: (cwd: string) => gitStatus(cwd),
   gitDiff: (cwd: string, path: string, staged: boolean) => gitDiff(cwd, path, staged),
+  gitStage: (cwd: string, path: string, staged: boolean) => gitStage(cwd, path, staged),
 }));
 
 const clean: RepoStatus = { branch: 'main', detached: false, ahead: 0, behind: 0, files: [] };
@@ -17,6 +22,7 @@ const clean: RepoStatus = { branch: 'main', detached: false, ahead: 0, behind: 0
 beforeEach(() => {
   gitStatus.mockReset().mockResolvedValue(clean);
   gitDiff.mockReset().mockResolvedValue({ patch: 'a patch', stale: false });
+  gitStage.mockReset().mockResolvedValue(clean);
 });
 
 describe('reading the repository only when it is being looked at', () => {
@@ -185,6 +191,74 @@ describe('diffs the reader has opened', () => {
     act(() => result.current.diff('a.ts', false));
 
     await waitFor(() => expect(result.current.diffs['unstaged:a.ts']).toEqual({ patch: null, stale: false }));
+  });
+});
+
+
+/**
+ * Staging through the hook. Git is the authority on what happened, so the tree it reports
+ * afterwards is taken as the new state rather than the panel assuming what staging did.
+ */
+describe('staging a path', () => {
+  const afterStaging: RepoStatus = { ...clean, files: [{ path: 'a.ts', staged: 'modified' }] };
+
+  it('asks the sidecar and takes the tree it answers with', async () => {
+    gitStage.mockResolvedValue(afterStaging);
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.stage('a.ts', true)));
+
+    expect(gitStage).toHaveBeenCalledWith('C:\\repo', 'a.ts', true);
+    expect(result.current.status).toEqual(afterStaging);
+  });
+
+  it('marks the path as working while it is in flight', async () => {
+    let settle!: (status: RepoStatus) => void;
+    gitStage.mockImplementation(() => new Promise((resolve) => (settle = resolve)));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    act(() => void result.current.stage('a.ts', true));
+    await waitFor(() => expect(result.current.busy).toEqual(['a.ts']));
+
+    await act(async () => {
+      settle(afterStaging);
+      await Promise.resolve();
+    });
+    expect(result.current.busy).toEqual([]);
+  });
+
+  /** The file has moved between the lists, so a diff held for it describes where it was. */
+  it('gives up the diffs it held', async () => {
+    gitStage.mockResolvedValue(afterStaging);
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+    act(() => result.current.diff('a.ts', false));
+    await waitFor(() => expect(Object.keys(result.current.diffs)).toHaveLength(1));
+
+    await act(async () => void (await result.current.stage('a.ts', true)));
+
+    expect(result.current.diffs).toEqual({});
+  });
+
+  it('says what could not be done', async () => {
+    gitStage.mockRejectedValue(new Error('the index is locked'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.stage('a.ts', true)));
+
+    expect(result.current.failed).toContain('the index is locked');
+    expect(result.current.busy).toEqual([]);
+  });
+
+  it('does nothing for a session with no directory', async () => {
+    const { result } = renderHook(() => useRepoStatus(null, true));
+
+    await act(async () => void (await result.current.stage('a.ts', true)));
+
+    expect(gitStage).not.toHaveBeenCalled();
   });
 });
 

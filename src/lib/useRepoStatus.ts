@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { gitDiff, gitStatus } from './sidecar';
+import { gitDiff, gitStage, gitStatus } from './sidecar';
+import { messageOf } from './errors';
 import type { FileDiff, RepoStatus } from '../../shared/protocol';
 
 /**
@@ -25,6 +26,10 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
   const [status, setStatus] = useState<RepoStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [diffs, setDiffs] = useState<Record<string, FileDiff>>({});
+  /** What could not be done, for a reader who would otherwise see a button do nothing. */
+  const [failed, setFailed] = useState<string | null>(null);
+  /** Paths with a staging operation in flight, so a row cannot be clicked twice. */
+  const [busy, setBusy] = useState<string[]>([]);
   /** Which directory is being shown, so a slow reply for another cannot land here. */
   const showing = useRef(cwd);
   showing.current = cwd;
@@ -65,8 +70,7 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
   }, []);
 
   /** Fetch one file's diff, on the side the row belongs to. */
-  const diff = useCallback((path: string, staged: boolean) => {
-    const directory = showing.current;
+  const diff = useCallback((path: string, staged: boolean) => {    const directory = showing.current;
     const key = diffKey(path, staged);
     if (!directory || asking.current.has(key)) return;
 
@@ -95,7 +99,36 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     if (open && cwd) load();
   }, [cwd, open, load]);
 
-  return { status, loading, diffs, diff, refresh: load };
+  /**
+   * Put a path into the index, or take it back out.
+   *
+   * The tree the sidecar reports afterwards is taken as the new state rather than the panel
+   * assuming what staging did. Git is the authority on what happened, and a panel that drew
+   * its own guess would eventually draw something that is not true.
+   */
+  const stage = useCallback(async (path: string, staged: boolean) => {
+    const directory = showing.current;
+    if (!directory) return;
+
+    setBusy((current) => [...current, path]);
+    try {
+      const found = await gitStage(directory, path, staged);
+      if (showing.current !== directory) return;
+
+      // The file has moved between the two lists, so any diff held for it describes where
+      // it used to be.
+      reading.current += 1;
+      asking.current.clear();
+      setDiffs({});
+      setStatus(found);
+    } catch (error: unknown) {
+      if (showing.current === directory) setFailed(messageOf(error));
+    } finally {
+      setBusy((current) => current.filter((each) => each !== path));
+    }
+  }, []);
+
+  return { status, loading, failed, diffs, diff, busy, stage, refresh: load };
 }
 
 

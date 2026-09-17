@@ -321,6 +321,17 @@ export async function gitDiff(cwd: string, path: string, staged: boolean): Promi
   return diff;
 }
 
+/**
+ * Put one path into the index, or take it back out, and get the tree as it stands after.
+ *
+ * Unstaging never touches the working tree: the sidecar writes the index directly rather
+ * than through a command that is also capable of overwriting files.
+ */
+export async function gitStage(cwd: string, path: string, staged: boolean): Promise<RepoStatus | null> {
+  const { status } = await request('git.stage', { cwd, path, staged });
+  return status;
+}
+
 /** Replays a session transcript from events.jsonl without resuming it. */
 export function getTranscript(
   sessionId: string,
