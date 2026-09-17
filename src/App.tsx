@@ -856,6 +856,7 @@ export default function App() {
              whole pane rather than sitting under one. */
           <Wiki
             pages={wiki.pages}
+            where={wiki.where}
             page={wiki.page}
             loading={wiki.loading}
             failed={wiki.failed}

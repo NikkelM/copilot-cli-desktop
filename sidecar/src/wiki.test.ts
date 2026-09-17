@@ -128,6 +128,34 @@ describe('listing the pages there are', () => {
   });
 });
 
+/**
+ * An empty wiki and a missing one need different sentences: one wants the folder made, the
+ * other only wants a page put in it.
+ */
+describe('saying whether there is a wiki at all', () => {
+  it('says there is none when the folder is absent', async () => {
+    const { wikiExists } = await loadWiki();
+
+    expect(await wikiExists()).toBe(false);
+  });
+
+  it('says there is one when the folder is there but empty', async () => {
+    if (!linkWiki()) return;
+    const { wikiExists, listWikiPages } = await loadWiki();
+
+    expect(await wikiExists()).toBe(true);
+    expect(await listWikiPages()).toEqual([]);
+  });
+
+  it('says there is one when it holds pages', async () => {
+    if (!linkWiki()) return;
+    page('index.md', withFrontmatter('Index'));
+    const { wikiExists } = await loadWiki();
+
+    expect(await wikiExists()).toBe(true);
+  });
+});
+
 describe('reading one page', () => {
   it('hands back the prose without the frontmatter above it', async () => {
     if (!linkWiki()) return;

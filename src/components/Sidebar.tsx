@@ -199,7 +199,12 @@ export function Sidebar({
         </span>
         {/* The wiki is a destination rather than something about a session, so it is
             reached from the app's own chrome rather than from a session's header. */}
-        <button type="button" className="new-session" onClick={onWiki} title="Browse the local wiki">
+        <button
+          type="button"
+          className="new-session"
+          onClick={onWiki}
+          title="Browse your local knowledge base"
+        >
           Wiki
         </button>
         <button

@@ -216,6 +216,30 @@ grouped under epics:
 - [ ] [#36 In-app file diffs](https://github.com/NikkelM/copilot-cli-desktop/issues/36) - show only the changes the current agent made
 - [ ] [#41 In-app git editor](https://github.com/NikkelM/copilot-cli-desktop/issues/41) - stage, commit and push
 
+## The wiki browser
+
+If a folder exists at `~/.copilot/wiki`, the sidebar's **Wiki** button browses it as a
+knowledge base: the notes worth keeping between sessions, read where the work is rather
+than in another window. `/wiki` opens it too.
+
+Nothing about the layout is prescribed. Sub-folders become the tree, so whatever structure
+you already keep is the structure you get.
+
+| What | Behaviour |
+|---|---|
+| Entry page | `index.md`, `Home.md` or `README.md`, else the first page found |
+| Frontmatter | Optional. `title` and `summary` are shown beside the page; without them a page is named after its file |
+| Links | `[[wikilinks]]` and ordinary markdown links are both followed in-app |
+| `_manifest.json` | Optional. Supplies titles and summaries when present; the filesystem always decides what exists |
+| Ignored | `.obsidian`, `.git`, `assets`, `_templates` |
+
+Reading is all it does - pages are edited wherever you normally edit them. Paths are
+resolved against the wiki's real location, so a page cannot be read from outside it even
+when the root is a symlink.
+
+With no wiki on the machine, the button explains what one is and where to put it rather
+than opening an empty tree.
+
 ## Design constraints
 
 Two rules that outrank any single feature:

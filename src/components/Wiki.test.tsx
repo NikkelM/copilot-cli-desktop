@@ -20,6 +20,7 @@ const shown = (page: WikiPageContent | null, over: Partial<Parameters<typeof Wik
   render(
     <Wiki
       pages={pages}
+      where={{ root: '/home/someone/.copilot/wiki', exists: true }}
       page={page}
       loading={false}
       failed={null}
@@ -162,12 +163,6 @@ describe('browsing the wiki', () => {
     shown({ path: 'resources/guides/rtk.md', body: 'prose' });
 
     expect(screen.getByRole('button', { name: 'RTK Install' })).toBeTruthy();
-  });
-
-  it('says so when there is no wiki at all', () => {
-    shown(null, { pages: [] });
-
-    expect(screen.getByText('No wiki on this machine.')).toBeTruthy();
   });
 
   it('reports a page it could not read', () => {
@@ -377,3 +372,64 @@ describe('the trail showing how a reader got here', () => {
   });
 });
 
+
+/**
+ * The browser has to explain itself to someone meeting it for the first time. Left as an
+ * empty tree beside an empty page it is a feature that appears broken, and the idea it
+ * rests on - a folder of markdown the app reads - is not one it can assume anyone knows.
+ */
+describe('meeting the wiki for the first time', () => {
+  const nothing = (exists: boolean) =>
+    shown(null, { pages: [], where: { root: '/home/someone/.copilot/wiki', exists } });
+
+  it('explains what a knowledge base is when there is none', () => {
+    nothing(false);
+
+    expect(screen.getByText('No knowledge base yet')).toBeTruthy();
+  });
+
+  it('names the folder to make, so the reader knows where it goes', () => {
+    nothing(false);
+
+    expect(screen.getAllByText('/home/someone/.copilot/wiki').length).toBeGreaterThan(0);
+  });
+
+  /** Different sentences: one needs the folder made, the other a page put in it. */
+  it('tells an empty wiki apart from a missing one', () => {
+    nothing(true);
+
+    expect(screen.getByText('No pages here yet')).toBeTruthy();
+    expect(screen.queryByText('No knowledge base yet')).toBeNull();
+  });
+
+  it('says a page may be laid out however the reader already keeps it', () => {
+    nothing(false);
+
+    expect(screen.getByText(/Any layout works/)).toBeTruthy();
+  });
+
+  // An empty tree beside it would be the thing that reads as broken.
+  it('gives the tree space to the explanation', () => {
+    const view = nothing(false);
+
+    expect(view.container.querySelector('.wiki-onboarding')).toBeTruthy();
+    expect(view.container.querySelector('.wiki-nav')).toBeNull();
+  });
+
+  it('does not explain itself to a wiki that has pages', () => {
+    const view = shown({ path: 'index.md', body: 'prose' });
+
+    expect(view.container.querySelector('.wiki-onboarding')).toBeNull();
+    expect(view.container.querySelector('.wiki-nav')).toBeTruthy();
+  });
+
+  /** Credit for writing pages belonged to one machine's scripts, which nobody else has. */
+  it('says where it reads from without naming anyone tools', () => {
+    const view = nothing(true);
+
+    expect(view.container.querySelector('.changes-note')?.textContent).toContain(
+      '/home/someone/.copilot/wiki',
+    );
+    expect(view.container.querySelector('.changes-note')?.textContent).not.toContain('scripts');
+  });
+});

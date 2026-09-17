@@ -19,6 +19,8 @@ const ENTRY = ['index.md', 'Home.md', 'README.md'];
  */
 export function useWiki(open: boolean) {
   const [pages, setPages] = useState<WikiPage[] | null>(null);
+  /** Where the wiki is looked for, and whether it is there, for a reader who has none. */
+  const [where, setWhere] = useState<{ root: string; exists: boolean } | null>(null);
   const [page, setPage] = useState<WikiPageContent | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -42,7 +44,9 @@ export function useWiki(open: boolean) {
     let current = true;
     listWikiPages()
       .then((found) => {
-        if (current) setPages(found);
+        if (!current) return;
+        setPages(found.pages);
+        setWhere({ root: found.root, exists: found.exists });
       })
       .catch((error: unknown) => {
         if (current) setFailed(`Could not read the wiki: ${messageOf(error)}`);
@@ -121,6 +125,7 @@ export function useWiki(open: boolean) {
 
   return {
     pages,
+    where,
     page,
     loading,
     failed,

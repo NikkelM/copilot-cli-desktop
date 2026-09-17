@@ -7,6 +7,8 @@ import { Markdown } from './Markdown';
 
 interface WikiProps {
   pages: WikiPage[] | null;
+  /** Where the wiki is read from, and whether it is there. Null until that is known. */
+  where: { root: string; exists: boolean } | null;
   page: WikiPageContent | null;
   loading: boolean;
   failed: string | null;
@@ -208,6 +210,57 @@ function Trail({
 }
 
 /**
+ * What to do when there is no knowledge base to browse.
+ *
+ * The browser has to explain itself to someone meeting it for the first time. Left as an
+ * empty tree it is a feature that appears broken, and the idea it rests on - a folder of
+ * markdown the app can read - is not one it can assume anybody has heard of.
+ *
+ * An empty wiki and a missing one are told apart, because they need different sentences:
+ * one needs the folder made, the other only needs a page put in it.
+ */
+function Onboarding({ root, exists }: { root: string; exists: boolean }) {
+  return (
+    <div className="wiki-onboarding">
+      <h2>{exists ? 'No pages here yet' : 'No knowledge base yet'}</h2>
+      <p>
+        This reads a folder of markdown files as a browsable knowledge base - the notes worth
+        keeping between sessions, where the work is rather than in another window.
+      </p>
+
+      <p>
+        {exists ? 'It reads from' : 'Make a folder at'} <code>{root}</code>
+        {exists ? ', which is empty. Put a markdown file in it.' : ' and put markdown files in it.'}
+      </p>
+
+      <ul>
+        <li>
+          Any layout works. Sub-folders become the tree, so the structure is whatever you
+          already keep.
+        </li>
+        <li>
+          A page called <code>index.md</code>, <code>Home.md</code> or <code>README.md</code>{' '}
+          opens first.
+        </li>
+        <li>
+          Frontmatter is optional. A <code>title</code> and <code>summary</code> are shown
+          beside the page; without them a page is named after its file.
+        </li>
+        <li>
+          Pages may link to each other as <code>[[wikilinks]]</code> or as ordinary markdown
+          links, and both are followed here.
+        </li>
+      </ul>
+
+      <p className="wiki-onboarding-note">
+        Reading is all this does. Pages are edited wherever you normally edit them, and the
+        browser picks the changes up when it is next opened.
+      </p>
+    </div>
+  );
+}
+
+/**
  * The local knowledge base, browsable without leaving the app.
  *
  * Read-only. The helper scripts remain the way to write pages, and a viewer that could
@@ -215,6 +268,7 @@ function Trail({
  */
 export function Wiki({
   pages,
+  where,
   page,
   loading,
   failed,
@@ -240,6 +294,8 @@ export function Wiki({
     [page, pages],
   );
   const title = pages?.find((each) => each.path === page?.path)?.title ?? page?.path ?? 'Wiki';
+  /** Nothing to browse, which is the case the browser has to explain itself for. */
+  const empty = where !== null && pages !== null && pages.length === 0;
 
   /**
    * The gestures that already mean back, wherever the reader's hands are.
@@ -322,53 +378,60 @@ export function Wiki({
           grid assigns its rows by position. */}
       <div className="notices">{failed && <p className="error">{failed}</p>}</div>
 
-      <div className="wiki">
-        <nav className="wiki-nav" aria-label="Wiki pages">
-          {tree === null ? (
-            <p className="wiki-empty">Reading the wiki…</p>
-          ) : tree.folders.length === 0 && tree.pages.length === 0 ? (
-            <p className="wiki-empty">No wiki on this machine.</p>
-          ) : (
-            <FolderBody folder={tree} openPath={page?.path ?? null} onOpen={onOpen} depth={0} />
-          )}
-        </nav>
+      {/* Nothing to browse, so the tree gives its space to an explanation instead: an
+          empty tree beside an empty page is a feature that looks broken. */}
+      {empty ? (
+        <div className="wiki">
+          <Onboarding root={where.root} exists={where.exists} />
+        </div>
+      ) : (
+        <div className="wiki">
+          <nav className="wiki-nav" aria-label="Wiki pages">
+            {tree === null ? (
+              <p className="wiki-empty">Reading the wiki…</p>
+            ) : (
+              <FolderBody folder={tree} openPath={page?.path ?? null} onOpen={onOpen} depth={0} />
+            )}
+          </nav>
 
-        <article className="wiki-page-body">
-          {fields.length > 0 && (
-            <dl className="wiki-meta">
-              {fields.map((field) => (
-                <div key={field.key}>
-                  <dt>{field.key}</dt>
-                  <dd>{field.value}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
+          <article className="wiki-page-body">
+            {fields.length > 0 && (
+              <dl className="wiki-meta">
+                {fields.map((field) => (
+                  <div key={field.key}>
+                    <dt>{field.key}</dt>
+                    <dd>{field.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
 
-          {loading && !page ? (
-            <p className="wiki-empty">Reading…</p>
-          ) : page ? (
-            <Markdown
-              body={body}
-              anchor={page.path}
-              onLink={(href) => {
-                if (!isWikiLink(href) || !pages) return false;
-                const found = resolveWikiLink(decodeURI(href), page.path, pages);
-                if (!found) return false;
+            {loading && !page ? (
+              <p className="wiki-empty">Reading…</p>
+            ) : page ? (
+              <Markdown
+                body={body}
+                anchor={page.path}
+                onLink={(href) => {
+                  if (!isWikiLink(href) || !pages) return false;
+                  const found = resolveWikiLink(decodeURI(href), page.path, pages);
+                  if (!found) return false;
 
-                onOpen(found.path);
-                return true;
-              }}
-            />
-          ) : (
-            <p className="wiki-empty">Choose a page.</p>
-          )}
-        </article>
-      </div>
+                  onOpen(found.path);
+                  return true;
+                }}
+              />
+            ) : (
+              <p className="wiki-empty">Choose a page.</p>
+            )}
+          </article>
+        </div>
+      )}
 
       <div className="footer">
         <p className="changes-note">
-          Read from {'~/.copilot/wiki'}. Read-only here: pages are written with the wiki scripts.
+          {where ? `Read from ${where.root}.` : 'Reading…'} Read-only here: edit pages wherever
+          you normally edit them.
         </p>
       </div>
     </>

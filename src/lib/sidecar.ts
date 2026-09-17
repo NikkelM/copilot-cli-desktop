@@ -263,9 +263,8 @@ export async function listMcpServers(cwd?: string): Promise<McpServerSummary[]> 
 }
 
 /** Every page in the local knowledge base. A disk read, so it costs no Copilot process. */
-export async function listWikiPages(): Promise<WikiPage[]> {
-  const { pages } = await request('wiki.pages');
-  return pages;
+export function listWikiPages(): Promise<{ pages: WikiPage[]; root: string; exists: boolean }> {
+  return request('wiki.pages');
 }
 
 /** One page by its path relative to the wiki root. Null for a path outside it, or a page that has gone. */

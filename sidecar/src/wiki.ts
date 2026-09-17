@@ -33,6 +33,16 @@ async function realRoot(): Promise<string | null> {
 }
 
 /**
+ * Whether there is a wiki here at all.
+ *
+ * Told apart from an empty one on purpose: a machine with no wiki needs to be told what one
+ * is and where to put it, while a wiki with nothing in it needs neither.
+ */
+export async function wikiExists(): Promise<boolean> {
+  return (await realRoot()) !== null;
+}
+
+/**
  * The absolute path a page argument names, or null when it names somewhere else entirely.
  *
  * Every read goes through here, and the check is on the resolved real path rather than on

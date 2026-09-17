@@ -3327,3 +3327,59 @@ button.group:hover {
 }
 
 
+
+/*
+ * What the browser says when there is nothing to browse.
+ *
+ * Takes the whole area rather than sitting beside an empty tree: an empty tree next to an
+ * empty page is what makes a feature look broken, which is the impression this exists to
+ * prevent.
+ */
+.wiki-onboarding {
+  max-width: 62ch;
+  margin: 24px auto 0;
+  overflow-y: auto;
+  color: var(--text-muted);
+  font-size: var(--font-lg);
+  line-height: 1.6;
+}
+
+.wiki-onboarding h2 {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: var(--font-2xl);
+}
+
+.wiki-onboarding p {
+  margin: 0 0 12px;
+}
+
+.wiki-onboarding ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.wiki-onboarding li {
+  margin-bottom: 6px;
+}
+
+.wiki-onboarding code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: 0.92em;
+}
+
+/* Last, and quieter: it answers a question asked after the first one is settled. */
+.wiki-onboarding-note {
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: var(--font-md);
+}
+
+/* With nothing to browse there is no tree, so the explanation has the whole width. */
+.wiki:has(.wiki-onboarding) {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -848,8 +848,11 @@ export interface SidecarRequests {
    *
    * A directory walk and one read of the prebuilt index. Like the session list, it costs no
    * Copilot process: the wiki is files, and reading files is all this does.
+   *
+   * Says where it looked and whether anything is there, so a machine with no wiki can be
+   * told what one is rather than shown an empty tree.
    */
-  'wiki.pages': { params: void; result: { pages: WikiPage[] } };
+  'wiki.pages': { params: void; result: { pages: WikiPage[]; root: string; exists: boolean } };
   /** One page, by its path relative to the wiki root. Null for anything outside it. */
   'wiki.page': { params: { path: string }; result: { page: WikiPageContent | null } };
   /** Run a command in a session, resuming it if it is cold. */

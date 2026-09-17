@@ -21,8 +21,11 @@ const pages: WikiPage[] = [
   { path: 'projects/README.md', title: 'Projects' },
 ];
 
+/** What the sidecar answers with: the pages, and where it looked for them. */
+const found = (list: WikiPage[], exists = true) => ({ pages: list, root: '/home/someone/.copilot/wiki', exists });
+
 beforeEach(() => {
-  listWikiPages.mockReset().mockResolvedValue(pages);
+  listWikiPages.mockReset().mockResolvedValue(found(pages));
   readWikiPage.mockReset().mockImplementation((path: string) => Promise.resolve({ path, body: `body of ${path}` }));
 });
 
@@ -67,25 +70,36 @@ describe('the page a reader starts on', () => {
 
   /** A knowledge base may be laid out around any of these, so the entry is chosen from what is there. */
   it('falls back to the home page', async () => {
-    listWikiPages.mockResolvedValue([{ path: 'Home.md', title: 'Home' }]);
+    listWikiPages.mockResolvedValue(found([{ path: 'Home.md', title: 'Home' }]));
     const { result } = renderHook(() => useWiki(true));
 
     await waitFor(() => expect(result.current.page?.path).toBe('Home.md'));
   });
 
   it('opens the first page when it recognises none of them', async () => {
-    listWikiPages.mockResolvedValue([{ path: 'areas/only.md', title: 'Only' }]);
+    listWikiPages.mockResolvedValue(found([{ path: 'areas/only.md', title: 'Only' }]));
     const { result } = renderHook(() => useWiki(true));
 
     await waitFor(() => expect(result.current.page?.path).toBe('areas/only.md'));
   });
 
   it('opens nothing when the wiki is empty', async () => {
-    listWikiPages.mockResolvedValue([]);
+    listWikiPages.mockResolvedValue(found([], false));
     const { result } = renderHook(() => useWiki(true));
 
     await waitFor(() => expect(result.current.pages).toEqual([]));
     expect(readWikiPage).not.toHaveBeenCalled();
+  });
+
+  /** The onboarding needs to know both, and they need different sentences. */
+  it('says where it looked and whether anything was there', async () => {
+    listWikiPages.mockResolvedValue(found([], false));
+    const { result } = renderHook(() => useWiki(true));
+
+    await waitFor(() => expect(result.current.where).toEqual({
+      root: '/home/someone/.copilot/wiki',
+      exists: false,
+    }));
   });
 });
 
@@ -224,3 +238,4 @@ describe('moving between pages', () => {
     expect(result.current.page?.path).toBe('Home.md');
   });
 });
+
