@@ -5,14 +5,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useWiki } from './useWiki';
 import type { WikiPage } from '../../shared/protocol';
 
-const { listWikiPages, readWikiPage } = vi.hoisted(() => ({
+const { listWikiPages, readWikiPage, saveWikiPage } = vi.hoisted(() => ({
   listWikiPages: vi.fn(),
   readWikiPage: vi.fn(),
+  saveWikiPage: vi.fn(),
 }));
 
 vi.mock('./sidecar', () => ({
   listWikiPages: () => listWikiPages(),
   readWikiPage: (path: string) => readWikiPage(path),
+  saveWikiPage: (path: string, source: string) => saveWikiPage(path, source),
 }));
 
 const pages: WikiPage[] = [
@@ -26,6 +28,7 @@ const found = (list: WikiPage[], exists = true) => ({ pages: list, root: '/home/
 
 beforeEach(() => {
   listWikiPages.mockReset().mockResolvedValue(found(pages));
+  saveWikiPage.mockReset().mockResolvedValue(true);
   readWikiPage.mockReset().mockImplementation((path: string) => Promise.resolve({ path, body: `body of ${path}` }));
 });
 
@@ -236,6 +239,109 @@ describe('moving between pages', () => {
     });
 
     expect(result.current.page?.path).toBe('Home.md');
+  });
+});
+
+
+/**
+ * Editing, held in the hook so an unsaved page survives being navigated away from: losing
+ * work to a click on the tree is the kind of loss nobody forgives a viewer.
+ */
+describe('editing a page', () => {
+  it('holds what an editor is given without writing it', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    act(() => result.current.edit('index.md', 'edited'));
+
+    expect(result.current.draft).toBe('edited');
+    expect(saveWikiPage).not.toHaveBeenCalled();
+  });
+
+  it('keeps a draft through a walk to another page and back', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    act(() => result.current.edit('index.md', 'edited'));
+    act(() => result.current.go('Home.md'));
+    await waitFor(() => expect(result.current.page?.path).toBe('Home.md'));
+    expect(result.current.draft).toBeUndefined();
+
+    act(() => result.current.back());
+
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+    expect(result.current.draft).toBe('edited');
+  });
+
+  it('names every page with edits waiting on it', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    act(() => result.current.edit('index.md', 'one'));
+    act(() => result.current.edit('Home.md', 'two'));
+
+    expect(result.current.unsaved.sort()).toEqual(['Home.md', 'index.md']);
+  });
+
+  it('gives up a draft when it is reverted', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    act(() => result.current.edit('index.md', 'edited'));
+    act(() => result.current.revert('index.md'));
+
+    expect(result.current.draft).toBeUndefined();
+    expect(result.current.unsaved).toEqual([]);
+  });
+
+  it('writes the draft and reads back what landed', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+    act(() => result.current.edit('index.md', 'edited'));
+
+    await act(async () => void (await result.current.save('index.md')));
+
+    expect(saveWikiPage).toHaveBeenCalledWith('index.md', 'edited');
+    expect(result.current.draft).toBeUndefined();
+    // Read back rather than assumed: the split of the file is the sidecar's to make.
+    expect(readWikiPage).toHaveBeenLastCalledWith('index.md');
+  });
+
+  /**
+   * The one outcome worth being careful about: a failed save that dropped the draft would
+   * lose the edit and say nothing about it.
+   */
+  it('keeps the draft when the write is refused', async () => {
+    saveWikiPage.mockResolvedValue(false);
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+    act(() => result.current.edit('index.md', 'edited'));
+
+    await act(async () => void (await result.current.save('index.md')));
+
+    expect(result.current.draft).toBe('edited');
+    expect(result.current.failed).toContain('Could not write index.md');
+  });
+
+  it('keeps the draft when the write throws', async () => {
+    saveWikiPage.mockRejectedValue(new Error('disk is full'));
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+    act(() => result.current.edit('index.md', 'edited'));
+
+    await act(async () => void (await result.current.save('index.md')));
+
+    expect(result.current.draft).toBe('edited');
+    expect(result.current.failed).toContain('disk is full');
+  });
+
+  it('writes nothing for a page with no edits', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    await act(async () => void (await result.current.save('index.md')));
+
+    expect(saveWikiPage).not.toHaveBeenCalled();
   });
 });
 

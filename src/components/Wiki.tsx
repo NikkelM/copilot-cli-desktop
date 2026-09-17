@@ -12,6 +12,14 @@ interface WikiProps {
   page: WikiPageContent | null;
   loading: boolean;
   failed: string | null;
+  saving: boolean;
+  /** What an editor holds for this page, or nothing when there are no unsaved edits. */
+  draft: string | undefined;
+  /** Pages with edits not yet written, so the tree can mark them. */
+  unsaved: string[];
+  onEdit: (path: string, source: string) => void;
+  onRevert: (path: string) => void;
+  onSave: (path: string) => void;
   onOpen: (path: string) => void;
   onBack: () => void;
   onForward: () => void;
@@ -73,11 +81,13 @@ function FolderRow({
   folder,
   openPath,
   onOpen,
+  unsaved,
   depth,
 }: {
   folder: Folder;
   openPath: string | null;
   onOpen: (path: string) => void;
+  unsaved: string[];
   depth: number;
 }) {
   // Opened when the page being read is inside it, so following a link into a folded
@@ -97,7 +107,7 @@ function FolderRow({
         <span className="wiki-folder-name">{folder.name}</span>
         <span className="wiki-folder-count">{folder.pages.length + folder.folders.length}</span>
       </button>
-      {open && <FolderBody folder={folder} openPath={openPath} onOpen={onOpen} depth={depth + 1} />}
+      {open && <FolderBody folder={folder} openPath={openPath} onOpen={onOpen} unsaved={unsaved} depth={depth + 1} />}
     </li>
   );
 }
@@ -106,17 +116,26 @@ function FolderBody({
   folder,
   openPath,
   onOpen,
+  unsaved,
   depth,
 }: {
   folder: Folder;
   openPath: string | null;
   onOpen: (path: string) => void;
+  unsaved: string[];
   depth: number;
 }) {
   return (
     <ul className="wiki-tree" style={{ '--depth': depth } as React.CSSProperties}>
       {folder.folders.map((child) => (
-        <FolderRow key={child.path} folder={child} openPath={openPath} onOpen={onOpen} depth={depth} />
+        <FolderRow
+          key={child.path}
+          folder={child}
+          openPath={openPath}
+          onOpen={onOpen}
+          unsaved={unsaved}
+          depth={depth}
+        />
       ))}
       {folder.pages.map((page) => (
         <li key={page.path}>
@@ -127,6 +146,13 @@ function FolderBody({
             onClick={() => onOpen(page.path)}
           >
             {page.title}
+            {/* A page can be left with edits and navigated away from, so the tree says
+                which ones are waiting rather than letting them be forgotten. */}
+            {unsaved.includes(page.path) && (
+              <span className="wiki-dirty-mark" title="Unsaved edits">
+                •
+              </span>
+            )}
           </button>
         </li>
       ))}
@@ -253,8 +279,7 @@ function Onboarding({ root, exists }: { root: string; exists: boolean }) {
       </ul>
 
       <p className="wiki-onboarding-note">
-        Reading is all this does. Pages are edited wherever you normally edit them, and the
-        browser picks the changes up when it is next opened.
+        Pages are read and, through the Raw view, written. Nothing else here touches them.
       </p>
     </div>
   );
@@ -272,6 +297,12 @@ export function Wiki({
   page,
   loading,
   failed,
+  saving,
+  draft,
+  unsaved,
+  onEdit,
+  onRevert,
+  onSave,
   onOpen,
   onBack,
   onForward,
@@ -296,6 +327,17 @@ export function Wiki({
   const title = pages?.find((each) => each.path === page?.path)?.title ?? page?.path ?? 'Wiki';
   /** Nothing to browse, which is the case the browser has to explain itself for. */
   const empty = where !== null && pages !== null && pages.length === 0;
+  /**
+   * Whether the page is shown as the file it is rather than as what it renders to.
+   *
+   * Per page rather than a mode the whole browser is in: turning it on to fix a typo and
+   * then reading three pages of source is not what was asked for. Kept on while there are
+   * unsaved edits, because leaving the editor would put them out of sight.
+   */
+  const [raw, setRaw] = useState(false);
+  const editing = raw || draft !== undefined;
+  const source = draft ?? page?.source ?? '';
+  useEffect(() => setRaw(false), [page?.path]);
 
   /**
    * The gestures that already mean back, wherever the reader's hands are.
@@ -371,6 +413,50 @@ export function Wiki({
             →
           </button>
           {trail.length > 0 && <Trail trail={trail} pages={pages ?? []} onOpen={onOpen} />}
+
+          {/* Top right, away from the navigation: what it switches is the page rather than
+              where the reader is. */}
+          {page && (
+            <div className="wiki-edit-actions">
+              {draft !== undefined && (
+                <>
+                  <span className="wiki-dirty" title="Not written to disk yet">
+                    unsaved
+                  </span>
+                  <button
+                    type="button"
+                    className="changes-action"
+                    onClick={() => onRevert(page.path)}
+                    disabled={saving}
+                  >
+                    Discard
+                  </button>
+                  <button
+                    type="button"
+                    className="changes-action primary"
+                    onClick={() => onSave(page.path)}
+                    disabled={saving}
+                  >
+                    {saving ? 'Saving…' : 'Save'}
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                className={editing ? 'changes-action on' : 'changes-action'}
+                onClick={() => setRaw((was) => !was)}
+                disabled={draft !== undefined}
+                aria-pressed={editing}
+                title={
+                  draft !== undefined
+                    ? 'Save or discard the edits first'
+                    : 'Show the file as it is written, and edit it'
+                }
+              >
+                Raw
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -390,39 +476,60 @@ export function Wiki({
             {tree === null ? (
               <p className="wiki-empty">Reading the wiki…</p>
             ) : (
-              <FolderBody folder={tree} openPath={page?.path ?? null} onOpen={onOpen} depth={0} />
+              <FolderBody folder={tree} openPath={page?.path ?? null} onOpen={onOpen} unsaved={unsaved} depth={0} />
             )}
           </nav>
 
           <article className="wiki-page-body">
-            {fields.length > 0 && (
-              <dl className="wiki-meta">
-                {fields.map((field) => (
-                  <div key={field.key}>
-                    <dt>{field.key}</dt>
-                    <dd>{field.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-
-            {loading && !page ? (
-              <p className="wiki-empty">Reading…</p>
-            ) : page ? (
-              <Markdown
-                body={body}
-                anchor={page.path}
-                onLink={(href) => {
-                  if (!isWikiLink(href) || !pages) return false;
-                  const found = resolveWikiLink(decodeURI(href), page.path, pages);
-                  if (!found) return false;
-
-                  onOpen(found.path);
-                  return true;
+            {/* The page as the file it is, which is also how it is edited. No metadata
+                strip above it: the frontmatter is in the text being edited. */}
+            {editing && page ? (
+              <textarea
+                className="wiki-source"
+                value={source}
+                spellCheck={false}
+                aria-label={`Source of ${page.path}`}
+                onChange={(event) => onEdit(page.path, event.target.value)}
+                onKeyDown={(event) => {
+                  // The one key every editor answers to, so saving is not a trip to the header.
+                  if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+                    event.preventDefault();
+                    if (draft !== undefined) onSave(page.path);
+                  }
                 }}
               />
             ) : (
-              <p className="wiki-empty">Choose a page.</p>
+              <>
+                {fields.length > 0 && (
+                  <dl className="wiki-meta">
+                    {fields.map((field) => (
+                      <div key={field.key}>
+                        <dt>{field.key}</dt>
+                        <dd>{field.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+
+                {loading && !page ? (
+                  <p className="wiki-empty">Reading…</p>
+                ) : page ? (
+                  <Markdown
+                    body={body}
+                    anchor={page.path}
+                    onLink={(href) => {
+                      if (!isWikiLink(href) || !pages) return false;
+                      const found = resolveWikiLink(decodeURI(href), page.path, pages);
+                      if (!found) return false;
+
+                      onOpen(found.path);
+                      return true;
+                    }}
+                  />
+                ) : (
+                  <p className="wiki-empty">Choose a page.</p>
+                )}
+              </>
             )}
           </article>
         </div>
@@ -430,11 +537,12 @@ export function Wiki({
 
       <div className="footer">
         <p className="changes-note">
-          {where ? `Read from ${where.root}.` : 'Reading…'} Read-only here: edit pages wherever
-          you normally edit them.
+          {where ? `Read from ${where.root}.` : 'Reading…'} Raw shows a page as the file it is,
+          and that view is editable. Ctrl+S writes it.
         </p>
       </div>
     </>
   );
 }
+
 

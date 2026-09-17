@@ -220,7 +220,9 @@ grouped under epics:
 
 If a folder exists at `~/.copilot/wiki`, the sidebar's **Wiki** button browses it as a
 knowledge base: the notes worth keeping between sessions, read where the work is rather
-than in another window. `/wiki` opens it too.
+than in another window. `/wiki` opens it too. Set `COPILOT_WIKI_DIR` to read from somewhere
+else - a folder already synced, or already open in an editor, is a better answer than a
+second copy under this app's directory.
 
 Nothing about the layout is prescribed. Sub-folders become the tree, so whatever structure
 you already keep is the structure you get.
@@ -233,9 +235,15 @@ you already keep is the structure you get.
 | `_manifest.json` | Optional. Supplies titles and summaries when present; the filesystem always decides what exists |
 | Ignored | `.obsidian`, `.git`, `assets`, `_templates` |
 
-Reading is all it does - pages are edited wherever you normally edit them. Paths are
-resolved against the wiki's real location, so a page cannot be read from outside it even
-when the root is a symlink.
+**Raw** shows a page as the file it is, and that view is editable - a typo noticed while
+reading is fixable where it was noticed. Ctrl+S writes it. The file is handed to the editor
+and back whole, so saving never reformats anything it was not asked to touch, and edits
+left unsaved survive walking to another page: the tree marks which pages are waiting.
+
+Only pages that already exist can be written. Containment is judged by resolving the real
+path, which a file that does not exist has none of, so creating pages needs a rule of its
+own rather than falling out of that one. The same resolution is why a page cannot be read
+or written from outside the wiki even when the root is a symlink.
 
 With no wiki on the machine, the button explains what one is and where to put it rather
 than opening an empty tree.

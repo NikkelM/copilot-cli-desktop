@@ -16,14 +16,26 @@ const pages: WikiPage[] = [
   { path: 'resources/guides/rtk.md', title: 'RTK Install' },
 ];
 
-const shown = (page: WikiPageContent | null, over: Partial<Parameters<typeof Wiki>[0]> = {}) =>
+/** A page as the sidecar hands it over: the split, plus the file the split came from. */
+const asPage = (page: PageFixture | null): WikiPageContent | null =>
+  page === null ? null : { ...page, source: page.source ?? page.body };
+
+type PageFixture = Omit<WikiPageContent, 'source'> & { source?: string };
+
+const shown = (page: PageFixture | null, over: Partial<Parameters<typeof Wiki>[0]> = {}) =>
   render(
     <Wiki
       pages={pages}
       where={{ root: '/home/someone/.copilot/wiki', exists: true }}
-      page={page}
+      page={asPage(page)}
       loading={false}
       failed={null}
+      saving={false}
+      draft={undefined}
+      unsaved={[]}
+      onEdit={() => {}}
+      onRevert={() => {}}
+      onSave={() => {}}
       onOpen={() => {}}
       onBack={() => {}}
       onForward={() => {}}
@@ -431,5 +443,185 @@ describe('meeting the wiki for the first time', () => {
       '/home/someone/.copilot/wiki',
     );
     expect(view.container.querySelector('.changes-note')?.textContent).not.toContain('scripts');
+  });
+});
+
+/**
+ * Editing, which is what the raw toggle is for: a typo noticed while reading should be
+ * fixable where it was noticed rather than in another window.
+ */
+describe('showing a page as the file it is', () => {
+  const file = {
+    path: 'index.md',
+    frontmatter: 'title: Index',
+    body: '# The index',
+    source: '---\ntitle: Index\n---\n\n# The index',
+  };
+
+  const editor = () => screen.queryByRole('textbox');
+
+  it('renders the page until the toggle is pressed', () => {
+    shown(file);
+
+    expect(screen.getByText('The index')).toBeTruthy();
+    expect(editor()).toBeNull();
+  });
+
+  it('shows the whole file, frontmatter and all', async () => {
+    const user = userEvent.setup();
+    shown(file);
+
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
+
+    expect((editor() as HTMLTextAreaElement).value).toBe(file.source);
+  });
+
+  /** Reconstructing it would rewrite spacing the app was never asked to touch. */
+  it('shows the file rather than a rebuild of its parts', async () => {
+    const user = userEvent.setup();
+    shown({ ...file, source: '---\ntitle: Index\n---\n\n\n\n# The index\n\n\n' });
+
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
+
+    expect((editor() as HTMLTextAreaElement).value).toBe('---\ntitle: Index\n---\n\n\n\n# The index\n\n\n');
+  });
+
+  it('hands every edit up as it is typed', async () => {
+    const onEdit = vi.fn();
+    const user = userEvent.setup();
+    shown(file, { onEdit });
+
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
+    await user.type(editor()!, '!');
+
+    expect(onEdit).toHaveBeenCalledWith('index.md', `${file.source}!`);
+  });
+
+  it('shows what is being edited rather than what is on disk', async () => {
+    const user = userEvent.setup();
+    shown(file, { draft: 'edited elsewhere' });
+
+    await user.click(screen.getByRole('button', { name: 'Raw' })).catch(() => {});
+
+    expect((editor() as HTMLTextAreaElement).value).toBe('edited elsewhere');
+  });
+
+  /** Unsaved work put out of sight is unsaved work about to be lost. */
+  it('stays open while there are edits, and cannot be toggled away', () => {
+    shown(file, { draft: 'half written' });
+
+    expect(editor()).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Raw' })).toHaveProperty('disabled', true);
+  });
+
+  it('goes back to reading when the toggle is pressed again', async () => {
+    const user = userEvent.setup();
+    shown(file);
+
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
+    await user.click(screen.getByRole('button', { name: 'Raw' }));
+
+    expect(editor()).toBeNull();
+    expect(screen.getByText('The index')).toBeTruthy();
+  });
+
+  // Turning it on for one page and reading three more as source is not what was asked for.
+  it('goes back to reading when another page is opened', () => {
+    const view = shown(file);
+
+    view.rerender(
+      <Wiki
+        pages={pages}
+        where={{ root: '/w', exists: true }}
+        page={{ path: 'Home.md', body: 'prose', source: 'prose' }}
+        loading={false}
+        failed={null}
+        saving={false}
+        draft={undefined}
+        unsaved={[]}
+        onEdit={() => {}}
+        onRevert={() => {}}
+        onSave={() => {}}
+        onOpen={() => {}}
+        onBack={() => {}}
+        onForward={() => {}}
+        canGoBack={false}
+        canGoForward={false}
+        trail={['Home.md']}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
+});
+
+describe('writing a page back', () => {
+  const file = { path: 'index.md', body: '# The index', source: '# The index' };
+
+  it('offers nothing to save until something is edited', () => {
+    shown(file);
+
+    expect(screen.queryByRole('button', { name: 'Save' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+  });
+
+  it('saves what is being edited', async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    shown(file, { draft: 'edited', onSave });
+
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(onSave).toHaveBeenCalledWith('index.md');
+  });
+
+  /** The key every editor answers to, so saving is not a trip to the header. */
+  it('saves on ctrl and s', async () => {
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+    shown(file, { draft: 'edited', onSave });
+
+    await user.click(screen.getByRole('textbox'));
+    await user.keyboard('{Control>}s{/Control}');
+
+    expect(onSave).toHaveBeenCalledWith('index.md');
+  });
+
+  it('gives up the edits when they are discarded', async () => {
+    const onRevert = vi.fn();
+    const user = userEvent.setup();
+    shown(file, { draft: 'edited', onRevert });
+
+    await user.click(screen.getByRole('button', { name: 'Discard' }));
+
+    expect(onRevert).toHaveBeenCalledWith('index.md');
+  });
+
+  it('says the file on disk is not what is on screen', () => {
+    shown(file, { draft: 'edited' });
+
+    expect(screen.getByText('unsaved')).toBeTruthy();
+  });
+
+  it('says so while it is being written', () => {
+    shown(file, { draft: 'edited', saving: true });
+
+    expect(screen.getByRole('button', { name: 'Saving…' })).toHaveProperty('disabled', true);
+  });
+
+  /** A page can be left with edits, so the tree says which are waiting rather than losing them. */
+  it('marks a page left behind with edits on it', () => {
+    // A page at the root, so it is drawn without a folder needing to be opened first.
+    shown(file, { unsaved: ['Home.md'] });
+
+    const marked = screen.getByRole('button', { name: /Knowledge Base Home/ });
+    expect(marked.querySelector('.wiki-dirty-mark')).toBeTruthy();
+  });
+
+  it('reports a page it could not write', () => {
+    shown(file, { draft: 'edited', failed: 'Could not write index.md. It may be read-only.' });
+
+    expect(screen.getByText(/Could not write index.md/)).toBeTruthy();
   });
 });

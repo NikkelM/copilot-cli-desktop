@@ -860,6 +860,12 @@ export default function App() {
             page={wiki.page}
             loading={wiki.loading}
             failed={wiki.failed}
+            saving={wiki.saving}
+            draft={wiki.draft}
+            unsaved={wiki.unsaved}
+            onEdit={wiki.edit}
+            onRevert={wiki.revert}
+            onSave={(path) => void wiki.save(path)}
             onOpen={wiki.go}
             onBack={wiki.back}
             onForward={wiki.forward}

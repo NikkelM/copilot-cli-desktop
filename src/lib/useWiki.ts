@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { messageOf } from './errors';
-import { listWikiPages, readWikiPage } from './sidecar';
+import { listWikiPages, readWikiPage, saveWikiPage } from './sidecar';
 import type { WikiPage, WikiPageContent } from '../../shared/protocol';
 
 /** Where a reader who opens the wiki without naming a page starts. */
@@ -24,6 +24,15 @@ export function useWiki(open: boolean) {
   const [page, setPage] = useState<WikiPageContent | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  /**
+   * Edits not yet written, by page.
+   *
+   * Held rather than dropped when the reader navigates away: an unsaved page is work, and
+   * losing it to a click on the tree would be the kind of loss nobody forgives a viewer.
+   * Cleared once written, so a page with a draft is exactly a page with unsaved changes.
+   */
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   /**
    * Where the reader has been, and where they were before going back.
    *
@@ -114,6 +123,54 @@ export function useWiki(open: boolean) {
   const back = useCallback(() => step(-1), [step]);
   const forward = useCallback(() => step(1), [step]);
 
+  /** Take what an editor now holds for a page, without writing it yet. */
+  const edit = useCallback((path: string, source: string) => {
+    setDrafts((current) => ({ ...current, [path]: source }));
+  }, []);
+
+  /** Give up on the edits to a page and go back to what is on disk. */
+  const revert = useCallback((path: string) => {
+    setDrafts((current) => {
+      if (!(path in current)) return current;
+      const { [path]: _dropped, ...rest } = current;
+      return rest;
+    });
+  }, []);
+
+  /**
+   * Write a page back, and take what was written as the page itself.
+   *
+   * The draft is dropped only once the write succeeds. A failed save that cleared it would
+   * lose the edit and say nothing, which is the one outcome worth being careful about.
+   */
+  const save = useCallback(
+    async (path: string) => {
+      const source = drafts[path];
+      if (source === undefined) return;
+
+      setSaving(true);
+      setFailed(null);
+      try {
+        const written = await saveWikiPage(path, source);
+        if (!written) {
+          setFailed(`Could not write ${path}. It may be read-only, or no longer there.`);
+          return;
+        }
+
+        revert(path);
+
+        // Read back rather than assumed: what is rendered should be what is on disk, and
+        // the split between frontmatter and prose is the sidecar's to make.
+        if (wanted.current === path) read(path);
+      } catch (error: unknown) {
+        setFailed(`Could not write ${path}: ${messageOf(error)}`);
+      } finally {
+        setSaving(false);
+      }
+    },
+    [drafts, read, revert],
+  );
+
   // The first page the reader sees, chosen from what this wiki actually has rather than
   // assumed: a knowledge base may be laid out around any of these.
   useEffect(() => {
@@ -129,6 +186,14 @@ export function useWiki(open: boolean) {
     page,
     loading,
     failed,
+    saving,
+    /** What an editor holds for the page being read, or nothing when it has no unsaved edits. */
+    draft: page ? drafts[page.path] : undefined,
+    /** Every page with edits not yet written, so the reader can be told before they are lost. */
+    unsaved: Object.keys(drafts),
+    edit,
+    revert,
+    save,
     go,
     back,
     forward,

@@ -646,6 +646,13 @@ export interface WikiPageContent {
   /** As it was written, for the reader to make sense of. Absent when the page carries none. */
   frontmatter?: string;
   body: string;
+  /**
+   * The whole file, unsplit.
+   *
+   * What an editor edits. Handing back a reconstruction would rewrite spacing and line
+   * endings the app was never asked to touch, in a file its owner also edits elsewhere.
+   */
+  source: string;
 }
 
 /** The diff for one changed file, or why there is not one. */
@@ -855,6 +862,13 @@ export interface SidecarRequests {
   'wiki.pages': { params: void; result: { pages: WikiPage[]; root: string; exists: boolean } };
   /** One page, by its path relative to the wiki root. Null for anything outside it. */
   'wiki.page': { params: { path: string }; result: { page: WikiPageContent | null } };
+  /**
+   * Write a page back as it was edited, over one that is already there.
+   *
+   * False when it could not be written: outside the wiki, gone, or read-only. The whole file
+   * is sent, because the editor holds the file rather than a view of it.
+   */
+  'wiki.save': { params: { path: string; source: string }; result: { saved: boolean } };
   /** Run a command in a session, resuming it if it is cold. */
   'commands.invoke': {
     params: { sessionId: string; name: string; input?: string };
@@ -1012,6 +1026,7 @@ export const SIDECAR_METHODS = [
   'filesystem.directories',
   'wiki.pages',
   'wiki.page',
+  'wiki.save',
   'commands.invoke',
   'commands.enqueue',
   'agents.list',

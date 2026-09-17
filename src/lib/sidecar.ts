@@ -273,6 +273,12 @@ export async function readWikiPage(path: string): Promise<WikiPageContent | null
   return page;
 }
 
+/** Write a page back as it was edited. False when it could not be written. */
+export async function saveWikiPage(path: string, source: string): Promise<boolean> {
+  const { saved } = await request('wiki.save', { path, source });
+  return saved;
+}
+
 /** The skills this session has switched off. Read from the app's own record, so it costs no process. */
 export function disabledSkills(sessionId: string): Promise<{ disabled: string[] }> {
   return request('skills.disabled', { sessionId });

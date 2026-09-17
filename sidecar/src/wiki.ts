@@ -1,11 +1,17 @@
-import { readdir, readFile, realpath } from 'node:fs/promises';
+import { readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
 import { copilotHome } from './paths.js';
 import type { WikiPage, WikiPageContent } from '../../shared/protocol.js';
 
-/** The knowledge base this app can browse, beside the CLI's own state. */
-export const wikiDir = join(copilotHome, 'wiki');
+/**
+ * The knowledge base this app can browse.
+ *
+ * Beside the CLI's own state by default, and overridable, because where someone keeps their
+ * notes is their business - a folder already synced or already open in an editor is a
+ * better answer than a second copy under this app's directory.
+ */
+export const wikiDir = process.env.COPILOT_WIKI_DIR ?? join(copilotHome, 'wiki');
 
 /** The prebuilt search index, which also carries every page's title and summary. */
 const manifestFile = join(wikiDir, '_manifest.json');
@@ -188,6 +194,9 @@ export function splitFrontmatter(source: string): { frontmatter: string | null; 
  * The frontmatter is handed over as it was written rather than parsed here: what the fields
  * mean is the reader's business, and a page whose frontmatter this cannot make sense of
  * should still be readable.
+ *
+ * The whole file comes too. The split is what gets rendered, but an editor has to hand back
+ * exactly what it was given or saving would rewrite formatting nobody asked it to touch.
  */
 export async function readWikiPage(page: string): Promise<WikiPageContent | null> {
   const root = await realRoot();
@@ -206,5 +215,29 @@ export async function readWikiPage(page: string): Promise<WikiPageContent | null
     path: asPagePath(root, file),
     ...(frontmatter === null ? {} : { frontmatter }),
     body,
+    source,
   };
+}
+
+/**
+ * Write a page back, as it was edited.
+ *
+ * Only over a page that is already there. Containment is judged by resolving the real path,
+ * which a file that does not exist has none of - so creating pages would need a different
+ * rule, and inventing one silently while implementing editing would be the wrong moment to
+ * decide it.
+ *
+ * Written whole rather than patched: the editor holds the file, not a view of it.
+ */
+export async function writeWikiPage(page: string, source: string): Promise<boolean> {
+  const file = await resolveWikiPath(page);
+  if (!file) return false;
+
+  try {
+    await writeFile(file, source, 'utf8');
+    return true;
+  } catch {
+    // A read-only file or a folder that has gone. The caller says so rather than pretending.
+    return false;
+  }
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -281,3 +281,58 @@ describe('separating frontmatter from prose', () => {
     expect(splitFrontmatter('---\r\ntitle: A\r\n---\r\nbody').body).toBe('body');
   });
 });
+
+/**
+ * Writing a page back, which is what makes the browser an editor. The same containment rule
+ * as reading, on the resolved real path.
+ */
+describe('writing a page back', () => {
+  it('writes what it was given, exactly', async () => {
+    if (!linkWiki()) return;
+    page('index.md', withFrontmatter('Index'));
+    const { writeWikiPage, readWikiPage } = await loadWiki();
+
+    const written = await writeWikiPage('index.md', '---\ntitle: Edited\n---\n\nnew prose');
+
+    expect(written).toBe(true);
+    expect((await readWikiPage('index.md'))?.source).toBe('---\ntitle: Edited\n---\n\nnew prose');
+  });
+
+  it('hands the whole file back beside the split of it', async () => {
+    if (!linkWiki()) return;
+    page('index.md', '---\ntitle: Index\n---\n\n\n\nspaced out\n\n');
+    const { readWikiPage } = await loadWiki();
+
+    const found = await readWikiPage('index.md');
+    expect(found?.source).toBe('---\ntitle: Index\n---\n\n\n\nspaced out\n\n');
+    expect(found?.body).toBe('\n\nspaced out\n\n');
+  });
+
+  it('refuses a page outside the wiki', async () => {
+    if (!linkWiki()) return;
+    const outside = join(home, 'secret.md');
+    writeFileSync(outside, 'untouched');
+    const { writeWikiPage } = await loadWiki();
+
+    expect(await writeWikiPage('../secret.md', 'overwritten')).toBe(false);
+    expect(readFileSync(outside, 'utf8')).toBe('untouched');
+  });
+
+  /**
+   * Containment is judged by resolving the real path, which a file that does not exist has
+   * none of - so creating pages needs a rule of its own rather than falling out of this one.
+   */
+  it('refuses a page that is not already there', async () => {
+    if (!linkWiki()) return;
+    const { writeWikiPage } = await loadWiki();
+
+    expect(await writeWikiPage('brand-new.md', 'hello')).toBe(false);
+  });
+
+  it('says so when there is no wiki to write into', async () => {
+    const { writeWikiPage } = await loadWiki();
+
+    expect(await writeWikiPage('index.md', 'hello')).toBe(false);
+  });
+});
+
