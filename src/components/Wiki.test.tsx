@@ -25,7 +25,10 @@ const shown = (page: WikiPageContent | null, over: Partial<Parameters<typeof Wik
       failed={null}
       onOpen={() => {}}
       onBack={() => {}}
+      onForward={() => {}}
       canGoBack={false}
+      canGoForward={false}
+      trail={page ? [page.path] : []}
       onClose={() => {}}
       {...over}
     />,
@@ -187,35 +190,37 @@ describe('browsing the wiki', () => {
    * Two buttons both saying back would each be explaining the other, so the one that leaves
    * the wiki is named for where it goes.
    */
-  it('names the way out and the way back differently', () => {
+  it('names the way out for where it goes', () => {
     shown({ path: 'index.md', body: 'prose' });
 
     expect(screen.getByRole('button', { name: 'Sessions' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '← Back' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '←' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '→' })).toBeTruthy();
   });
 
   // Disabled rather than absent, so the header does not move as the reader navigates.
   it('offers a way back only once there is somewhere to go', async () => {
     const onBack = vi.fn();
     const user = userEvent.setup();
-    const view = shown({ path: 'index.md', body: 'prose' }, { onBack });
-    expect(screen.getByRole('button', { name: '← Back' })).toHaveProperty('disabled', true);
+    shown({ path: 'index.md', body: 'prose' }, { onBack });
+    expect(screen.getByRole('button', { name: '←' })).toHaveProperty('disabled', true);
 
-    view.rerender(
-      <Wiki
-        pages={pages}
-        page={{ path: 'projects/README.md', body: 'prose' }}
-        loading={false}
-        failed={null}
-        onOpen={() => {}}
-        onBack={onBack}
-        canGoBack
-        onClose={() => {}}
-      />,
-    );
-    await user.click(screen.getByRole('button', { name: '← Back' }));
+    shown({ path: 'projects/README.md', body: 'prose' }, { onBack, canGoBack: true });
+    await user.click(screen.getAllByRole('button', { name: '←' })[1]!);
 
     expect(onBack).toHaveBeenCalled();
+  });
+
+  it('offers a way forward only once something is ahead', async () => {
+    const onForward = vi.fn();
+    const user = userEvent.setup();
+    shown({ path: 'index.md', body: 'prose' }, { onForward });
+    expect(screen.getByRole('button', { name: '→' })).toHaveProperty('disabled', true);
+
+    shown({ path: 'index.md', body: 'prose' }, { onForward, canGoForward: true });
+    await user.click(screen.getAllByRole('button', { name: '→' })[1]!);
+
+    expect(onForward).toHaveBeenCalled();
   });
 });
 
@@ -269,6 +274,42 @@ describe('going back without the button', () => {
     expect(onBack).not.toHaveBeenCalled();
   });
 
+  it('goes forward on alt and the right arrow', () => {
+    const onForward = vi.fn();
+    shown({ path: 'index.md', body: 'prose' }, { onForward, canGoForward: true });
+
+    fireEvent.keyDown(window, { key: 'ArrowRight', altKey: true });
+
+    expect(onForward).toHaveBeenCalled();
+  });
+
+  it('goes forward on the mouse forward button', () => {
+    const onForward = vi.fn();
+    shown({ path: 'index.md', body: 'prose' }, { onForward, canGoForward: true });
+
+    fireEvent.mouseUp(window, { button: 4 });
+
+    expect(onForward).toHaveBeenCalled();
+  });
+
+  /** Left alone the webview follows either thumb button and leaves the app. */
+  it('claims both thumb buttons so the webview cannot navigate', () => {
+    shown({ path: 'projects/README.md', body: 'prose' }, { canGoBack: true, canGoForward: true });
+
+    expect(!fireEvent.mouseDown(window, { button: 3, cancelable: true })).toBe(true);
+    expect(!fireEvent.mouseDown(window, { button: 4, cancelable: true })).toBe(true);
+  });
+
+  it('does nothing when there is nothing ahead', () => {
+    const onForward = vi.fn();
+    shown({ path: 'index.md', body: 'prose' }, { onForward, canGoForward: false });
+
+    fireEvent.keyDown(window, { key: 'ArrowRight', altKey: true });
+    fireEvent.mouseUp(window, { button: 4 });
+
+    expect(onForward).not.toHaveBeenCalled();
+  });
+
   // The listeners are the window's, so they must not outlive the view that set them up.
   it('stops listening once the wiki is closed', () => {
     const onBack = vi.fn();
@@ -282,56 +323,56 @@ describe('going back without the button', () => {
 });
 
 /**
- * Where the page sits, which is the way up rather than the way back - what a reader who has
- * followed three links into a subject actually wants.
+ * How the reader got here. The path was shown first and answered the wrong question: at the
+ * root of the wiki a page's path is only its own filename, and it could not show that the
+ * page was reached from the index.
  */
-describe('the trail showing where a page sits', () => {
-  /** The tree shows the same names, so these are asked of the trail rather than the page. */
-  const crumbs = () => within(screen.getByLabelText('Where this page sits'));
+describe('the trail showing how a reader got here', () => {
+  const crumbs = () => within(screen.getByLabelText('How you got here'));
 
-  it('shows each part of the path', () => {
-    shown({ path: 'projects/app/overview.md', body: 'prose' });
+  it('shows the pages that were walked through', () => {
+    shown({ path: 'projects/README.md', body: 'prose' }, { trail: ['index.md', 'Home.md', 'projects/README.md'] });
 
-    expect(crumbs().getByRole('button', { name: 'projects' })).toBeTruthy();
-    expect(crumbs().getByText('overview.md')).toBeTruthy();
+    expect(crumbs().getByRole('button', { name: 'Index' })).toBeTruthy();
+    expect(crumbs().getByRole('button', { name: 'Knowledge Base Home' })).toBeTruthy();
   });
 
-  it('opens the page a directory stands for', async () => {
+  it('names a page by its title rather than its path', () => {
+    shown({ path: 'projects/README.md', body: 'prose' }, { trail: ['index.md', 'projects/README.md'] });
+
+    expect(crumbs().getByText('Projects')).toBeTruthy();
+  });
+
+  it('goes back to a page chosen from the trail', async () => {
     const onOpen = vi.fn();
     const user = userEvent.setup();
-    shown({ path: 'projects/app/overview.md', body: 'prose' }, { onOpen });
+    shown({ path: 'projects/README.md', body: 'prose' }, { onOpen, trail: ['index.md', 'projects/README.md'] });
 
-    await user.click(crumbs().getByRole('button', { name: 'projects' }));
+    await user.click(crumbs().getByRole('button', { name: 'Index' }));
 
-    expect(onOpen).toHaveBeenCalledWith('projects/README.md');
+    expect(onOpen).toHaveBeenCalledWith('index.md');
   });
 
-  /**
-   * A crumb pointing at the page already open is a link that does nothing, and it is the
-   * common case rather than a corner: a directory's own page is usually the one read on
-   * the way into it.
-   */
-  it('does not link a directory back to the page being read', () => {
-    shown({ path: 'projects/app/overview.md', body: 'prose' });
+  /** Where the reader already is, so it says so rather than offering to go there. */
+  it('does not offer to open the page already open', () => {
+    shown({ path: 'projects/README.md', body: 'prose' }, { trail: ['index.md', 'projects/README.md'] });
 
-    expect(crumbs().queryByRole('button', { name: 'app' })).toBeNull();
-    expect(crumbs().getByText('app')).toBeTruthy();
+    expect(crumbs().queryByRole('button', { name: 'Projects' })).toBeNull();
   });
 
-  /** A grouping rather than a subject, and saying so beats inventing a destination. */
-  it('leaves a directory with no page of its own as plain text', () => {
-    shown(
-      { path: 'areas/loose/note.md', body: 'prose' },
-      { pages: [...pages, { path: 'areas/loose/note.md', title: 'Note' }] },
-    );
+  // A root page has no path to speak of, which is what made showing one useless.
+  it('shows a single page on its own', () => {
+    shown({ path: 'Home.md', body: 'prose' }, { trail: ['Home.md'] });
 
-    expect(crumbs().queryByRole('button', { name: 'loose' })).toBeNull();
-    expect(crumbs().getByText('loose')).toBeTruthy();
+    expect(crumbs().getByText('Knowledge Base Home')).toBeTruthy();
   });
 
-  it('never makes the page itself a link', () => {
-    shown({ path: 'projects/README.md', body: 'prose' });
+  /** A trail without a limit would push the buttons beside it off the header. */
+  it('clips a long walk from the left, keeping the pages just before this one', () => {
+    const long = ['Home.md', 'index.md', 'projects/README.md', 'projects/app/overview.md', 'Home.md', 'index.md'];
+    shown({ path: 'index.md', body: 'prose' }, { trail: [...long, 'projects/README.md'] });
 
-    expect(crumbs().queryByRole('button', { name: 'README.md' })).toBeNull();
+    expect(crumbs().getByText('…')).toBeTruthy();
+    expect(crumbs().queryByRole('button', { name: 'Knowledge Base Home' })).toBeTruthy();
   });
 });

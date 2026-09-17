@@ -129,6 +129,66 @@ describe('moving between pages', () => {
     expect(result.current.canGoBack).toBe(false);
   });
 
+  it('goes forward again after going back', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    act(() => result.current.go('projects/README.md'));
+    await waitFor(() => expect(result.current.page?.path).toBe('projects/README.md'));
+    act(() => result.current.back());
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    expect(result.current.canGoForward).toBe(true);
+    act(() => result.current.forward());
+
+    await waitFor(() => expect(result.current.page?.path).toBe('projects/README.md'));
+  });
+
+  it('offers nothing ahead until something has been gone back from', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    act(() => result.current.go('projects/README.md'));
+
+    await waitFor(() => expect(result.current.canGoBack).toBe(true));
+    expect(result.current.canGoForward).toBe(false);
+  });
+
+  /**
+   * The rule that makes forward mean anything: what was ahead was reached from somewhere
+   * the reader has left, so going somewhere new ends it rather than keeping it waiting.
+   */
+  it('discards what was ahead once the reader goes somewhere new', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    act(() => result.current.go('projects/README.md'));
+    await waitFor(() => expect(result.current.page?.path).toBe('projects/README.md'));
+    act(() => result.current.back());
+    await waitFor(() => expect(result.current.canGoForward).toBe(true));
+
+    act(() => result.current.go('Home.md'));
+
+    await waitFor(() => expect(result.current.page?.path).toBe('Home.md'));
+    expect(result.current.canGoForward).toBe(false);
+    // The walk the reader actually took. Left in, the abandoned page would be listed as
+    // one they came through, and going back would visit somewhere they never went.
+    expect(result.current.trail).toEqual(['index.md', 'Home.md']);
+  });
+
+  it('keeps the walk it has been on, newest last', async () => {
+    const { result } = renderHook(() => useWiki(true));
+    await waitFor(() => expect(result.current.page?.path).toBe('index.md'));
+
+    act(() => result.current.go('projects/README.md'));
+    await waitFor(() => expect(result.current.trail).toEqual(['index.md', 'projects/README.md']));
+
+    act(() => result.current.back());
+
+    // Only as far as the reader has come: what is ahead has not been walked back to yet.
+    await waitFor(() => expect(result.current.trail).toEqual(['index.md']));
+  });
+
   it('says so when a page has gone', async () => {
     const { result } = renderHook(() => useWiki(true));
     await waitFor(() => expect(result.current.page?.path).toBe('index.md'));

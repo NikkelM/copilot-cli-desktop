@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { WikiPage, WikiPageContent } from '../../shared/protocol';
-import { isWikiLink, landingPage, resolveWikiLink, withResolvedLinks } from '../lib/wikiLinks';
+import { isWikiLink, resolveWikiLink, withResolvedLinks } from '../lib/wikiLinks';
 import { ChevronIcon } from './Icons';
 import { Markdown } from './Markdown';
 
@@ -12,9 +12,22 @@ interface WikiProps {
   failed: string | null;
   onOpen: (path: string) => void;
   onBack: () => void;
+  onForward: () => void;
   canGoBack: boolean;
+  canGoForward: boolean;
+  /** Where the reader has been, newest last, including the page they are on. */
+  trail: string[];
   onClose: () => void;
 }
+
+/**
+ * How many steps of the walk are worth showing.
+ *
+ * The pages just before this one are what a reader is placing themselves against; the
+ * start of a long walk is not, and a trail that grows without limit would push the buttons
+ * beside it off the header.
+ */
+const TRAIL_LENGTH = 5;
 
 /** A directory in the tree, holding pages and the directories below it. */
 interface Folder {
@@ -148,49 +161,48 @@ export function readFrontmatter(source: string): Array<{ key: string; value: str
 }
 
 /**
- * Where the page being read sits, as the parts of its path.
+ * How the reader got here, as the pages they came through.
  *
- * The path was already shown here as text. Made of parts it says the same thing and also
- * goes somewhere, which is what a reader who has followed three links into a subject
- * actually wants - the way up, rather than only the way back.
+ * The path was shown here first, and it answered the wrong question: at the root of the
+ * wiki a page's path is only its own filename, which says nothing, and it could not show
+ * that this page was reached from the index. A trail says both - where the reader has
+ * been, and that the page they are on is the end of it.
+ *
+ * Clipped from the left when it gets long, because the pages just before this one are the
+ * ones worth seeing and the start of a long walk is not.
  */
-function Breadcrumb({
-  path,
+function Trail({
+  trail,
   pages,
   onOpen,
 }: {
-  path: string;
+  trail: string[];
   pages: WikiPage[];
   onOpen: (path: string) => void;
 }) {
-  const parts = path.split('/');
+  const shown = trail.slice(-TRAIL_LENGTH);
+  const nameOf = (path: string) => pages.find((page) => page.path === path)?.title ?? path;
 
   return (
-    <nav className="wiki-crumbs" aria-label="Where this page sits">
-      {parts.slice(0, -1).map((name, index) => {
-        const folder = parts.slice(0, index + 1).join('/');
-        const landing = landingPage(folder, pages);
-        // A crumb pointing at the page already open is a link that does nothing. Common
-        // rather than rare: a directory's page is usually the one read on the way in.
-        const goes = landing && landing !== path ? landing : null;
+    <nav className="wiki-crumbs" aria-label="How you got here">
+      {trail.length > shown.length && <span className="wiki-crumb-sep">…</span>}
+      {shown.map((path, index) => {
+        const here = index === shown.length - 1;
 
         return (
-          <span key={folder}>
-            {goes ? (
-              <button type="button" className="wiki-crumb" onClick={() => onOpen(goes)}>
-                {name}
-              </button>
+          <span key={`${path}:${index}`}>
+            {here ? (
+              // Where the reader already is, so it says so rather than offering to go there.
+              <span className="wiki-crumb plain here">{nameOf(path)}</span>
             ) : (
-              /* A grouping rather than a subject, and saying so by not being a link beats
-                 inventing a destination for it. */
-              <span className="wiki-crumb plain">{name}</span>
+              <button type="button" className="wiki-crumb" onClick={() => onOpen(path)}>
+                {nameOf(path)}
+              </button>
             )}
-            <span className="wiki-crumb-sep">/</span>
+            {!here && <span className="wiki-crumb-sep">›</span>}
           </span>
         );
       })}
-      {/* The page itself, which is where the reader already is. */}
-      <span className="wiki-crumb plain">{parts[parts.length - 1]}</span>
     </nav>
   );
 }
@@ -201,7 +213,19 @@ function Breadcrumb({
  * Read-only. The helper scripts remain the way to write pages, and a viewer that could
  * half-edit them would be worse than one that plainly cannot.
  */
-export function Wiki({ pages, page, loading, failed, onOpen, onBack, canGoBack, onClose }: WikiProps) {
+export function Wiki({
+  pages,
+  page,
+  loading,
+  failed,
+  onOpen,
+  onBack,
+  onForward,
+  canGoBack,
+  canGoForward,
+  trail,
+  onClose,
+}: WikiProps) {
   const tree = useMemo(() => (pages ? asTree(pages) : null), [pages]);
   const fields = useMemo(() => (page?.frontmatter ? readFrontmatter(page.frontmatter) : []), [page?.frontmatter]);
   /**
@@ -226,27 +250,28 @@ export function Wiki({ pages, page, loading, failed, onOpen, onBack, canGoBack, 
    * navigation and leaves the app, which there is no way back from.
    */
   useEffect(() => {
-    const goBack = () => {
-      if (canGoBack) onBack();
-    };
-
     const onKey = (event: KeyboardEvent) => {
-      if (event.altKey && event.key === 'ArrowLeft') {
+      if (!event.altKey) return;
+      if (event.key === 'ArrowLeft' && canGoBack) {
         event.preventDefault();
-        goBack();
+        onBack();
+      } else if (event.key === 'ArrowRight' && canGoForward) {
+        event.preventDefault();
+        onForward();
       }
     };
 
-    // Buttons 3 and 4 are the thumb buttons. Claimed here so the webview does not navigate,
-    // and acted on when the back one is released, which is when a click has happened.
+    // Buttons 3 and 4 are the thumb buttons, back and forward. Claimed here so the webview
+    // does not navigate, and acted on when released, which is when a click has happened.
     const claim = (event: MouseEvent) => {
       if (event.button === 3 || event.button === 4) event.preventDefault();
     };
 
     const onMouseUp = (event: MouseEvent) => {
-      if (event.button !== 3) return;
+      if (event.button !== 3 && event.button !== 4) return;
       event.preventDefault();
-      goBack();
+      if (event.button === 3 && canGoBack) onBack();
+      if (event.button === 4 && canGoForward) onForward();
     };
 
     window.addEventListener('keydown', onKey);
@@ -257,7 +282,7 @@ export function Wiki({ pages, page, loading, failed, onOpen, onBack, canGoBack, 
       window.removeEventListener('mousedown', claim);
       window.removeEventListener('mouseup', onMouseUp);
     };
-  }, [canGoBack, onBack]);
+  }, [canGoBack, canGoForward, onBack, onForward]);
 
   return (
     <>
@@ -270,7 +295,7 @@ export function Wiki({ pages, page, loading, failed, onOpen, onBack, canGoBack, 
             Sessions
           </button>
           {/* Disabled rather than absent, so the header does not move as the reader
-              navigates. Both gestures above do the same thing. */}
+              navigates. The gestures above do the same thing. */}
           <button
             type="button"
             className="changes-action"
@@ -278,9 +303,18 @@ export function Wiki({ pages, page, loading, failed, onOpen, onBack, canGoBack, 
             disabled={!canGoBack}
             title="Back a page (Alt+Left, or the mouse's back button)"
           >
-            ← Back
+            ←
           </button>
-          {page && <Breadcrumb path={page.path} pages={pages ?? []} onOpen={onOpen} />}
+          <button
+            type="button"
+            className="changes-action"
+            onClick={onForward}
+            disabled={!canGoForward}
+            title="Forward a page (Alt+Right, or the mouse's forward button)"
+          >
+            →
+          </button>
+          {trail.length > 0 && <Trail trail={trail} pages={pages ?? []} onOpen={onOpen} />}
         </div>
       </header>
 
@@ -340,3 +374,4 @@ export function Wiki({ pages, page, loading, failed, onOpen, onBack, canGoBack, 
     </>
   );
 }
+

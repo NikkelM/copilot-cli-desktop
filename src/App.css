@@ -3280,7 +3280,6 @@ button.group:hover {
   align-items: center;
   flex-wrap: wrap;
   gap: 2px;
-  margin-left: auto;
   min-width: 0;
   font-family: ui-monospace, monospace;
   font-size: var(--font-sm);
@@ -3311,11 +3310,20 @@ button.group:hover {
   color: var(--text-muted);
 }
 
-.wiki-crumbs > span:last-child .wiki-crumb,
-.wiki-crumbs > .wiki-crumb:last-child {
+/* Where the reader is now, at the end of the walk that led there. */
+.wiki-crumb.here {
   color: var(--text);
+}
+
+/* The trail is a sentence about the page, not a title: it reads at the header's own size
+   rather than in the monospace a path wanted. */
+.wiki-crumbs {
+  font-family: inherit;
+  font-size: var(--font-md);
 }
 
 .wiki-crumb-sep {
   color: var(--border);
 }
+
+

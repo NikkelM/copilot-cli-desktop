@@ -861,7 +861,10 @@ export default function App() {
             failed={wiki.failed}
             onOpen={wiki.go}
             onBack={wiki.back}
+            onForward={wiki.forward}
             canGoBack={wiki.canGoBack}
+            canGoForward={wiki.canGoForward}
+            trail={wiki.trail}
             onClose={() => setShowWiki(false)}
           />
         ) : openSubagent ? (

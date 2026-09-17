@@ -23,12 +23,16 @@ export function useWiki(open: boolean) {
   const [failed, setFailed] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   /**
-   * Where the reader has been, so Back means what it does everywhere else.
+   * Where the reader has been, and where they were before going back.
    *
-   * The path only. Re-reading a page costs one file read, and holding every page visited
-   * would grow for as long as the browser stayed open.
+   * A position in a list rather than two stacks: it is the model a browser uses, and it is
+   * what makes forward mean anything - going back and then somewhere new has to discard
+   * what was ahead, which two stacks get wrong unless they are kept in step by hand.
+   *
+   * Paths only. Re-reading a page costs one file read, and holding every page visited would
+   * grow for as long as the browser stayed open.
    */
-  const [trail, setTrail] = useState<string[]>([]);
+  const [history, setHistory] = useState<{ visited: string[]; at: number }>({ visited: [], at: -1 });
   /** Which page is being read, tracked outside state so a fetch can tell if it is stale. */
   const wanted = useRef<string | null>(null);
 
@@ -69,23 +73,42 @@ export function useWiki(open: boolean) {
       });
   }, []);
 
-  /** Follow a link, remembering where it was followed from. */
+  /** Follow a link, which is where the reader now is and the end of anything that was ahead. */
   const go = useCallback(
     (path: string) => {
-      setTrail((current) => (page && page.path !== path ? [...current, page.path] : current));
+      setHistory((current) => {
+        if (current.visited[current.at] === path) return current;
+        // Anything ahead was reached from where the reader no longer is, so it is not a
+        // future any more. This is the one rule two stacks tend to get wrong.
+        const visited = [...current.visited.slice(0, current.at + 1), path];
+        return { visited, at: visited.length - 1 };
+      });
       read(path);
     },
-    [page, read],
+    [read],
   );
 
-  const back = useCallback(() => {
-    setTrail((current) => {
-      const previous = current[current.length - 1];
-      if (previous === undefined) return current;
-      read(previous);
-      return current.slice(0, -1);
-    });
-  }, [read]);
+  /**
+   * Step through what has been read.
+   *
+   * The move is decided here rather than inside the state updater, which React invokes
+   * twice under StrictMode and may replay from a discarded render - a read fired from in
+   * there would happen more than once for one keypress.
+   */
+  const step = useCallback(
+    (by: -1 | 1) => {
+      const to = history.at + by;
+      const path = history.visited[to];
+      if (path === undefined) return;
+
+      setHistory({ visited: history.visited, at: to });
+      read(path);
+    },
+    [history, read],
+  );
+
+  const back = useCallback(() => step(-1), [step]);
+  const forward = useCallback(() => step(1), [step]);
 
   // The first page the reader sees, chosen from what this wiki actually has rather than
   // assumed: a knowledge base may be laid out around any of these.
@@ -93,10 +116,22 @@ export function useWiki(open: boolean) {
     if (!open || !pages || page || wanted.current) return;
 
     const entry = ENTRY.find((candidate) => pages.some((each) => each.path === candidate)) ?? pages[0]?.path;
-    if (entry) read(entry);
-  }, [open, pages, page, read]);
+    if (entry) go(entry);
+  }, [open, pages, page, go]);
 
-  return { pages, page, loading, failed, go, back, canGoBack: trail.length > 0 };
+  return {
+    pages,
+    page,
+    loading,
+    failed,
+    go,
+    back,
+    forward,
+    canGoBack: history.at > 0,
+    canGoForward: history.at >= 0 && history.at < history.visited.length - 1,
+    /** Where the reader has been, newest last, for a trail showing how they got here. */
+    trail: history.visited.slice(0, history.at + 1),
+  };
 }
 
 
