@@ -101,6 +101,36 @@ describe('the prose around a match', () => {
     expect(found).toContain('hades appears here');
   });
 
+  /**
+   * A page's title and keywords live in its frontmatter, so a term that put the page at the
+   * top of the results is usually in there - and drawing the excerpt from the whole file
+   * showed `--- title: … category: …` instead of anything the page says.
+   */
+  it('skips the frontmatter, where the title and keywords live', () => {
+    const source = [
+      '---',
+      'title: HadesDialogueExplorer',
+      'category: reference',
+      'keywords:',
+      '  - hades',
+      '---',
+      '',
+      'An interactive explorer for hades dialogue.',
+    ].join('\n');
+
+    const found = excerptAround(source, ['hades']);
+
+    expect(found).toBe('An interactive explorer for hades dialogue.');
+    expect(found).not.toContain('title:');
+  });
+
+  /** Nothing in the prose is a real answer, and the caller says where it matched instead. */
+  it('says nothing for a term that only appears in the frontmatter', () => {
+    const source = '---\ntitle: Hades\n---\n\nnothing relevant below';
+
+    expect(excerptAround(source, ['hades'])).toBeNull();
+  });
+
   it('marks where it was cut', () => {
     const body = `${'x'.repeat(400)} hades ${'y'.repeat(400)}`;
 

@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { splitFrontmatter } from '../../shared/frontmatter.js';
 import type { WikiSearchResult } from '../../shared/protocol.js';
 
 /**
@@ -64,12 +65,23 @@ function occurrences(haystack: string, needle: string): number {
  * The prose around the first term to appear in it, for a reader deciding whether to open the
  * page.
  *
- * Taken from the body rather than the summary, because what a search usually asks is "where
- * did I write about this", and the sentence it appears in answers that where a page's own
- * description does not.
+ * Headings are left out along with the frontmatter, and for the same reason: a page's title
+ * appears in its frontmatter, again as its first heading, and once more in the result above
+ * this - so an excerpt drawn from either gave the reader the title three times and told them
+ * nothing. What is wanted is a sentence somebody wrote.
+ *
+ * Note this is not where the score comes from: scoring reads the whole file, because the
+ * wiki's own search script does, and matching its ranking matters more than tidiness. What is
+ * counted and what is shown are allowed to differ, and here they should.
  */
-export function excerptAround(body: string, terms: string[]): string | null {
-  const lowered = body.toLowerCase();
+export function excerptAround(source: string, terms: string[]): string | null {
+  const { body } = splitFrontmatter(source);
+  const prose = body
+    .split('\n')
+    .filter((line) => !/^\s{0,3}#{1,6}\s/.test(line))
+    .join('\n');
+
+  const lowered = prose.toLowerCase();
   let first = -1;
 
   for (const term of terms) {
@@ -79,10 +91,11 @@ export function excerptAround(body: string, terms: string[]): string | null {
   if (first === -1) return null;
 
   const from = Math.max(0, first - EXCERPT / 2);
-  const to = Math.min(body.length, first + EXCERPT / 2);
-  const text = body.slice(from, to).replace(/\s+/g, ' ').trim();
+  const to = Math.min(prose.length, first + EXCERPT / 2);
+  const text = prose.slice(from, to).replace(/\s+/g, ' ').trim();
+  if (!text) return null;
 
-  return `${from > 0 ? '…' : ''}${text}${to < body.length ? '…' : ''}`;
+  return `${from > 0 ? '…' : ''}${text}${to < prose.length ? '…' : ''}`;
 }
 
 const lowerAll = (values: readonly string[] | undefined): string[] =>
@@ -109,6 +122,13 @@ export function scorePage(
 
   let score = 0;
   let termsMatched = 0;
+  /**
+   * Where it matched, kept in weight order.
+   *
+   * Insertion order is the order of the checks below, which is the order of the weights, so
+   * the first entry is always the strongest reason the page ranked - which is the only one
+   * worth showing a reader.
+   */
   const matched = new Set<MatchField>();
 
   for (const term of terms) {

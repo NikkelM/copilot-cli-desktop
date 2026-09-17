@@ -319,10 +319,18 @@ function Results({
             onClick={() => onOpen(result.path)}
           >
             <span className="wiki-result-title">{result.title}</span>
-            {/* Where it matched, which is what separates a page about the term from one
-                that merely mentions it - and is what the ranking is built on. */}
-            <span className="wiki-result-where">{result.matchedIn.join(' · ')}</span>
-            {result.excerpt && <span className="wiki-result-excerpt">{result.excerpt}</span>}
+            {/* A sentence somebody wrote, preferred in this order: the prose around the
+                match, then the page's own description, then - for a page found by its
+                keywords with nothing to quote - the strongest reason it ranked. Listing all
+                six fields, which is what this was, said nothing: most pages match on most
+                of them. */}
+            {result.excerpt ? (
+              <span className="wiki-result-excerpt">{result.excerpt}</span>
+            ) : result.summary ? (
+              <span className="wiki-result-excerpt">{result.summary}</span>
+            ) : (
+              result.matchedIn[0] && <span className="wiki-result-where">in its {result.matchedIn[0]}</span>
+            )}
           </button>
         </li>
       ))}

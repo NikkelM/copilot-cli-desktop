@@ -662,7 +662,12 @@ export interface WikiSearchResult {
   path: string;
   title: string;
   score: number;
-  /** Which of keywords, title, headings, summary, tags or content matched. */
+  /**
+   * Where it matched, strongest first.
+   *
+   * Worth showing only when the match is not visible in the excerpt - a page found by its
+   * keywords with nothing in its prose would otherwise be a title and no reason.
+   */
   matchedIn: string[];
   summary?: string;
   /** The prose around the first match, for a reader deciding whether to open the page. */

@@ -807,11 +807,25 @@ describe('searching the wiki', () => {
     expect(screen.getByText('Knowledge Base Home')).toBeTruthy();
   });
 
-  /** What separates a page about the term from one that merely mentions it. */
-  it('says where each page matched', () => {
+  /**
+   * The excerpt says why a page matched when the match is in the prose. Listing every field
+   * beside it said nothing: most pages match on nearly all of them.
+   */
+  it('lets the excerpt speak for a page matched in its prose', () => {
     shown({ path: 'index.md', body: 'prose' }, { query: 'hades', results: found });
 
-    expect(screen.getByText('keywords · content')).toBeTruthy();
+    expect(screen.queryByText(/keywords/)).toBeNull();
+    expect(screen.getByText(/the sentence the term appeared in/)).toBeTruthy();
+  });
+
+  /** A page found by its keywords with nothing in its prose would be a title and no reason. */
+  it('says where it matched when the prose cannot show it', () => {
+    const noExcerpt = [{ path: 'a.md', title: 'A page', score: 10, matchedIn: ['keywords', 'tags'] }];
+    shown({ path: 'index.md', body: 'prose' }, { query: 'hades', results: noExcerpt });
+
+    // The strongest reason only: the list was in weight order and the rest added nothing.
+    expect(screen.getByText('in its keywords')).toBeTruthy();
+    expect(screen.queryByText(/tags/)).toBeNull();
   });
 
   it('shows the prose around the match', () => {
