@@ -333,6 +333,16 @@ export async function gitStage(cwd: string, paths: string[], staged: boolean): P
 }
 
 /**
+ * Send the current branch to its remote, or bring the remote's work down onto it.
+ *
+ * Fast-forward only in both directions, and there is no force anywhere behind this.
+ */
+export async function gitSync(cwd: string, direction: 'push' | 'pull'): Promise<RepoStatus | null> {
+  const { status } = await request('git.sync', { cwd, direction });
+  return status;
+}
+
+/**
  * Commit what is staged, or amend the commit at HEAD, and get the tree as it stands after.
  *
  * The message is the reader's own. Repository hooks and signing configuration apply, because

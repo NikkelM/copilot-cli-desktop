@@ -20,6 +20,8 @@ const shown = (status: RepoStatus | null, over: Partial<Parameters<typeof Reposi
       onStage={() => {}}
       onCommit={() => {}}
       committing={false}
+      onSync={() => {}}
+      syncing={null}
       failed={null}
       onRefresh={() => {}}
       onClose={() => {}}
@@ -341,6 +343,8 @@ describe('an open row when the tree is read again', () => {
         onStage={() => {}}
         onCommit={() => {}}
         committing={false}
+        onSync={() => {}}
+        syncing={null}
         failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -367,6 +371,8 @@ describe('an open row when the tree is read again', () => {
       onStage={() => {}}
       onCommit={() => {}}
       committing={false}
+      onSync={() => {}}
+      syncing={null}
       failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -395,6 +401,8 @@ describe('an open row when the tree is read again', () => {
         onStage={() => {}}
         onCommit={() => {}}
         committing={false}
+        onSync={() => {}}
+        syncing={null}
         failed={null}
         onRefresh={() => {}}
         onClose={() => {}}
@@ -737,3 +745,69 @@ describe('staging and unstaging a whole group', () => {
   });
 });
 
+
+
+describe('syncing with the remote', () => {
+  const tracking = { ...clean, upstream: 'origin/main' };
+
+  it('pushes when asked to', async () => {
+    const onSync = vi.fn();
+    shown(tracking, { onSync });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Push' }));
+
+    expect(onSync).toHaveBeenCalledWith('push');
+  });
+
+  it('pulls when asked to', async () => {
+    const onSync = vi.fn();
+    shown(tracking, { onSync });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Pull' }));
+
+    expect(onSync).toHaveBeenCalledWith('pull');
+  });
+
+  it('offers to publish a branch that tracks nothing', () => {
+    shown(clean);
+
+    expect((screen.getByRole('button', { name: 'Push' }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('will not pull into a branch that tracks nothing', () => {
+    shown(clean);
+
+    expect((screen.getByRole('button', { name: 'Pull' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('offers neither on a detached HEAD, where there is no branch to sync', () => {
+    shown({ ...clean, detached: true, branch: 'a1b2c3d' });
+
+    expect(screen.queryByRole('button', { name: 'Push' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pull' })).toBeNull();
+  });
+
+  it('offers neither outside a repository', () => {
+    shown(null);
+
+    expect(screen.queryByRole('button', { name: 'Push' })).toBeNull();
+  });
+
+  it('says which way it is going while it goes', () => {
+    shown(tracking, { syncing: 'push' });
+
+    expect(screen.getByRole('button', { name: 'Pushing…' })).toBeTruthy();
+  });
+
+  it('will not start the other direction while one is running', () => {
+    shown(tracking, { syncing: 'push' });
+
+    expect((screen.getByRole('button', { name: 'Pull' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('never offers to force anything', () => {
+    shown({ ...tracking, ahead: 2, behind: 3 });
+
+    expect(screen.queryByText(/force/i)).toBeNull();
+  });
+});

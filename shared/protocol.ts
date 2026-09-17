@@ -887,6 +887,17 @@ export interface SidecarRequests {
     params: { cwd: string; message: string; amend: boolean };
     result: { status: RepoStatus | null };
   };
+  /**
+   * Send the current branch to its remote, or bring the remote's work down onto it.
+   *
+   * There is no force, and no option that could become one. A pull is fast-forward only, so
+   * it either moves the branch along or refuses and says so - a button called "pull" must
+   * not quietly write a merge commit or start a rebase nothing here can finish.
+   */
+  'git.sync': {
+    params: { cwd: string; direction: 'push' | 'pull' };
+    result: { status: RepoStatus | null };
+  };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**
    * The slash commands there are.
@@ -1089,6 +1100,7 @@ export const SIDECAR_METHODS = [
   'git.diff',
   'git.stage',
   'git.commit',
+  'git.sync',
   'models.list',
   'commands.list',
   'filesystem.directories',

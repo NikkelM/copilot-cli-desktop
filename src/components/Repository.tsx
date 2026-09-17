@@ -22,6 +22,9 @@ interface RepositoryProps {
   /** Commit what is staged, or amend the commit at HEAD. */
   onCommit: (message: string, amend: boolean) => void;
   committing: boolean;
+  /** Send the branch to its remote, or bring the remote's work down. */
+  onSync: (direction: 'push' | 'pull') => void;
+  syncing: 'push' | 'pull' | null;
   /** What could not be done, so a button never appears to do nothing. */
   failed: string | null;
   onRefresh: () => void;
@@ -273,6 +276,8 @@ export function Repository({
   onStage,
   onCommit,
   committing,
+  onSync,
+  syncing,
   failed,
   onRefresh,
   onClose,
@@ -319,6 +324,35 @@ export function Repository({
           )}
         </span>
         <div className="changes-actions">
+          {/* Beside the counts that say why you would press them. Both are always offered
+              when there is an upstream: a pull with nothing to fetch is how you find out
+              there is nothing to fetch, and refusing it would hide that. */}
+          {status && !status.detached && (
+            <>
+              <button
+                type="button"
+                className="changes-action"
+                onClick={() => onSync('pull')}
+                disabled={syncing !== null || status.upstream === undefined}
+                title={
+                  status.upstream === undefined
+                    ? 'This branch tracks nothing to pull from'
+                    : 'Bring the remote work down onto this branch'
+                }
+              >
+                {syncing === 'pull' ? 'Pulling…' : 'Pull'}
+              </button>
+              <button
+                type="button"
+                className="changes-action"
+                onClick={() => onSync('push')}
+                disabled={syncing !== null}
+                title={status.upstream === undefined ? 'Publish this branch' : 'Send this branch to its remote'}
+              >
+                {syncing === 'push' ? 'Pushing…' : 'Push'}
+              </button>
+            </>
+          )}
           <button type="button" className="changes-action" onClick={onRefresh} disabled={loading}>
             {loading ? 'Reading…' : 'Refresh'}
           </button>

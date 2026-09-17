@@ -5,11 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useRepoStatus } from './useRepoStatus';
 import type { RepoStatus } from '../../shared/protocol';
 
-const { gitStatus, gitDiff, gitStage, gitCommit } = vi.hoisted(() => ({
+const { gitStatus, gitDiff, gitStage, gitCommit, gitSync } = vi.hoisted(() => ({
   gitStatus: vi.fn(),
   gitDiff: vi.fn(),
   gitStage: vi.fn(),
   gitCommit: vi.fn(),
+  gitSync: vi.fn(),
 }));
 
 vi.mock('./sidecar', () => ({
@@ -17,6 +18,7 @@ vi.mock('./sidecar', () => ({
   gitDiff: (cwd: string, path: string, staged: boolean) => gitDiff(cwd, path, staged),
   gitStage: (cwd: string, path: string, staged: boolean) => gitStage(cwd, path, staged),
   gitCommit: (cwd: string, message: string, amend: boolean) => gitCommit(cwd, message, amend),
+  gitSync: (cwd: string, direction: 'push' | 'pull') => gitSync(cwd, direction),
 }));
 
 const clean: RepoStatus = { branch: 'main', detached: false, ahead: 0, behind: 0, files: [] };
@@ -425,5 +427,71 @@ describe('staging many paths at once', () => {
     await act(async () => void (await result.current.stage([], true)));
 
     expect(gitStage).not.toHaveBeenCalled();
+  });
+});
+
+describe('syncing with the remote', () => {
+  it('takes the tree git reports afterwards', async () => {
+    gitSync.mockResolvedValue({ ...clean, upstream: 'origin/main', ahead: 0 });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.sync('push')));
+
+    expect(gitSync).toHaveBeenCalledWith('C:\\repo', 'push');
+    expect(result.current.status?.upstream).toBe('origin/main');
+  });
+
+  it('keeps the diffs it was showing, because a sync moves none of them', async () => {
+    gitStatus.mockResolvedValue({ ...clean, files: [{ path: 'a.ts', unstaged: 'modified' }] });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toBeTruthy());
+    await act(async () => void result.current.diff('a.ts', false));
+    await waitFor(() => expect(Object.keys(result.current.diffs)).toHaveLength(1));
+
+    await act(async () => void (await result.current.sync('pull')));
+
+    expect(Object.keys(result.current.diffs)).toHaveLength(1);
+  });
+
+  it('says which way it is going while it goes', async () => {
+    let release: (value: RepoStatus) => void = () => {};
+    gitSync.mockReturnValue(new Promise<RepoStatus>((resolve) => (release = resolve)));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    act(() => void result.current.sync('pull'));
+    await waitFor(() => expect(result.current.syncing).toBe('pull'));
+
+    await act(async () => release(clean));
+    expect(result.current.syncing).toBeNull();
+  });
+
+  it('reports what git refused to do', async () => {
+    gitSync.mockRejectedValue(new Error('The remote has work you do not. Pull first, then push.'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.sync('push')));
+
+    expect(result.current.failed).toMatch(/Pull first/);
+  });
+
+  it('stops syncing once it has finished failing', async () => {
+    gitSync.mockRejectedValue(new Error('nope'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.sync('push')));
+
+    expect(result.current.syncing).toBeNull();
+  });
+
+  it('does nothing outside a repository', async () => {
+    const { result } = renderHook(() => useRepoStatus(null, true));
+
+    await act(async () => void (await result.current.sync('push')));
+
+    expect(gitSync).not.toHaveBeenCalled();
   });
 });

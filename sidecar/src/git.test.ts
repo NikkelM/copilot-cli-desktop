@@ -4,7 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { commitStaged, githubSlug, inRuns, stagePaths, statusOf, treeStateOf, unstagePaths } from './git.js';
+import {
+  commitStaged,
+  explainGit,
+  githubSlug,
+  inRuns,
+  pullBranch,
+  pushBranch,
+  stagePaths,
+  statusOf,
+  treeStateOf,
+  unstagePaths,
+} from './git.js';
 import { canAmend } from '../../shared/protocol.js';
 import type { RepoStatus } from '../../shared/protocol.js';
 
@@ -730,6 +741,206 @@ describe('splitting paths into runs short enough to spawn', () => {
     const huge = 'x'.repeat(20_000);
 
     expect(inRuns(['a.txt', huge])).toEqual([['a.txt'], [huge]]);
+  });
+});
+
+
+/**
+ * A real bare repository as the remote, cloned twice: pushing and pulling are about two
+ * checkouts disagreeing, and a stub cannot disagree with anything.
+ */
+describe('pushing and pulling', () => {
+  let remote: string;
+  let here: string;
+  let elsewhere: string;
+
+  const at = (where: string, ...args: string[]) =>
+    execFileSync('git', ['-C', where, ...args], { encoding: 'utf8' });
+
+  // A bare repository cannot be read with -C when safe.bareRepository is xplicit,
+  // which is a real setting real people have.
+  const inRemote = (...args: string[]) =>
+    execFileSync('git', ['--git-dir', remote, ...args], { encoding: 'utf8' });
+
+  const settle = (where: string) => {
+    at(where, 'config', 'user.email', 'test@example.com');
+    at(where, 'config', 'user.name', 'test');
+    at(where, 'config', 'commit.gpgsign', 'false');
+  };
+
+  beforeEach(() => {
+    const base = mkdtempSync(join(tmpdir(), 'ccd-sync-'));
+    remote = join(base, 'remote.git');
+    here = join(base, 'here');
+    elsewhere = join(base, 'elsewhere');
+
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote]);
+    execFileSync('git', ['clone', '-q', remote, here]);
+    settle(here);
+    writeFileSync(join(here, 'f.txt'), 'one\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'one');
+    at(here, 'push', '-q', '-u', 'origin', 'main');
+
+    execFileSync('git', ['clone', '-q', remote, elsewhere]);
+    settle(elsewhere);
+  });
+
+  it('sends a commit to the remote', async () => {
+    writeFileSync(join(here, 'f.txt'), 'two\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'two');
+
+    await pushBranch(here);
+
+    expect(inRemote('log', '--oneline', '-1')).toContain('two');
+  });
+
+  it('leaves nothing waiting to be pushed', async () => {
+    writeFileSync(join(here, 'f.txt'), 'two\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'two');
+
+    await pushBranch(here);
+
+    expect((await statusOf(here))?.ahead).toBe(0);
+  });
+
+  it('gives a new branch an upstream on the way', async () => {
+    at(here, 'switch', '-q', '-c', 'feature');
+    writeFileSync(join(here, 'g.txt'), 'x\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'on the branch');
+    expect((await statusOf(here))?.upstream).toBeUndefined();
+
+    await pushBranch(here);
+
+    expect((await statusOf(here))?.upstream).toBe('origin/feature');
+  });
+
+  it('refuses to push a detached HEAD rather than guessing a branch', async () => {
+    at(here, 'checkout', '-q', '--detach');
+
+    await expect(pushBranch(here)).rejects.toThrow(/detached/i);
+  });
+
+  it('says to pull when the remote has moved on', async () => {
+    writeFileSync(join(elsewhere, 'other.txt'), 'x\n');
+    at(elsewhere, 'add', '-A');
+    at(elsewhere, 'commit', '-qm', 'theirs');
+    at(elsewhere, 'push', '-q');
+    writeFileSync(join(here, 'f.txt'), 'mine\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'mine');
+
+    await expect(pushBranch(here)).rejects.toThrow(/Pull first/i);
+  });
+
+  it('leaves the remote alone when it refuses a push', async () => {
+    writeFileSync(join(elsewhere, 'other.txt'), 'x\n');
+    at(elsewhere, 'add', '-A');
+    at(elsewhere, 'commit', '-qm', 'theirs');
+    at(elsewhere, 'push', '-q');
+    const before = inRemote('rev-parse', 'main');
+    writeFileSync(join(here, 'f.txt'), 'mine\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'mine');
+
+    await expect(pushBranch(here)).rejects.toThrow();
+
+    expect(inRemote('rev-parse', 'main')).toBe(before);
+  });
+
+  it('brings the remote work down', async () => {
+    writeFileSync(join(elsewhere, 'other.txt'), 'x\n');
+    at(elsewhere, 'add', '-A');
+    at(elsewhere, 'commit', '-qm', 'theirs');
+    at(elsewhere, 'push', '-q');
+
+    await pullBranch(here);
+
+    expect(existsSync(join(here, 'other.txt'))).toBe(true);
+  });
+
+  it('refuses to pull into a branch that tracks nothing', async () => {
+    at(here, 'switch', '-q', '-c', 'orphaned');
+
+    await expect(pullBranch(here)).rejects.toThrow(/tracks nothing/i);
+  });
+
+  it('refuses to merge two branches that have both moved', async () => {
+    writeFileSync(join(elsewhere, 'other.txt'), 'x\n');
+    at(elsewhere, 'add', '-A');
+    at(elsewhere, 'commit', '-qm', 'theirs');
+    at(elsewhere, 'push', '-q');
+    writeFileSync(join(here, 'mine.txt'), 'y\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'mine');
+
+    await expect(pullBranch(here)).rejects.toThrow();
+  });
+
+  it('leaves the reader on their own commit when it refuses to pull', async () => {
+    writeFileSync(join(elsewhere, 'other.txt'), 'x\n');
+    at(elsewhere, 'add', '-A');
+    at(elsewhere, 'commit', '-qm', 'theirs');
+    at(elsewhere, 'push', '-q');
+    writeFileSync(join(here, 'mine.txt'), 'y\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'mine');
+    const before = at(here, 'rev-parse', 'HEAD');
+
+    await expect(pullBranch(here)).rejects.toThrow();
+
+    expect(at(here, 'rev-parse', 'HEAD')).toBe(before);
+    expect(at(here, 'log', '--oneline', '-1')).toContain('mine');
+  });
+
+  it('says a folder outside a repository is not one', async () => {
+    const plain = mkdtempSync(join(tmpdir(), 'ccd-plain-'));
+    try {
+      await expect(pushBranch(plain)).rejects.toThrow(/not in a git repository/i);
+    } finally {
+      rmSync(plain, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('saying what git said, to someone who was not watching a terminal', () => {
+  const said = (stderr: string) => explainGit(Object.assign(new Error('Command failed'), { stderr }));
+
+  it('names a sign-in failure', () => {
+    expect(said("fatal: could not read Username for 'https://gitlab.com': terminal prompts disabled")).toMatch(
+      /sign in/i,
+    );
+  });
+
+  it('names a rejected SSH key', () => {
+    expect(said('git@github.com: Permission denied (publickey).')).toMatch(/SSH key/i);
+  });
+
+  it('names being offline', () => {
+    expect(said("fatal: unable to access 'https://x/y.git/': Could not resolve host: x")).toMatch(/connection/i);
+  });
+
+  it('names a repository it cannot see', () => {
+    expect(said('remote: Repository not found.\nfatal: repository not found')).toMatch(/not found/i);
+  });
+
+  it('tells a rejected push to pull first', () => {
+    expect(said(' ! [rejected]        main -> main (fetch first)')).toMatch(/Pull first/i);
+  });
+
+  it('does not suggest forcing a rejected push', () => {
+    expect(said(' ! [rejected]        main -> main (fetch first)')).not.toMatch(/force/i);
+  });
+
+  it('passes git\'s own words through when it recognises nothing', () => {
+    expect(said('fatal: something specific and unusual happened')).toBe('something specific and unusual happened');
+  });
+
+  it('says something rather than nothing for an empty failure', () => {
+    expect(said('')).toBeTruthy();
   });
 });
 

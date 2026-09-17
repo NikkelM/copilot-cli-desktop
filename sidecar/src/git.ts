@@ -20,16 +20,150 @@ const run = promisify(execFile);
  * Shared rather than written per caller so the buffer limit holds everywhere: reading a
  * large repository's status overruns the default buffer.
  *
- * The timeout is for the calls that can wait on a person rather than on a process - a commit
- * that signs may raise a passphrase prompt. Everything else is given git's own patience,
- * which is none.
+ * The timeout is for the calls that can wait on something other than a processor - a commit
+ * that signs may raise a passphrase prompt, and anything crossing the network waits on the
+ * network. Everything else is given git's own patience, which is none.
+ *
+ * `network` also turns off git's terminal prompts, because there is no terminal here to
+ * answer them.
  */
-export async function git(root: string, args: string[], options: { timeoutMs?: number } = {}): Promise<string> {
+export async function git(
+  root: string,
+  args: string[],
+  options: { timeoutMs?: number; network?: boolean } = {},
+): Promise<string> {
   const { stdout } = await run('git', ['-C', root, ...args], {
     maxBuffer: 64 * 1024 * 1024,
     ...(options.timeoutMs ? { timeout: options.timeoutMs } : {}),
+    ...(options.network
+      ? {
+          env: {
+            ...process.env,
+            // Without this git waits forever on a username it can never be given: there is
+            // no terminal behind the sidecar, so the prompt goes nowhere and the call never
+            // returns. Off, the same situation fails in milliseconds and says why.
+            GIT_TERMINAL_PROMPT: '0',
+          },
+        }
+      : {}),
   });
   return stdout;
+}
+
+/**
+ * What git said, said to someone who was not watching a terminal.
+ *
+ * Git writes for a reader who typed the command and can read the hints under it. The panel
+ * has room for one sentence, and the sentences that matter are the ones a person can act on:
+ * sign in, pull first, get back online. Anything unrecognised is passed through rather than
+ * flattened into "something went wrong", because git's own words beat a shrug.
+ *
+ * Every pattern here was taken from a real failure rather than from the documentation.
+ */
+export function explainGit(error: unknown): string {
+  const text = String((error as { stderr?: string })?.stderr ?? error ?? '');
+
+  if (/could not read (Username|Password)|Authentication failed|terminal prompts disabled/i.test(text)) {
+    return 'Git could not sign in to the remote. Check your credential helper or SSH key.';
+  }
+  if (/Permission denied \(publickey\)/i.test(text)) {
+    return 'The remote refused your SSH key.';
+  }
+  if (/Could not resolve host|unable to access|Connection timed out|Failed to connect/i.test(text)) {
+    return 'Could not reach the remote. Check your connection.';
+  }
+  if (/Repository not found|does not appear to be a git repository/i.test(text)) {
+    return 'The remote repository was not found, or your account cannot see it.';
+  }
+  if (/\[rejected\]|failed to push some refs|non-fast-forward|fetch first/i.test(text)) {
+    return 'The remote has work you do not. Pull first, then push.';
+  }
+  if (/Diverging branches can't be fast-forwarded|not possible to fast-forward/i.test(text)) {
+    return 'Your branch and the remote have both moved on. Merge or rebase them yourself.';
+  }
+  if (/would be overwritten by (merge|checkout)|local changes.*would be overwritten/i.test(text)) {
+    return 'Uncommitted changes are in the way. Commit or stash them first.';
+  }
+
+  // Git's own first line, which is usually the whole of what happened.
+  const fatal = /^(?:fatal|error): (.+)$/m.exec(text);
+  return fatal?.[1]?.trim() || text.trim().split('\n')[0] || 'Git failed without saying why.';
+}
+
+/** How long a call that crosses the network is given before it is called hung. */
+const NETWORK_TIMEOUT = 2 * 60_000;
+
+/**
+ * Send the current branch to its remote.
+ *
+ * A branch that tracks nothing is given an upstream on the way, which is what every reader
+ * means by pushing a new branch and what git makes them ask for separately.
+ *
+ * Nothing here can force. Not as a setting that defaults to off - there is no code path to
+ * it at all, because the panel is used by someone who wants their work saved, and the one
+ * situation where force is tempting is exactly the one where it destroys somebody else's.
+ * A rejected push says to pull.
+ */
+export async function pushBranch(cwd: string): Promise<void> {
+  const status = await statusOf(cwd);
+  if (!status) throw new Error('This folder is not in a git repository.');
+  if (status.detached) throw new Error('HEAD is detached, so there is no branch to push. Check one out first.');
+
+  try {
+    if (status.upstream) {
+      await git(cwd, ['push'], { network: true, timeoutMs: NETWORK_TIMEOUT });
+    } else {
+      const remote = await defaultRemote(cwd);
+      if (!remote) throw new Error('This repository has no remote to push to.');
+      await git(cwd, ['push', '--set-upstream', remote, status.branch], {
+        network: true,
+        timeoutMs: NETWORK_TIMEOUT,
+      });
+    }
+  } catch (error: unknown) {
+    throw new Error(explainGit(error));
+  }
+}
+
+/**
+ * Bring the remote's work down onto the current branch.
+ *
+ * `--ff-only`, so this either moves the branch forward or refuses. The alternative is that a
+ * button labelled "pull" silently writes a merge commit, or starts a rebase the panel has no
+ * way to finish, and leaves the reader in a state they did not ask for and cannot see. When
+ * the branches have genuinely diverged that is a decision, and it belongs to the reader.
+ */
+export async function pullBranch(cwd: string): Promise<void> {
+  const status = await statusOf(cwd);
+  if (!status) throw new Error('This folder is not in a git repository.');
+  if (status.detached) throw new Error('HEAD is detached, so there is no branch to pull into.');
+  if (!status.upstream) throw new Error('This branch tracks nothing, so there is nothing to pull.');
+
+  try {
+    await git(cwd, ['pull', '--ff-only'], { network: true, timeoutMs: NETWORK_TIMEOUT });
+  } catch (error: unknown) {
+    throw new Error(explainGit(error));
+  }
+}
+
+/**
+ * The remote a new branch should be pushed to.
+ *
+ * `origin` when there is one, because that is what it means. Otherwise the only remote, and
+ * when there are several without an origin, nothing: guessing which of someone's forks to
+ * publish to is not a guess worth making.
+ */
+async function defaultRemote(cwd: string): Promise<string | null> {
+  let output: string;
+  try {
+    output = await git(cwd, ['remote']);
+  } catch {
+    return null;
+  }
+
+  const remotes = output.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (remotes.includes('origin')) return 'origin';
+  return remotes.length === 1 ? remotes[0]! : null;
 }
 
 /**

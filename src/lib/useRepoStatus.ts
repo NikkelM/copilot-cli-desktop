@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { gitCommit, gitDiff, gitStage, gitStatus } from './sidecar';
+import { gitCommit, gitDiff, gitStage, gitStatus, gitSync } from './sidecar';
 import { messageOf } from './errors';
 import type { FileDiff, RepoStatus } from '../../shared/protocol';
 
@@ -32,6 +32,8 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
   const [busy, setBusy] = useState<string[]>([]);
   /** Whether a commit is being made, so it cannot be made twice. */
   const [committing, setCommitting] = useState(false);
+  /** Which way the repository is being synced, so neither can be asked for twice. */
+  const [syncing, setSyncing] = useState<'push' | 'pull' | null>(null);
   /** Which directory is being shown, so a slow reply for another cannot land here. */
   const showing = useRef(cwd);
   showing.current = cwd;
@@ -165,7 +167,29 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     }
   }, []);
 
-  return { status, loading, failed, diffs, diff, busy, stage, committing, commit, refresh: load };
+  /**
+   * Send the branch to its remote, or bring the remote's work down onto it.
+   *
+   * Diffs survive a sync: neither direction moves anything between the index and the working
+   * tree, so a diff the reader had open still describes the same change afterwards.
+   */
+  const sync = useCallback(async (direction: 'push' | 'pull') => {
+    const directory = showing.current;
+    if (!directory) return;
+
+    setSyncing(direction);
+    setFailed(null);
+    try {
+      const found = await gitSync(directory, direction);
+      if (showing.current === directory) setStatus(found);
+    } catch (error: unknown) {
+      if (showing.current === directory) setFailed(messageOf(error));
+    } finally {
+      setSyncing(null);
+    }
+  }, []);
+
+  return { status, loading, failed, diffs, diff, busy, stage, committing, commit, syncing, sync, refresh: load };
 }
 
 
