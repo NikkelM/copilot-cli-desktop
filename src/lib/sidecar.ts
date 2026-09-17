@@ -13,6 +13,7 @@ import type {
   ListSessionsResult,
   McpServerSummary,
   ModelChoice,
+  RepoStatus,
   PendingElicitation,
   PendingPermission,
   PendingPlanApproval,
@@ -306,6 +307,12 @@ export function setSkillEnabled(sessionId: string, name: string, enabled: boolea
 export async function gitState(cwd: string): Promise<TreeState | null> {
   const { state } = await request('git.state', { cwd });
   return state;
+}
+
+/** The whole state of a working tree, for the source control panel. Null outside a repository. */
+export async function gitStatus(cwd: string): Promise<RepoStatus | null> {
+  const { status } = await request('git.status', { cwd });
+  return status;
 }
 
 /** Replays a session transcript from events.jsonl without resuming it. */

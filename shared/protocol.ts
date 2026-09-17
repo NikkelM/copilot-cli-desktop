@@ -851,6 +851,13 @@ export interface SidecarRequests {
   /** The diff for one of those files, over the same span the list was built with. */
   'sessions.diff': { params: { sessionId: string; path: string; since?: string }; result: FileDiff };
   'git.state': { params: { cwd: string }; result: { state: TreeState | null } };
+  /**
+   * The full state of a working tree: branch, upstream, and every path with a change.
+   *
+   * Reads git directly rather than the session, so it answers for a session nobody has
+   * opened and costs no Copilot process. Null when the directory is not in a repository.
+   */
+  'git.status': { params: { cwd: string }; result: { status: RepoStatus | null } };
   'models.list': { params: void; result: { models: ModelChoice[] } };
   /**
    * The slash commands there are.
@@ -1049,6 +1056,7 @@ export const SIDECAR_METHODS = [
   'sessions.changes',
   'sessions.diff',
   'git.state',
+  'git.status',
   'models.list',
   'commands.list',
   'filesystem.directories',
@@ -1223,4 +1231,39 @@ export interface TreeState {
    * one, or neither, and only the second has a page to link to.
    */
   remote: string | null;
+}
+
+/**
+ * One path git has something to say about.
+ *
+ * Both halves at once, because a file can be staged and then modified again - which a reader
+ * needs to see as one row rather than as two files with the same name.
+ */
+export interface RepoFile {
+  path: string;
+  /** What the index holds against HEAD. Absent when the index matches HEAD. */
+  staged?: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange';
+  /** What the working tree holds against the index. Absent when they match. */
+  unstaged?: 'modified' | 'deleted' | 'untracked' | 'unmerged' | 'typechange';
+  /** Where a rename or copy came from, which is half of what the row means. */
+  from?: string;
+}
+
+/**
+ * The state of a working tree, as a source control panel shows it.
+ *
+ * Null when the directory is not in a repository, which is a normal thing for a session to
+ * be in rather than a failure: plenty of work happens in folders nobody has run `git init`
+ * in, and this app exists partly to serve them.
+ */
+export interface RepoStatus {
+  /** The branch name, or the short commit when HEAD is detached. */
+  branch: string;
+  detached: boolean;
+  /** The branch it tracks, when it tracks one. */
+  upstream?: string;
+  /** How far ahead and behind that upstream. Both zero when there is none. */
+  ahead: number;
+  behind: number;
+  files: RepoFile[];
 }

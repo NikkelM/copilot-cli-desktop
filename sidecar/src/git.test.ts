@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { githubSlug, treeStateOf } from './git.js';
+import { githubSlug, statusOf, treeStateOf } from './git.js';
 
 /**
  * Every test here spawns git, several times over.
@@ -181,3 +181,139 @@ describe('githubSlug', () => {
     expect(githubSlug(url)).toBeNull();
   });
 });
+
+/**
+ * The whole state of a working tree, which is what a source control panel draws (#42).
+ *
+ * Real repositories again: every shape below was first produced by running git and reading
+ * what it printed, because the porcelain format's field counts differ per entry kind and
+ * guessing them is how a parser ends up returning paths with their metadata attached.
+ */
+describe('statusOf', () => {
+  it('names the branch and counts nothing on a clean tree', async () => {
+    const found = await statusOf(dir);
+
+    expect(found).toEqual({ branch: 'main', detached: false, ahead: 0, behind: 0, files: [] });
+  });
+
+  it('says nothing about a directory that is not a repository', async () => {
+    const plain = mkdtempSync(join(tmpdir(), 'ccd-not-git-'));
+
+    expect(await statusOf(plain)).toBeNull();
+    rmSync(plain, { recursive: true, force: true });
+  });
+
+  it('reports a file the working tree has changed', async () => {
+    write('tracked.txt', 'changed\n');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', unstaged: 'modified' }]);
+  });
+
+  it('reports a file waiting in the index', async () => {
+    write('tracked.txt', 'changed\n');
+    git('add', 'tracked.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', staged: 'modified' }]);
+  });
+
+  /** A reader needs this as one row, not as two files that happen to share a name. */
+  it('reports a file staged and then changed again as one row', async () => {
+    write('tracked.txt', 'staged\n');
+    git('add', 'tracked.txt');
+    write('tracked.txt', 'and changed since\n');
+
+    expect((await statusOf(dir))?.files).toEqual([
+      { path: 'tracked.txt', staged: 'modified', unstaged: 'modified' },
+    ]);
+  });
+
+  it('reports a new file as untracked', async () => {
+    write('new.txt', 'hello\n');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'new.txt', unstaged: 'untracked' }]);
+  });
+
+  it('reports a deleted file', async () => {
+    unlinkSync(join(dir, 'tracked.txt'));
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'tracked.txt', unstaged: 'deleted' }]);
+  });
+
+  it('reports a staged addition', async () => {
+    write('new.txt', 'hello\n');
+    git('add', 'new.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'new.txt', staged: 'added' }]);
+  });
+
+  /** Where a rename came from is half of what the row means. */
+  it('reports a rename and what it was called before', async () => {
+    git('mv', 'tracked.txt', 'renamed.txt');
+
+    expect((await statusOf(dir))?.files).toEqual([
+      { path: 'renamed.txt', staged: 'renamed', from: 'tracked.txt' },
+    ]);
+  });
+
+  // The path is the last field, and a rename puts a score before it. Splitting the line on
+  // spaces instead would cut a name like this in half.
+  it('keeps a path that has a space in it', async () => {
+    write('with space.txt', 'hello\n');
+
+    expect((await statusOf(dir))?.files).toEqual([{ path: 'with space.txt', unstaged: 'untracked' }]);
+  });
+
+  it('reads the branch it tracks and how far apart they are', async () => {
+    const remote = mkdtempSync(join(tmpdir(), 'ccd-git-remote-'));
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote], { encoding: 'utf8' });
+    git('remote', 'add', 'origin', remote);
+    git('push', '-q', '-u', 'origin', 'main');
+    write('tracked.txt', 'ahead by one\n');
+    git('commit', '-qam', 'ahead');
+
+    const found = await statusOf(dir);
+    expect(found?.upstream).toBe('origin/main');
+    expect(found?.ahead).toBe(1);
+    expect(found?.behind).toBe(0);
+    rmSync(remote, { recursive: true, force: true });
+  });
+
+  it('shows the commit when there is no branch to name', async () => {
+    git('checkout', '-q', '--detach');
+
+    const found = await statusOf(dir);
+    expect(found?.detached).toBe(true);
+    expect(found?.branch).toHaveLength(8);
+  });
+
+  /** A repository whose first commit is still to come has a branch and no HEAD. */
+  it('still names the branch before the first commit', async () => {
+    const fresh = mkdtempSync(join(tmpdir(), 'ccd-git-fresh-'));
+    execFileSync('git', ['-C', fresh, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+    writeFileSync(join(fresh, 'first.txt'), 'hello\n');
+
+    const found = await statusOf(fresh);
+    expect(found?.branch).toBe('main');
+    expect(found?.files).toEqual([{ path: 'first.txt', unstaged: 'untracked' }]);
+    rmSync(fresh, { recursive: true, force: true });
+  });
+
+  // Git lists in index-walk order, which puts a file wherever the tree happens to hold it.
+  it('lists in a stable order', async () => {
+    write('b.txt', 'b\n');
+    write('a.txt', 'a\n');
+    write('c.txt', 'c\n');
+
+    expect((await statusOf(dir))?.files.map((file) => file.path)).toEqual(['a.txt', 'b.txt', 'c.txt']);
+  });
+
+  it('leaves ignored files out entirely', async () => {
+    write('.gitignore', 'ignored.txt\n');
+    write('ignored.txt', 'hello\n');
+    git('add', '.gitignore');
+    git('commit', '-qm', 'ignore');
+
+    expect((await statusOf(dir))?.files).toEqual([]);
+  });
+});
+

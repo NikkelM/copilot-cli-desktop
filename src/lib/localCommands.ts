@@ -87,12 +87,26 @@ export const WIKI: SlashCommand = {
 };
 
 /**
+ * Show the repository the session works in, and what has changed in it.
+ *
+ * Distinct from `/changes`, which is scoped to what the agent edited. This one is the real
+ * working tree, including the reader's own edits - the two are deliberately separate so
+ * that acting on one is never mistaken for acting on the other (#41).
+ */
+export const GIT: SlashCommand = {
+  name: 'git',
+  description: 'show the repository status',
+  aliases: [],
+  allowDuringTurn: true,
+};
+
+/**
  * The commands this app answers itself.
  *
  * Folded into the runtime's list so they are offered by the menu alongside it - the reader
  * has no reason to care which side of the wire answers them.
  */
-export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT, USAGE, WIKI];
+export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT, USAGE, WIKI, GIT];
 
 /** Whether a command is one of ours, and so must not be sent to the runtime. */
 export function isLocal(name: string): boolean {

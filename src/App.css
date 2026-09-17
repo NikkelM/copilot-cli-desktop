@@ -3526,3 +3526,93 @@ button.group:hover {
   font-size: var(--font-sm);
   line-height: 1.4;
 }
+
+/* The source control panel, which reuses the changes panel's frame and adds a branch line. */
+.repo-branch {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+}
+
+.repo-upstream {
+  opacity: 0.7;
+}
+
+/* Only drawn when there is a count to give, so a clean repository shows no punctuation. */
+.repo-count {
+  color: var(--accent);
+}
+
+/* Staged and Changes, which is what git calls the two halves of a working tree. */
+.repo-group {
+  margin: 8px 0 2px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.repo-file {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 10px;
+  font-size: var(--font-md);
+}
+
+/* Git's own letters: anyone who has read a status already knows them, and a word per row
+   would push the paths off a narrow panel. */
+.repo-mark {
+  width: 12px;
+  flex-shrink: 0;
+  font-family: ui-monospace, monospace;
+  color: var(--text-muted);
+}
+
+.repo-file.added .repo-mark,
+.repo-file.untracked .repo-mark {
+  color: var(--success);
+}
+
+.repo-file.deleted .repo-mark {
+  color: var(--danger);
+}
+
+.repo-file.modified .repo-mark,
+.repo-file.renamed .repo-mark,
+.repo-file.copied .repo-mark,
+.repo-file.typechange .repo-mark {
+  color: var(--warning, #d29922);
+}
+
+.repo-file.unmerged .repo-mark {
+  color: var(--danger);
+}
+
+.repo-path {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.repo-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* After the name and quieter: a list of paths is read by filename, and the directories are
+   the part every row has in common. */
+.repo-folder {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -12,6 +12,7 @@ import { Changes } from './components/Changes';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { Environment } from './components/Environment';
+import { Repository } from './components/Repository';
 import { Wiki } from './components/Wiki';
 import { AgentPicker } from './components/AgentPicker';
 import { ModelPicker } from './components/ModelPicker';
@@ -40,7 +41,7 @@ import {
   setMcpEnabled,
   sendMessage,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, USAGE, WIKI, wantsDirectory } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, GIT, USAGE, WIKI, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
 import { staleRuntime } from './lib/protocolCheck';
@@ -59,6 +60,7 @@ import { useModel } from './lib/useModel';
 import { useMode } from './lib/useMode';
 import { useContextUsage } from './lib/useContextUsage';
 import { useCommands } from './lib/useCommands';
+import { useRepoStatus } from './lib/useRepoStatus';
 import { useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
 import { dispatch } from './lib/slash';
@@ -123,6 +125,8 @@ export default function App() {
   const [showChanges, setShowChanges] = useState(false);
   /** Whether what this session would load is showing. */
   const [showEnvironment, setShowEnvironment] = useState(false);
+  /** Whether the source control panel is open, which is what asks git for the tree state. */
+  const [showRepository, setShowRepository] = useState(false);
   /**
    * The session being woken, if one is.
    *
@@ -178,6 +182,7 @@ export default function App() {
   const openSubagentSession = useRef<string | null>(null);
   openSubagentSession.current = openSubagent?.sessionId ?? null;
   const changes = useChanges(selectedId);
+  const repository = useRepoStatus(selected?.cwd ?? null, showRepository);
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
   const prompts = usePrompts(selectedId, setError);
@@ -243,6 +248,7 @@ export default function App() {
 
   // And for the environment, which is read for one directory and says nothing about another.
   useEffect(() => setShowEnvironment(false), [selectedId]);
+  useEffect(() => setShowRepository(false), [selectedId]);
 
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
@@ -371,8 +377,11 @@ export default function App() {
     () =>
       onSessionChanges(({ sessionId }) => {
         if (showChanges && sessionId === selectedId) changes.load();
+        // The agent editing files is the main thing that changes what git would say, and
+        // the app already knows when it happened - so the panel does not need a timer.
+        if (showRepository && sessionId === selectedId) repository.refresh();
       }),
-    [showChanges, selectedId, changes.load],
+    [showChanges, showRepository, selectedId, changes.load, repository.refresh],
   );
 
   // Losing the sidecar takes every session with it, and a request that will never be
@@ -560,7 +569,13 @@ export default function App() {
       else if (what.command.name === ENVIRONMENT.name) openEnvironment();
       else if (what.command.name === USAGE.name) void showUsage(selectedId);
       else if (what.command.name === WIKI.name) setShowWiki(true);
-      else setHelp('full');
+      else if (what.command.name === GIT.name) {
+        // One panel at a time: both are tall, and stacking them pushes the transcript off.
+        setShowChanges(false);
+        setShowEnvironment(false);
+        setShowRepository(true);
+        repository.refresh();
+      } else setHelp('full');
       return;
     }
 
@@ -1005,6 +1020,19 @@ export default function App() {
                   reviewedAt={changes.reviewedAt}
                   showAll={changes.showAll}
                   onSpan={changes.setSpan}
+                />
+              )}
+
+              {showRepository && (
+                <Repository
+                  status={repository.status}
+                  loading={repository.loading}
+                  cwd={selected.cwd}
+                  onRefresh={repository.refresh}
+                  onClose={() => {
+                    setShowRepository(false);
+                    toComposer();
+                  }}
                 />
               )}
 
