@@ -3628,18 +3628,24 @@ button.group:hover {
 }
 
 /* Staged and Changes, which is what git calls the two halves of a working tree. The heading
-   sits in the same two columns as the rows below it, so the group's own button lines up with
-   the one on every file it covers. */
+   is built out of the same two boxes as the rows under it - the button's fixed column, then
+   a label padded the way a row's contents are - so both columns line up down the panel. */
 .repo-group {
   display: flex;
   align-items: center;
   gap: 8px;
   margin: 8px 0 2px;
-  padding: 0 10px;
+  padding: 0;
   color: var(--text-muted);
   font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+/* The 10px is `.changes-row`'s own horizontal padding: the label stands where a file's
+   status mark stands. */
+.repo-group-label {
+  padding: 0 10px;
 }
 
 /* Smaller than a row's, because it acts on the group rather than a file, and a heading that
@@ -3648,16 +3654,10 @@ button.group:hover {
   font-size: var(--font-md);
 }
 
-.repo-file {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 3px 10px;
-  font-size: var(--font-md);
-}
-
 /* Git's own letters: anyone who has read a status already knows them, and a word per row
-   would push the paths off a narrow panel. */
+   would push the paths off a narrow panel. The change is a class on the mark itself, so
+   these select it directly - written against a `.repo-file` wrapper first, which no row has
+   ever had, leaving every letter the same muted grey. */
 .repo-mark {
   width: 12px;
   flex-shrink: 0;
@@ -3665,23 +3665,23 @@ button.group:hover {
   color: var(--text-muted);
 }
 
-.repo-file.added .repo-mark,
-.repo-file.untracked .repo-mark {
+.repo-mark.added,
+.repo-mark.untracked {
   color: var(--success);
 }
 
-.repo-file.deleted .repo-mark {
+.repo-mark.deleted {
   color: var(--danger);
 }
 
-.repo-file.modified .repo-mark,
-.repo-file.renamed .repo-mark,
-.repo-file.copied .repo-mark,
-.repo-file.typechange .repo-mark {
-  color: var(--warning, #d29922);
+.repo-mark.modified,
+.repo-mark.renamed,
+.repo-mark.copied,
+.repo-mark.typechange {
+  color: var(--warning);
 }
 
-.repo-file.unmerged .repo-mark {
+.repo-mark.unmerged {
   color: var(--danger);
 }
 

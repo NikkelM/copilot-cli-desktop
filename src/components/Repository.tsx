@@ -375,7 +375,7 @@ export function Repository({
                 >
                   −
                 </button>
-                Staged
+                <span className="repo-group-label">Staged</span>
               </p>
               <ul className="changes-list">
                 {staged.map((file) => (
@@ -411,7 +411,7 @@ export function Repository({
                 >
                   +
                 </button>
-                Changes
+                <span className="repo-group-label">Changes</span>
               </p>
               <ul className="changes-list">
                 {unstaged.map((file) => (
