@@ -88,12 +88,14 @@ body {
   overflow: hidden;
 }
 
-/* The wiki at one end, the new-session button at the other. */
+/* The wiki at one end, the new-session button at the other. Padded to match `.search`
+   below it, so the two bordered controls share a left edge rather than missing it by the
+   four pixels the row padding used. */
 .sidebar-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 12px 14px;
+  padding: 12px 10px;
   border-bottom: 1px solid var(--border);
   font-weight: 600;
 }
@@ -2794,8 +2796,11 @@ pre.fatal,
 
 /* Starting a session is the one thing in the sidebar that costs a process, so it is
    present but quiet rather than the loudest thing there. */
+/* Layout is the container's business: this rule sets how the button looks, and an auto
+   margin here followed both of the sidebar's buttons to the right, which left the first of
+   them stranded in the middle. It was also shoving the placeholder's button off the centre
+   its grid had put it on. */
 .new-session {
-  margin-left: auto;
   padding: 2px 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
