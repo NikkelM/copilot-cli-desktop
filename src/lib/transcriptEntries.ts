@@ -297,6 +297,25 @@ const TRIGGER: Record<string, ToolEntry['skill']> = {
   'context-load': 'context',
 };
 
+/**
+ * Event types that draw nothing, and are dropped before the timeline is built.
+ *
+ * These are lifecycle markers rather than things the reader can see. They are also half of a
+ * long log by count - 135,494 of 267,473 events across the twelve largest here - and every
+ * one was walked, matched against every case below, and discarded, on every streamed chunk.
+ *
+ * Dropping them first makes a case for one of them unreachable, so no test that feeds one
+ * through can tell a missing case from a dead one. The test that keeps this honest reads
+ * this file and fails if any of these ever acquires a case, which is the only place the
+ * question can still be asked.
+ */
+export const DRAWS_NOTHING: ReadonlySet<string> = new Set([
+  'assistant.turn_start',
+  'assistant.turn_end',
+  'hook.start',
+  'hook.end',
+]);
+
 /** Longest question shown in a row header before clamping. */
 const MAX_HEADER = 140;
 
@@ -329,7 +348,7 @@ function answerOf(result: string): string | null {
  *   only record of a reply that was interrupted.
  */
 export function toEntries(
-  events: TranscriptEvent[],
+  all: TranscriptEvent[],
   cwd: string | null,
   abandoned?: ReadonlyMap<string, string>,
   /**
@@ -341,6 +360,13 @@ export function toEntries(
    */
   ofAgent?: string,
 ): Entry[] {
+  // Before anything reads them, including the pre-passes and the partitioning: a type that
+  // draws nothing has nothing to say to any of it. Doing it here rather than at the caller
+  // covers the recursive call a subagent's work makes, and means a synthesised row for a
+  // delegation this page cannot see starts at the agent's first visible event rather than at
+  // a hook that happened to fire just before it.
+  const events = all.filter((event) => !DRAWS_NOTHING.has(event.type));
+
   const entries: Entry[] = [];
   /** Thinking already shown as it was written, so the message repeating it is skipped. */
   const streamed = new Set<string>();

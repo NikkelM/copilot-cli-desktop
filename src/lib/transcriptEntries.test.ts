@@ -1,7 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import type { TranscriptEvent } from '../../shared/protocol';
-import { sameEntry, toEntries, type MessageEntry, type ReasoningEntry, type ToolEntry } from './transcriptEntries';
+import {
+  DRAWS_NOTHING,
+  sameEntry,
+  toEntries,
+  type MessageEntry,
+  type ReasoningEntry,
+  type ToolEntry,
+} from './transcriptEntries';
 
 const event = (type: string, data: Record<string, unknown> = {}, id?: string): TranscriptEvent => ({
   type,
@@ -1288,5 +1296,89 @@ describe('a delegation made from inside a subagent', () => {
 
     expect(entries.filter((e) => e.kind === 'tool')).toHaveLength(1);
     expect(entries.some((e) => e.kind === 'message' && e.body === 'the deeper agent')).toBe(false);
+  });
+});
+
+/**
+ * Half of a long log is lifecycle markers that draw nothing, and walking them on every
+ * streamed chunk was a third of the cost of building the timeline. They are dropped up front,
+ * which is only safe while they really do draw nothing.
+ *
+ * The switch in toEntries is exhaustive by convention rather than by type, so there is
+ * nothing to derive the list from. These tests are the other half of that bargain: give one
+ * of them a case and they fail.
+ */
+describe('events that draw nothing', () => {
+  /**
+   * The one guard that works.
+   *
+   * Dropping these before the switch makes a case for one of them unreachable, so a test
+   * that feeds one through cannot tell a missing case from a dead one - it passes either
+   * way. Reading the source can: it asks the question the filter makes unanswerable at
+   * runtime, which is whether anyone has tried to draw one of these since.
+   */
+  it('has no case anywhere, which is the only thing that makes dropping them safe', () => {
+    const source = readFileSync(new URL('./transcriptEntries.ts', import.meta.url), 'utf8');
+
+    for (const type of DRAWS_NOTHING) {
+      expect(source, `${type} is dropped before the switch, so a case for it would never run`).not.toContain(
+        `case '${type}'`,
+      );
+    }
+  });
+
+  it('names the ones a long log is mostly made of', () => {
+    expect([...DRAWS_NOTHING].sort()).toEqual([
+      'assistant.turn_end',
+      'assistant.turn_start',
+      'hook.end',
+      'hook.start',
+    ]);
+  });
+
+  it.each([...DRAWS_NOTHING])('draws nothing for %s', (type) => {
+    // On its own, and beside something that does draw, since a type given a case might only
+    // show itself in company.
+    expect(toEntries([event(type, { toolCallId: 't1' })], CWD)).toEqual([]);
+
+    const withOne = toEntries(
+      [event('user.message', { content: 'hello' }), event(type, { toolCallId: 't1' })],
+      CWD,
+    );
+    expect(withOne).toHaveLength(1);
+    expect(withOne[0]?.kind).toBe('message');
+  });
+
+  it('leaves a tool call that surrounds one of them untouched', () => {
+    const entries = toEntries(
+      [
+        event('assistant.turn_start'),
+        event('tool.execution_start', { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'ls' } }),
+        event('hook.start', {}),
+        event('tool.execution_complete', { toolCallId: 't1', success: true, result: { content: 'a.txt' } }),
+        event('hook.end', {}),
+        event('assistant.turn_end'),
+      ],
+      CWD,
+    );
+
+    expect(entries).toHaveLength(1);
+    expect((entries[0] as ToolEntry).status).toBe('ok');
+    expect((entries[0] as ToolEntry).output).toBe('a.txt');
+  });
+
+  it('keeps the order of what is left', () => {
+    const entries = toEntries(
+      [
+        event('user.message', { content: 'first' }),
+        event('hook.start'),
+        event('assistant.message', { content: 'second' }),
+        event('hook.end'),
+        event('user.message', { content: 'third' }),
+      ],
+      CWD,
+    );
+
+    expect(entries.map((e) => (e as MessageEntry).body)).toEqual(['first', 'second', 'third']);
   });
 });
