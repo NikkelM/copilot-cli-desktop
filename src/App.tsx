@@ -47,6 +47,7 @@ import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
 import { allTags, useTags } from './lib/useTags';
 import { TagPicker } from './components/TagPicker';
+import { HeaderTags } from './components/HeaderTags';
 import { useConfirmDelete } from './lib/useConfirmDelete';
 import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
@@ -1016,6 +1017,7 @@ export default function App() {
                   branch={tree.state?.branch ?? selected.branch}
                   onError={setError}
                 />
+                <HeaderTags tags={tags[selected.sessionId] ?? []} onEdit={() => setTagging(selected)} />
                 <div className="header-controls">
                   {/* Reads files rather than starting a session, so it costs nothing until
                       it is asked for - and then costs enough to be worth asking for. */}

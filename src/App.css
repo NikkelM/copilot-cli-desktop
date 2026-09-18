@@ -4597,3 +4597,35 @@ pre.fatal,
 .tag-retire:focus-visible {
   color: var(--danger);
 }
+
+/* The open session's tags, between where it is and what can be done to it. One control
+   rather than one per tag: from here they are a fact about the session and a way to change
+   it, not a filter for a list that may not be on screen. */
+.header-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.header-tags:hover,
+.header-tags:focus-visible {
+  border-color: var(--border);
+}
+
+.header-tags-empty {
+  color: var(--text-dim);
+  font-size: var(--font-md);
+}
+
+.header-tags:hover .header-tags-empty {
+  color: var(--text-muted);
+}
