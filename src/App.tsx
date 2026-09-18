@@ -869,7 +869,7 @@ export default function App() {
             .catch((e: unknown) => setError(String(e)));
         },
         copy: (text) => void copyText(text),
-        openFolder: (path) => void openPath(path).catch((e: unknown) => setError(String(e))),
+        openDirectory: (path) => void openPath(path).catch((e: unknown) => setError(String(e))),
         remove: (target) => (confirmDelete.confirms ? setDeleting(target) : void removeSession(target)),
       }),
     [favourites, toggleFavourite, archived, toggleArchived, sessions, confirmDelete.confirms, removeSession],

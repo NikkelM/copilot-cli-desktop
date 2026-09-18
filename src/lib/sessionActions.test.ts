@@ -23,7 +23,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   working: new Set(),
   unload: vi.fn(),
   copy: vi.fn(),
-  openFolder: vi.fn(),
+  openDirectory: vi.fn(),
   remove: vi.fn(),
   ...over,
 });
@@ -38,7 +38,7 @@ describe('sessionActions', () => {
       'unload',
       'archive',
       'copy-id',
-      'folder',
+      'directory',
       'delete',
     ]);
   });
@@ -86,20 +86,20 @@ describe('sessionActions', () => {
     });
   });
 
-  describe('the working folder', () => {
-    it('opens the folder the session was started in', () => {
-      const openFolder = vi.fn();
-      byId(session({ cwd: 'C:\\repo' }), deps({ openFolder })).folder.run();
-      expect(openFolder).toHaveBeenCalledWith('C:\\repo');
+  describe('the working directory', () => {
+    it('opens the directory the session was started in', () => {
+      const openDirectory = vi.fn();
+      byId(session({ cwd: 'C:\\repo' }), deps({ openDirectory })).directory.run();
+      expect(openDirectory).toHaveBeenCalledWith('C:\\repo');
     });
 
-    it('refuses when the session has no folder', () => {
-      const openFolder = vi.fn();
-      const action = byId(session({ cwd: null }), deps({ openFolder })).folder;
+    it('refuses when the session has no directory', () => {
+      const openDirectory = vi.fn();
+      const action = byId(session({ cwd: null }), deps({ openDirectory })).directory;
 
-      expect(action.refused).toMatch(/not started in a folder/i);
+      expect(action.refused).toMatch(/no working directory/i);
       action.run();
-      expect(openFolder).not.toHaveBeenCalled();
+      expect(openDirectory).not.toHaveBeenCalled();
     });
   });
 

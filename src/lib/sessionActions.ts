@@ -13,7 +13,7 @@ export interface SessionActionDeps {
   working: ReadonlySet<string>;
   unload: (sessionId: string) => void;
   copy: (text: string) => void;
-  openFolder: (path: string) => void;
+  openDirectory: (path: string) => void;
   /** Asked to delete. Confirming is the caller's business, not this list's. */
   remove: (session: SessionSummary) => void;
 }
@@ -66,11 +66,11 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       run: () => deps.copy(session.sessionId),
     },
     {
-      id: 'folder',
-      label: 'Open working folder',
-      refused: session.cwd ? undefined : 'This session was not started in a folder.',
+      id: 'directory',
+      label: 'Open working directory',
+      refused: session.cwd ? undefined : 'This session has no working directory.',
       run: () => {
-        if (session.cwd) deps.openFolder(session.cwd);
+        if (session.cwd) deps.openDirectory(session.cwd);
       },
     },
     {
