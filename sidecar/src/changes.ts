@@ -13,6 +13,7 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol.js';
 import { contentHash, fileKey, readBackup, readRewind, type Image, type RewindSnapshot } from './rewind.js';
+import { gitBlobHash } from './rewindLegacy.js';
 
 /**
  * What a session changed, answered from the rewind store rather than from git.
@@ -139,12 +140,15 @@ function contentsOf(sessionId: string, image: Image, path: string): Buffer | nul
   if (image.kind === 'absent') return Buffer.alloc(0);
   if (image.kind === 'skipped') return null;
 
-  const blob = readBackup(sessionId, image.contentHash);
+  const blob = readBackup(sessionId, image.contentHash, image.blob);
   if (blob) return blob;
 
   try {
     const now = readFileSync(path);
-    return contentHash(now) === image.contentHash ? now : null;
+    // The older store hashes the way git does, so recognising the file on disk as still
+    // holding this image means hashing it the same way rather than the other.
+    const hash = image.contentHash.startsWith('git-sha1:') ? gitBlobHash(now) : contentHash(now);
+    return hash === image.contentHash ? now : null;
   } catch {
     return null;
   }

@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { sessionStateDir } from './paths.js';
+import { readLegacyRewind } from './rewindLegacy.js';
 
 /**
  * The Copilot CLI's own record of what each turn changed, read.
@@ -29,7 +30,14 @@ export type Image =
       kind: 'content';
       contentHash: string;
       resolvedPath: string;
-      encodedPath: { encoding: 'windows-wide'; data: string };
+      encodedPath?: { encoding: 'windows-wide'; data: string };
+      /**
+       * The blob's filename, when the store names it something other than its hash.
+       *
+       * The older store addresses backups as `<16 hex>-<epoch ms>`, so the hash alone does
+       * not find them. Absent means the hash is the name, which is how the current one works.
+       */
+      blob?: string;
     };
 
 export interface FileChange {
@@ -61,6 +69,9 @@ const rewindDir = (sessionId: string) => join(sessionStateDir(sessionId), 'rewin
 const indexPath = (sessionId: string) => join(rewindDir(sessionId), 'index.json');
 const backupPath = (sessionId: string, hash: string) => join(rewindDir(sessionId), 'backups', hash);
 
+/** Where the store the CLI wrote until late July lives, alongside rather than instead. */
+export const legacyRewindDir = (sessionId: string) => join(sessionStateDir(sessionId), 'rewind-snapshots');
+
 /**
  * The key a file is filed under: the first half of the SHA-256 of its display path.
  *
@@ -81,8 +92,17 @@ export function contentHash(content: Buffer | string): string {
  *
  * A schema this does not know is treated as no history rather than as something to parse
  * optimistically: reading it wrong would be worse than not reading it.
+ *
+ * Two stores have existed. The one read here is what the CLI has written since early
+ * August; sessions from April to mid-July have `rewind-snapshots` instead, which records
+ * something different enough to need its own reader (#185). Chosen by which directory is
+ * there rather than by the version inside, because both say `1` and mean different things.
  */
 export function readRewind(sessionId: string): RewindSnapshot[] {
+  if (!existsSync(indexPath(sessionId)) && existsSync(legacyRewindDir(sessionId))) {
+    return readLegacyRewind(sessionId);
+  }
+
   try {
     const file = JSON.parse(readFileSync(indexPath(sessionId), 'utf8')) as RewindIndex;
     if (file.schema !== SCHEMA || !Array.isArray(file.snapshots)) return [];
@@ -98,9 +118,12 @@ export function readRewind(sessionId: string): RewindSnapshot[] {
  * Pruning is normal: 254 of 1092 blobs referenced by a real store no longer existed. A
  * caller must treat a missing one as history it cannot show rather than as corruption.
  */
-export function readBackup(sessionId: string, hash: string): Buffer | null {
+export function readBackup(sessionId: string, hash: string, blob?: string): Buffer | null {
+  // The older store names blobs `<16 hex>-<epoch ms>` and keeps them somewhere else, so
+  // the name it gave is followed rather than the hash, which would find nothing.
+  const path = blob ? join(legacyRewindDir(sessionId), 'backups', blob) : backupPath(sessionId, hash);
   try {
-    return readFileSync(backupPath(sessionId, hash));
+    return readFileSync(path);
   } catch {
     return null;
   }
