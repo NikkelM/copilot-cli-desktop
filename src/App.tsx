@@ -82,13 +82,6 @@ const REASONING = 'copilot-desktop.reasoning';
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /**
-   * Which delegated task is being read instead of the session, if any.
-   *
-   * Held beside the selected session rather than in place of it: the subagent belongs to
-   * that conversation, and closing its transcript returns to where the reader was.
-   */
-  const [openSubagentId, setOpenSubagentId] = useState<string | null>(null);
-  /**
    * Whether the knowledge base is being read instead of a session.
    *
    * A destination rather than a panel over a session: it belongs to no session, is read for
@@ -167,7 +160,7 @@ export default function App() {
     setOffList(session ?? null);
     // Choosing a session is asking for that conversation, including the one whose delegated
     // task is being read: the subagent view would otherwise be a room with one door.
-    setOpenSubagentId(null);
+    subagents.close();
     // The wiki is somewhere else entirely, and a session chosen while reading it is a
     // request to go back to work.
     setShowWiki(false);
@@ -183,16 +176,6 @@ export default function App() {
   const slash = useCommands(selectedId);
   const subagents = useSubagents();
   const wiki = useWiki(showWiki);
-  /** The delegated task being read, or nothing when the session itself is on screen. */
-  const openSubagent = subagents.find(openSubagentId);
-  /**
-   * Whose session that task belongs to, for the event handler to read.
-   *
-   * A ref because the handler is registered once and never rebuilt, and because the entry
-   * has to be identified before `forget` removes it.
-   */
-  const openSubagentSession = useRef<string | null>(null);
-  openSubagentSession.current = openSubagent?.sessionId ?? null;
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, showRepository);
   const environment = useEnvironment(selected?.cwd ?? null);
@@ -359,7 +342,6 @@ export default function App() {
        * ten minutes, reading one for long enough was itself the trigger.
        */
       if (!loaded) {
-        if (openSubagentSession.current === sessionId) setOpenSubagentId(null);
         subagents.forget(sessionId);
       }
 
@@ -859,17 +841,16 @@ export default function App() {
         maxLoaded={sessions.maxLoaded}
         activity={activity}
         subagents={subagents.watched}
-        selectedSubagentId={openSubagentId}
+        selectedSubagentId={subagents.openId}
         onSelectSubagent={(agentId) => {
           // A delegated task belongs to the conversation that delegated it, so opening one
           // moves the sidebar there: leaving the previous session marked would say the
           // reader is somewhere they are not.
           const entry = subagents.find(agentId);
           if (entry) open(entry.sessionId);
-          setOpenSubagentId(agentId);
+          subagents.setOpenId(agentId);
         }}
         onDismissSubagent={(agentId) => {
-          if (agentId === openSubagentId) setOpenSubagentId(null);
           subagents.dismiss(agentId);
         }}
       />
@@ -909,21 +890,21 @@ export default function App() {
             trail={wiki.trail}
             onClose={() => setShowWiki(false)}
           />
-        ) : openSubagent ? (
+        ) : subagents.open ? (
           /* A subagent's own transcript, in place of the session that delegated it.
              Read-only: whether one can be spoken to at all is an open question about the
              runtime rather than a decision this app has made (#179). */
           <>
             <header className="main-header">
-              <h1>{openSubagent.name}</h1>
+              <h1>{subagents.open.name}</h1>
               <div className="header-row">
-                <button type="button" className="changes-action" onClick={() => setOpenSubagentId(null)}>
+                <button type="button" className="changes-action" onClick={subagents.close}>
                   Back to the session
                 </button>
                 <span className="session-meta">
-                  {openSubagent.outcome === undefined
+                  {subagents.open.outcome === undefined
                     ? 'working'
-                    : openSubagent.outcome === 'failed'
+                    : subagents.open.outcome === 'failed'
                       ? 'failed'
                       : 'finished'}
                 </span>
@@ -939,10 +920,10 @@ export default function App() {
                 to fetch behind it - a watched task's events are all already held - so it
                 needs no older page, only the window the transcript keeps for itself. */}
             <Transcript
-              events={openSubagent.events}
-              sessionId={openSubagent.agentId}
+              events={subagents.open.events}
+              sessionId={subagents.open.agentId}
               cwd={selected?.cwd ?? null}
-              ofAgent={openSubagent.agentId}
+              ofAgent={subagents.open.agentId}
               reasoning={reasoning}
             />
 
@@ -1189,6 +1170,7 @@ function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }
+
 
 
 

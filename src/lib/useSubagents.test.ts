@@ -285,3 +285,118 @@ describe('the subagents this app watched start', () => {
     });
   });
 });
+/**
+ * Which delegated task is being read, held here rather than in App.
+ *
+ * It lived across seven sites there, and the two bugs below both came of the concern being
+ * split from the data that answers it (#182).
+ */
+describe('reading one of them instead of its session', () => {
+  it('has none open to begin with', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    expect(result.current.openId).toBeNull();
+    expect(result.current.open).toBeNull();
+  });
+
+  it('opens the one it is given', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1', 'explore')));
+
+    act(() => result.current.setOpenId('a1'));
+
+    expect(result.current.open?.agentId).toBe('a1');
+    expect(result.current.open?.name).toBe('explore');
+  });
+
+  it('closes again', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.setOpenId('a1'));
+
+    act(() => result.current.close());
+
+    expect(result.current.openId).toBeNull();
+    expect(result.current.open).toBeNull();
+  });
+
+  it('holds nothing open for a task it never saw', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.setOpenId('nobody'));
+
+    expect(result.current.open).toBeNull();
+  });
+
+  /**
+   * Fixed in 14d65ef: closing on any unload shut the transcript someone was reading because
+   * an unrelated session aged out. The `forget` beside it was already scoped; this was not.
+   */
+  it('keeps it open when another session is let go', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => {
+      result.current.observe('s1', started('a1'));
+      result.current.observe('s2', started('a2'));
+    });
+    act(() => result.current.setOpenId('a1'));
+
+    act(() => result.current.forget('s2'));
+
+    expect(result.current.open?.agentId).toBe('a1');
+  });
+
+  it('closes it when its own session is let go', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.setOpenId('a1'));
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.openId).toBeNull();
+  });
+
+  it('leaves a closed view closed when a session goes', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.openId).toBeNull();
+  });
+
+  // Dismissing the one being read has to close it, or the view outlives its own entry.
+  it('closes it when it is dismissed', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.setOpenId('a1'));
+
+    act(() => result.current.dismiss('a1'));
+
+    expect(result.current.openId).toBeNull();
+  });
+
+  it('keeps it open when a different one is dismissed', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => {
+      result.current.observe('s1', started('a1'));
+      result.current.observe('s1', started('a2'));
+    });
+    act(() => result.current.setOpenId('a1'));
+
+    act(() => result.current.dismiss('a2'));
+
+    expect(result.current.open?.agentId).toBe('a1');
+  });
+
+  // The events keep arriving while it is being read, and the view has to show them.
+  it('follows the task it has open as it works', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.setOpenId('a1'));
+    const before = result.current.open?.events.length ?? 0;
+
+    act(() => result.current.observe('s1', working('a1', 'found it')));
+
+    expect(result.current.open?.events.length).toBe(before + 1);
+  });
+});

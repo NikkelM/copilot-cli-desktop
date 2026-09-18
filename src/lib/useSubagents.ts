@@ -49,6 +49,13 @@ export interface WatchedSubagent {
  */
 export function useSubagents() {
   const [watched, setWatched] = useState<WatchedSubagent[]>([]);
+  /** Which delegated task is being read in place of its session, if any. */
+  const [openId, setOpenId] = useState<string | null>(null);
+  /** Each watched task's session, for the handlers that run outside a render. */
+  const ofSession = useRef(new Map<string, string>());
+
+  /** Stop reading a delegated task and go back to the session that delegated it. */
+  const close = useCallback(() => setOpenId(null), []);
   /**
    * How many prompts each session has seen, and the count each finished subagent finished
    * at. Staleness is the difference, which makes it a subtraction rather than a tally that
@@ -134,12 +141,17 @@ export function useSubagents() {
    * Their work only exists here while it is held: nothing was read from disk to build it,
    * and an entry outliving the session would offer a transcript this app can no longer
    * produce.
+   *
+   * Closes the open view only when the session that goes is the one it belongs to. Closing
+   * on any unload shut the transcript someone was reading because an unrelated session
+   * aged out, which is the bug this pair of concerns produced while they lived apart.
    */
   const forget = useCallback((sessionId: string) => {
     promptsIn.current.delete(sessionId);
     for (const [agentId, finished] of finishedAt.current) {
       if (finished.sessionId === sessionId) finishedAt.current.delete(agentId);
     }
+    setOpenId((current) => (current && ofSession.current.get(current) === sessionId ? null : current));
     setWatched((current) => {
       const kept = current.filter((entry) => entry.sessionId !== sessionId);
       return kept.length === current.length ? current : kept;
@@ -149,6 +161,7 @@ export function useSubagents() {
   /** Take one off the list, for a reader who is done with it before this app decides. */
   const dismiss = useCallback((agentId: string) => {
     finishedAt.current.delete(agentId);
+    setOpenId((current) => (current === agentId ? null : current));
     setWatched((current) => current.filter((entry) => entry.agentId !== agentId));
   }, []);
 
@@ -157,5 +170,16 @@ export function useSubagents() {
     [watched],
   );
 
-  return { watched, observe, forget, dismiss, find };
+  /** The delegated task being read, or nothing when the session itself is on screen. */
+  const open = find(openId);
+
+  /**
+   * Which session the open task belongs to, readable without waiting for a render.
+   *
+   * `forget` runs from an event handler, where the `watched` list closed over by this
+   * render may already be a version behind the entry being asked about.
+   */
+  ofSession.current = new Map(watched.map((entry) => [entry.agentId, entry.sessionId]));
+
+  return { watched, observe, forget, dismiss, find, open, openId, setOpenId, close };
 }
