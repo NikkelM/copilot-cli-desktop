@@ -13,6 +13,7 @@ const show = (over: Partial<Parameters<typeof TagPicker>[0]> = {}) => {
     held: [] as string[],
     known: [] as string[],
     onToggle: vi.fn(),
+    onRetire: vi.fn(),
     onClose: vi.fn(),
     ...over,
   };
@@ -20,7 +21,7 @@ const show = (over: Partial<Parameters<typeof TagPicker>[0]> = {}) => {
   return props;
 };
 
-const chips = () => screen.getAllByRole('button').filter((b) => b.className.includes('tag'));
+const chips = () => [...document.querySelectorAll('.tag-list .tag')] as HTMLElement[];
 
 describe('TagPicker', () => {
   it('says which session it is about', () => {
@@ -89,13 +90,13 @@ describe('TagPicker', () => {
     // Held-first is decided when the dialog opens, not on every render: reordering as tags
     // are chosen moves the next one someone was reaching for out from under the pointer.
     const view = render(
-      <TagPicker title="Biomes" held={[]} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onClose={vi.fn()} />,
+      <TagPicker title="Biomes" held={[]} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
     );
     expect(chips().map((c) => c.textContent)).toEqual(['bug', 'spike', 'unity']);
 
     // As the app would redraw it once the tag landed in the store.
     view.rerender(
-      <TagPicker title="Biomes" held={['unity']} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onClose={vi.fn()} />,
+      <TagPicker title="Biomes" held={['unity']} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
     );
 
     expect(chips().map((c) => c.textContent)).toEqual(['bug', 'spike', 'unity']);
@@ -104,18 +105,18 @@ describe('TagPicker', () => {
 
   it('puts a tag invented while it is open at the end, displacing nothing', () => {
     const view = render(
-      <TagPicker title="Biomes" held={[]} known={['bug', 'spike']} onToggle={vi.fn()} onClose={vi.fn()} />,
+      <TagPicker title="Biomes" held={[]} known={['bug', 'spike']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
     );
 
     view.rerender(
-      <TagPicker title="Biomes" held={['fresh']} known={['bug', 'spike', 'fresh']} onToggle={vi.fn()} onClose={vi.fn()} />,
+      <TagPicker title="Biomes" held={['fresh']} known={['bug', 'spike', 'fresh']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
     );
 
     expect(chips().map((c) => c.textContent)).toEqual(['bug', 'spike', 'fresh']);
   });
 
   it('takes the order again the next time it is opened', () => {
-    render(<TagPicker title="Biomes" held={['unity']} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onClose={vi.fn()} />);
+    render(<TagPicker title="Biomes" held={['unity']} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />);
 
     expect(chips().map((c) => c.textContent)).toEqual(['unity', 'bug', 'spike']);
   });
@@ -175,5 +176,50 @@ describe('TagPicker', () => {
     show();
 
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Add a tag');
+  });
+});
+
+describe('retiring a tag', () => {
+  it('offers a way to take a name off every session', async () => {
+    const { onRetire } = show({ known: ['bug'] });
+
+    await userEvent.click(screen.getByLabelText('Remove bug from every session'));
+
+    expect(onRetire).toHaveBeenCalledExactlyOnceWith('bug');
+  });
+
+  it('does not also change this session', async () => {
+    // Two reaches from one row, so the wrong one must not fire alongside the right one.
+    const { onToggle } = show({ known: ['bug'] });
+
+    await userEvent.click(screen.getByLabelText('Remove bug from every session'));
+
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+
+  it('offers it for one the session carries too', async () => {
+    const { onRetire } = show({ held: ['bug'], known: ['bug'] });
+
+    await userEvent.click(screen.getByLabelText('Remove bug from every session'));
+
+    expect(onRetire).toHaveBeenCalledExactlyOnceWith('bug');
+  });
+
+  it('stays open, since retiring several is the same handful of changes', async () => {
+    const { onRetire, onClose } = show({ known: ['bug', 'spike'] });
+
+    await userEvent.click(screen.getByLabelText('Remove bug from every session'));
+    await userEvent.click(screen.getByLabelText('Remove spike from every session'));
+
+    expect(onRetire).toHaveBeenCalledTimes(2);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('says what it reaches, since the pill beside it reaches only this session', () => {
+    show({ known: ['bug'] });
+
+    expect(screen.getByLabelText('Remove bug from every session').getAttribute('title')).toBe(
+      'Remove bug from every session',
+    );
   });
 });

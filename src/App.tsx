@@ -177,7 +177,7 @@ export default function App() {
   const width = useSidebarWidth();
   const { favourites, toggle: toggleFavourite } = useFavourites();
   const { archived, toggle: toggleArchived } = useArchived();
-  const { tags, toggle: toggleTag } = useTags();
+  const { tags, toggle: toggleTag, retire: retireTag } = useTags();
   /** The session whose tags are being changed, if any. */
   const [tagging, setTagging] = useState<SessionSummary | null>(null);
   const wiki = useWiki(showWiki);
@@ -1230,6 +1230,7 @@ export default function App() {
           held={tags[tagging.sessionId] ?? []}
           known={allTags(tags)}
           onToggle={(tag) => toggleTag(tagging.sessionId, tag)}
+          onRetire={retireTag}
           onClose={() => setTagging(null)}
         />
       )}

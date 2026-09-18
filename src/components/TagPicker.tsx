@@ -17,6 +17,7 @@ export function TagPicker({
   held,
   known,
   onToggle,
+  onRetire,
   onClose,
 }: {
   /** The session being tagged, so the dialog says what it is about. */
@@ -25,6 +26,8 @@ export function TagPicker({
   /** Every tag in use anywhere, commonest first. */
   known: readonly string[];
   onToggle: (tag: string) => void;
+  /** Takes a tag off every session. Nothing else removes a name once it stops being used. */
+  onRetire: (tag: string) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState('');
@@ -107,7 +110,7 @@ export function TagPicker({
         {offered.length > 0 && (
           <ul className="tag-list">
             {offered.map((tag) => (
-              <li key={tag}>
+              <li key={tag} className="tag-row">
                 <button
                   type="button"
                   className={held.includes(tag) ? 'tag on' : 'tag'}
@@ -115,6 +118,18 @@ export function TagPicker({
                   onClick={() => onToggle(tag)}
                 >
                   {tag}
+                </button>
+                {/* Retiring a name reaches past this session, which is the one thing here
+                    that does, so it is a separate target rather than a second meaning for
+                    the pill. */}
+                <button
+                  type="button"
+                  className="tag-retire"
+                  aria-label={`Remove ${tag} from every session`}
+                  title={`Remove ${tag} from every session`}
+                  onClick={() => onRetire(tag)}
+                >
+                  ×
                 </button>
               </li>
             ))}

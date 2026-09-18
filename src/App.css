@@ -4531,3 +4531,35 @@ pre.fatal,
 .tag-filter-clear:hover {
   color: var(--text);
 }
+
+/* A pill and the way to retire the name on it, which are two different reaches: one changes
+   this session, the other changes every session. */
+.tag-row {
+  display: flex;
+  align-items: center;
+}
+
+.tag-retire {
+  margin-left: 2px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--font-lg);
+  line-height: 1.4;
+  cursor: pointer;
+  /* Only once the row is pointed at: it is the destructive one, and a column of crosses down
+     a list of tags reads as a list of things to delete. */
+  opacity: 0;
+}
+
+.tag-row:hover .tag-retire,
+.tag-retire:focus-visible {
+  opacity: 1;
+}
+
+.tag-retire:hover {
+  color: var(--danger);
+}

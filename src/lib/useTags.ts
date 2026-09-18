@@ -100,7 +100,30 @@ export function useTags() {
     });
   }, []);
 
-  return { tags, toggle };
+  /**
+   * Take a tag off every session that carries it.
+   *
+   * A tag someone has stopped using otherwise stays in the picker and the filter menu
+   * forever, since nothing else removes one: pruning only forgets sessions, not names. This
+   * is the only way to retire a spelling, so it is also how a mistyped one is fixed.
+   */
+  const retire = useCallback((raw: string) => {
+    const tag = normalise(raw);
+    if (!tag) return;
+
+    setTags((current) => {
+      const all: Record<string, readonly string[]> = {};
+      for (const [sessionId, held] of Object.entries(current)) {
+        const next = held.filter((t) => t !== tag);
+        if (next.length > 0) all[sessionId] = next;
+      }
+
+      write(all);
+      return all;
+    });
+  }, []);
+
+  return { tags, toggle, retire };
 }
 
 /**

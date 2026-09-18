@@ -264,3 +264,76 @@ describe('countTags once something is chosen', () => {
     expect(counted.find(({ tag }) => tag === 'bug')?.count).toBe(3);
   });
 });
+
+describe('retiring a tag', () => {
+  it('takes it off every session carrying it', async () => {
+    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug', 'unity'], b: ['bug'], c: ['unity'] }));
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.retire('bug'));
+
+    expect(result.current.tags).toEqual({ a: ['unity'], c: ['unity'] });
+  });
+
+  it('drops a session left with nothing, so the store does not keep empty entries', async () => {
+    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug'] }));
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.retire('bug'));
+
+    expect(result.current.tags).toEqual({});
+    expect(localStorage.getItem(TAGS)).toBe('{}');
+  });
+
+  it('is still gone next time', async () => {
+    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug', 'unity'] }));
+    const first = await load();
+    const opened = renderHook(() => first.useTags());
+    act(() => opened.result.current.retire('bug'));
+
+    const { useTags } = await load();
+    expect(renderHook(() => useTags()).result.current.tags).toEqual({ a: ['unity'] });
+  });
+
+  it('normalises, so retiring Bug retires bug', async () => {
+    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug'] }));
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.retire('  BUG '));
+
+    expect(result.current.tags).toEqual({});
+  });
+
+  it('leaves everything else alone', async () => {
+    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug', 'unity', 'hades'] }));
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.retire('unity'));
+
+    expect(result.current.tags).toEqual({ a: ['bug', 'hades'] });
+  });
+
+  it('does nothing for a name nobody used', async () => {
+    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug'] }));
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.retire('never-used'));
+
+    expect(result.current.tags).toEqual({ a: ['bug'] });
+  });
+
+  it('ignores a name that is nothing but space', async () => {
+    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug'] }));
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.retire('   '));
+
+    expect(result.current.tags).toEqual({ a: ['bug'] });
+  });
+});
