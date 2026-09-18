@@ -17,7 +17,13 @@ import { existingSessions } from './sidecar';
 /** Where they live, beside the app's other choices. */
 export const TAGS = 'copilot-desktop.tags';
 
-/** Tags per session. A session with none is absent rather than holding an empty list. */
+/**
+ * Tags per session, each session's own sorted alphabetically.
+ *
+ * Sorted rather than kept in the order they were added, so the same tags read in the same
+ * order on every row and line up down the sidebar. Ordering by when someone happened to add
+ * them says nothing about them and makes two rows carrying `bug` and `unity` look unrelated.
+ */
 export type Tags = Readonly<Record<string, readonly string[]>>;
 
 /**
@@ -39,7 +45,9 @@ function read(): Tags {
     const out: Record<string, string[]> = {};
     for (const [sessionId, value] of Object.entries(parsed as Record<string, unknown>)) {
       if (!Array.isArray(value)) continue;
-      const tags = [...new Set(value.filter((t): t is string => typeof t === 'string').map(normalise))].filter(Boolean);
+      const tags = [...new Set(value.filter((t): t is string => typeof t === 'string').map(normalise))]
+        .filter(Boolean)
+        .sort();
       if (tags.length > 0) out[sessionId] = tags;
     }
     return out;
@@ -95,7 +103,7 @@ export function useTags() {
 
     setTags((current) => {
       const held = current[sessionId] ?? [];
-      const next = held.includes(tag) ? held.filter((t) => t !== tag) : [...held, tag];
+      const next = held.includes(tag) ? held.filter((t) => t !== tag) : [...held, tag].sort();
 
       const all = { ...current };
       if (next.length > 0) all[sessionId] = next;

@@ -4151,6 +4151,10 @@ pre.fatal,
   margin: 0 0 8px;
 }
 
+.tag-picker {
+  width: min(38rem, 100%);
+}
+
 .confirm-body strong {
   color: var(--text);
 }
@@ -4345,27 +4349,34 @@ pre.fatal,
   white-space: nowrap;
 }
 
-/* In the picker they are buttons, and the ones already on the session say so. */
+/* In the picker they are buttons rather than labels, so they are sized to be pointed at
+   rather than to be dense: the row wants as many as will fit on a narrow sidebar, and this
+   wants each one to be easy to hit. */
 .tag-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 16px;
+  gap: 8px;
+  margin: 0 0 18px;
   padding: 0;
-  max-height: 30vh;
+  max-height: 34vh;
   overflow-y: auto;
   list-style: none;
 }
 
 .tag-list .tag {
+  padding: 5px 14px;
   background: none;
+  color: var(--text);
   font-family: inherit;
+  font-size: var(--font-lg);
+  line-height: 1.4;
   cursor: pointer;
 }
 
-.tag-list .tag:hover {
+.tag-list .tag:hover,
+.tag-list .tag:focus-visible {
   border-color: var(--text-muted);
-  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .tag-list .tag.on {

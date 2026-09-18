@@ -62,6 +62,26 @@ describe('what is true about a session', () => {
     expect(result.current.tags.s1).toEqual(['bug', 'spike']);
   });
 
+  it('keeps them alphabetical, so the same tags read the same way on every row', async () => {
+    // Added in the other order: kept as typed, two rows carrying the same pair would draw
+    // them differently and look unrelated down the list.
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.toggle('s1', 'unity'));
+    act(() => result.current.toggle('s1', 'hades'));
+    act(() => result.current.toggle('s1', 'mod'));
+
+    expect(result.current.tags.s1).toEqual(['hades', 'mod', 'unity']);
+  });
+
+  it('sorts a store that was written in some other order', async () => {
+    localStorage.setItem(TAGS, JSON.stringify({ s1: ['unity', 'hades', 'mod'] }));
+    const { useTags } = await load();
+
+    expect(renderHook(() => useTags()).result.current.tags.s1).toEqual(['hades', 'mod', 'unity']);
+  });
+
   it('keeps a session out of the store once its last tag goes', async () => {
     const { useTags } = await load();
     const { result } = renderHook(() => useTags());

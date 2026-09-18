@@ -30,6 +30,26 @@ export function TagPicker({
   const [draft, setDraft] = useState('');
   const field = useRef<HTMLInputElement>(null);
 
+  /**
+   * The order the chips are drawn in, taken once when the dialog opens.
+   *
+   * What is true reads before what could be, but only at the moment of asking. Recomputing it
+   * as tags are ticked would move each one to the front as it was chosen, so the next one
+   * someone reached for would have moved somewhere else under the pointer - and tags are
+   * changed in handfuls, which is the whole reason this is a dialog.
+   */
+  const [order, setOrder] = useState<string[]>(() => [
+    ...held,
+    ...known.filter((tag) => !held.includes(tag)),
+  ]);
+
+  // A tag invented while the dialog is open joins the end rather than displacing anything.
+  useEffect(() => {
+    const drawn = new Set(order);
+    const added = [...new Set([...held, ...known])].filter((tag) => !drawn.has(tag));
+    if (added.length > 0) setOrder((current) => [...current, ...added]);
+  }, [held, known, order]);
+
   useEffect(() => field.current?.focus(), []);
 
   useEffect(() => {
@@ -48,8 +68,8 @@ export function TagPicker({
     setDraft('');
   };
 
-  // The ones already on the session first, so what is true reads before what could be.
-  const offered = [...held, ...known.filter((tag) => !held.includes(tag))];
+  // The ones already on the session first, as they were when the dialog opened.
+  const offered = order;
 
   return (
     <div className="confirm-backdrop" onMouseDown={onClose}>

@@ -85,6 +85,41 @@ describe('TagPicker', () => {
     expect(chips().map((c) => c.textContent)).toEqual(['needs review', 'bug', 'spike']);
   });
 
+  it('keeps them where they are while they are being ticked', async () => {
+    // Held-first is decided when the dialog opens, not on every render: reordering as tags
+    // are chosen moves the next one someone was reaching for out from under the pointer.
+    const view = render(
+      <TagPicker title="Biomes" held={[]} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(chips().map((c) => c.textContent)).toEqual(['bug', 'spike', 'unity']);
+
+    // As the app would redraw it once the tag landed in the store.
+    view.rerender(
+      <TagPicker title="Biomes" held={['unity']} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    expect(chips().map((c) => c.textContent)).toEqual(['bug', 'spike', 'unity']);
+    expect(chips()[2]?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('puts a tag invented while it is open at the end, displacing nothing', () => {
+    const view = render(
+      <TagPicker title="Biomes" held={[]} known={['bug', 'spike']} onToggle={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    view.rerender(
+      <TagPicker title="Biomes" held={['fresh']} known={['bug', 'spike', 'fresh']} onToggle={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    expect(chips().map((c) => c.textContent)).toEqual(['bug', 'spike', 'fresh']);
+  });
+
+  it('takes the order again the next time it is opened', () => {
+    render(<TagPicker title="Biomes" held={['unity']} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onClose={vi.fn()} />);
+
+    expect(chips().map((c) => c.textContent)).toEqual(['unity', 'bug', 'spike']);
+  });
+
   it('marks the ones the session carries', () => {
     show({ held: ['bug'], known: ['bug', 'spike'] });
 
