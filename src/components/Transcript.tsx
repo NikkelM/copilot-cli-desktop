@@ -411,14 +411,18 @@ export function Transcript({
     pinned.current = distance <= BOTTOM_TOLERANCE_PX;
 
     // Back at the bottom and following the reply again, rather than reading somewhere of
-    // their own choosing: the pages behind are no longer being looked at, only paid for.
+    // their own choosing: what is above is no longer being looked at, only paid for.
     // Waiting rather than acting at once, because touching the bottom on the way past is
     // not the same as having finished with what is above it.
-    if (pinned.current && extraPages && onDropOlder && !loadingOlder) {
+    if (pinned.current && !loadingOlder) {
       if (dropAfter.current === null) {
         dropAfter.current = setTimeout(() => {
           dropAfter.current = null;
-          onDropOlder();
+          // The pages fetched by reaching back, and then the window over whatever is left.
+          // Reaching back is not the only way to end up drawing too much: a session worked
+          // in for long enough arrives at the same place without ever scrolling (#184).
+          if (extraPages) onDropOlder?.();
+          budgeted.settle();
         }, DROP_OLDER_AFTER_MS);
       }
     } else {

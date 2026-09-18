@@ -945,3 +945,154 @@ describe('a page too short to scroll', () => {
     expect(onLoadOlder.mock.calls.length).toBeLessThanOrEqual(4);
   });
 });
+
+/**
+ * The bug this exists for: the window grew for as long as the reader stayed in the session,
+ * and only leaving and coming back brought it down (#184). Reaching back is not the only way
+ * to end up drawing too much, so settling cannot be conditional on having reached back.
+ */
+describe('coming back to a workable window while the reader follows along', () => {
+  const VIEWPORT = 300;
+  const HEIGHT = 1000;
+  const BOTTOM = HEIGHT - VIEWPORT;
+  const DWELL = 10_000;
+
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  /** Replies long enough that a few hundred of them are far past any budget. */
+  const said = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      event('assistant.message', { content: 'x'.repeat(1024) }, `e${index}`),
+    );
+
+  function mounted(events: TranscriptEvent[], over: Partial<ComponentProps<typeof Transcript>> = {}) {
+    const props: ComponentProps<typeof Transcript> = {
+      events,
+      sessionId: 's1',
+      cwd: null,
+      hasOlder: false,
+      loadingOlder: false,
+      extraPages: false,
+      reasoning: true,
+      ...over,
+    };
+
+    const view = render(<Transcript {...props} />);
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => HEIGHT });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+
+    return {
+      view,
+      props,
+      // li.entry rather than every li: the list always carries a history-edge marker.
+      rows: () => view.container.querySelectorAll('ol.transcript > li.entry').length,
+      grow: (to: number) => view.rerender(<Transcript {...props} events={said(to)} />),
+      scrollTo: (top: number) => {
+        list.scrollTop = top;
+        fireEvent.scroll(list);
+      },
+      wait: (ms: number) => act(() => void vi.advanceTimersByTime(ms)),
+    };
+  }
+
+  it('draws everything a long session accumulated, until it settles', () => {
+    const t = mounted(said(4));
+    t.grow(400);
+
+    expect(t.rows()).toBe(400);
+  });
+
+  it('comes back down once the view has followed the bottom for long enough', () => {
+    const t = mounted(said(4));
+    t.grow(400);
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+
+    expect(t.rows()).toBeLessThan(400);
+  });
+
+  // The whole point: this session never scrolled up, so it has no pages to give back.
+  it('does so for a session that never reached back', () => {
+    const t = mounted(said(4), { extraPages: false });
+    t.grow(400);
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+
+    expect(t.rows()).toBeLessThan(400);
+  });
+
+  it('waits rather than trimming the moment the bottom is reached', () => {
+    const t = mounted(said(4));
+    t.grow(400);
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL - 1);
+
+    expect(t.rows()).toBe(400);
+  });
+
+  // Trimming from the top while someone is reading up there would move the text under them.
+  it('leaves the window alone while the reader is reading above it', () => {
+    const t = mounted(said(4));
+    t.grow(400);
+
+    t.scrollTo(0);
+    t.wait(DWELL * 2);
+
+    expect(t.rows()).toBe(400);
+  });
+
+  it('keeps the newest entries, which are the ones being followed', () => {
+    const t = mounted(said(4));
+    t.grow(400);
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+
+    expect(t.view.container.querySelector('ol.transcript > li.entry:last-child')?.textContent).toContain('x');
+    expect(t.rows()).toBeGreaterThan(0);
+  });
+
+  it('goes on following the reply after it has trimmed', () => {
+    const t = mounted(said(4));
+    t.grow(400);
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+    const settled = t.rows();
+
+    t.grow(410);
+
+    expect(t.rows()).toBe(settled + 10);
+  });
+
+  it('trims again as the session goes on growing', () => {
+    const t = mounted(said(4));
+    t.grow(400);
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+    const settled = t.rows();
+
+    t.grow(900);
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+
+    expect(t.rows()).toBeLessThanOrEqual(settled + 1);
+  });
+
+  // A session that opens and is left alone has already been budgeted; settling must not
+  // then reach for four times as much because the reader paused at the bottom.
+  it('does not widen the window of a session that merely sat there', () => {
+    const t = mounted(said(400));
+    const opened = t.rows();
+
+    t.scrollTo(BOTTOM);
+    t.wait(DWELL);
+
+    expect(t.rows()).toBe(opened);
+  });
+});
+

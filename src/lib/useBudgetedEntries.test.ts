@@ -2,7 +2,14 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { DRAWN_BUDGET, MINIMUM_ENTRIES, budgetedCount, drawnSize, useBudgetedEntries } from './useBudgetedEntries';
+import {
+  DRAWN_BUDGET,
+  MINIMUM_ENTRIES,
+  REACH_BUDGET,
+  budgetedCount,
+  drawnSize,
+  useBudgetedEntries,
+} from './useBudgetedEntries';
 import type { Entry } from './transcriptEntries';
 
 const message = (key: string, length: number): Entry => ({
@@ -204,3 +211,143 @@ describe('a transcript that gets shorter', () => {
     expect(result.current.entries.length).toBe(afterOne);
   });
 });
+
+
+/**
+ * The bug this exists for: the window grew for as long as the reader stayed in the session,
+ * and only leaving and coming back brought it down (#184).
+ */
+describe('coming back down once the reader settles at the bottom', () => {
+  /** A page that has grown well past what a session in use should hold. */
+  const grown = () => {
+    const { result, rerender } = renderHook(({ entries }) => useBudgetedEntries('s1', entries), {
+      initialProps: { entries: many(4) },
+    });
+    // Arriving rather than mounted, which is how a session transcript actually fills.
+    rerender({ entries: many(400) });
+    return { result, rerender };
+  };
+
+  it('draws everything that arrived, before anything settles', () => {
+    const { result } = grown();
+
+    expect(result.current.entries).toHaveLength(400);
+  });
+
+  it('comes back to the reach budget', () => {
+    const { result } = grown();
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries).toHaveLength(budgetedCount(many(400), REACH_BUDGET));
+  });
+
+  it('holds more than a session opens with, because the reader has been working in it', () => {
+    const { result } = grown();
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries.length).toBeGreaterThan(budgetedCount(many(400), DRAWN_BUDGET));
+  });
+
+  it('keeps the newest entries, which are the ones being read', () => {
+    const { result } = grown();
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries[result.current.entries.length - 1]?.key).toBe('m399');
+  });
+
+  it('says there is more above it', () => {
+    const { result } = grown();
+
+    act(() => result.current.settle());
+
+    expect(result.current.hasMore).toBe(true);
+  });
+
+  /**
+   * Settling is a ceiling, not a target. Reaching for entries the reader never asked for
+   * would make a session that just opened draw four times as much for having paused.
+   */
+  it('leaves a window below the ceiling exactly where it was', () => {
+    const { result } = renderHook(() => useBudgetedEntries('s1', many(400)));
+    const opened = result.current.entries.length;
+    expect(opened).toBe(budgetedCount(many(400), DRAWN_BUDGET));
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries).toHaveLength(opened);
+  });
+
+  it('leaves a window already under the ceiling alone', () => {
+    const { result } = renderHook(() => useBudgetedEntries('s1', many(4)));
+    const before = result.current.entries.length;
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries).toHaveLength(before);
+  });
+
+  it('does not undo a reader who asked for more, below the ceiling', () => {
+    const { result } = renderHook(() => useBudgetedEntries('s1', many(400, 16)));
+    act(() => result.current.showMore());
+    const asked = result.current.entries.length;
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries).toHaveLength(asked);
+  });
+
+  it('does trim a reader who asked for more, past the ceiling', () => {
+    const { result } = grown();
+    act(() => result.current.showMore());
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries.length).toBeLessThan(400);
+  });
+
+  /** Streaming carries on afterwards, and must still be followed. */
+  it('keeps up with what arrives after it has settled', () => {
+    const { result, rerender } = grown();
+    act(() => result.current.settle());
+    const after = result.current.entries.length;
+
+    rerender({ entries: many(410) });
+
+    expect(result.current.entries).toHaveLength(after + 10);
+    expect(result.current.entries[result.current.entries.length - 1]?.key).toBe('m409');
+  });
+
+  it('can settle again as the session goes on growing', () => {
+    const { result, rerender } = grown();
+    act(() => result.current.settle());
+    rerender({ entries: many(800) });
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries).toHaveLength(budgetedCount(many(800), REACH_BUDGET));
+  });
+
+  it('takes the ceiling it is given', () => {
+    const { result } = grown();
+
+    act(() => result.current.settle(DRAWN_BUDGET));
+
+    expect(result.current.entries).toHaveLength(budgetedCount(many(400), DRAWN_BUDGET));
+  });
+
+  /** A settle armed in one session must not measure the next one's transcript. */
+  it('budgets against the list it is holding now', () => {
+    const { result, rerender } = renderHook(({ entries }) => useBudgetedEntries('s1', entries), {
+      initialProps: { entries: many(400) },
+    });
+    rerender({ entries: many(3) });
+
+    act(() => result.current.settle());
+
+    expect(result.current.entries).toHaveLength(3);
+  });
+});
+
