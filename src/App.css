@@ -157,6 +157,9 @@ body {
 }
 
 .search {
+  /* The containing block for the tag menu, so it can span the whole row rather than
+     shrink-wrapping to the button it hangs from - which left room for two tags. */
+  position: relative;
   display: flex;
   /* Stretch rather than centre, so the button is exactly as tall as the box beside it
      whatever either of them is set in. Matching paddings by hand would drift the moment
@@ -4434,7 +4437,6 @@ pre.fatal,
 
 /* Narrowing by tag, beside the box that narrows by everything else. */
 .tag-filter {
-  position: relative;
   flex-shrink: 0;
   display: flex;
 }
@@ -4474,15 +4476,14 @@ pre.fatal,
   line-height: 1.5;
 }
 
-/* Under the button and against the right edge, so a long list of tags grows into the sidebar
-   rather than off the side of it. */
+/* Under the whole row and as wide as it, which is as wide as the sidebar gets. Hung from the
+   button it shrank to fit the button, and a menu of tags wants every pixel the sidebar has. */
 .tag-filter-menu {
   position: absolute;
   z-index: 40;
-  top: calc(100% + 4px);
-  right: 0;
-  min-width: 12rem;
-  max-width: 20rem;
+  top: calc(100% + 2px);
+  left: 10px;
+  right: 10px;
   padding: 8px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -4491,13 +4492,18 @@ pre.fatal,
 }
 
 .tag-filter-menu .tag-list {
+  gap: 6px;
   margin: 0;
   max-height: 40vh;
 }
 
+/* A little tighter than the picker's: this one lives inside the sidebar's width rather than
+   in a dialog, and the count beside each name is already carrying some of the room. */
 .tag-filter-menu .tag {
+  padding: 4px 10px;
   font-size: var(--font-md);
 }
+
 
 /* How many sessions carry it, so a tag that narrows to nothing says so before it is pressed. */
 .tag-count {
