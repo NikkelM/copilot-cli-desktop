@@ -794,3 +794,97 @@ describe('a session waiting for an answer', () => {
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('a', expect.objectContaining({ sessionId: 'a' }));
   });
 });
+
+/**
+ * Archiving folds a group away rather than hiding anything. #101 warns that three
+ * overlapping reasons a session might not appear is one more than can be reasoned about, so
+ * an archived session is always there to be counted and one press from being read.
+ */
+describe('a session put away', () => {
+  // Folding is remembered across restarts, so it is also remembered across tests: without
+  // this, a test that unfolds the group leaves the next one starting from open.
+  beforeEach(() => localStorage.clear());
+
+  const three = [
+    session({ sessionId: 'a', title: 'Alpha' }),
+    session({ sessionId: 'b', title: 'Beta' }),
+    session({ sessionId: 'c', title: 'Gamma' }),
+  ];
+
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={three}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        {...over}
+      />,
+    );
+
+  it('says nothing about an archive that is empty', () => {
+    shown();
+
+    expect(screen.queryByText('Archived')).toBeNull();
+  });
+
+  it('comes out of the list it was in', () => {
+    shown({ archived: ['b'] });
+
+    expect(screen.queryByText('Beta')).toBeNull();
+    expect(screen.getByText('Alpha')).toBeTruthy();
+  });
+
+  it('is folded away rather than hidden, and says how many', async () => {
+    shown({ archived: ['b', 'c'] });
+
+    const group = screen.getByText('Archived').closest('button') as HTMLElement;
+    expect(group.getAttribute('aria-expanded')).toBe('false');
+    expect(group.textContent).toContain('2');
+  });
+
+  it('is one press from being read', async () => {
+    shown({ archived: ['b'] });
+
+    await userEvent.click(screen.getByText('Archived'));
+
+    expect(screen.getByText('Beta')).toBeTruthy();
+  });
+
+  it('is last, under everything still in use', () => {
+    shown({ archived: ['c'], favourites: ['a'], onFavourite: () => {} });
+
+    // A folded group carries its count, so match the name rather than the whole label.
+    const headings = screen.getAllByText(/Favourites|Not loaded|Archived/).map((n) => n.textContent ?? '');
+    expect(headings[headings.length - 1]).toMatch(/^Archived/);
+    expect(headings[0]).toBe('Favourites');
+  });
+
+  it('still shows the one being read, folded or not', () => {
+    // A folded group holding the open session shows it, or the reader loses where they are.
+    shown({ archived: ['b'], selectedId: 'b' });
+
+    expect(screen.getByText('Beta')).toBeTruthy();
+  });
+
+  it('is found by a search, since being findable is the reason to keep it', async () => {
+    shown({ archived: ['c'] });
+
+    await userEvent.type(screen.getByRole('searchbox'), 'Gamma');
+    await userEvent.click(screen.getByText('Archived'));
+
+    expect(screen.getByText('Gamma')).toBeTruthy();
+  });
+
+  it('comes back out when it is no longer waiting to be dealt with', () => {
+    // Being stopped on a question outranks having been finished with.
+    shown({ archived: ['b'], activity: { b: { state: 'blocked', queued: 0 } } });
+
+    expect(screen.getByText('Waiting for you')).toBeTruthy();
+    expect(screen.getByText('Beta')).toBeTruthy();
+    expect(screen.queryByText('Archived')).toBeNull();
+  });
+});

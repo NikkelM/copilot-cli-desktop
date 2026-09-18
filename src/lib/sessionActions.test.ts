@@ -18,6 +18,8 @@ const session = (over: Partial<SessionSummary> = {}): SessionSummary =>
 const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   favourites: [],
   toggleFavourite: vi.fn(),
+  archived: [],
+  toggleArchived: vi.fn(),
   working: new Set(),
   unload: vi.fn(),
   copy: vi.fn(),
@@ -34,6 +36,7 @@ describe('sessionActions', () => {
     expect(sessionActions(session(), deps()).map((a) => a.id)).toEqual([
       'favourite',
       'unload',
+      'archive',
       'copy-id',
       'folder',
       'delete',
@@ -100,6 +103,36 @@ describe('sessionActions', () => {
     });
   });
 
+  describe('archiving', () => {
+    it('offers to put away one that is not', () => {
+      expect(byId(session(), deps()).archive.label).toBe('Archive');
+    });
+
+    it('offers to take back one that is', () => {
+      expect(byId(session(), deps({ archived: ['abc'] })).archive.label).toBe('Take out of the archive');
+    });
+
+    it('marks the session it was opened on', () => {
+      const toggleArchived = vi.fn();
+      byId(session({ sessionId: 'done' }), deps({ toggleArchived })).archive.run();
+
+      expect(toggleArchived).toHaveBeenCalledExactlyOnceWith('done');
+    });
+
+    it('asks nothing first, since nothing on disk changes', () => {
+      // Unlike deleting: the group is one press from open and the session is still there.
+      expect(byId(session(), deps()).archive.refused).toBeUndefined();
+    });
+
+    it('refuses a session mid-turn, because archiving lets it go', () => {
+      const action = byId(session({ loaded: true }), deps({ working: new Set(['abc']) })).archive;
+      expect(action.refused).toMatch(/still working/i);
+    });
+
+    it('is not one of the actions that loses something', () => {
+      expect(byId(session(), deps()).archive.destructive).toBeUndefined();
+    });
+  });
   describe('deleting', () => {
     it('hands the session up rather than deleting it here', () => {
       // Confirming belongs to the caller: this list has no way to ask anything.

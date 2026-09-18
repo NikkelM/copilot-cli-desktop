@@ -44,6 +44,7 @@ import {
 import { CHANGES, ENVIRONMENT, GIT, USAGE, WIKI, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
+import { useArchived } from './lib/useArchived';
 import { useConfirmDelete } from './lib/useConfirmDelete';
 import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
@@ -173,6 +174,7 @@ export default function App() {
   const size = useScale();
   const width = useSidebarWidth();
   const { favourites, toggle: toggleFavourite } = useFavourites();
+  const { archived, toggle: toggleArchived } = useArchived();
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, showRepository);
@@ -851,6 +853,15 @@ export default function App() {
       sessionActions(session, {
         favourites,
         toggleFavourite,
+        archived,
+        // Archiving is a decision that the session is finished with, so it also stops paying
+        // for it: keeping one resumed while hiding it from view is the memory cost this app
+        // exists to avoid (#101).
+        toggleArchived: (sessionId) => {
+          const putting = !archived.includes(sessionId);
+          toggleArchived(sessionId);
+          if (putting) evictSession(sessionId).then(() => sessions.refresh()).catch(() => undefined);
+        },
         working: sessions.working,
         unload: (sessionId) => {
           evictSession(sessionId)
@@ -861,7 +872,7 @@ export default function App() {
         openFolder: (path) => void openPath(path).catch((e: unknown) => setError(String(e))),
         remove: (target) => (confirmDelete.confirms ? setDeleting(target) : void removeSession(target)),
       }),
-    [favourites, toggleFavourite, sessions, confirmDelete.confirms, removeSession],
+    [favourites, toggleFavourite, archived, toggleArchived, sessions, confirmDelete.confirms, removeSession],
   );
 
   return (
@@ -886,6 +897,7 @@ export default function App() {
           subagents.setOpenId(agentId);
         }}
         favourites={favourites}
+        archived={archived}
         onFavourite={toggleFavourite}
         actionsFor={sessionMenu}
         onToggle={width.toggle}

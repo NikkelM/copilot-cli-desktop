@@ -6,6 +6,9 @@ export interface SessionActionDeps {
   /** Which sessions are favourited, and how to change that. */
   favourites: readonly string[];
   toggleFavourite: (sessionId: string) => void;
+  /** Which sessions are put away, and how to change that. */
+  archived: readonly string[];
+  toggleArchived: (sessionId: string) => void;
   /** Which sessions are mid-turn. Read live: a session can start working while a menu is open. */
   working: ReadonlySet<string>;
   unload: (sessionId: string) => void;
@@ -45,6 +48,17 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
           ? 'Still working. It can be unloaded once the turn finishes.'
           : undefined,
       run: () => deps.unload(session.sessionId),
+    },
+    {
+      id: 'archive',
+      label: deps.archived.includes(session.sessionId) ? 'Take out of the archive' : 'Archive',
+      // Nothing on disk changes and the group is one press from open, so unlike deleting
+      // this asks nothing first. What it does refuse is putting away a session mid-turn:
+      // archiving lets it go, and letting go mid-turn loses the turn.
+      refused: deps.working.has(session.sessionId)
+        ? 'Still working. It can be archived once the turn finishes.'
+        : undefined,
+      run: () => deps.toggleArchived(session.sessionId),
     },
     {
       id: 'copy-id',

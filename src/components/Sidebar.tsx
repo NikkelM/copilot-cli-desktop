@@ -46,6 +46,8 @@ interface SidebarProps {
   onToggle?: () => void;
   /** What right-clicking a session offers. Absent leaves the rows with no menu at all. */
   actionsFor?: (session: SessionSummary) => SessionAction[];
+  /** Sessions put away, which fold into a group of their own. */
+  archived?: string[];
   /** Sessions kept among the favourites. Absent is none, which is what a fresh install has. */
   favourites?: string[];
   /** Absent leaves the rows readable without offering the mark, as the subagent actions do. */
@@ -96,9 +98,16 @@ function readFolded(): Record<string, boolean> {
 function useFolded() {
   const [folded, setFolded] = useState<Record<string, boolean>>(readFolded);
 
-  const toggle = (key: string) =>
+  /**
+   * Fold a group, or unfold it.
+   *
+   * Told what the group is doing now rather than working it out from what is stored. A group
+   * that folds itself by default has nothing stored, so flipping the stored value would set
+   * it to folded - which it already is - and the first press would do nothing at all.
+   */
+  const toggle = (key: string, shut: boolean) =>
     setFolded((current) => {
-      const next = { ...current, [key]: !current[key] };
+      const next = { ...current, [key]: !shut };
       try {
         localStorage.setItem(FOLDED, JSON.stringify(next));
       } catch {
@@ -162,6 +171,7 @@ export function Sidebar({
   onSelectSubagent,
   onDismissSubagent,
   favourites = [],
+  archived = [],
   onFavourite,
   actionsFor,
   onToggle,
@@ -235,10 +245,21 @@ export function Sidebar({
     // minutes, so a filter that hides it costs a turn rather than a scroll (#187).
     const asked = new Set(waiting.map((session) => session.sessionId));
 
+    // Put away next, and out of every other group. #101 warns that three overlapping reasons
+    // a session might not appear is one more than can be reasoned about, so archiving hides
+    // nothing: it folds a group away. What is in it can always be counted, and opening it
+    // costs one press.
+    //
+    // A session that is waiting is not put away, whatever was decided about it earlier. It
+    // has an agent stopped on it, which is the one thing more urgent than being finished.
+    const put = matches.filter((session) => !asked.has(session.sessionId) && archived.includes(session.sessionId));
+
     // Favourites next and only once: a favourite that is also loaded belongs to the group
     // someone chose it for, not to both. Each group keeps the order it was given, which is
     // by activity, so favouriting changes where a session sits and nothing else about it.
-    const rest = matches.filter((session) => !asked.has(session.sessionId));
+    const rest = matches.filter(
+      (session) => !asked.has(session.sessionId) && !archived.includes(session.sessionId),
+    );
     const favoured = rest.filter((session) => favourites.includes(session.sessionId));
     const plain = rest.filter((session) => !favourites.includes(session.sessionId));
     const loaded = plain.filter((session) => session.loaded);
@@ -254,8 +275,9 @@ export function Sidebar({
         label: loaded.length > 0 || favoured.length > 0 || waiting.length > 0 ? 'Not loaded' : null,
         sessions: cold,
       },
+      { key: 'archived', label: 'Archived', sessions: put, foldedByDefault: true },
     ].filter((group) => group.sessions.length > 0);
-  }, [waiting, matches, favourites]);
+  }, [waiting, matches, favourites, archived]);
 
   return (
     <nav className="sidebar">
@@ -298,7 +320,7 @@ export function Sidebar({
       ) : (
         <ul className="session-list">
           {groups.map((group) => {
-            const shut = group.label !== null && (folded[group.key] ?? false);
+            const shut = group.label !== null && (folded[group.key] ?? group.foldedByDefault === true);
             // A folded group holding the open session still shows it, or the reader loses
             // where they are for the sake of a tidier list.
             const shown = shut ? group.sessions.filter((s) => s.sessionId === selectedId) : group.sessions;
@@ -310,7 +332,7 @@ export function Sidebar({
                     type="button"
                     className="group"
                     aria-expanded={!shut}
-                    onClick={() => toggle(group.key)}
+                    onClick={() => toggle(group.key, shut)}
                     title={shut ? `Show the ${group.sessions.length} sessions in this group` : 'Fold this group away'}
                   >
                     <ChevronIcon open={!shut} />
