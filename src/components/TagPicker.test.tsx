@@ -21,7 +21,7 @@ const show = (over: Partial<Parameters<typeof TagPicker>[0]> = {}) => {
   return props;
 };
 
-const chips = () => [...document.querySelectorAll('.tag-list .tag')] as HTMLElement[];
+const chips = () => [...document.querySelectorAll('.tag-list .tag-name')] as HTMLElement[];
 
 describe('TagPicker', () => {
   it('says which session it is about', () => {
@@ -221,5 +221,14 @@ describe('retiring a tag', () => {
     expect(screen.getByLabelText('Remove bug from every session').getAttribute('title')).toBe(
       'Remove bug from every session',
     );
+  });
+  it('holds the name and the cross in one pill', () => {
+    // A pill that is itself a control could not contain either of them.
+    show({ known: ['bug'] });
+
+    const pill = document.querySelector('.tag-list .tag') as HTMLElement;
+    expect(pill.tagName).toBe('SPAN');
+    expect(pill.querySelector('.tag-name')?.textContent).toBe('bug');
+    expect(pill.querySelector('.tag-retire')).toBeTruthy();
   });
 });

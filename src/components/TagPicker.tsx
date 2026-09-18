@@ -111,26 +111,30 @@ export function TagPicker({
           <ul className="tag-list">
             {offered.map((tag) => (
               <li key={tag} className="tag-row">
-                <button
-                  type="button"
-                  className={held.includes(tag) ? 'tag on' : 'tag'}
-                  aria-pressed={held.includes(tag)}
-                  onClick={() => onToggle(tag)}
-                >
-                  {tag}
-                </button>
-                {/* Retiring a name reaches past this session, which is the one thing here
-                    that does, so it is a separate target rather than a second meaning for
-                    the pill. */}
-                <button
-                  type="button"
-                  className="tag-retire"
-                  aria-label={`Remove ${tag} from every session`}
-                  title={`Remove ${tag} from every session`}
-                  onClick={() => onRetire(tag)}
-                >
-                  ×
-                </button>
+                {/* The pill is a container rather than a control: it holds two, and one
+                    cannot be nested in the other. */}
+                <span className={held.includes(tag) ? 'tag on' : 'tag'}>
+                  <button
+                    type="button"
+                    className="tag-name"
+                    aria-pressed={held.includes(tag)}
+                    onClick={() => onToggle(tag)}
+                  >
+                    {tag}
+                  </button>
+                  {/* Retiring a name reaches past this session, which is the one thing here
+                      that does, so it is its own target rather than a second meaning for the
+                      name beside it. */}
+                  <button
+                    type="button"
+                    className="tag-retire"
+                    aria-label={`Remove ${tag} from every session`}
+                    title={`Remove ${tag} from every session`}
+                    onClick={() => onRetire(tag)}
+                  >
+                    ×
+                  </button>
+                </span>
               </li>
             ))}
           </ul>
