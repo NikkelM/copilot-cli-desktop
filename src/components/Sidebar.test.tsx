@@ -596,38 +596,46 @@ describe('drawing a row short', () => {
     expect(screen.getByText(/me\/repo/)).toBeTruthy();
   });
 
-  it('leaves both out once the row is collapsed', async () => {
-    shown();
-
-    await userEvent.click(screen.getByLabelText('Collapse Alpha'));
-
-    expect(screen.queryByText('last thing said')).toBeNull();
-    expect(screen.queryByText(/me\/repo/)).toBeNull();
-  });
-
-  it('keeps the title, which is the whole point', async () => {
-    shown();
-
-    await userEvent.click(screen.getByLabelText('Collapse Alpha'));
-
-    expect(screen.getByText('Alpha')).toBeTruthy();
-  });
-
-  it('puts it back', async () => {
-    shown();
-    await userEvent.click(screen.getByLabelText('Collapse Alpha'));
-
-    await userEvent.click(screen.getByLabelText('Expand Alpha'));
-
-    expect(screen.getByText('last thing said')).toBeTruthy();
-  });
-
-  it('collapses every row at once', async () => {
+  it('drops the quotation once the list is turned over', async () => {
     shown();
 
     await userEvent.click(screen.getByLabelText('Show titles only'));
 
     expect(screen.queryByText('last thing said')).toBeNull();
+  });
+
+  /** Which is what still tells two sessions with similar titles apart. */
+  it('keeps when it was touched and what it belongs to', async () => {
+    shown();
+
+    await userEvent.click(screen.getByLabelText('Show titles only'));
+
+    expect(screen.getByText(/me\/repo/)).toBeTruthy();
+  });
+
+  it('keeps the title, which is the whole point', async () => {
+    shown();
+
+    await userEvent.click(screen.getByLabelText('Show titles only'));
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+  });
+
+  it('puts the quotation back', async () => {
+    shown();
+    await userEvent.click(screen.getByLabelText('Show titles only'));
+
+    await userEvent.click(screen.getByLabelText('Show session details'));
+
+    expect(screen.getByText('last thing said')).toBeTruthy();
+  });
+
+  /** One control for the list, and none on the rows: nobody collapses a single session. */
+  it('offers nothing per row', () => {
+    shown();
+
+    expect(screen.queryByLabelText(/^Collapse /)).toBeNull();
+    expect(screen.queryByLabelText(/^Expand /)).toBeNull();
   });
 
   it('says which way the whole-list control goes', async () => {
@@ -655,8 +663,9 @@ describe('drawing a row short', () => {
       />,
     );
 
-    await userEvent.click(screen.getByLabelText('Collapse Alpha'));
+    await userEvent.click(screen.getByLabelText('Show titles only'));
 
     expect(screen.getByLabelText(/blocked/)).toBeTruthy();
   });
 });
+

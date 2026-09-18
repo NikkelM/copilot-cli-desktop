@@ -303,17 +303,8 @@ export function Sidebar({
                             selectedId={selectedId}
                             onSelect={onSelect}
                             activity={activity[session.sessionId]}
-                            collapsed={rows.collapsed(session.sessionId)}
+                            collapsed={rows.compact}
                           />
-                          <button
-                            type="button"
-                            className="session-fold"
-                            onClick={() => rows.toggleOne(session.sessionId)}
-                            aria-expanded={!rows.collapsed(session.sessionId)}
-                            aria-label={`${rows.collapsed(session.sessionId) ? 'Expand' : 'Collapse'} ${session.title ?? 'Untitled session'}`}
-                          >
-                            <ChevronIcon open={!rows.collapsed(session.sessionId)} />
-                          </button>
                           {onFavourite && (
                           <Favourite
                             on={favourites.includes(session.sessionId)}
@@ -472,18 +463,17 @@ function Row({
           <span className={`activity activity-${mark.state}`} role="img" aria-label={describeActivity(mark)} />
         )}
       </span>
-      {!collapsed && (
-        <>
-          <span className="session-meta">
-            <Touched at={session.updatedAt} />
-            {session.repository ? ` · ${session.repository}` : ''}
-          </span>
-          {session.preview && <span className="session-preview">{session.preview}</span>}
-        </>
-      )}
+      <span className="session-meta">
+        <Touched at={session.updatedAt} />
+        {session.repository ? ` · ${session.repository}` : ''}
+      </span>
+      {/* The quotation is the only thing a short row drops. When the session is known, when
+          it was touched and what it belongs to are still what tells two of them apart. */}
+      {!collapsed && session.preview && <span className="session-preview">{session.preview}</span>}
     </button>
   );
 }
+
 
 
 

@@ -88,19 +88,19 @@ body {
   overflow: hidden;
 }
 
-/* The list toggle on one side and the two destinations on the other. No label: the sidebar
-   is plainly a list of sessions, and the word cost a row of them at a large text scale. */
+/* The list toggle at one end, the two destinations at the other. Not `space-between`: with
+   three children that puts the middle one in the middle of the sidebar, which read as Wiki
+   having been placed at random. */
 .sidebar-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   font-weight: 600;
 }
 
-/* The pair on the right stay together whatever the width. */
+/* The pair on the right stay together, and the gap opens before them. */
 .sidebar-header .new-session:first-of-type {
   margin-left: auto;
 }
@@ -218,42 +218,57 @@ body {
   color: var(--text);
 }
 
-/* The row and its pin sit side by side. The row is itself a button, so the pin cannot live
-   inside it - and putting it in the flow rather than over the title keeps it off the text. */
+/* The row and its two controls. The line under them belongs to the row rather than to each
+   part of it: drawn per part it broke into segments that did not quite meet, which is what
+   made the column look assembled rather than laid out. */
 .session-row {
   display: flex;
   align-items: flex-start;
+  border-bottom: 1px solid var(--border);
 }
 
 .session-row .session {
   min-width: 0;
   flex: 1;
+  border-bottom: none;
 }
 
-/* Only there when it is set or the row is under the pointer. Two hundred outlines down the
-   side of the list would be noise; the one that is filled is the only one saying anything. */
-/* Beside the pin, revealed the same way. Both are about the row rather than in it, since
-   the row is a button and a control cannot be nested in one. */
-.session-fold {
+/* Both controls line up with the title rather than with the middle of the row, so a session
+   whose title runs to two lines does not put its star somewhere different from the rest. */
+.favourite {
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  padding: 10px 2px 0 0;
+  width: calc(var(--font-base) * 1.25);
+  padding: 10px 0 0;
   border: none;
-  border-bottom: 1px solid var(--border);
   background: none;
   color: var(--text-dim);
+  font-size: var(--font-md);
+  line-height: 1;
   cursor: pointer;
   opacity: 0;
 }
 
-.session-row:hover .session-fold,
-.session-fold:focus-visible {
+/* The column is held open whether or not anything is in it, so the titles beside it end at
+   the same place on every row and the edge of the list is straight. */
+.session-row:hover .favourite,
+.favourite:focus-visible,
+.favourite.on {
   opacity: 1;
 }
 
-.session-fold:hover {
+.favourite.on {
+  color: var(--warning);
+}
+
+.favourite:hover {
   color: var(--text);
+}
+
+/* Air at the outer edge, matching the padding the row's own text has. */
+.favourite {
+  margin-right: 8px;
 }
 
 /* In the header with the other two, and quieter than them: it changes how the list is
@@ -281,33 +296,6 @@ body {
   color: var(--text);
 }
 
-.favourite {
-  flex-shrink: 0;
-  align-self: stretch;
-  padding: 10px 8px 0 0;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  background: none;
-  color: var(--text-dim);
-  font-size: var(--font-md);
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-}
-
-.session-row:hover .favourite,
-.favourite:focus-visible,
-.favourite.on {
-  opacity: 1;
-}
-
-.favourite.on {
-  color: var(--warning);
-}
-
-.favourite:hover {
-  color: var(--text);
-}
 
 .session {
   display: flex;
@@ -4044,6 +4032,8 @@ pre.fatal,
   opacity: 0.4;
   cursor: default;
 }
+
+
 
 
 
