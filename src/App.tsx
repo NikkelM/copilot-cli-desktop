@@ -32,9 +32,6 @@ import {
   onSessionChanges,
   onSessionLoaded,
   onSessionsChanged,
-  onSidecarRestarted,
-  onSidecarStopped,
-  restartRuntime,
   invokeCommand,
   enqueueCommand,
   runShell,
@@ -45,8 +42,6 @@ import {
 import { CHANGES, ENVIRONMENT, GIT, USAGE, WIKI, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
-import { staleRuntime } from './lib/protocolCheck';
-import { onSidecarBehind, rebuildSidecar } from './lib/sidecarFreshness';
 import { revealPointerForPicker } from './lib/nativePicker';
 import { usageReport } from './lib/usageReport';
 import { activityOf } from './lib/activity';
@@ -63,6 +58,7 @@ import { useMode } from './lib/useMode';
 import { useContextUsage } from './lib/useContextUsage';
 import { useCommands } from './lib/useCommands';
 import { useRepoStatus } from './lib/useRepoStatus';
+import { useRuntimeHealth } from './lib/useRuntimeHealth';
 import { useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
 import { dispatch } from './lib/slash';
@@ -131,18 +127,6 @@ export default function App() {
    */
   const [resuming, setResuming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** Set when the sidecar exits: nothing works afterwards, so it outranks any other message. */
-  const [stopped, setStopped] = useState<string | null>(null);
-  /**
-   * Set when the dev server sees a sidecar source file change under the running process.
-   *
-   * Not `stopped`: the runtime is a version behind rather than gone, and most of what is on
-   * screen still works. Blanking the session someone is reading because they saved a file
-   * would be its own kind of wrong answer (#169).
-   */
-  const [behind, setBehind] = useState<string | null>(null);
-  /** Whether the dev server is rebuilding, so the button cannot be pressed twice. */
-  const [rebuilding, setRebuilding] = useState(false);
   /**
    * A session opened by id that the list does not carry.
    *
@@ -378,52 +362,23 @@ export default function App() {
     [showChanges, showRepository, selectedId, changes.load, repository.refresh],
   );
 
-  // Losing the sidecar takes every session with it, and a request that will never be
-  // answered otherwise shows as the app quietly doing nothing.
-  useTauriEvent(() =>
-    onSidecarStopped((reason) => {
-      setStopped(reason);
-      setBusy(false);
-      setResuming(null);
-      prompts.clear();
-    }),
-  );
 
-  /**
-   * Refuse a runtime built from a different protocol, loudly, before it is used (#169).
-   *
-   * Shown the same way as a sidecar that has gone away, because it has the same shape: the
-   * reader cannot fix it from in here, everything below it is untrustworthy, and the one
-   * useful action is to restart. Left to itself it surfaces later as a single feature
-   * failing for reasons that are nothing to do with that feature.
-   */
-  const checkProtocol = useCallback(() => {
-    void staleRuntime().then((message) => message && setStopped(message));
-  }, []);
 
-  useEffect(checkProtocol, [checkProtocol]);
+  /** Everything that was waiting on the runtime, stood down because it will not answer. */
+  const standDown = useCallback(() => {
+    setBusy(false);
+    setResuming(null);
+    prompts.clear();
+  }, [prompts.clear]);
 
-  // The dev server watches the files the sidecar was built from; the sidecar cannot.
-  useEffect(() => onSidecarBehind(setBehind), []);
+  /** A replacement knows nothing the old one was told, so the list is read again. */
+  const afterRestart = useCallback(() => {
+    setError(null);
+    standDown();
+    sessions.refresh();
+  }, [standDown, sessions.refresh]);
 
-  // A replacement is up. Nothing it was told survives, so anything that was waiting on
-  // the old one is dropped and the session list is read again.
-  useTauriEvent(
-    () =>
-      onSidecarRestarted(() => {
-        setError(null);
-        setBusy(false);
-        setResuming(null);
-        prompts.clear();
-        sessions.refresh();
-        // A replacement is a different process, and on a dev machine often a different
-        // build: whatever was concluded about the last one says nothing about this one.
-        setStopped(null);
-        setBehind(null);
-        checkProtocol();
-      }),
-    [sessions.refresh, checkProtocol],
-  );
+  const runtime = useRuntimeHealth(standDown, afterRestart);
 
   /** Stop the turn, saying so rather than leaving the press looking unnoticed. */
   const interrupt = useCallback(() => {
@@ -859,9 +814,9 @@ export default function App() {
         {/* Nothing here works once the sidecar is gone, so it says so instead of showing
             a transcript that can no longer be added to. One child, like the other
             branches: .main assigns its rows by position. */}
-        {stopped ? (
+        {runtime.stopped ? (
           <div className="placeholder">
-            <p className="error">{stopped}</p>
+            <p className="error">{runtime.stopped}</p>
           </div>
         ) : showWiki ? (
           /* The local knowledge base, which belongs to no session and so replaces the
@@ -1137,27 +1092,19 @@ export default function App() {
 
           Development only - `onSidecarBehind` has nothing to listen to in a packaged app,
           where the sidecar was built alongside the window and cannot drift from it. */}
-      {behind && (
+      {runtime.behind && (
         <div className="behind-bar" role="status">
-          <span>{behind}</span>
+          <span>{runtime.behind}</span>
           <button
             type="button"
             className="changes-action primary"
-            disabled={rebuilding}
-            onClick={() => {
-              setRebuilding(true);
-              rebuildSidecar()
-                .then(() => restartRuntime())
-                // Left showing on failure rather than cleared: a rebuild that did not work
-                // and one that did must not look the same, or the next thing the reader
-                // sees is the old code behaving exactly as it did before.
-                .catch((error: unknown) => setBehind(messageOf(error)))
-                .finally(() => setRebuilding(false));
-            }}
+            disabled={runtime.rebuilding}
+            onClick={runtime.rebuild}
+
           >
-            {rebuilding ? 'Rebuilding…' : 'Rebuild and restart'}
+            {runtime.rebuilding ? 'Rebuilding…' : 'Rebuild and restart'}
           </button>
-          <button type="button" onClick={() => setBehind(null)} aria-label="Dismiss">
+          <button type="button" onClick={runtime.dismiss} aria-label="Dismiss">
             ✕
           </button>
         </div>
@@ -1170,6 +1117,11 @@ function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }
+
+
+
+
+
 
 
 
