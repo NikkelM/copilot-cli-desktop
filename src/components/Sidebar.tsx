@@ -6,6 +6,7 @@ import { describeActivity, type ActivityMark } from '../lib/activity';
 import { useRelative } from '../lib/useRelative';
 import { ChevronIcon } from './Icons';
 import { SessionMenu, type SessionAction } from './SessionMenu';
+import { SidebarToggle } from './SidebarToggle';
 
 import type { SessionSummary } from '../../shared/protocol';
 import type { WatchedSubagent } from '../lib/useSubagents';
@@ -40,6 +41,8 @@ interface SidebarProps {
   onSelectSubagent?: (agentId: string) => void;
   /** Take one off the list before it ages out on its own. */
   onDismissSubagent?: (agentId: string) => void;
+  /** Folds the sidebar away. Absent leaves the header without the control. */
+  onToggle?: () => void;
   /** What right-clicking a session offers. Absent leaves the rows with no menu at all. */
   actionsFor?: (session: SessionSummary) => SessionAction[];
   /** Sessions kept among the favourites. Absent is none, which is what a fresh install has. */
@@ -160,6 +163,7 @@ export function Sidebar({
   favourites = [],
   onFavourite,
   actionsFor,
+  onToggle,
 }: SidebarProps) {
   const [query, setQuery] = useState('');
 
@@ -224,6 +228,7 @@ export function Sidebar({
   return (
     <nav className="sidebar">
       <header className="sidebar-header">
+        {onToggle && <SidebarToggle hidden={false} onToggle={onToggle} />}
         {/* The wiki is a destination rather than something about a session, so it is
             reached from the app's own chrome rather than from a session's header. */}
         <button

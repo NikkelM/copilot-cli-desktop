@@ -4211,10 +4211,11 @@ pre.fatal,
   color: var(--bg);
 }
 
-/* Hidden gives the whole window to the session. A column of none rather than a narrow one:
-   half a sidebar is worse than either, and the grip stays at the edge as the way back. */
+/* Hidden gives the whole window to the session, as one column rather than an empty one and
+   a full one. The sidebar is display:none, so leaving two columns would put the session in
+   the first of them - the one that is meant to be empty - and squeeze it to nothing. */
 .sidebar-hidden .app {
-  grid-template-columns: 0 1fr;
+  grid-template-columns: 1fr;
 }
 
 .sidebar-hidden .sidebar {
@@ -4230,4 +4231,51 @@ pre.fatal,
 
 .sidebar-hidden .sidebar-grip::after {
   inset: 0 0 0 0;
+}
+
+/* Folds the sidebar away, and brings it back. Quiet: it is chrome about the chrome, and
+   should not compete with the two controls beside it that do something to a session. */
+.sidebar-toggle {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: calc(var(--font-base) * 1.35);
+  height: calc(var(--font-base) * 1.35);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sidebar-toggle:hover,
+.sidebar-toggle:focus-visible {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Left when the sidebar is there and about to go, right when it is not and about to come
+   back. The shared rule turns the chevron a quarter turn, which is the wrong axis here. */
+.sidebar-toggle .caret {
+  transition: transform 120ms ease;
+}
+
+.sidebar-toggle .caret[data-open='true'] {
+  transform: rotate(180deg);
+}
+
+/* Once the sidebar is gone there is no header to sit in, so it holds the same corner of the
+   window instead. Clear of the grip, which keeps the very edge. */
+.sidebar-toggle.away {
+  position: fixed;
+  z-index: 30;
+  top: 10px;
+  left: 14px;
+}
+
+/* And the session title makes room for it, rather than being written underneath it. Only the
+   title: everything below is past the button and has the width to itself. */
+.sidebar-hidden .main-header h1 {
+  padding-left: calc(var(--font-base) * 2.2);
 }

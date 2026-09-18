@@ -47,6 +47,7 @@ import { sessionActions } from './lib/sessionActions';
 import { useConfirmDelete } from './lib/useConfirmDelete';
 import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
+import { SidebarToggle } from './components/SidebarToggle';
 import { useSidebarWidth } from './lib/useSidebarWidth';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { explain, messageOf } from './lib/errors';
@@ -881,6 +882,7 @@ export default function App() {
         favourites={favourites}
         onFavourite={toggleFavourite}
         actionsFor={sessionMenu}
+        onToggle={width.toggle}
         onDismissSubagent={(agentId) => {
           subagents.dismiss(agentId);
         }}
@@ -892,6 +894,10 @@ export default function App() {
         onNudge={width.nudge}
         onReset={width.reset}
       />
+
+      {/* The sidebar takes its own control with it, so the way back is drawn here instead,
+          at the corner the reader was already looking at. */}
+      {width.hidden && <SidebarToggle hidden onToggle={width.toggle} />}
 
       <main className="main">
         {/* Nothing here works once the sidecar is gone, so it says so instead of showing

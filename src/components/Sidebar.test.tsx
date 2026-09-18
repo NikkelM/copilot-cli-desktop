@@ -671,3 +671,32 @@ describe('Sidebar session menu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 });
+
+describe('folding the sidebar away from its own header', () => {
+  it('offers the control when the app supplies one', async () => {
+    const onToggle = vi.fn();
+    render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} onToggle={onToggle} />);
+
+    await userEvent.click(screen.getByLabelText('Hide the sidebar'));
+
+    expect(onToggle).toHaveBeenCalledOnce();
+  });
+
+  it('leaves the header as it was when the app supplies none', () => {
+    render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} />);
+
+    expect(screen.queryByLabelText('Hide the sidebar')).toBeNull();
+  });
+
+  it('puts it before the controls that do something to a session', () => {
+    render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} onToggle={() => {}} />);
+
+    const header = screen.getByLabelText('Hide the sidebar').closest('header') as HTMLElement;
+    const inHeader = [...header.querySelectorAll('button')].map((b) => b.textContent || b.getAttribute('aria-label'));
+
+    expect(inHeader).toEqual(['Hide the sidebar', 'Wiki', 'New']);
+  });
+});
