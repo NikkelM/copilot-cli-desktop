@@ -14,8 +14,6 @@ export interface SessionSummary {
   /** ISO-8601. Sidebar sorts by this descending. */
   updatedAt: string;
   createdAt: string;
-  /** Truncated tail of the last user or assistant message. */
-  preview: string | null;
   /** Whether a live runtime session is currently held in memory. */
   loaded: boolean;
 }

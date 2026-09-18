@@ -11,7 +11,6 @@ const session = (id: string, updatedAt: string, loaded = false): SessionSummary 
   branch: null,
   createdAt: updatedAt,
   updatedAt,
-  preview: null,
   loaded,
 });
 

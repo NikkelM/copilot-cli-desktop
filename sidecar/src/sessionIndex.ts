@@ -7,11 +7,10 @@
  * last message with zero Copilot processes. That is the whole bargain, so this stays.
  */
 import { DatabaseSync } from 'node:sqlite';
-import { closeSync, existsSync, openSync, readFileSync, readSync, statSync, type Stats } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { SessionSummary } from '../../shared/protocol.js';
-import { toPreview } from '../../shared/preview.js';
 import { sessionEventLog, sessionStateDir, sessionStoreDb } from './paths.js';
 
 /**
@@ -75,108 +74,6 @@ function parseSessionName(path: string): string | null {
   return null;
 }
 
-/**
- * Previews already read, keyed by session, with what the log looked like when they were.
- *
- * The same bargain `names` makes, and an even better one here: the stat that decides whether
- * the log has moved is one `listSessions` already performs, so an idle session costs nothing
- * beyond what the list was doing anyway.
- */
-const previews = new Map<string, { at: number; size: number; preview: string | null }>();
-
-/** First slice read from the end of a log. Held the newest message in 166 of 187 sessions here. */
-const PREVIEW_WINDOW = 16 * 1024;
-
-/** How much the window grows when the tail held no message. */
-const PREVIEW_GROWTH = 4;
-
-/** Stop rather than read a multi-hundred-megabyte log to the start for one line of sidebar text. */
-const PREVIEW_MAX_WINDOW = 4 * 1024 * 1024;
-
-/**
- * The newest thing said in a session, read from the end of its log.
- *
- * The history database is the obvious source and the wrong one. `turns` is written lazily and
- * is not flushed on shutdown, so a quarter of the sessions here previewed text that was hours
- * or days out of date while the timestamp printed beside it, which does consult the log, was
- * right (#164). One session's newest turn row was from the previous day, and had no assistant
- * response on it, so the sidebar showed a question from the start of a session whose transcript
- * ended somewhere else entirely.
- *
- * Kept here rather than taken from `eventLog`, whose business is paging a transcript
- * asynchronously for the viewer. This wants one event, synchronously, from a window small
- * enough that the list can afford it for every session at once.
- */
-function readPreview(sessionId: string, log: Stats): string | null {
-  const seen = previews.get(sessionId);
-  if (seen && seen.at === log.mtimeMs && seen.size === log.size) return seen.preview;
-
-  const preview = lastMessageIn(sessionEventLog(sessionId), log.size);
-  previews.set(sessionId, { at: log.mtimeMs, size: log.size, preview });
-  return preview;
-}
-
-/**
- * Read backwards in a window that grows, because the newest message is usually within a few
- * kilobytes of the end but a closing run of large tool results can push it a long way back.
- */
-function lastMessageIn(path: string, size: number): string | null {
-  if (size === 0) return null;
-
-  let handle: number | undefined;
-  try {
-    handle = openSync(path, 'r');
-    let window = Math.min(PREVIEW_WINDOW, size);
-
-    for (;;) {
-      const start = Math.max(0, size - window);
-      const buffer = Buffer.alloc(size - start);
-      readSync(handle, buffer, 0, buffer.length, start);
-
-      const lines = buffer.toString('utf8').split('\n');
-      // A window that starts mid-file almost never starts on a line boundary.
-      if (start > 0) lines.shift();
-
-      const found = newestMessageIn(lines);
-      if (found) return found;
-
-      if (start === 0 || window >= PREVIEW_MAX_WINDOW) return null;
-      window = Math.min(window * PREVIEW_GROWTH, size, PREVIEW_MAX_WINDOW);
-    }
-  } catch {
-    return null; // An unreadable log just means falling back to what the database recorded.
-  } finally {
-    if (handle !== undefined) closeSync(handle);
-  }
-}
-
-/**
- * What was last said among these lines, newest first.
- *
- * The string test before parsing is what makes the window affordable: a log's bulk is tool
- * results, some of them megabytes of file content, and none of them worth handing to a JSON
- * parser to discover they are not a message.
- */
-function newestMessageIn(lines: string[]): string | null {
-  for (let index = lines.length - 1; index >= 0; index--) {
-    const line = lines[index];
-    if (!line) continue;
-    if (!line.includes('"user.message"') && !line.includes('"assistant.message"')) continue;
-
-    let event: { type?: string; data?: { content?: unknown } };
-    try {
-      event = JSON.parse(line) as typeof event;
-    } catch {
-      continue;
-    }
-    if (event.type !== 'user.message' && event.type !== 'assistant.message') continue;
-
-    const content = event.data?.content;
-    if (typeof content === 'string' && content.trim()) return content;
-  }
-
-  return null;
-}
 
 interface SessionRow {
   id: string;
@@ -186,13 +83,12 @@ interface SessionRow {
   summary: string | null;
   created_at: string;
   updated_at: string;
-  preview: string | null;
 }
 
 /**
  * Read the sidebar model straight out of the CLI's own history database.
  *
- * This is the core of the app's resource story: listing and previewing every session
+ * This is the core of the app's resource story: listing every session
  * costs one read-only SQLite query and spawns no Copilot process at all.
  *
  * Sessions with neither a title nor a single turn are excluded. They come from aborted
@@ -219,8 +115,7 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
     const rows = db
       .prepare(
         `SELECT s.id, s.cwd, s.repository, s.branch, s.summary, s.created_at,
-                COALESCE(t.timestamp, s.updated_at) AS updated_at,
-                COALESCE(t.assistant_response, t.user_message) AS preview
+                COALESCE(t.timestamp, s.updated_at) AS updated_at
          FROM sessions s
          LEFT JOIN turns t
            ON t.session_id = s.id
@@ -259,7 +154,6 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
         branch: row.branch,
         createdAt: row.created_at,
         updatedAt: newest(log?.mtime.toISOString() ?? null, row.updated_at) ?? row.updated_at,
-        preview: toPreview((log ? readPreview(row.id, log) : null) ?? row.preview),
         loaded: false,
       }));
 
@@ -328,8 +222,6 @@ export function findSessions(prefix: string): SessionSummary[] {
         branch: row.branch,
         createdAt: row.created_at,
         updatedAt: newest(log?.mtime.toISOString() ?? null, row.updated_at) ?? row.updated_at,
-        // A hidden session has no turn to preview, so there is nothing to read here.
-        preview: null,
         loaded: false,
       }))
       .sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));

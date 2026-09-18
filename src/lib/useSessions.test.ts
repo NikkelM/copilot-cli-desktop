@@ -21,14 +21,9 @@ function summary(sessionId: string, over: Partial<SessionSummary> = {}): Session
     branch: null,
     updatedAt: '2026-01-02T00:00:00.000Z',
     createdAt: '2026-01-01T00:00:00.000Z',
-    preview: `preview ${sessionId}`,
     loaded: false,
     ...over,
   };
-}
-
-function said(content: string): TranscriptEvent {
-  return { type: 'assistant.message', timestamp: '2026-01-02T00:00:01.000Z', data: { content } } as TranscriptEvent;
 }
 
 /** Mount, and wait for the first fetch to land so a test does not assert on an empty list. */
@@ -68,62 +63,6 @@ describe('useSessions', () => {
     expect(result.current.find(null)).toBeNull();
   });
 
-  describe('previews taken from live events', () => {
-    it('shows what a session just said, ahead of the database', async () => {
-      const { result } = await listed();
-
-      act(() => result.current.observe('s1', said('all done')));
-
-      expect(result.current.find('s1')?.preview).toBe('all done');
-      expect(result.current.find('s2')?.preview).toBe('preview s2');
-    });
-
-    /**
-     * The reason the override is kept outside the fetched list. A refetch can land between
-     * a reply and the write that announces it, carrying a list assembled a turn earlier.
-     */
-    it('keeps the live preview when the list is read again', async () => {
-      const { result } = await listed();
-      act(() => result.current.observe('s1', said('all done')));
-
-      await act(async () => void (await result.current.refresh()));
-
-      expect(result.current.find('s1')?.preview).toBe('all done');
-    });
-
-    /**
-     * A delegating session says far more through its subagents than in its own name, and
-     * their replies carry an agentId. Without this the row quotes another agent's words as
-     * though the session had said them (#11).
-     */
-    it('does not quote a subagent as the session', async () => {
-      const { result } = await listed();
-      act(() => result.current.observe('s1', said('all done')));
-
-      const fromSubagent = { ...said('a subagent reporting back'), agentId: 'agent-1' } as TranscriptEvent;
-      act(() => result.current.observe('s1', fromSubagent));
-
-      expect(result.current.find('s1')?.preview).toBe('all done');
-    });
-
-    it('gives up the override once the session is let go', async () => {
-      const { result } = await listed();
-      act(() => result.current.observe('s1', said('all done')));
-
-      act(() => result.current.observeLoaded('s1', false));
-      await act(async () => void (await result.current.refresh()));
-
-      expect(result.current.find('s1')?.preview).toBe('preview s1');
-    });
-
-    it('ignores an event that says nothing', async () => {
-      const { result } = await listed();
-
-      act(() => result.current.observe('s1', { type: 'session.idle', timestamp: '', data: {} } as TranscriptEvent));
-
-      expect(result.current.find('s1')?.preview).toBe('preview s1');
-    });
-  });
 
   describe('the active group', () => {
     it('puts a session that wakes at the top', async () => {

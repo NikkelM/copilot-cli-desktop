@@ -1,11 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { SessionSummary, TranscriptEvent } from '../../shared/protocol';
-import { toPreview } from '../../shared/preview';
-import { mergeLivePreviews } from './livePreviews';
 import { orderSessions } from './ordering';
 import { listSessions, runtimeStatus } from './sidecar';
-import { contentOf } from './timeline';
 
 /**
  * Which sessions exist, in the order the sidebar shows them.
@@ -33,19 +30,12 @@ export function useSessions(onError: (message: string) => void) {
   /** Sessions with a turn running, whichever one is on screen. */
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set());
 
-  /**
-   * Previews taken from live events, which run ahead of anything that would prompt a refetch.
-   * A ref rather than state: refetches read it, but it never needs to trigger a render
-   * on its own, since the render always follows a setSessions in the same handler.
-   */
-  const livePreviews = useRef(new Map<string, string | null>());
-
   const refresh = useCallback(() => {
     // Returned so a caller that needs the list to contain something can wait for it.
     return listSessions()
       // A fetch that lands between a reply and the write that announces it would otherwise
       // show the session a turn behind, so what the app has already heard wins.
-      .then((result) => setSessions(mergeLivePreviews(result.sessions, livePreviews.current)))
+      .then((result) => setSessions(result.sessions))
       .catch((e: unknown) => onError(String(e)));
   }, [onError]);
 
@@ -83,24 +73,6 @@ export function useSessions(onError: (message: string) => void) {
         return next;
       });
     }
-
-    /**
-     * What the session last said, for the sidebar.
-     *
-     * Only the session's own voice. A subagent's reply carries an `agentId` and would
-     * otherwise become the preview, so the row would quote another agent's words as though
-     * the session had said them - and a delegating session says far more through its
-     * subagents than in its own name (#11).
-     */
-    const spoken = event.type === 'assistant.message' && !event.agentId ? contentOf(event) : null;
-    if (!spoken) return;
-
-    const preview = toPreview(spoken);
-    livePreviews.current.set(sessionId, preview);
-
-    setSessions((current) =>
-      current.map((session) => (session.sessionId === sessionId ? { ...session, preview } : session)),
-    );
   }, []);
 
   /** Take a session waking or being let go, which moves it between the sidebar's groups. */
@@ -120,9 +92,6 @@ export function useSessions(onError: (message: string) => void) {
         : current.filter((id) => id !== sessionId),
     );
 
-    // Once unloaded the app no longer sees this session's events, so its own preview
-    // must stop overriding what the next fetch reads from the log.
-    if (!loaded) livePreviews.current.delete(sessionId);
     // A session let go cannot still be mid-turn, and it will send no idle event to say so.
     if (!loaded) {
       setWorking((current) => {
@@ -143,3 +112,4 @@ export function useSessions(onError: (message: string) => void) {
 
   return { all, find, maxLoaded, working, refresh, observe, observeLoaded };
 }
+

@@ -19,7 +19,6 @@ const session = (over: Partial<SessionSummary>): SessionSummary =>
     cwd: null,
     repository: null,
     branch: null,
-    preview: null,
     updatedAt: '2026-01-01T00:00:00Z',
     turns: 1,
     loaded: false,
@@ -571,101 +570,4 @@ describe('pinning a session to the top', () => {
 });
 
 
-describe('drawing a row short', () => {
-  beforeEach(() => localStorage.clear());
-
-  const one = [session({ sessionId: 'a', title: 'Alpha', repository: 'me/repo', preview: 'last thing said' })];
-
-  const shown = () =>
-    render(
-      <Sidebar
-        sessions={one}
-        selectedId={null}
-        onSelect={() => {}}
-        onCreate={() => {}}
-        onWiki={() => {}}
-        creating={false}
-        activity={{}}
-      />,
-    );
-
-  it('draws the preview and the meta line to begin with', () => {
-    shown();
-
-    expect(screen.getByText('last thing said')).toBeTruthy();
-    expect(screen.getByText(/me\/repo/)).toBeTruthy();
-  });
-
-  it('drops the quotation once the list is turned over', async () => {
-    shown();
-
-    await userEvent.click(screen.getByLabelText('Show titles only'));
-
-    expect(screen.queryByText('last thing said')).toBeNull();
-  });
-
-  /** Which is what still tells two sessions with similar titles apart. */
-  it('keeps when it was touched and what it belongs to', async () => {
-    shown();
-
-    await userEvent.click(screen.getByLabelText('Show titles only'));
-
-    expect(screen.getByText(/me\/repo/)).toBeTruthy();
-  });
-
-  it('keeps the title, which is the whole point', async () => {
-    shown();
-
-    await userEvent.click(screen.getByLabelText('Show titles only'));
-
-    expect(screen.getByText('Alpha')).toBeTruthy();
-  });
-
-  it('puts the quotation back', async () => {
-    shown();
-    await userEvent.click(screen.getByLabelText('Show titles only'));
-
-    await userEvent.click(screen.getByLabelText('Show session details'));
-
-    expect(screen.getByText('last thing said')).toBeTruthy();
-  });
-
-  /** One control for the list, and none on the rows: nobody collapses a single session. */
-  it('offers nothing per row', () => {
-    shown();
-
-    expect(screen.queryByLabelText(/^Collapse /)).toBeNull();
-    expect(screen.queryByLabelText(/^Expand /)).toBeNull();
-  });
-
-  it('says which way the whole-list control goes', async () => {
-    shown();
-
-    await userEvent.click(screen.getByLabelText('Show titles only'));
-
-    expect(screen.getByLabelText('Show session details')).toBeTruthy();
-  });
-
-  /**
-   * A collapsed row still has to say a session is working or waiting on an answer: that is
-   * the one thing on it which is not a reminder of what the session is (#187).
-   */
-  it('keeps the activity mark on a collapsed row', async () => {
-    render(
-      <Sidebar
-        sessions={[session({ sessionId: 'a', title: 'Alpha', loaded: true })]}
-        selectedId={null}
-        onSelect={() => {}}
-        onCreate={() => {}}
-        onWiki={() => {}}
-        creating={false}
-        activity={{ a: { state: 'blocked', queued: 0 } }}
-      />,
-    );
-
-    await userEvent.click(screen.getByLabelText('Show titles only'));
-
-    expect(screen.getByLabelText(/blocked/)).toBeTruthy();
-  });
-});
 

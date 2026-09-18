@@ -254,23 +254,6 @@ describe('listSessions', () => {
     expect(listSessions()[0]?.title).toBe('Only a summary');
   });
 
-  it('previews the newest turn, preferring the assistant reply', async () => {
-    store.addSession('s', { summary: 'S' });
-    store.addTurn('s', 0, 'first', 'old reply', '2026-09-05 10:00:00');
-    store.addTurn('s', 1, 'second', 'newest reply', '2026-09-05 11:00:00');
-
-    const { listSessions } = await loadIndex();
-    expect(listSessions()[0]?.preview).toBe('newest reply');
-  });
-
-  it('falls back to the user message when the assistant has not replied', async () => {
-    store.addSession('s', { summary: 'S' });
-    store.addTurn('s', 0, 'only a question', null, '2026-09-05 10:00:00');
-
-    const { listSessions } = await loadIndex();
-    expect(listSessions()[0]?.preview).toBe('only a question');
-  });
-
   // sessions.updated_at is written at creation, not per turn, so it was hours stale.
   it('ignores the stale updated_at column in favour of real activity', async () => {
     store.addSession('s', { summary: 'S', updated_at: '2020-01-01 00:00:00' });
@@ -481,94 +464,5 @@ describe('existingSessions', () => {
     const { existingSessions } = await loadIndex();
     expect(existingSessions([])).toEqual([]);
     expect(existingSessions(['never-existed'])).toEqual([]);
-  });
-});
-
-describe('preview text', () => {
-  /** A message event in the shape the CLI writes. */
-  const said = (type: 'user.message' | 'assistant.message', content: string) => ({
-    type,
-    data: { content },
-    id: 'e1',
-    timestamp: '2026-01-01T00:00:00.000Z',
-  });
-
-  /** A tool result, which is what a log is mostly made of and is what pushes messages back. */
-  const tooled = (bytes: number) => ({
-    type: 'tool.execution_complete',
-    data: { content: 'x'.repeat(bytes) },
-  });
-
-  it('prefers what the log says over a turn row that has fallen behind', async () => {
-    store.addSession('s', { summary: 'Titled' });
-    store.addTurn('s', 1, 'an old question', null, '2026-01-01 00:00:00');
-    store.writeLog('s', [said('user.message', 'an old question'), said('assistant.message', 'the real latest reply')]);
-
-    const { listSessions } = await loadIndex();
-    expect(listSessions()[0]?.preview).toBe('the real latest reply');
-  });
-
-  it('shows a question the agent has not answered yet', async () => {
-    store.addSession('s', { summary: 'Titled' });
-    store.addTurn('s', 1, 'older', 'an older reply', '2026-01-01 00:00:00');
-    store.writeLog('s', [said('assistant.message', 'an older reply'), said('user.message', 'and what about this')]);
-
-    const { listSessions } = await loadIndex();
-    expect(listSessions()[0]?.preview).toBe('and what about this');
-  });
-
-  it('falls back to the database when the log holds no message', async () => {
-    store.addSession('s', { summary: 'Titled' });
-    store.addTurn('s', 1, null, 'only the database knows', '2026-01-01 00:00:00');
-    store.writeLog('s', [{ type: 'session.start', data: {} }]);
-
-    const { listSessions } = await loadIndex();
-    expect(listSessions()[0]?.preview).toBe('only the database knows');
-  });
-
-  it('looks past a closing run of large tool results', async () => {
-    store.addSession('s', { summary: 'Titled' });
-    store.addTurn('s', 1, null, 'the stale one', '2026-01-01 00:00:00');
-    // Comfortably more than the window opens with, so finding this needs the window to grow.
-    store.writeLog('s', [said('assistant.message', 'buried but current'), tooled(40 * 1024)]);
-
-    const { listSessions } = await loadIndex();
-    expect(listSessions()[0]?.preview).toBe('buried but current');
-  });
-
-  it('ignores an event that merely mentions a message type', async () => {
-    store.addSession('s', { summary: 'Titled' });
-    store.writeLog('s', [
-      said('assistant.message', 'the genuine one'),
-      // Names the type in a field of its own, so the cheap string test cannot tell it apart.
-      { type: 'tool.execution_complete', data: { eventType: 'assistant.message', content: 'not a message' } },
-    ]);
-
-    const { listSessions } = await loadIndex();
-    expect(listSessions()[0]?.preview).toBe('the genuine one');
-  });
-
-  it('reads a log once while it stays untouched', async () => {
-    store.addSession('s', { summary: 'Titled' });
-    store.writeLog('s', [said('assistant.message', 'stable')]);
-
-    const { listSessions } = await loadIndex();
-    listSessions();
-    opens.length = 0;
-    listSessions();
-    listSessions();
-
-    expect(opens.filter((path) => path.endsWith('events.jsonl'))).toEqual([]);
-  });
-
-  it('reads it again once it has moved on', async () => {
-    store.addSession('s', { summary: 'Titled' });
-    store.writeLog('s', [said('assistant.message', 'before')]);
-
-    const { listSessions } = await loadIndex();
-    expect(listSessions()[0]?.preview).toBe('before');
-
-    store.writeLog('s', [said('assistant.message', 'before'), said('assistant.message', 'after')]);
-    expect(listSessions()[0]?.preview).toBe('after');
   });
 });

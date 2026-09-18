@@ -88,9 +88,7 @@ body {
   overflow: hidden;
 }
 
-/* The list toggle at one end, the two destinations at the other. Not `space-between`: with
-   three children that puts the middle one in the middle of the sidebar, which read as Wiki
-   having been placed at random. */
+/* The wiki at one end, the new-session button at the other. */
 .sidebar-header {
   display: flex;
   align-items: center;
@@ -100,8 +98,9 @@ body {
   font-weight: 600;
 }
 
-/* The pair on the right stay together, and the gap opens before them. */
-.sidebar-header .new-session:first-of-type {
+/* The gap opens before the last control rather than between the first two, so a third one
+   added later joins the group on the left instead of landing in the middle. */
+.sidebar-header button:last-child {
   margin-left: auto;
 }
 
@@ -383,15 +382,7 @@ body {
   font-size: var(--font-md);
 }
 
-.session-preview {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: var(--font-md);
-}
+
 
 .main {
   display: grid;

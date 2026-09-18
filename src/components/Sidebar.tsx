@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { useCompact } from '../lib/useCompact';
-
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
 import { useRelative } from '../lib/useRelative';
@@ -179,7 +177,6 @@ export function Sidebar({
 
   const hidden = useHiddenMatches(query, matches.length === 0);
   const { folded, toggle } = useFolded();
-  const rows = useCompact();
 
   /**
    * The list, split into the groups the sidebar draws.
@@ -208,16 +205,6 @@ export function Sidebar({
   return (
     <nav className="sidebar">
       <header className="sidebar-header">
-        <button
-          type="button"
-          className={rows.compact ? 'sidebar-compact on' : 'sidebar-compact'}
-          onClick={rows.toggleAll}
-          aria-pressed={rows.compact}
-          title={rows.compact ? 'Show what each session last said' : 'Show titles only'}
-          aria-label={rows.compact ? 'Show session details' : 'Show titles only'}
-        >
-          {rows.compact ? '☰' : '≡'}
-        </button>
         {/* The wiki is a destination rather than something about a session, so it is
             reached from the app's own chrome rather than from a session's header. */}
         <button
@@ -303,7 +290,6 @@ export function Sidebar({
                             selectedId={selectedId}
                             onSelect={onSelect}
                             activity={activity[session.sessionId]}
-                            collapsed={rows.compact}
                           />
                           {onFavourite && (
                           <Favourite
@@ -435,14 +421,11 @@ function Row({
   selectedId,
   onSelect,
   activity,
-  collapsed,
 }: {
   session: SessionSummary;
   selectedId: string | null;
   onSelect: (sessionId: string, session?: SessionSummary) => void;
   activity?: ActivityMark;
-  /** Drawn as its title alone, for a reader who already knows which session they want. */
-  collapsed?: boolean;
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
 
@@ -467,12 +450,10 @@ function Row({
         <Touched at={session.updatedAt} />
         {session.repository ? ` · ${session.repository}` : ''}
       </span>
-      {/* The quotation is the only thing a short row drops. When the session is known, when
-          it was touched and what it belongs to are still what tells two of them apart. */}
-      {!collapsed && session.preview && <span className="session-preview">{session.preview}</span>}
     </button>
   );
 }
+
 
 
 
