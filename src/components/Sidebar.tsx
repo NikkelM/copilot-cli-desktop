@@ -208,10 +208,6 @@ export function Sidebar({
   return (
     <nav className="sidebar">
       <header className="sidebar-header">
-        <span>Sessions</span>
-        <span className="badge">
-          {query ? `${matches.length + hidden.length}/${sessions.length}` : sessions.length}
-        </span>
         <button
           type="button"
           className={rows.compact ? 'sidebar-compact on' : 'sidebar-compact'}

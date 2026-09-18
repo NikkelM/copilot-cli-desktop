@@ -88,41 +88,25 @@ body {
   overflow: hidden;
 }
 
-/* `space-between` put all the slack between "Sessions" and its count, which reads as two
-   separate things rather than a label and its badge. A gap and one pushed margin keeps the
-   pair together and the buttons at the far end. */
+/* The list toggle on one side and the two destinations on the other. No label: the sidebar
+   is plainly a list of sessions, and the word cost a row of them at a large text scale. */
 .sidebar-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   padding: 12px 14px;
   border-bottom: 1px solid var(--border);
   font-weight: 600;
 }
 
-/* The label yields before a button does. At a large scale there is no arrangement that fits
-   everything, and losing a letter of a word that never changes beats clipping a control. */
-.sidebar-header > span:first-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sidebar-header .badge {
-  margin-right: auto;
+/* The pair on the right stay together whatever the width. */
+.sidebar-header .new-session:first-of-type {
+  margin-left: auto;
 }
 
 .sidebar-header button {
   flex-shrink: 0;
-}
-
-.badge {
-  padding: 1px 8px;
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text-muted);
-  font-size: var(--font-md);
 }
 
 .search {
