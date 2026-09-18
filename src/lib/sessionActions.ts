@@ -6,6 +6,8 @@ export interface SessionActionDeps {
   /** Which sessions are favourited, and how to change that. */
   favourites: readonly string[];
   toggleFavourite: (sessionId: string) => void;
+  /** Opens the tag picker. Tags change in handfuls, so this hands over rather than toggling. */
+  tag: (session: SessionSummary) => void;
   /** Which sessions are put away, and how to change that. */
   archived: readonly string[];
   toggleArchived: (sessionId: string) => void;
@@ -48,6 +50,11 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
           ? 'Still working. It can be unloaded once the turn finishes.'
           : undefined,
       run: () => deps.unload(session.sessionId),
+    },
+    {
+      id: 'tag',
+      label: 'Tags…',
+      run: () => deps.tag(session),
     },
     {
       id: 'archive',

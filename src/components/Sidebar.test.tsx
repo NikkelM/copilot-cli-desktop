@@ -888,3 +888,75 @@ describe('a session put away', () => {
     expect(screen.queryByText('Archived')).toBeNull();
   });
 });
+
+describe('tags in the sidebar', () => {
+  const three = [
+    session({ sessionId: 'a', title: 'Alpha' }),
+    session({ sessionId: 'b', title: 'Beta' }),
+    session({ sessionId: 'c', title: 'Gamma' }),
+  ];
+
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={three}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        {...over}
+      />,
+    );
+
+  it('draws what is true about a session on its row', () => {
+    shown({ tags: { b: ['bug', 'spike'] } });
+
+    const row = screen.getByText('Beta').closest('.session') as HTMLElement;
+    expect([...row.querySelectorAll('.tag')].map((t) => t.textContent)).toEqual(['bug', 'spike']);
+  });
+
+  it('draws none for a session with none', () => {
+    shown({ tags: { b: ['bug'] } });
+
+    const row = screen.getByText('Alpha').closest('.session') as HTMLElement;
+    expect(row.querySelector('.tag')).toBeNull();
+  });
+
+  it('filters down to one tag', async () => {
+    shown({ tags: { a: ['bug'], b: ['spike'] } });
+
+    await userEvent.type(screen.getByRole('searchbox'), 'tag:bug');
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.queryByText('Beta')).toBeNull();
+    expect(screen.queryByText('Gamma')).toBeNull();
+  });
+
+  it('narrows rather than widens when a tag is added to a search', async () => {
+    shown({ tags: { a: ['bug'], b: ['bug'] } });
+
+    await userEvent.type(screen.getByRole('searchbox'), 'tag:bug Alpha');
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.queryByText('Beta')).toBeNull();
+  });
+
+  it('finds a tag typed without the prefix', async () => {
+    shown({ tags: { c: ['spike'] } });
+
+    await userEvent.type(screen.getByRole('searchbox'), 'spike');
+
+    expect(screen.getByText('Gamma')).toBeTruthy();
+    expect(screen.queryByText('Alpha')).toBeNull();
+  });
+
+  it('says nothing matched when no session carries the tag', async () => {
+    shown({ tags: { a: ['bug'] } });
+
+    await userEvent.type(screen.getByRole('searchbox'), 'tag:nonexistent');
+
+    expect(screen.getByText('No sessions match that filter.')).toBeTruthy();
+  });
+});

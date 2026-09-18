@@ -4324,3 +4324,92 @@ pre.fatal,
   background: var(--warning);
   box-shadow: 0 0 0 2px var(--bg);
 }
+
+/* What is true about a session right now. Under the meta rather than beside it: on one line
+   they push the repository off a narrow sidebar, and the repository is what says which
+   session this is. */
+.session-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.tag {
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* In the picker they are buttons, and the ones already on the session say so. */
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 16px;
+  padding: 0;
+  max-height: 30vh;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.tag-list .tag {
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.tag-list .tag:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.tag-list .tag.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--text);
+}
+
+.tag-add {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.tag-add input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-lg);
+}
+
+.tag-add button {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-lg);
+  cursor: pointer;
+}
+
+.tag-add button:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+/* The session it is about, quieter than the heading and not a paragraph of body text. */
+.tag-picker .confirm-body {
+  margin-bottom: 14px;
+  font-size: var(--font-md);
+}

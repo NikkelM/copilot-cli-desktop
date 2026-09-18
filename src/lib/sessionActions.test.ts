@@ -20,6 +20,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   toggleFavourite: vi.fn(),
   archived: [],
   toggleArchived: vi.fn(),
+  tag: vi.fn(),
   working: new Set(),
   unload: vi.fn(),
   copy: vi.fn(),
@@ -36,6 +37,7 @@ describe('sessionActions', () => {
     expect(sessionActions(session(), deps()).map((a) => a.id)).toEqual([
       'favourite',
       'unload',
+      'tag',
       'archive',
       'copy-id',
       'directory',

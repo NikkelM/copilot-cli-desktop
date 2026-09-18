@@ -45,6 +45,8 @@ import { CHANGES, ENVIRONMENT, GIT, USAGE, WIKI, wantsDirectory } from './lib/lo
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
+import { allTags, useTags } from './lib/useTags';
+import { TagPicker } from './components/TagPicker';
 import { useConfirmDelete } from './lib/useConfirmDelete';
 import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
@@ -175,6 +177,9 @@ export default function App() {
   const width = useSidebarWidth();
   const { favourites, toggle: toggleFavourite } = useFavourites();
   const { archived, toggle: toggleArchived } = useArchived();
+  const { tags, toggle: toggleTag } = useTags();
+  /** The session whose tags are being changed, if any. */
+  const [tagging, setTagging] = useState<SessionSummary | null>(null);
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, showRepository);
@@ -854,6 +859,7 @@ export default function App() {
         favourites,
         toggleFavourite,
         archived,
+        tag: setTagging,
         // Archiving is a decision that the session is finished with, so it also stops paying
         // for it: keeping one resumed while hiding it from view is the memory cost this app
         // exists to avoid (#101).
@@ -898,6 +904,7 @@ export default function App() {
         }}
         favourites={favourites}
         archived={archived}
+        tags={tags}
         onFavourite={toggleFavourite}
         actionsFor={sessionMenu}
         onToggle={width.toggle}
@@ -1215,6 +1222,16 @@ export default function App() {
             ✕
           </button>
         </div>
+      )}
+
+      {tagging && (
+        <TagPicker
+          title={tagging.title ?? 'Untitled session'}
+          held={tags[tagging.sessionId] ?? []}
+          known={allTags(tags)}
+          onToggle={(tag) => toggleTag(tagging.sessionId, tag)}
+          onClose={() => setTagging(null)}
+        />
       )}
 
       {deleting && (

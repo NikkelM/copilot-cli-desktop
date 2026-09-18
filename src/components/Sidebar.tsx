@@ -8,6 +8,8 @@ import { ChevronIcon } from './Icons';
 import { SessionMenu, type SessionAction } from './SessionMenu';
 import { SidebarToggle } from './SidebarToggle';
 import { Waiting } from './Waiting';
+import { isEmpty, matchesQuery, parseQuery } from '../lib/sessionFilter';
+import type { Tags } from '../lib/useTags';
 
 import type { SessionSummary } from '../../shared/protocol';
 import type { WatchedSubagent } from '../lib/useSubagents';
@@ -46,6 +48,8 @@ interface SidebarProps {
   onToggle?: () => void;
   /** What right-clicking a session offers. Absent leaves the rows with no menu at all. */
   actionsFor?: (session: SessionSummary) => SessionAction[];
+  /** What is true about each session right now, which the filter box can be asked about. */
+  tags?: Tags;
   /** Sessions put away, which fold into a group of their own. */
   archived?: string[];
   /** Sessions kept among the favourites. Absent is none, which is what a fresh install has. */
@@ -172,6 +176,7 @@ export function Sidebar({
   onDismissSubagent,
   favourites = [],
   archived = [],
+  tags = {},
   onFavourite,
   actionsFor,
   onToggle,
@@ -180,20 +185,11 @@ export function Sidebar({
 
   // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
   const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    if (!needle) return sessions;
+    const parsed = parseQuery(query);
+    if (isEmpty(parsed)) return sessions;
 
-    return sessions.filter(
-      (session) =>
-        [session.title, session.cwd, session.repository, session.branch].some((field) =>
-          field?.toLowerCase().includes(needle),
-        ) ||
-        // An id is usually quoted by its first characters - in CLI output, in a state
-        // directory name, in a commit trailer - so it matches from the start rather than
-        // anywhere, which would turn a short query into a match against every session.
-        session.sessionId.toLowerCase().startsWith(needle),
-    );
-  }, [sessions, query]);
+    return sessions.filter((session) => matchesQuery(session, parsed, tags[session.sessionId] ?? []));
+  }, [sessions, query, tags]);
 
   const hidden = useHiddenMatches(query, matches.length === 0);
   const { folded, toggle } = useFolded();
@@ -372,6 +368,7 @@ export function Sidebar({
                             session={session}
                             selectedId={selectedId}
                             activity={activity[session.sessionId]}
+                            tags={tags[session.sessionId]}
                           />
                           {onFavourite && (
                           <Favourite
@@ -411,7 +408,12 @@ export function Sidebar({
                       onClick={() => onSelect(session.sessionId, session)}
                       onContextMenu={openMenu(session.sessionId)}
                     >
-                      <Row session={session} selectedId={selectedId} activity={activity[session.sessionId]} />
+                      <Row
+                        session={session}
+                        selectedId={selectedId}
+                        activity={activity[session.sessionId]}
+                        tags={tags[session.sessionId]}
+                      />
                     </div>
                   </li>
                 ))}
@@ -519,10 +521,12 @@ function Row({
   session,
   selectedId,
   activity,
+  tags = [],
 }: {
   session: SessionSummary;
   selectedId: string | null;
   activity?: ActivityMark;
+  tags?: readonly string[];
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
 
@@ -545,6 +549,17 @@ function Row({
         <Touched at={session.updatedAt} />
         {session.repository ? ` · ${session.repository}` : ''}
       </span>
+      {/* On the same line as the rest of the meta would push the repository off a narrow
+          sidebar, and the repository is the one that says which session this is. */}
+      {tags.length > 0 && (
+        <span className="session-tags">
+          {tags.map((tag) => (
+            <span className="tag" key={tag}>
+              {tag}
+            </span>
+          ))}
+        </span>
+      )}
     </button>
   );
 }
