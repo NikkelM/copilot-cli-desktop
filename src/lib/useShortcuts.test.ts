@@ -252,6 +252,51 @@ describe('useShortcuts', () => {
     expect(on).not.toHaveBeenCalled();
   });
 
+  /** ctrl+b, which is what editors use for this. */
+  describe('showing or hiding the sidebar', () => {
+    it('reports the toggle', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('b', { ctrlKey: true });
+
+      expect(on).toHaveBeenCalledExactlyOnceWith('sidebar');
+    });
+
+    // It changes how the app is drawn rather than what is being written, so the composer
+    // must not shadow it.
+    it('fires while a message is being typed', () => {
+      renderHook(() => useShortcuts(on));
+      const field = document.createElement('textarea');
+      field.value = 'half a message';
+      document.body.append(field);
+
+      press('b', { ctrlKey: true }, field);
+
+      expect(on).toHaveBeenCalledExactlyOnceWith('sidebar');
+    });
+
+    it('leaves a plain b to be typed', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('b');
+
+      expect(on).not.toHaveBeenCalled();
+    });
+
+    it('ignores the shifted and alt forms, which are other things', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('b', { ctrlKey: true, shiftKey: true });
+      press('b', { ctrlKey: true, altKey: true });
+
+      expect(on).not.toHaveBeenCalled();
+    });
+
+    it('is offered in the quick help, so it is not only findable by guessing', () => {
+      expect(BINDINGS.some((binding) => binding.id === 'sidebar' && binding.keys === 'ctrl+b')).toBe(true);
+    });
+  });
+
   /** ctrl+t, which the CLI answers wherever the cursor happens to be. */
   describe('showing or hiding reasoning', () => {
     it('reports the toggle', () => {
@@ -343,6 +388,7 @@ describe('BINDINGS', () => {
       'larger',
       'reasoning',
       'reset-size',
+      'sidebar',
       'smaller',
       'stash',
     ]);

@@ -4210,3 +4210,24 @@ pre.fatal,
   background: var(--danger);
   color: var(--bg);
 }
+
+/* Hidden gives the whole window to the session. A column of none rather than a narrow one:
+   half a sidebar is worse than either, and the grip stays at the edge as the way back. */
+.sidebar-hidden .app {
+  grid-template-columns: 0 1fr;
+}
+
+.sidebar-hidden .sidebar {
+  display: none;
+}
+
+/* Wider when there is no sidebar to point at, since it is the only thing at that edge and
+   there is no line under it to aim for. */
+.sidebar-hidden .sidebar-grip {
+  width: 12px;
+  margin-left: 0;
+}
+
+.sidebar-hidden .sidebar-grip::after {
+  inset: 0 0 0 0;
+}

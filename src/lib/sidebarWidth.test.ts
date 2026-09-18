@@ -5,8 +5,10 @@ import {
   NARROWEST,
   WIDEST,
   WIDTH_KEY,
+  applyHidden,
   applyWidth,
   clampWidth,
+  readHidden,
   readWidth,
 } from './sidebarWidth';
 
@@ -80,5 +82,41 @@ describe('applyWidth', () => {
 describe('what the sidebar width is stored under', () => {
   it('sits beside the app other choices', () => {
     expect(WIDTH_KEY).toBe('copilot-desktop.sidebarWidth');
+  });
+});
+
+describe('whether the sidebar is hidden', () => {
+  it('is shown when nothing says otherwise', () => {
+    expect(readHidden(store(null))).toBe(false);
+  });
+
+  it('is hidden when that is what was stored', () => {
+    expect(readHidden(store('true'))).toBe(true);
+  });
+
+  it('is shown for anything it does not recognise', () => {
+    // A sidebar that is hidden by a value nobody wrote is the harder state to get out of.
+    expect(readHidden(store('yes'))).toBe(false);
+    expect(readHidden(store(''))).toBe(false);
+  });
+
+  it('marks the document rather than setting a width of zero', () => {
+    // The two differ to everything else: a hidden sidebar should not be reachable by Tab.
+    const root = document.createElement('div');
+
+    applyHidden(true, root);
+    expect(root.classList.contains('sidebar-hidden')).toBe(true);
+
+    applyHidden(false, root);
+    expect(root.classList.contains('sidebar-hidden')).toBe(false);
+  });
+
+  it('leaves a chosen width alone, so showing it again brings that one back', () => {
+    const root = document.createElement('div');
+    applyWidth(24, root);
+
+    applyHidden(true, root);
+
+    expect(root.style.getPropertyValue('--sidebar-column')).toBe('calc(var(--font-base) * 24)');
   });
 });

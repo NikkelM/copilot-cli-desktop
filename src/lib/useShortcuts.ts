@@ -5,7 +5,16 @@ import { useHotGeneration } from './hotGeneration';
 /** How long a second Escape still counts as part of the first. */
 const DOUBLE_ESCAPE_MS = 800;
 
-export type Shortcut = 'interrupt' | 'escape-twice' | 'help' | 'reasoning' | 'stash' | 'larger' | 'smaller' | 'reset-size';
+export type Shortcut =
+  | 'interrupt'
+  | 'escape-twice'
+  | 'help'
+  | 'reasoning'
+  | 'stash'
+  | 'larger'
+  | 'smaller'
+  | 'reset-size'
+  | 'sidebar';
 
 export interface Binding {
   /**
@@ -51,6 +60,7 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'larger', keys: 'ctrl+plus', what: 'draw everything larger' },
   { id: 'smaller', keys: 'ctrl+minus', what: 'draw everything smaller' },
   { id: 'reset-size', keys: 'ctrl+0', what: 'back to the default size' },
+  { id: 'sidebar', keys: 'ctrl+b', what: 'show or hide the sidebar' },
   { keys: 'ctrl+wheel', what: 'draw everything larger or smaller' },
   { keys: 'shift+enter', what: 'insert newline' },
   { keys: 'up/down', what: 'previous or next prompt' },
@@ -183,6 +193,14 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
           handler.current(zoom);
           return;
         }
+      }
+
+      // Fired while typing for the same reason the others are: it changes how the app is
+      // drawn rather than what is being written. Ctrl+B is what editors use for this.
+      if (event.key === 'b' && event.ctrlKey && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        handler.current('sidebar');
+        return;
       }
 
       // Only useful while typing, so it has to fire there. Prevented in any case: the

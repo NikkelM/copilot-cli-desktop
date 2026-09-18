@@ -170,6 +170,7 @@ export default function App() {
   const slash = useCommands(selectedId);
   const subagents = useSubagents();
   const size = useScale();
+  const width = useSidebarWidth();
   const { favourites, toggle: toggleFavourite } = useFavourites();
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
@@ -413,6 +414,11 @@ export default function App() {
           return;
         }
 
+        if (shortcut === 'sidebar') {
+          width.toggle();
+          return;
+        }
+
         if (shortcut === 'reasoning') {
           setReasoning((showing) => {
             localStorage.setItem(REASONING, String(!showing));
@@ -436,7 +442,7 @@ export default function App() {
         if (busyRef.current) interrupt();
         else if (selectedRef.current) drafts.clear(selectedRef.current);
       },
-      [interrupt, drafts, size],
+      [interrupt, drafts, size, width],
     ),
     // The composer's own text, rather than what a key event can be asked about the field it
     // landed in: this is where it is actually kept.
@@ -806,7 +812,6 @@ export default function App() {
   /** The session waiting on an answer to "really delete this?". */
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
   const confirmDelete = useConfirmDelete();
-  const width = useSidebarWidth();
 
   /**
    * Delete a session, and leave it if it was the one open.

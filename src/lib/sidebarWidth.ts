@@ -58,3 +58,23 @@ export function applyWidth(multiple: number | null, root: HTMLElement = document
   if (multiple === null) root.style.removeProperty('--sidebar-column');
   else root.style.setProperty('--sidebar-column', `calc(var(--font-base) * ${multiple})`);
 }
+
+/** Where whether the sidebar is shown at all is remembered. */
+export const HIDDEN_KEY = 'copilot-desktop.sidebarHidden';
+
+/** Whether the sidebar was hidden last time. Absent means shown, which is the default. */
+export function readHidden(store: Pick<Storage, 'getItem'> = localStorage): boolean {
+  return store.getItem(HIDDEN_KEY) === 'true';
+}
+
+/**
+ * Take the sidebar out of the layout, or put it back.
+ *
+ * A class on the element rather than a width of zero, because the two are different things
+ * to everything else: a hidden sidebar should not be reachable by Tab, and the grip has to
+ * stay where it can be found. The width someone chose is left alone, so showing the sidebar
+ * again brings back the one they had rather than the default.
+ */
+export function applyHidden(hidden: boolean, root: HTMLElement = document.documentElement): void {
+  root.classList.toggle('sidebar-hidden', hidden);
+}

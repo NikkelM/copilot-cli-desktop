@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { BASE_PX } from './scale';
-import { DEFAULT_MULTIPLE, WIDTH_KEY, applyWidth, clampWidth, readWidth } from './sidebarWidth';
+import {
+  DEFAULT_MULTIPLE,
+  HIDDEN_KEY,
+  WIDTH_KEY,
+  applyHidden,
+  applyWidth,
+  clampWidth,
+  readHidden,
+  readWidth,
+} from './sidebarWidth';
 
 /**
  * The sidebar's width, dragged in pixels and remembered as a multiple of the text size.
@@ -12,6 +21,7 @@ import { DEFAULT_MULTIPLE, WIDTH_KEY, applyWidth, clampWidth, readWidth } from '
  */
 export function useSidebarWidth() {
   const [multiple, setMultiple] = useState(readWidth);
+  const [hidden, setHidden] = useState(readHidden);
   const [dragging, setDragging] = useState(false);
   /** The base in force, so a drag in pixels can be turned into multiples of it. */
   const base = useRef(BASE_PX);
@@ -24,11 +34,22 @@ export function useSidebarWidth() {
     else localStorage.setItem(WIDTH_KEY, String(multiple));
   }, [multiple]);
 
+  useEffect(() => {
+    applyHidden(hidden);
+    localStorage.setItem(HIDDEN_KEY, String(hidden));
+  }, [hidden]);
+
+  const toggle = useCallback(() => setHidden((current) => !current), []);
+  const show = useCallback(() => setHidden(false), []);
+
   const start = useCallback(() => {
     // Read now rather than per move: it cannot change mid-drag, and getComputedStyle is the
     // expensive kind of read to do on every pointer event.
     const size = Number.parseFloat(getComputedStyle(document.documentElement).fontSize);
     base.current = Number.isFinite(size) && size > 0 ? size : BASE_PX;
+    // Taking hold of the edge of a hidden sidebar is asking for it back. This is the visible
+    // way back that a shortcut on its own would not be (#190).
+    setHidden(false);
     setDragging(true);
   }, []);
 
@@ -59,10 +80,11 @@ export function useSidebarWidth() {
    * chosen: the first press should move the edge from where it is, not jump to a default.
    */
   const nudge = useCallback((steps: number) => {
+    setHidden(false);
     setMultiple((current) => clampWidth((current ?? measure()) + steps));
   }, []);
 
-  return { multiple, dragging, start, reset, nudge };
+  return { multiple, hidden, dragging, start, reset, nudge, toggle, show };
 }
 
 /**

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
 import { useSidebarWidth } from './useSidebarWidth';
-import { DEFAULT_MULTIPLE, NARROWEST, WIDEST, WIDTH_KEY } from './sidebarWidth';
+import { DEFAULT_MULTIPLE, HIDDEN_KEY, NARROWEST, WIDEST, WIDTH_KEY } from './sidebarWidth';
 
 const column = () => document.documentElement.style.getPropertyValue('--sidebar-column');
 
@@ -21,6 +21,7 @@ beforeEach(() => {
   document.documentElement.style.removeProperty('--sidebar-column');
   // jsdom reports 16px for the root font size, which is the app's own default base.
   document.documentElement.style.fontSize = '16px';
+  document.documentElement.classList.remove('sidebar-hidden');
 });
 
 describe('the sidebar width', () => {
@@ -152,5 +153,77 @@ describe('the sidebar width', () => {
 
       expect(result.current.multiple).toBe(NARROWEST);
     });
+  });
+});
+
+describe('hiding the sidebar', () => {
+  const hiddenNow = () => document.documentElement.classList.contains('sidebar-hidden');
+
+  it('is shown to begin with', () => {
+    const { result } = renderHook(() => useSidebarWidth());
+
+    expect(result.current.hidden).toBe(false);
+    expect(hiddenNow()).toBe(false);
+  });
+
+  it('hides and shows again on the same key', () => {
+    const { result } = renderHook(() => useSidebarWidth());
+
+    act(() => result.current.toggle());
+    expect(result.current.hidden).toBe(true);
+    expect(hiddenNow()).toBe(true);
+
+    act(() => result.current.toggle());
+    expect(result.current.hidden).toBe(false);
+    expect(hiddenNow()).toBe(false);
+  });
+
+  it('is still hidden next time', () => {
+    const first = renderHook(() => useSidebarWidth());
+    act(() => first.result.current.toggle());
+    expect(localStorage.getItem(HIDDEN_KEY)).toBe('true');
+
+    const { result } = renderHook(() => useSidebarWidth());
+    expect(result.current.hidden).toBe(true);
+    expect(hiddenNow()).toBe(true);
+  });
+
+  it('comes back when its edge is taken hold of', () => {
+    // The visible way back, which a shortcut on its own would not be.
+    const { result } = renderHook(() => useSidebarWidth());
+    act(() => result.current.toggle());
+
+    act(() => result.current.start());
+
+    expect(result.current.hidden).toBe(false);
+  });
+
+  it('comes back when the edge is moved by a key', () => {
+    const { result } = renderHook(() => useSidebarWidth());
+    act(() => result.current.toggle());
+
+    act(() => result.current.nudge(1));
+
+    expect(result.current.hidden).toBe(false);
+  });
+
+  it('keeps the width someone chose, so showing it again brings back theirs', () => {
+    const { result } = renderHook(() => useSidebarWidth());
+    drag(result.current.start, [400]);
+
+    act(() => result.current.toggle());
+    act(() => result.current.toggle());
+
+    expect(result.current.multiple).toBe(25);
+  });
+
+  it('can be shown without being toggled, for a caller that only wants it back', () => {
+    const { result } = renderHook(() => useSidebarWidth());
+    act(() => result.current.toggle());
+
+    act(() => result.current.show());
+    act(() => result.current.show());
+
+    expect(result.current.hidden).toBe(false);
   });
 });
