@@ -802,10 +802,10 @@ export default function App() {
     () =>
       activityOf(
         sessions.working,
-        [...prompts.permissions, ...prompts.elicitations, ...prompts.plans],
+        prompts.blocking,
         Object.fromEntries(Object.entries(queue.queues).map(([id, waiting]) => [id, waiting.length])),
       ),
-    [sessions.working, prompts.permissions, prompts.elicitations, prompts.plans, queue.queues],
+    [sessions.working, prompts.blocking, queue.queues],
   );
 
   useTaskbar(sessions.working.size > 0);

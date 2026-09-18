@@ -297,3 +297,57 @@ describe('usePrompts', () => {
     await waitFor(() => expect(failed.join()).toContain('session is gone'));
   });
 });
+
+/**
+ * The one list that says "an agent is stopped here", whatever it is stopped by.
+ *
+ * Assembled here rather than by each caller, because a caller that had to remember all three
+ * could leave one out and the sidebar would go on calling a session idle while it sat waiting
+ * on a question (#187).
+ */
+describe('what has an agent stopped', () => {
+  beforeEach(() => {
+    for (const key of Object.keys(listeners) as (keyof typeof listeners)[]) listeners[key] = [];
+    resolvePermission.mockReset().mockResolvedValue(undefined);
+    resolveElicitation.mockReset().mockResolvedValue(undefined);
+    resolvePlan.mockReset().mockResolvedValue(undefined);
+  });
+
+  it('is empty when nothing is', () => {
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+
+    expect(result.current.blocking).toEqual([]);
+  });
+
+  it.each([
+    ['a permission', 'permissionRequested' as const, () => permission('r1')],
+    ['a question', 'elicitationRequested' as const, () => elicitation('r1')],
+    ['a plan', 'planRequested' as const, () => plan('r1')],
+  ])('counts %s', async (_what, channel, make) => {
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+
+    await emit(channel, make());
+
+    expect(result.current.blocking.map((p) => p.sessionId)).toEqual(['s1']);
+  });
+
+  it('gathers all three kinds at once', async () => {
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+
+    await emit('permissionRequested', permission('r1', 'a'));
+    await emit('elicitationRequested', elicitation('r2', 'b'));
+    await emit('planRequested', plan('r3', 'c'));
+
+    expect(result.current.blocking.map((p) => p.sessionId).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('covers every session, not only the one on screen', async () => {
+    // The sidebar asks about all of them; the composer is the one that only cares about this.
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+
+    await emit('elicitationRequested', elicitation('r1', 'somewhere-else'));
+
+    expect(result.current.blocking.map((p) => p.sessionId)).toEqual(['somewhere-else']);
+    expect(result.current.blocked).toBe(false);
+  });
+});

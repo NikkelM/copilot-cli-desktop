@@ -172,10 +172,25 @@ export function usePrompts(sessionId: string | null, onError: (message: string) 
     [permissions, elicitations, plans, sessionId],
   );
 
+  /**
+   * Every ask that has an agent stopped, whatever kind it is and whichever session it is in.
+   *
+   * Named here rather than assembled where it is used. A permission, a question and a plan
+   * are three different prompts, but "the agent is stopped until somebody answers" is one
+   * fact about all three, and a caller that had to remember to include each of them could
+   * quietly leave one out: the sidebar would then go on saying a session was idle while it
+   * sat waiting on a question (#187).
+   */
+  const blocking = useMemo(
+    () => [...permissions, ...elicitations, ...plans],
+    [permissions, elicitations, plans],
+  );
+
   return {
     permissions,
     elicitations,
     plans,
+    blocking,
     mine,
     answerPermission,
     answerElicitation,
