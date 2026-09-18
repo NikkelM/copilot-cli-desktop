@@ -570,3 +570,93 @@ describe('pinning a session to the top', () => {
   });
 });
 
+
+describe('drawing a row short', () => {
+  beforeEach(() => localStorage.clear());
+
+  const one = [session({ sessionId: 'a', title: 'Alpha', repository: 'me/repo', preview: 'last thing said' })];
+
+  const shown = () =>
+    render(
+      <Sidebar
+        sessions={one}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+      />,
+    );
+
+  it('draws the preview and the meta line to begin with', () => {
+    shown();
+
+    expect(screen.getByText('last thing said')).toBeTruthy();
+    expect(screen.getByText(/me\/repo/)).toBeTruthy();
+  });
+
+  it('leaves both out once the row is collapsed', async () => {
+    shown();
+
+    await userEvent.click(screen.getByLabelText('Collapse Alpha'));
+
+    expect(screen.queryByText('last thing said')).toBeNull();
+    expect(screen.queryByText(/me\/repo/)).toBeNull();
+  });
+
+  it('keeps the title, which is the whole point', async () => {
+    shown();
+
+    await userEvent.click(screen.getByLabelText('Collapse Alpha'));
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+  });
+
+  it('puts it back', async () => {
+    shown();
+    await userEvent.click(screen.getByLabelText('Collapse Alpha'));
+
+    await userEvent.click(screen.getByLabelText('Expand Alpha'));
+
+    expect(screen.getByText('last thing said')).toBeTruthy();
+  });
+
+  it('collapses every row at once', async () => {
+    shown();
+
+    await userEvent.click(screen.getByLabelText('Show titles only'));
+
+    expect(screen.queryByText('last thing said')).toBeNull();
+  });
+
+  it('says which way the whole-list control goes', async () => {
+    shown();
+
+    await userEvent.click(screen.getByLabelText('Show titles only'));
+
+    expect(screen.getByLabelText('Show session details')).toBeTruthy();
+  });
+
+  /**
+   * A collapsed row still has to say a session is working or waiting on an answer: that is
+   * the one thing on it which is not a reminder of what the session is (#187).
+   */
+  it('keeps the activity mark on a collapsed row', async () => {
+    render(
+      <Sidebar
+        sessions={[session({ sessionId: 'a', title: 'Alpha', loaded: true })]}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{ a: { state: 'blocked', queued: 0 } }}
+      />,
+    );
+
+    await userEvent.click(screen.getByLabelText('Collapse Alpha'));
+
+    expect(screen.getByLabelText(/blocked/)).toBeTruthy();
+  });
+});

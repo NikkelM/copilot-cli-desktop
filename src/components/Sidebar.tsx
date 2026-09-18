@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { useCompact } from '../lib/useCompact';
+
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
 import { useRelative } from '../lib/useRelative';
@@ -177,6 +179,7 @@ export function Sidebar({
 
   const hidden = useHiddenMatches(query, matches.length === 0);
   const { folded, toggle } = useFolded();
+  const rows = useCompact();
 
   /**
    * The list, split into the groups the sidebar draws.
@@ -209,6 +212,16 @@ export function Sidebar({
         <span className="badge">
           {query ? `${matches.length + hidden.length}/${sessions.length}` : sessions.length}
         </span>
+        <button
+          type="button"
+          className={rows.compact ? 'sidebar-compact on' : 'sidebar-compact'}
+          onClick={rows.toggleAll}
+          aria-pressed={rows.compact}
+          title={rows.compact ? 'Show what each session last said' : 'Show titles only'}
+          aria-label={rows.compact ? 'Show session details' : 'Show titles only'}
+        >
+          {rows.compact ? '☰' : '≡'}
+        </button>
         {/* The wiki is a destination rather than something about a session, so it is
             reached from the app's own chrome rather than from a session's header. */}
         <button
@@ -294,7 +307,17 @@ export function Sidebar({
                             selectedId={selectedId}
                             onSelect={onSelect}
                             activity={activity[session.sessionId]}
+                            collapsed={rows.collapsed(session.sessionId)}
                           />
+                          <button
+                            type="button"
+                            className="session-fold"
+                            onClick={() => rows.toggleOne(session.sessionId)}
+                            aria-expanded={!rows.collapsed(session.sessionId)}
+                            aria-label={`${rows.collapsed(session.sessionId) ? 'Expand' : 'Collapse'} ${session.title ?? 'Untitled session'}`}
+                          >
+                            <ChevronIcon open={!rows.collapsed(session.sessionId)} />
+                          </button>
                           {onFavourite && (
                           <Favourite
                             on={favourites.includes(session.sessionId)}
@@ -425,11 +448,14 @@ function Row({
   selectedId,
   onSelect,
   activity,
+  collapsed,
 }: {
   session: SessionSummary;
   selectedId: string | null;
   onSelect: (sessionId: string, session?: SessionSummary) => void;
   activity?: ActivityMark;
+  /** Drawn as its title alone, for a reader who already knows which session they want. */
+  collapsed?: boolean;
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
 
@@ -442,18 +468,27 @@ function Row({
       <span className="session-title">
         {session.title ?? 'Untitled session'}
         {/* Shape first, colour second: five states is more than a hue can carry, and a
-            reader who cannot separate hues gets none of it at all. */}
+            reader who cannot separate hues gets none of it at all.
+
+            Kept when the row is short: it is the one thing on it that is not a reminder of
+            what the session is, but a claim about what it is doing now (#187). */}
         {session.loaded && (
           <span className={`activity activity-${mark.state}`} role="img" aria-label={describeActivity(mark)} />
         )}
       </span>
-      <span className="session-meta">
-        <Touched at={session.updatedAt} />
-        {session.repository ? ` · ${session.repository}` : ''}
-      </span>
-      {session.preview && <span className="session-preview">{session.preview}</span>}
+      {!collapsed && (
+        <>
+          <span className="session-meta">
+            <Touched at={session.updatedAt} />
+            {session.repository ? ` · ${session.repository}` : ''}
+          </span>
+          {session.preview && <span className="session-preview">{session.preview}</span>}
+        </>
+      )}
     </button>
   );
 }
+
+
 
 

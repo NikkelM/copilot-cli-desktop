@@ -248,6 +248,55 @@ body {
 
 /* Only there when it is set or the row is under the pointer. Two hundred outlines down the
    side of the list would be noise; the one that is filled is the only one saying anything. */
+/* Beside the pin, revealed the same way. Both are about the row rather than in it, since
+   the row is a button and a control cannot be nested in one. */
+.session-fold {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  padding: 10px 2px 0 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.session-row:hover .session-fold,
+.session-fold:focus-visible {
+  opacity: 1;
+}
+
+.session-fold:hover {
+  color: var(--text);
+}
+
+/* In the header with the other two, and quieter than them: it changes how the list is
+   drawn rather than doing anything to a session. */
+.sidebar-compact {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--font-lg);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sidebar-compact:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.sidebar-compact.on {
+  border-color: var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
 .favourite {
   flex-shrink: 0;
   align-self: stretch;
