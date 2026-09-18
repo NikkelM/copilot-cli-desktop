@@ -94,11 +94,35 @@ function makeStore() {
       ).run(sessionId, index, user, assistant, timestamp);
     },
     /** Write the per-session state the CLI keeps outside the database. */
-    addState(sessionId: string, { name, logMtime }: { name?: string; logMtime?: Date } = {}) {
+    addState(
+      sessionId: string,
+      {
+        name,
+        logMtime,
+        cwd,
+        repository,
+        branch,
+        workspace,
+      }: {
+        name?: string;
+        logMtime?: Date;
+        cwd?: string;
+        repository?: string;
+        branch?: string;
+        /** Write the file with only what is named, as a session outside a repository has. */
+        workspace?: boolean;
+      } = {},
+    ) {
       const dir = join(home, 'session-state', sessionId);
       mkdirSync(dir, { recursive: true });
-      if (name !== undefined) {
-        writeFileSync(join(dir, 'workspace.yaml'), `id: ${sessionId}\nname: ${name}\nuser_named: true\n`);
+      const named = name !== undefined || cwd !== undefined || repository !== undefined || branch !== undefined;
+      if (named || workspace) {
+        const lines = [`id: ${sessionId}`];
+        if (cwd !== undefined) lines.push(`cwd: ${cwd}`);
+        if (repository !== undefined) lines.push(`repository: ${repository}`);
+        if (branch !== undefined) lines.push(`branch: ${branch}`);
+        if (name !== undefined) lines.push(`name: ${name}`, 'user_named: true');
+        writeFileSync(join(dir, 'workspace.yaml'), `${lines.join('\n')}\n`);
       }
       // Every real session has one, and its absence is what marks a session as no longer
       // openable, so writing it is part of existing rather than an option.
@@ -464,5 +488,66 @@ describe('existingSessions', () => {
     const { existingSessions } = await loadIndex();
     expect(existingSessions([])).toEqual([]);
     expect(existingSessions(['never-existed'])).toEqual([]);
+  });
+});
+
+/**
+ * Where the sidebar's repository, branch and directory come from.
+ *
+ * The database is written once and not corrected, so it can name a repository a session has
+ * nothing to do with. Across a real store, 29 rows named one where the session's own
+ * workspace named none, 28 of them for a session whose directory is not a repository at all.
+ */
+describe('what a session says about its workspace', () => {
+  it('takes the repository from the session, not from the database', async () => {
+    const { listSessions } = await loadIndex();
+    store.addSession('s1', { repository: 'someone/stale', branch: 'old', summary: 'A session' });
+    store.addState('s1', { cwd: '/work/real', repository: 'me/real', branch: 'main' });
+
+    const [session] = listSessions();
+    expect(session?.repository).toBe('me/real');
+    expect(session?.branch).toBe('main');
+    expect(session?.cwd).toBe('/work/real');
+  });
+
+  it('shows no repository when the session says it has none', async () => {
+    // The case that started this: a session working in a plain folder, with a row naming a
+    // repository it never touched.
+    const { listSessions } = await loadIndex();
+    store.addSession('s1', { repository: 'AnthonyBloomer/daftlistings', summary: 'Dublin House Hunting' });
+    store.addState('s1', { cwd: '/home/me/Projects', name: 'Dublin House Hunting' });
+
+    const [session] = listSessions();
+    expect(session?.repository).toBeNull();
+    expect(session?.branch).toBeNull();
+    expect(session?.cwd).toBe('/home/me/Projects');
+  });
+
+  it('falls back to the database when the session has no workspace file', async () => {
+    // A session old enough to predate the file still has to say something.
+    const { listSessions } = await loadIndex();
+    store.addSession('s1', { cwd: '/work/old', repository: 'me/old', branch: 'main', summary: 'A session' });
+
+    const [session] = listSessions();
+    expect(session?.repository).toBe('me/old');
+    expect(session?.branch).toBe('main');
+    expect(session?.cwd).toBe('/work/old');
+  });
+
+  it('still prefers the name the session was given', async () => {
+    const { listSessions } = await loadIndex();
+    store.addSession('s1', { summary: 'Auto-generated' });
+    store.addState('s1', { name: 'What I called it' });
+
+    expect(listSessions()[0]?.title).toBe('What I called it');
+  });
+
+  it('answers the same for a session found by id', async () => {
+    const { findSessions } = await loadIndex();
+    store.addSession('11111111-1111-1111-1111-111111111111', { repository: 'someone/stale', summary: 'Found' });
+    store.addState('11111111-1111-1111-1111-111111111111', { cwd: '/work/real', repository: 'me/real' });
+
+    const [session] = findSessions('11111111');
+    expect(session?.repository).toBe('me/real');
   });
 });

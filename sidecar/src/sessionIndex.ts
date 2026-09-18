@@ -7,71 +7,84 @@
  * last message with zero Copilot processes. That is the whole bargain, so this stays.
  */
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 
 import type { SessionSummary } from '../../shared/protocol.js';
 import { sessionEventLog, sessionStateDir, sessionStoreDb } from './paths.js';
 
 /**
- * Names already read, keyed by session, with what the file looked like when they were.
+ * Workspaces already read, keyed by session, with what the file looked like when they were.
  *
  * Reading `workspace.yaml` for every session was 49ms of a 113ms refresh - by far the most
- * expensive thing the list did, and almost entirely wasted: a session's name is set once and
- * then never changes. A stat is a tenth of the cost of an open-read-close, so the file is
- * only opened when it differs from what was read last.
+ * expensive thing the list did, and almost entirely wasted: what it says about a session is
+ * set once and then rarely changes. A stat is a tenth of the cost of an open-read-close, so
+ * the file is only opened when it differs from what was read last.
  *
- * Bounded by the number of sessions on disk, and each entry is one short string.
+ * Bounded by the number of sessions on disk, and each entry is a handful of short strings.
  */
-const names = new Map<string, { at: number; size: number; name: string | null }>();
+const workspaces = new Map<string, { at: number; size: number; workspace: Workspace | null }>();
+
+/** What `workspace.yaml` says about a session. A field the file omits is null. */
+interface Workspace {
+  name: string | null;
+  cwd: string | null;
+  repository: string | null;
+  branch: string | null;
+}
 
 /**
- * The session's display name, which lives outside the history database.
+ * What the session itself says about its workspace, which the history database does not.
  *
- * `sessions.summary` holds an auto-generated summary derived from early conversation
- * and is not updated when a session is renamed, so a renamed session would otherwise
- * show stale text. `workspace.yaml` carries the authoritative name.
+ * The database is written once and not corrected. `sessions.summary` holds an auto-generated
+ * summary and does not follow a rename, and `sessions.repository` can name a repository the
+ * session has nothing to do with: across a real store, 29 rows named one where the session's
+ * own workspace has none, 28 of them for a session whose directory is not a repository at
+ * all. `workspace.yaml` is written by the CLI as the workspace changes and is the answer.
  *
- * Parsed by hand rather than with a YAML library: one scalar field is needed, the file
- * is written by the CLI in a flat predictable shape, and a dependency here would be
- * loaded for every session in the list.
+ * Read for every session in the list, so it is cached against the file's own mtime and size
+ * and parsed by hand: the fields are few, the CLI writes a flat predictable shape, and a
+ * YAML dependency here would be loaded once per session.
  */
-function readSessionName(sessionId: string): string | null {
+function readWorkspace(sessionId: string): Workspace | null {
   const path = join(sessionStateDir(sessionId), 'workspace.yaml');
 
   // One stat rather than an exists and a read: it answers whether the file is there and
   // whether it has changed since it was last read, which is everything needed to decide.
   const info = statSync(path, { throwIfNoEntry: false });
   if (!info) {
-    names.delete(sessionId);
+    workspaces.delete(sessionId);
     return null;
   }
 
-  const seen = names.get(sessionId);
-  if (seen && seen.at === info.mtimeMs && seen.size === info.size) return seen.name;
+  const seen = workspaces.get(sessionId);
+  if (seen && seen.at === info.mtimeMs && seen.size === info.size) return seen.workspace;
 
-  const name = parseSessionName(path);
-  names.set(sessionId, { at: info.mtimeMs, size: info.size, name });
-  return name;
+  const workspace = parseWorkspace(path);
+  workspaces.set(sessionId, { at: info.mtimeMs, size: info.size, workspace });
+  return workspace;
 }
 
-/** The `name:` field, or null when the file has none or cannot be read. */
-function parseSessionName(path: string): string | null {
+/** The fields the sidebar needs, or null when the file cannot be read at all. */
+function parseWorkspace(path: string): Workspace | null {
+  const found: Workspace = { name: null, cwd: null, repository: null, branch: null };
+
   try {
     for (const line of readFileSync(path, 'utf8').split('\n')) {
-      const match = /^name:\s*(.*)$/.exec(line.trimEnd());
+      const match = /^(name|cwd|repository|branch):\s*(.*)$/.exec(line.trimEnd());
       if (!match) continue;
 
       // Values are quoted when they contain a colon, e.g. name: 'Reply with exactly: PONG'
-      const raw = match[1]?.trim() ?? '';
+      const raw = match[2]?.trim() ?? '';
       const unquoted = /^(['"])(.*)\1$/.exec(raw);
-      const name = (unquoted ? unquoted[2] : raw) ?? '';
-      return name.trim() || null;
+      const value = ((unquoted ? unquoted[2] : raw) ?? '').trim();
+      found[match[1] as keyof Workspace] = value || null;
     }
   } catch {
-    return null; // A malformed or unreadable file just means falling back to the summary.
+    return null; // A malformed or unreadable file just means falling back to the database.
   }
-  return null;
+
+  return found;
 }
 
 
@@ -83,6 +96,30 @@ interface SessionRow {
   summary: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * One row and its log, as the sidebar wants it.
+ *
+ * The session's own `workspace.yaml` wins wherever it exists, including where it says a
+ * session has no repository: that is an answer rather than a gap. The database's columns are
+ * written once and not corrected, so a session that was first associated with a repository
+ * keeps naming it long after it has nothing to do with it. Only a session with no workspace
+ * file at all falls back to them, which is what a session predating the file looks like.
+ */
+function summarise(row: SessionRow, log: Stats | undefined): SessionSummary {
+  const workspace = readWorkspace(row.id);
+
+  return {
+    sessionId: row.id,
+    title: workspace?.name ?? row.summary,
+    cwd: workspace ? workspace.cwd : row.cwd,
+    repository: workspace ? workspace.repository : row.repository,
+    branch: workspace ? workspace.branch : row.branch,
+    createdAt: row.created_at,
+    updatedAt: newest(log?.mtime.toISOString() ?? null, row.updated_at) ?? row.updated_at,
+    loaded: false,
+  };
 }
 
 /**
@@ -146,16 +183,7 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
         ({ row, log }) =>
           (log !== undefined && log.size > 0) || (held.has(row.id) && existsSync(sessionStateDir(row.id))),
       )
-      .map(({ row, log }) => ({
-        sessionId: row.id,
-        title: readSessionName(row.id) ?? row.summary,
-        cwd: row.cwd,
-        repository: row.repository,
-        branch: row.branch,
-        createdAt: row.created_at,
-        updatedAt: newest(log?.mtime.toISOString() ?? null, row.updated_at) ?? row.updated_at,
-        loaded: false,
-      }));
+      .map(({ row, log }) => summarise(row, log));
 
     // The SQL ordering used the turn timestamp, which lastActivity may have superseded.
     return sessions.sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
@@ -214,16 +242,7 @@ export function findSessions(prefix: string): SessionSummary[] {
       // Same rule as the list: a session with no log, or an empty one, cannot be opened, so
       // handing one back to someone who quoted its id would only fail later.
       .filter(({ log }) => log !== undefined && log.size > 0)
-      .map(({ row, log }) => ({
-        sessionId: row.id,
-        title: readSessionName(row.id) ?? row.summary,
-        cwd: row.cwd,
-        repository: row.repository,
-        branch: row.branch,
-        createdAt: row.created_at,
-        updatedAt: newest(log?.mtime.toISOString() ?? null, row.updated_at) ?? row.updated_at,
-        loaded: false,
-      }))
+      .map(({ row, log }) => summarise(row, log))
       .sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
   } finally {
     db.close();
