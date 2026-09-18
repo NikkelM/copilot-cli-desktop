@@ -3,7 +3,7 @@ import { useEffect, useRef } from 'react';
 /** How long a second Escape still counts as part of the first. */
 const DOUBLE_ESCAPE_MS = 800;
 
-export type Shortcut = 'interrupt' | 'escape-twice' | 'help' | 'reasoning' | 'stash';
+export type Shortcut = 'interrupt' | 'escape-twice' | 'help' | 'reasoning' | 'stash' | 'larger' | 'smaller' | 'reset-size';
 
 export interface Binding {
   /**
@@ -46,6 +46,10 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'escape-twice', keys: 'esc esc', what: 'clear input or interrupt' },
   { id: 'reasoning', keys: 'ctrl+t', what: 'show or hide reasoning' },
   { id: 'stash', keys: 'ctrl+s', what: 'stash or pop the prompt' },
+  { id: 'larger', keys: 'ctrl+plus', what: 'draw everything larger' },
+  { id: 'smaller', keys: 'ctrl+minus', what: 'draw everything smaller' },
+  { id: 'reset-size', keys: 'ctrl+0', what: 'back to the default size' },
+  { keys: 'ctrl+wheel', what: 'draw everything larger or smaller' },
   { keys: 'shift+enter', what: 'insert newline' },
   { keys: 'up/down', what: 'previous or next prompt' },
   { keys: 'ctrl+r', what: 'reverse search history' },
@@ -147,6 +151,29 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
         return;
       }
 
+      // Fired while typing like ctrl+t, and for the same reason: it changes how the app is
+      // drawn rather than what is being written. Both the main row and the numeric keypad
+      // are answered, and `=` is taken as plus because that is the unshifted key every
+      // browser and editor accepts for this - requiring shift would be the odd one out.
+      if (event.ctrlKey && !event.altKey) {
+        const zoom =
+          event.key === '+' || event.key === '=' || event.code === 'NumpadAdd'
+            ? 'larger'
+            : event.key === '-' || event.key === '_' || event.code === 'NumpadSubtract'
+              ? 'smaller'
+              : event.key === '0' || event.code === 'Numpad0'
+                ? 'reset-size'
+                : null;
+
+        if (zoom) {
+          // The webview's own zoom would otherwise fire as well, which scales the app a
+          // second time on top of this one and cannot be put back by ctrl+0 alone.
+          event.preventDefault();
+          handler.current(zoom);
+          return;
+        }
+      }
+
       // Only useful while typing, so it has to fire there. Prevented in any case: the
       // webview would otherwise offer to save the page, which is not a thing this app has.
       if (event.key === 's' && event.ctrlKey && !event.shiftKey && !event.altKey) {
@@ -165,7 +192,27 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
       }
     }
 
+    /**
+     * Ctrl and the wheel, which is the other half of the same gesture.
+     *
+     * A trackpad pinch arrives here too, as a wheel event with ctrl held, so both are
+     * answered by one listener. Registered as non-passive because the whole point is to
+     * take the event: left alone the webview zooms itself, which scales the app a second
+     * time on top of this one.
+     */
+    function onWheel(event: WheelEvent) {
+      if (!event.ctrlKey || event.deltaY === 0) return;
+      event.preventDefault();
+      handler.current(event.deltaY < 0 ? 'larger' : 'smaller');
+    }
+
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('wheel', onWheel);
+    };
   }, []);
 }
+
+

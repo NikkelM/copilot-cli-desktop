@@ -335,7 +335,16 @@ describe('BINDINGS', () => {
   // described, and nothing described as this hook's may do nothing.
   it('describes every shortcut the hook can report', () => {
     const mine = BINDINGS.map((binding) => binding.id).filter(Boolean);
-    expect(mine.sort()).toEqual(['escape-twice', 'help', 'interrupt', 'reasoning', 'stash']);
+    expect(mine.sort()).toEqual([
+      'escape-twice',
+      'help',
+      'interrupt',
+      'larger',
+      'reasoning',
+      'reset-size',
+      'smaller',
+      'stash',
+    ]);
   });
 
   // The rest are the composer's and the menu's. They are listed because the reader does not
@@ -376,5 +385,165 @@ describe('BINDINGS', () => {
   it('names each key once', () => {
     const keys = BINDINGS.map((binding) => binding.keys);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('drawing everything larger or smaller', () => {
+  const typing = () => {
+    const box = document.createElement('textarea');
+    document.body.appendChild(box);
+    return box;
+  };
+
+  it('goes up on ctrl and plus', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('+', { ctrlKey: true });
+
+    expect(on).toHaveBeenCalledExactlyOnceWith('larger');
+  });
+
+  /** The unshifted key every browser and editor accepts for this. */
+  it('takes ctrl and equals as the same thing', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('=', { ctrlKey: true });
+
+    expect(on).toHaveBeenCalledExactlyOnceWith('larger');
+  });
+
+  it('goes down on ctrl and minus', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('-', { ctrlKey: true });
+
+    expect(on).toHaveBeenCalledExactlyOnceWith('smaller');
+  });
+
+  it('answers the numeric keypad too', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('Unidentified', { ctrlKey: true, code: 'NumpadAdd' });
+    press('Unidentified', { ctrlKey: true, code: 'NumpadSubtract' });
+
+    expect(on).toHaveBeenNthCalledWith(1, 'larger');
+    expect(on).toHaveBeenNthCalledWith(2, 'smaller');
+  });
+
+  it('goes back to the default on ctrl and zero', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('0', { ctrlKey: true });
+
+    expect(on).toHaveBeenCalledExactlyOnceWith('reset-size');
+  });
+
+  /**
+   * The webview zooms on these itself, which would scale the app a second time on top of
+   * this one and could not be put back by ctrl+0 alone.
+   */
+  it('keeps the webview from zooming as well', () => {
+    renderHook(() => useShortcuts(on));
+
+    for (const key of ['+', '=', '-', '0']) {
+      expect(press(key, { ctrlKey: true }).defaultPrevented).toBe(true);
+    }
+  });
+
+  // It changes how the app is drawn rather than what is being written, like ctrl+t.
+  it('fires while a message is being typed', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('+', { ctrlKey: true }, typing());
+
+    expect(on).toHaveBeenCalledExactlyOnceWith('larger');
+  });
+
+  it('leaves plus alone without ctrl, which is a character', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('+');
+
+    expect(on).not.toHaveBeenCalled();
+  });
+
+  it('leaves ctrl and alt together alone, which is a keyboard layout', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('+', { ctrlKey: true, altKey: true });
+
+    expect(on).not.toHaveBeenCalled();
+  });
+
+  it('does not answer another ctrl key with a size change', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('p', { ctrlKey: true });
+
+    expect(on).not.toHaveBeenCalledWith('larger');
+    expect(on).not.toHaveBeenCalledWith('smaller');
+    expect(on).not.toHaveBeenCalledWith('reset-size');
+  });
+
+  it('is listed in the help', () => {
+    const listed = BINDINGS.filter((b) => b.id === 'larger' || b.id === 'smaller' || b.id === 'reset-size');
+
+    expect(listed).toHaveLength(3);
+  });
+});
+
+describe('ctrl and the wheel', () => {
+  const wheel = (deltaY: number, init: WheelEventInit = {}) => {
+    const event = new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true, ...init });
+    act(() => void window.dispatchEvent(event));
+    return event;
+  };
+
+  it('goes up on a wheel turned away', () => {
+    renderHook(() => useShortcuts(on));
+
+    wheel(-120, { ctrlKey: true });
+
+    expect(on).toHaveBeenCalledExactlyOnceWith('larger');
+  });
+
+  it('goes down on a wheel turned towards', () => {
+    renderHook(() => useShortcuts(on));
+
+    wheel(120, { ctrlKey: true });
+
+    expect(on).toHaveBeenCalledExactlyOnceWith('smaller');
+  });
+
+  // Scrolling the transcript is what the wheel is for the rest of the time.
+  it('leaves an ordinary scroll alone', () => {
+    renderHook(() => useShortcuts(on));
+
+    wheel(-120);
+
+    expect(on).not.toHaveBeenCalled();
+  });
+
+  it('keeps the webview from zooming as well', () => {
+    renderHook(() => useShortcuts(on));
+
+    expect(wheel(-120, { ctrlKey: true }).defaultPrevented).toBe(true);
+  });
+
+  it('does not act on a wheel event that moved nothing', () => {
+    renderHook(() => useShortcuts(on));
+
+    wheel(0, { ctrlKey: true });
+
+    expect(on).not.toHaveBeenCalled();
+  });
+
+  it('stops listening once the app is gone', () => {
+    const { unmount } = renderHook(() => useShortcuts(on));
+
+    unmount();
+    wheel(-120, { ctrlKey: true });
+
+    expect(on).not.toHaveBeenCalled();
   });
 });

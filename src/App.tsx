@@ -59,6 +59,7 @@ import { useContextUsage } from './lib/useContextUsage';
 import { useCommands } from './lib/useCommands';
 import { useRepoStatus } from './lib/useRepoStatus';
 import { useRuntimeHealth } from './lib/useRuntimeHealth';
+import { useScale } from './lib/useScale';
 import { useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
 import { dispatch } from './lib/slash';
@@ -159,6 +160,7 @@ export default function App() {
   const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
   const slash = useCommands(selectedId);
   const subagents = useSubagents();
+  const size = useScale();
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, showRepository);
@@ -394,6 +396,13 @@ export default function App() {
           return;
         }
 
+        if (shortcut === 'larger' || shortcut === 'smaller' || shortcut === 'reset-size') {
+          if (shortcut === 'larger') size.larger();
+          else if (shortcut === 'smaller') size.smaller();
+          else size.reset();
+          return;
+        }
+
         if (shortcut === 'reasoning') {
           setReasoning((showing) => {
             localStorage.setItem(REASONING, String(!showing));
@@ -417,7 +426,7 @@ export default function App() {
         if (busyRef.current) interrupt();
         else if (selectedRef.current) drafts.clear(selectedRef.current);
       },
-      [interrupt, drafts],
+      [interrupt, drafts, size],
     ),
     // The composer's own text, rather than what a key event can be asked about the field it
     // landed in: this is where it is actually kept.
@@ -1117,6 +1126,7 @@ function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }
+
 
 
 
