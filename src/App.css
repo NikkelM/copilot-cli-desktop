@@ -234,6 +234,48 @@ body {
   color: var(--text);
 }
 
+/* The row and its pin sit side by side. The row is itself a button, so the pin cannot live
+   inside it - and putting it in the flow rather than over the title keeps it off the text. */
+.session-row {
+  display: flex;
+  align-items: flex-start;
+}
+
+.session-row .session {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Only there when it is set or the row is under the pointer. Two hundred outlines down the
+   side of the list would be noise; the one that is filled is the only one saying anything. */
+.favourite {
+  flex-shrink: 0;
+  align-self: stretch;
+  padding: 10px 8px 0 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--font-md);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.session-row:hover .favourite,
+.favourite:focus-visible,
+.favourite.on {
+  opacity: 1;
+}
+
+.favourite.on {
+  color: var(--warning);
+}
+
+.favourite:hover {
+  color: var(--text);
+}
+
 .session {
   display: flex;
   flex-direction: column;

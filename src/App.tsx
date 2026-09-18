@@ -59,6 +59,7 @@ import { useContextUsage } from './lib/useContextUsage';
 import { useCommands } from './lib/useCommands';
 import { useRepoStatus } from './lib/useRepoStatus';
 import { useRuntimeHealth } from './lib/useRuntimeHealth';
+import { useFavourites } from './lib/useFavourites';
 import { useScale } from './lib/useScale';
 import { useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
@@ -161,6 +162,7 @@ export default function App() {
   const slash = useCommands(selectedId);
   const subagents = useSubagents();
   const size = useScale();
+  const pinned = useFavourites();
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, showRepository);
@@ -814,6 +816,8 @@ export default function App() {
           if (entry) open(entry.sessionId);
           subagents.setOpenId(agentId);
         }}
+        favourites={pinned.favourites}
+        onFavourite={pinned.toggle}
         onDismissSubagent={(agentId) => {
           subagents.dismiss(agentId);
         }}
@@ -1126,6 +1130,7 @@ function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }
+
 
 
 

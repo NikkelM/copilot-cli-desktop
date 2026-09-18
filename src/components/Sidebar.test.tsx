@@ -2,6 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ComponentProps } from 'react';
 
 import { Sidebar } from './Sidebar';
 import type { SessionSummary } from '../../shared/protocol';
@@ -458,6 +459,114 @@ describe('Sidebar subagents', () => {
   it('draws none when there is nothing to open them with', () => {
     shown({ subagents: [watched()], onSelectSubagent: undefined });
     expect(screen.queryByText('deep-audit')).toBeNull();
+  });
+});
+
+
+describe('pinning a session to the top', () => {
+  // Folding is remembered in localStorage, and a group folded by an earlier test in this
+  // file would hide rows these need to see.
+  beforeEach(() => localStorage.clear());
+
+  const three = [
+    session({ sessionId: 'a', title: 'Alpha', loaded: true }),
+    session({ sessionId: 'b', title: 'Beta' }),
+    session({ sessionId: 'c', title: 'Gamma' }),
+  ];
+
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={three}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        onFavourite={() => {}}
+        {...over}
+      />,
+    );
+
+  /** Rows in the order the sidebar draws them, whichever group each is in. */
+  const order = () =>
+    [...document.querySelectorAll('.session .session-title')].map((n) => n.textContent?.trim().split(/\s/)[0]);
+
+  it('offers no pin when there is nowhere to keep one', () => {
+    shown({ onFavourite: undefined });
+
+    expect(screen.queryByLabelText(/^Pin /)).toBeNull();
+  });
+
+  it('offers one on every row otherwise', () => {
+    shown();
+
+    expect(screen.getAllByLabelText(/^Pin /)).toHaveLength(3);
+  });
+
+  it('pins the session whose mark was pressed', async () => {
+    const onFavourite = vi.fn();
+    shown({ onFavourite });
+
+    await userEvent.click(screen.getByLabelText('Pin Beta'));
+
+    expect(onFavourite).toHaveBeenCalledExactlyOnceWith('b');
+  });
+
+  it('offers to unpin one that is already pinned', () => {
+    shown({ favourites: ['b'] });
+
+    expect(screen.getByLabelText('Unpin Beta')).toBeTruthy();
+  });
+
+  it('puts a pinned session above everything else', () => {
+    shown({ favourites: ['c'] });
+
+    expect(order()[0]).toBe('Gamma');
+  });
+
+  it('puts it above a session that is in memory', () => {
+    shown({ favourites: ['c'] });
+
+    expect(order()).toEqual(['Gamma', 'Alpha', 'Beta']);
+  });
+
+  it('names the group so the ordering does not look arbitrary', () => {
+    shown({ favourites: ['c'] });
+
+    expect(screen.getByText('Pinned')).toBeTruthy();
+  });
+
+  it('says nothing about pinning when nothing is', () => {
+    shown();
+
+    expect(screen.queryByText('Pinned')).toBeNull();
+  });
+
+  // Listing it twice would double the row and make the count wrong.
+  it('draws a pinned session once, not in both groups', () => {
+    shown({ favourites: ['a'] });
+
+    expect(order().filter((title) => title === 'Alpha')).toHaveLength(1);
+  });
+
+  it('keeps activity order inside the pinned group', () => {
+    shown({ favourites: ['a', 'b'] });
+
+    expect(order()).toEqual(['Alpha', 'Beta', 'Gamma']);
+  });
+
+  /**
+   * The list always reflects what was asked for. A pinned session that does not match is
+   * hidden like any other, or the filter would quietly stop meaning what it says.
+   */
+  it('hides a pinned session that the filter excludes', async () => {
+    shown({ favourites: ['c'] });
+
+    await userEvent.type(screen.getByPlaceholderText(/Filter/), 'Alpha');
+
+    expect(order()).toEqual(['Alpha']);
   });
 });
 

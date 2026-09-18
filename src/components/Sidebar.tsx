@@ -38,6 +38,10 @@ interface SidebarProps {
   onSelectSubagent?: (agentId: string) => void;
   /** Take one off the list before it ages out on its own. */
   onDismissSubagent?: (agentId: string) => void;
+  /** Sessions pinned to the top. Absent is none, which is what a fresh install has. */
+  favourites?: string[];
+  /** Absent leaves the rows readable without offering a pin, as the subagent actions do. */
+  onFavourite?: (sessionId: string) => void;
 }
 
 /**
@@ -149,6 +153,8 @@ export function Sidebar({
   selectedSubagentId,
   onSelectSubagent,
   onDismissSubagent,
+  favourites = [],
+  onFavourite,
 }: SidebarProps) {
   const [query, setQuery] = useState('');
 
@@ -180,15 +186,21 @@ export function Sidebar({
    * so a third group is a row in this array rather than another index comparison.
    */
   const groups = useMemo(() => {
-    const loaded = matches.filter((session) => session.loaded);
-    const cold = matches.filter((session) => !session.loaded);
+    // Pinned first and only once: a favourite that is also loaded belongs to the group
+    // someone chose it for, not to both. Each group keeps the order it was given, which is
+    // by activity, so pinning changes where a session sits and nothing else about it.
+    const pinned = matches.filter((session) => favourites.includes(session.sessionId));
+    const rest = matches.filter((session) => !favourites.includes(session.sessionId));
+    const loaded = rest.filter((session) => session.loaded);
+    const cold = rest.filter((session) => !session.loaded);
 
     return [
+      { key: 'pinned', label: 'Pinned', sessions: pinned },
       { key: 'loaded', label: 'In memory', sessions: loaded },
       // Only named when there is something above it to tell it apart from.
-      { key: 'cold', label: loaded.length > 0 ? 'Not loaded' : null, sessions: cold },
+      { key: 'cold', label: loaded.length > 0 || pinned.length > 0 ? 'Not loaded' : null, sessions: cold },
     ].filter((group) => group.sessions.length > 0);
-  }, [matches]);
+  }, [matches, favourites]);
 
   return (
     <nav className="sidebar">
@@ -276,12 +288,21 @@ export function Sidebar({
                   <ul className="session-list">
                     {shown.map((session) => (
                       <li key={session.sessionId}>
-                        <Row
-                          session={session}
-                          selectedId={selectedId}
-                          onSelect={onSelect}
-                          activity={activity[session.sessionId]}
-                        />
+                        <div className="session-row">
+                          <Row
+                            session={session}
+                            selectedId={selectedId}
+                            onSelect={onSelect}
+                            activity={activity[session.sessionId]}
+                          />
+                          {onFavourite && (
+                          <Favourite
+                            on={favourites.includes(session.sessionId)}
+                            title={session.title ?? 'Untitled session'}
+                            onToggle={() => onFavourite(session.sessionId)}
+                          />
+                          )}
+                        </div>
                         <Delegated
                           subagents={subagents}
                           sessionId={session.sessionId}
@@ -376,6 +397,29 @@ function Delegated({
 }
 
 /** One session in the list. Shared so a found-by-id row reads exactly like a listed one. */
+/**
+ * The mark that keeps a session within reach.
+ *
+ * Beside the row rather than inside it, because the row is itself a button and a control
+ * cannot be nested in one. Only drawn when it is set or the row is under the pointer: two
+ * hundred stars down the side of the list would be noise, and the one that is set is the
+ * only one saying anything.
+ */
+function Favourite({ on, title, onToggle }: { on: boolean; title: string; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className={on ? 'favourite on' : 'favourite'}
+      onClick={onToggle}
+      aria-pressed={on}
+      aria-label={on ? `Unpin ${title}` : `Pin ${title}`}
+      title={on ? 'Unpin from the top' : 'Pin to the top'}
+    >
+      {on ? '★' : '☆'}
+    </button>
+  );
+}
+
 function Row({
   session,
   selectedId,
@@ -411,3 +455,5 @@ function Row({
     </button>
   );
 }
+
+
