@@ -281,9 +281,16 @@ body {
    star is outside the button, so lighting the button alone drew a seam down the row. */
 .session-row {
   display: flex;
-  align-items: flex-start;
+  /* A column: the title and its mark sit on one line, and what is true about the session
+     goes under both rather than beside either. */
+  flex-direction: column;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
+}
+
+.session-line {
+  display: flex;
+  align-items: flex-start;
 }
 
 .session-row:hover {
@@ -295,7 +302,7 @@ body {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-.session-row .session {
+.session-line .session {
   min-width: 0;
   flex: 1;
   border-bottom: none;
@@ -4342,11 +4349,31 @@ pre.fatal,
 /* What is true about a session right now. Under the meta rather than beside it: on one line
    they push the repository off a narrow sidebar, and the repository is what says which
    session this is. */
+/* Lined up with the row's own text, and carrying the row's bottom padding now that it is
+   the last thing in it. */
 .session-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin-top: 2px;
+  padding: 0 14px 10px;
+  margin-top: -4px;
+}
+
+/* On a row they are buttons too, asking about every session like this one. */
+.session-tags .tag {
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.session-tags .tag:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.session-tags .tag.on {
+  border-color: var(--accent);
+  color: var(--text);
 }
 
 .tag {

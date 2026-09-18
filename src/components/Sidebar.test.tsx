@@ -913,15 +913,59 @@ describe('tags in the sidebar', () => {
   it('draws what is true about a session on its row', () => {
     shown({ tags: { b: ['bug', 'spike'] } });
 
-    const row = screen.getByText('Beta').closest('.session') as HTMLElement;
+    const row = screen.getByText('Beta').closest('.session-row') as HTMLElement;
     expect([...row.querySelectorAll('.tag')].map((t) => t.textContent)).toEqual(['bug', 'spike']);
   });
 
   it('draws none for a session with none', () => {
     shown({ tags: { b: ['bug'] } });
 
-    const row = screen.getByText('Alpha').closest('.session') as HTMLElement;
+    const row = screen.getByText('Alpha').closest('.session-row') as HTMLElement;
     expect(row.querySelector('.tag')).toBeNull();
+  });
+
+  it('narrows to the rest like it when one is pressed', async () => {
+    const onSelect = vi.fn();
+    shown({ tags: { a: ['bug'], b: ['bug'], c: ['spike'] }, onSelect });
+
+    const row = screen.getByText('Alpha').closest('.session-row') as HTMLElement;
+    await userEvent.click(row.querySelector('.tag') as HTMLElement);
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.getByText('Beta')).toBeTruthy();
+    expect(screen.queryByText('Gamma')).toBeNull();
+  });
+
+  it('does not open the session it was pressed on', async () => {
+    // The row opens the session; the chip asks about every session like it.
+    const onSelect = vi.fn();
+    shown({ tags: { a: ['bug'] }, onSelect });
+
+    const row = screen.getByText('Alpha').closest('.session-row') as HTMLElement;
+    await userEvent.click(row.querySelector('.tag') as HTMLElement);
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('presses again to stop filtering', async () => {
+    shown({ tags: { a: ['bug'] } });
+    const chip = () => (screen.getByText('Alpha').closest('.session-row') as HTMLElement).querySelector('.tag') as HTMLElement;
+
+    await userEvent.click(chip());
+    expect(screen.queryByText('Beta')).toBeNull();
+
+    await userEvent.click(chip());
+    expect(screen.getByText('Beta')).toBeTruthy();
+  });
+
+  it('is the same choice the tag menu makes', async () => {
+    shown({ tags: { a: ['bug'], b: ['bug'] } });
+    const row = screen.getByText('Alpha').closest('.session-row') as HTMLElement;
+
+    await userEvent.click(row.querySelector('.tag') as HTMLElement);
+    await userEvent.click(screen.getByLabelText(/Filtering by/));
+
+    expect(within(screen.getByRole('group')).getByText('bug').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('filters down to one tag', async () => {

@@ -185,8 +185,12 @@ export function Sidebar({
 }: SidebarProps) {
   const [query, setQuery] = useState('');
 
-  /** Tags chosen from the menu, which narrow the list alongside whatever was typed. */
+  /** Tags chosen to filter by, from the menu or from a chip on a row. */
   const [chosen, setChosen] = useState<string[]>([]);
+  const pickTag = useCallback(
+    (tag: string) => setChosen((current) => (current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag])),
+    [],
+  );
 
   // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
   const matches = useMemo(() => {
@@ -333,9 +337,7 @@ export function Sidebar({
         <TagFilter
           known={known}
           chosen={chosen}
-          onToggle={(tag) =>
-            setChosen((current) => (current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag]))
-          }
+          onToggle={pickTag}
           onClear={() => setChosen([])}
         />
       </div>
@@ -393,19 +395,21 @@ export function Sidebar({
                           onClick={() => onSelect(session.sessionId, session)}
                           onContextMenu={openMenu(session.sessionId)}
                         >
-                          <Row
-                            session={session}
-                            selectedId={selectedId}
-                            activity={activity[session.sessionId]}
-                            tags={tags[session.sessionId]}
-                          />
-                          {onFavourite && (
-                          <Favourite
-                            on={favourites.includes(session.sessionId)}
-                            title={session.title ?? 'Untitled session'}
-                            onToggle={() => onFavourite(session.sessionId)}
-                          />
-                          )}
+                          <div className="session-line">
+                            <Row
+                              session={session}
+                              selectedId={selectedId}
+                              activity={activity[session.sessionId]}
+                            />
+                            {onFavourite && (
+                              <Favourite
+                                on={favourites.includes(session.sessionId)}
+                                title={session.title ?? 'Untitled session'}
+                                onToggle={() => onFavourite(session.sessionId)}
+                              />
+                            )}
+                          </div>
+                          <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
                         </div>
                         <Delegated
                           subagents={subagents}
@@ -437,12 +441,10 @@ export function Sidebar({
                       onClick={() => onSelect(session.sessionId, session)}
                       onContextMenu={openMenu(session.sessionId)}
                     >
-                      <Row
-                        session={session}
-                        selectedId={selectedId}
-                        activity={activity[session.sessionId]}
-                        tags={tags[session.sessionId]}
-                      />
+                      <div className="session-line">
+                        <Row session={session} selectedId={selectedId} activity={activity[session.sessionId]} />
+                      </div>
+                      <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
                     </div>
                   </li>
                 ))}
@@ -519,6 +521,46 @@ function Delegated({
   );
 }
 
+/**
+ * What is true about a session, under its row, and a way to see the rest like it.
+ *
+ * Pressing one narrows the list to sessions carrying it, which is the same thing the tag menu
+ * does and shares its state. Outside the row's own button rather than inside it: a control
+ * cannot be nested in one, and these have something of their own to do (#123).
+ */
+function SessionTags({
+  tags = [],
+  chosen,
+  onPick,
+}: {
+  tags?: readonly string[];
+  chosen: readonly string[];
+  onPick: (tag: string) => void;
+}) {
+  if (tags.length === 0) return null;
+
+  return (
+    <span className="session-tags">
+      {tags.map((tag) => (
+        <button
+          type="button"
+          key={tag}
+          className={chosen.includes(tag) ? 'tag on' : 'tag'}
+          aria-pressed={chosen.includes(tag)}
+          title={chosen.includes(tag) ? `Stop filtering by ${tag}` : `Show only sessions tagged ${tag}`}
+          onClick={(event) => {
+            // The row opens the session; this asks about every session like it.
+            event.stopPropagation();
+            onPick(tag);
+          }}
+        >
+          {tag}
+        </button>
+      ))}
+    </span>
+  );
+}
+
 /** One session in the list. Shared so a found-by-id row reads exactly like a listed one. */
 /**
  * The mark that keeps a session within reach.
@@ -550,12 +592,10 @@ function Row({
   session,
   selectedId,
   activity,
-  tags = [],
 }: {
   session: SessionSummary;
   selectedId: string | null;
   activity?: ActivityMark;
-  tags?: readonly string[];
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
 
@@ -578,17 +618,6 @@ function Row({
         <Touched at={session.updatedAt} />
         {session.repository ? ` · ${session.repository}` : ''}
       </span>
-      {/* On the same line as the rest of the meta would push the repository off a narrow
-          sidebar, and the repository is the one that says which session this is. */}
-      {tags.length > 0 && (
-        <span className="session-tags">
-          {tags.map((tag) => (
-            <span className="tag" key={tag}>
-              {tag}
-            </span>
-          ))}
-        </span>
-      )}
     </button>
   );
 }
