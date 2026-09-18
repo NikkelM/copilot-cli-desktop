@@ -9,6 +9,8 @@ import { SessionMenu, type SessionAction } from './SessionMenu';
 import { SidebarToggle } from './SidebarToggle';
 import { Waiting } from './Waiting';
 import { isEmpty, matchesQuery, parseQuery } from '../lib/sessionFilter';
+import { TagFilter } from './TagFilter';
+import { countTags } from '../lib/useTags';
 import type { Tags } from '../lib/useTags';
 
 import type { SessionSummary } from '../../shared/protocol';
@@ -183,13 +185,30 @@ export function Sidebar({
 }: SidebarProps) {
   const [query, setQuery] = useState('');
 
+  /** Tags chosen from the menu, which narrow the list alongside whatever was typed. */
+  const [chosen, setChosen] = useState<string[]>([]);
+
   // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
   const matches = useMemo(() => {
-    const parsed = parseQuery(query);
+    const typed = parseQuery(query);
+    // Chosen and typed tags are the same ask arriving two ways, so they join one list and
+    // every one of them has to be present.
+    const parsed = { ...typed, tags: [...new Set([...typed.tags, ...chosen])] };
     if (isEmpty(parsed)) return sessions;
 
     return sessions.filter((session) => matchesQuery(session, parsed, tags[session.sessionId] ?? []));
-  }, [sessions, query, tags]);
+  }, [sessions, query, tags, chosen]);
+
+  /** What the menu offers: how many sessions each tag would leave, given what is already chosen. */
+  const known = useMemo(() => countTags(tags, chosen), [tags, chosen]);
+
+  // A tag that no session carries at all cannot narrow anything, and leaving it chosen would
+  // empty the list with nothing on screen explaining why. Asked of every session rather than
+  // of `known`, which keeps a chosen tag listed however few sessions it would leave.
+  useEffect(() => {
+    const inUse = new Set(Object.values(tags).flat());
+    setChosen((current) => (current.every((tag) => inUse.has(tag)) ? current : current.filter((tag) => inUse.has(tag))));
+  }, [tags]);
 
   const hidden = useHiddenMatches(query, matches.length === 0);
   const { folded, toggle } = useFolded();
@@ -306,8 +325,18 @@ export function Sidebar({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter by title, folder or id"
+          placeholder="Filter by title, tag, folder or id"
           spellCheck={false}
+        />
+        {/* Beside the box rather than in the header: it narrows the list, which is what the
+            box does, and the two are read together. */}
+        <TagFilter
+          known={known}
+          chosen={chosen}
+          onToggle={(tag) =>
+            setChosen((current) => (current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag]))
+          }
+          onClear={() => setChosen([])}
         />
       </div>
 

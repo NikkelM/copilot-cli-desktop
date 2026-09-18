@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
@@ -958,5 +958,146 @@ describe('tags in the sidebar', () => {
     await userEvent.type(screen.getByRole('searchbox'), 'tag:nonexistent');
 
     expect(screen.getByText('No sessions match that filter.')).toBeTruthy();
+  });
+});
+
+describe('filtering by tags chosen from the menu', () => {
+  const three = [
+    session({ sessionId: 'a', title: 'Alpha' }),
+    session({ sessionId: 'b', title: 'Beta' }),
+    session({ sessionId: 'c', title: 'Gamma' }),
+  ];
+
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={three}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        {...over}
+      />,
+    );
+
+  const openMenu = () => userEvent.click(screen.getByLabelText(/Filter by tag|Filtering by/));
+  /** Scoped to the menu: the same tag is drawn on the rows carrying it as well. */
+  const inMenu = (name: string) => within(screen.getByRole('group')).getByText(name);
+
+  it('offers nothing to filter by until something is tagged', () => {
+    shown();
+
+    expect(screen.queryByLabelText('Filter by tag')).toBeNull();
+  });
+
+  it('narrows to the sessions carrying a chosen tag', async () => {
+    shown({ tags: { a: ['bug'], b: ['spike'] } });
+
+    await openMenu();
+    await userEvent.click(inMenu('bug'));
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.queryByText('Beta')).toBeNull();
+    expect(screen.queryByText('Gamma')).toBeNull();
+  });
+
+  it('wants every chosen tag, not any of them', async () => {
+    shown({ tags: { a: ['bug', 'spike'], b: ['bug'] } });
+
+    await openMenu();
+    await userEvent.click(inMenu('bug'));
+    await userEvent.click(inMenu('spike'));
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.queryByText('Beta')).toBeNull();
+  });
+
+  it('narrows alongside what was typed rather than replacing it', async () => {
+    shown({ tags: { a: ['bug'], b: ['bug'] } });
+
+    await openMenu();
+    await userEvent.click(inMenu('bug'));
+    await userEvent.type(screen.getByRole('searchbox'), 'Alpha');
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.queryByText('Beta')).toBeNull();
+  });
+
+  it('counts the same tag once when it is both typed and chosen', async () => {
+    shown({ tags: { a: ['bug'] } });
+
+    await openMenu();
+    await userEvent.click(inMenu('bug'));
+    await userEvent.type(screen.getByRole('searchbox'), 'tag:bug');
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+  });
+
+  it('says what each tag would leave, once something is chosen', async () => {
+    shown({ tags: { a: ['bug', 'spike'], b: ['bug'], c: ['spike'] } });
+    await openMenu();
+
+    // Three tags, counted across every session: bug on two, spike on two.
+    expect([...screen.getByRole('group').querySelectorAll('.tag')].map((b) => b.textContent)).toEqual([
+      'bug2',
+      'spike2',
+    ]);
+
+    await userEvent.click(inMenu('bug'));
+
+    // With bug chosen only a and b remain, and spike is on one of them.
+    expect([...screen.getByRole('group').querySelectorAll('.tag')].map((b) => b.textContent)).toEqual([
+      'bug2',
+      'spike1',
+    ]);
+  });
+
+  it('stops offering a tag that would leave nothing', async () => {
+    shown({ tags: { a: ['bug'], b: ['spike'] } });
+    await openMenu();
+    expect(within(screen.getByRole('group')).queryByText('spike')).toBeTruthy();
+
+    await userEvent.click(inMenu('bug'));
+
+    // No session carries both, so choosing spike could only empty the list.
+    expect(within(screen.getByRole('group')).queryByText('spike')).toBeNull();
+    expect(within(screen.getByRole('group')).queryByText('bug')).toBeTruthy();
+  });
+
+  it('gives the whole list back when the choice is cleared', async () => {
+    shown({ tags: { a: ['bug'] } });
+    await openMenu();
+    await userEvent.click(inMenu('bug'));
+    expect(screen.queryByText('Beta')).toBeNull();
+
+    await userEvent.click(inMenu('Clear'));
+
+    expect(screen.getByText('Beta')).toBeTruthy();
+  });
+
+  it('lets go of a tag that no session carries any more', async () => {
+    // Otherwise the list empties with nothing on screen saying why.
+    const view = shown({ tags: { a: ['bug'] } });
+    await openMenu();
+    await userEvent.click(inMenu('bug'));
+    expect(screen.queryByText('Beta')).toBeNull();
+
+    view.rerender(
+      <Sidebar
+        sessions={three}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        tags={{}}
+      />,
+    );
+
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.getByText('Beta')).toBeTruthy();
   });
 });

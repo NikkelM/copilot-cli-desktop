@@ -117,14 +117,41 @@ export function useTags() {
   return { tags, toggle };
 }
 
-/** Every tag in use, in the order they read best: commonest first, then alphabetically. */
-export function allTags(tags: Tags): string[] {
+/**
+ * Every tag worth offering, with how many sessions it would leave.
+ *
+ * With nothing chosen that is simply how many carry each tag. With something chosen it is how
+ * many carry all of those *and* this one, which is the number that answers the question
+ * someone is actually asking: what happens if I also pick this.
+ *
+ * A tag carried by none of the sessions that remain is not offered at all. That falls out of
+ * counting rather than being a rule: those sessions are skipped, so their tags are never
+ * reached. The one entry that can read zero is a chosen tag nothing carries.
+ *
+ * Commonest first because that is what is being reached for; the alphabet only decides ties,
+ * which would otherwise fall out in whatever order the store happened to be written in.
+ */
+export function countTags(tags: Tags, chosen: readonly string[] = []): { tag: string; count: number }[] {
   const counts = new Map<string, number>();
+
   for (const held of Object.values(tags)) {
+    // A session that does not already answer the chosen tags says nothing about what adding
+    // another would do. Skipping it is also what leaves a tag out: one carried by no
+    // remaining session is never counted, so there is nothing to hide afterwards.
+    if (!chosen.every((tag) => held.includes(tag))) continue;
     for (const tag of held) counts.set(tag, (counts.get(tag) ?? 0) + 1);
   }
 
+  // A chosen tag is listed whatever its count, since dropping it would leave no way to unpick
+  // a filter that had emptied the list. It is the only entry that can read zero.
+  for (const tag of chosen) if (!counts.has(tag)) counts.set(tag, 0);
+
   return [...counts.entries()]
     .sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b))
-    .map(([tag]) => tag);
+    .map(([tag, count]) => ({ tag, count }));
+}
+
+/** Every tag in use, commonest first. */
+export function allTags(tags: Tags): string[] {
+  return countTags(tags).map(({ tag }) => tag);
 }

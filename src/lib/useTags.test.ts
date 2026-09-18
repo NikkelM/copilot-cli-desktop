@@ -193,3 +193,74 @@ describe('allTags', () => {
     expect(allTags({ a: ['zebra'], b: ['apple'] })).toEqual(['apple', 'zebra']);
   });
 });
+
+/**
+ * With something chosen, a count answers "what happens if I also pick this" rather than "how
+ * many carry this". The two differ the moment anything is chosen, and the first is the
+ * question someone with a filter already on is asking.
+ */
+describe('countTags once something is chosen', () => {
+  const store = {
+    a: ['bug', 'unity'],
+    b: ['bug', 'hades'],
+    c: ['unity'],
+    d: ['bug', 'unity', 'hades'],
+  };
+
+  it('counts every session carrying a tag when nothing is chosen', async () => {
+    const { countTags } = await load();
+
+    expect(countTags(store)).toEqual([
+      { tag: 'bug', count: 3 },
+      { tag: 'unity', count: 3 },
+      { tag: 'hades', count: 2 },
+    ]);
+  });
+
+  it('counts what would be left, not what carries it', async () => {
+    const { countTags } = await load();
+
+    // With bug chosen: a, b and d remain. Of those, unity is on a and d, hades on b and d.
+    expect(countTags(store, ['bug'])).toEqual([
+      { tag: 'bug', count: 3 },
+      { tag: 'hades', count: 2 },
+      { tag: 'unity', count: 2 },
+    ]);
+  });
+
+  it('narrows again with each one chosen', async () => {
+    const { countTags } = await load();
+
+    expect(countTags(store, ['bug', 'hades'])).toEqual([
+      { tag: 'bug', count: 2 },
+      { tag: 'hades', count: 2 },
+      { tag: 'unity', count: 1 },
+    ]);
+  });
+
+  it('leaves out one that would leave nothing', async () => {
+    // With hades and unity chosen only d remains, and nothing else on d could narrow further
+    // to zero - but a tag on no remaining session must not be offered as a way to empty the
+    // list.
+    const { countTags } = await load();
+
+    const offered = countTags({ a: ['bug'], b: ['spike'] }, ['bug']).map(({ tag }) => tag);
+
+    expect(offered).toEqual(['bug']);
+    expect(offered).not.toContain('spike');
+  });
+
+  it('keeps a chosen tag listed even when it would leave nothing', async () => {
+    // Otherwise a filter that emptied the list could not be unpicked.
+    const { countTags } = await load();
+
+    expect(countTags({}, ['gone'])).toEqual([{ tag: 'gone', count: 0 }]);
+  });
+
+  it('says a chosen tag leaves what the filter currently leaves', async () => {
+    const { countTags } = await load();
+    const counted = countTags(store, ['bug']);
+
+    expect(counted.find(({ tag }) => tag === 'bug')?.count).toBe(3);
+  });
+});

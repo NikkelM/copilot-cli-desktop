@@ -157,11 +157,18 @@ body {
 }
 
 .search {
+  display: flex;
+  /* Stretch rather than centre, so the button is exactly as tall as the box beside it
+     whatever either of them is set in. Matching paddings by hand would drift the moment
+     one of the two font sizes changed. */
+  align-items: stretch;
+  gap: 6px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--border);
 }
 
 .search input {
+  min-width: 0;
   width: 100%;
   padding: 6px 10px;
   border: 1px solid var(--border);
@@ -4423,4 +4430,98 @@ pre.fatal,
 .tag-picker .confirm-body {
   margin-bottom: 14px;
   font-size: var(--font-md);
+}
+
+/* Narrowing by tag, beside the box that narrows by everything else. */
+.tag-filter {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+}
+
+.tag-filter-button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-md);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tag-filter-button:hover,
+.tag-filter-button:focus-visible {
+  color: var(--text);
+}
+
+/* Says a filter is on without having to be opened to find out. */
+.tag-filter-button.on {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.tag-filter-count {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+}
+
+/* Under the button and against the right edge, so a long list of tags grows into the sidebar
+   rather than off the side of it. */
+.tag-filter-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 12rem;
+  max-width: 20rem;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.tag-filter-menu .tag-list {
+  margin: 0;
+  max-height: 40vh;
+}
+
+.tag-filter-menu .tag {
+  font-size: var(--font-md);
+}
+
+/* How many sessions carry it, so a tag that narrows to nothing says so before it is pressed. */
+.tag-count {
+  margin-left: 6px;
+  color: var(--text-dim);
+  font-size: var(--font-xs);
+}
+
+.tag.on .tag-count {
+  color: var(--text-muted);
+}
+
+.tag-filter-clear {
+  margin-top: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-md);
+  cursor: pointer;
+}
+
+.tag-filter-clear:hover {
+  color: var(--text);
 }
