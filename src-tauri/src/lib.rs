@@ -149,7 +149,9 @@ fn fail_all(pending: &Pending, message: &str) {
 /// thread can start its own successor.
 #[derive(Clone)]
 struct Supervisor {
-    script: PathBuf,
+    /// Shared and re-read on every start, so a replacement can be pointed somewhere else
+    /// than the one before it - which is how a rebuilt sidecar gets to run (#169).
+    script: Arc<Mutex<PathBuf>>,
     app: tauri::AppHandle,
     pending: Pending,
     link: Link,
@@ -166,9 +168,10 @@ impl Supervisor {
      */
     fn start(&self, attempt: u32) -> Result<(), String> {
         let node = node_executable();
+        let script = self.script.lock().unwrap().clone();
         log(&format!(
             "starting sidecar (attempt {attempt}): {node} {}",
-            self.script.display()
+            script.display()
         ));
 
         let mut command = Command::new(&node);
@@ -176,7 +179,7 @@ impl Supervisor {
             // Node 24, which package.json asks for, loads node:sqlite quietly. This is kept
             // because the app runs on whatever node is installed, and 22 warns on every launch.
             .arg("--no-warnings=ExperimentalWarning")
-            .arg(&self.script)
+            .arg(&script)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             // Piped rather than inherited: an installed app has no console to inherit, so
@@ -196,7 +199,7 @@ impl Supervisor {
         let mut child = command.spawn().map_err(|e| {
             let message = format!(
                 "failed to spawn sidecar: {node} {}: {e}",
-                self.script.display()
+                script.display()
             );
             log(&message);
             message
@@ -305,6 +308,8 @@ struct Sidecar {
     pending: Pending,
     next_id: AtomicU64,
     link: Link,
+    /// Where the next one will be started from, so a rebuilt sidecar can replace this one.
+    script: Arc<Mutex<PathBuf>>,
     /// Set once no sidecar will be started again, so later requests fail rather than block.
     stopped: Arc<AtomicBool>,
 }
@@ -312,7 +317,7 @@ struct Sidecar {
 impl Sidecar {
     fn spawn(script: PathBuf, app: tauri::AppHandle) -> Result<Self, String> {
         let supervisor = Supervisor {
-            script,
+            script: Arc::new(Mutex::new(script)),
             app,
             pending: Arc::new(Mutex::new(HashMap::new())),
             link: Arc::new(Mutex::new(None)),
@@ -324,6 +329,7 @@ impl Sidecar {
             pending: Arc::clone(&supervisor.pending),
             next_id: AtomicU64::new(1),
             link: Arc::clone(&supervisor.link),
+            script: Arc::clone(&supervisor.script),
             stopped: Arc::clone(&supervisor.stopped),
         })
     }
@@ -447,16 +453,7 @@ fn sidecar_script(app: &tauri::AppHandle) -> PathBuf {
     }
 
     // In development the crate sits at <repo>/src-tauri.
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(|root| {
-            root.join("sidecar")
-                .join("dist")
-                .join("sidecar")
-                .join("src")
-                .join("index.js")
-        })
-        .unwrap_or_default()
+    built_sidecar()
 }
 
 #[tauri::command]
@@ -471,6 +468,58 @@ async fn sidecar_request(
     })
     .await
     .map_err(|e| format!("sidecar task panicked: {e}"))?
+}
+
+/// Where `npm run build:sidecar` leaves its output, on the machine this was built on.
+///
+/// `CARGO_MANIFEST_DIR` is baked in at compile time, so on an installed copy this names a
+/// directory that belongs to whoever did the build and will not exist. That is the point:
+/// it resolves to something only while developing, which is the only time it is wanted.
+fn built_sidecar() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|root| {
+            root.join("sidecar")
+                .join("dist")
+                .join("sidecar")
+                .join("src")
+                .join("index.js")
+        })
+        .unwrap_or_default()
+}
+
+/**
+ * Replace the sidecar with one started from what has just been built.
+ *
+ * Closing its stdin is how shutdown already ends one: the process drains the work it has
+ * and exits, and the thread reading its output starts the replacement.
+ *
+ * The replacement is pointed at `sidecar/dist` rather than left where this one came from.
+ * A running app loads the sidecar out of its own resource directory, which cargo fills
+ * while building the shell and nothing refreshes afterwards - so rebuilding and restarting
+ * without this ran the same code over again, said it had done something, and sent the
+ * reader back to where they started. Found by planting a line in the sidecar's startup log
+ * and watching the restart not print it.
+ *
+ * Nothing here compiles anything. The dev server does that first, because it is the piece
+ * that lives in the source tree and has npm within reach; this only swaps the process,
+ * which is the half it cannot do.
+ */
+#[tauri::command]
+fn restart_runtime(app: tauri::AppHandle) {
+    let sidecar = app.state::<Sidecar>();
+
+    let built = built_sidecar();
+    if built.exists() {
+        log(&format!("replacing the sidecar, from {}", built.display()));
+        *sidecar.script.lock().unwrap() = built;
+    } else {
+        // No source tree, so there is nothing newer to start: restart what is already here
+        // rather than refusing, since a fresh process is still what was asked for.
+        log("replacing the sidecar, from where the last one came");
+    }
+
+    *sidecar.link.lock().unwrap() = None;
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -503,7 +552,7 @@ pub fn run() {
             )?);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![sidecar_request])
+        .invoke_handler(tauri::generate_handler![sidecar_request, restart_runtime])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

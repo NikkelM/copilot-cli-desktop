@@ -71,6 +71,17 @@ export async function runtimeProtocolVersion(): Promise<string> {
   return version;
 }
 
+/**
+ * Throw away the sidecar and let the shell start another from what is on disk now.
+ *
+ * A Tauri command rather than a sidecar method, because the process being replaced cannot
+ * be the one asked to replace it - and a sidecar too old to know the method would refuse
+ * exactly when the replacing matters most (#169).
+ */
+export function restartRuntime(): Promise<void> {
+  return invoke('restart_runtime');
+}
+
 /** Reads the sidebar model from session-store.db. Spawns no Copilot process. */
 export function listSessions(): Promise<ListSessionsResult> {
   return request('sessions.list');

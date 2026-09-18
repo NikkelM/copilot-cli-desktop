@@ -34,6 +34,7 @@ import {
   onSessionsChanged,
   onSidecarRestarted,
   onSidecarStopped,
+  restartRuntime,
   invokeCommand,
   enqueueCommand,
   runShell,
@@ -45,6 +46,7 @@ import { CHANGES, ENVIRONMENT, GIT, USAGE, WIKI, wantsDirectory } from './lib/lo
 import { copyText } from './lib/clipboard';
 import { explain, messageOf } from './lib/errors';
 import { staleRuntime } from './lib/protocolCheck';
+import { onSidecarBehind, rebuildSidecar } from './lib/sidecarFreshness';
 import { revealPointerForPicker } from './lib/nativePicker';
 import { usageReport } from './lib/usageReport';
 import { activityOf } from './lib/activity';
@@ -138,6 +140,16 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   /** Set when the sidecar exits: nothing works afterwards, so it outranks any other message. */
   const [stopped, setStopped] = useState<string | null>(null);
+  /**
+   * Set when the dev server sees a sidecar source file change under the running process.
+   *
+   * Not `stopped`: the runtime is a version behind rather than gone, and most of what is on
+   * screen still works. Blanking the session someone is reading because they saved a file
+   * would be its own kind of wrong answer (#169).
+   */
+  const [behind, setBehind] = useState<string | null>(null);
+  /** Whether the dev server is rebuilding, so the button cannot be pressed twice. */
+  const [rebuilding, setRebuilding] = useState(false);
   /**
    * A session opened by id that the list does not carry.
    *
@@ -409,6 +421,9 @@ export default function App() {
 
   useEffect(checkProtocol, [checkProtocol]);
 
+  // The dev server watches the files the sidecar was built from; the sidecar cannot.
+  useEffect(() => onSidecarBehind(setBehind), []);
+
   // A replacement is up. Nothing it was told survives, so anything that was waiting on
   // the old one is dropped and the session list is read again.
   useTauriEvent(
@@ -422,6 +437,7 @@ export default function App() {
         // A replacement is a different process, and on a dev machine often a different
         // build: whatever was concluded about the last one says nothing about this one.
         setStopped(null);
+        setBehind(null);
         checkProtocol();
       }),
     [sessions.refresh, checkProtocol],
@@ -1133,6 +1149,38 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Fixed rather than placed, so it can appear over whichever branch is showing
+          without becoming a row in the grid: .main and .app both assign by position, and a
+          child that comes and goes would move everything under it.
+
+          Development only - `onSidecarBehind` has nothing to listen to in a packaged app,
+          where the sidecar was built alongside the window and cannot drift from it. */}
+      {behind && (
+        <div className="behind-bar" role="status">
+          <span>{behind}</span>
+          <button
+            type="button"
+            className="changes-action primary"
+            disabled={rebuilding}
+            onClick={() => {
+              setRebuilding(true);
+              rebuildSidecar()
+                .then(() => restartRuntime())
+                // Left showing on failure rather than cleared: a rebuild that did not work
+                // and one that did must not look the same, or the next thing the reader
+                // sees is the old code behaving exactly as it did before.
+                .catch((error: unknown) => setBehind(messageOf(error)))
+                .finally(() => setRebuilding(false));
+            }}
+          >
+            {rebuilding ? 'Rebuilding…' : 'Rebuild and restart'}
+          </button>
+          <button type="button" onClick={() => setBehind(null)} aria-label="Dismiss">
+            ✕
+          </button>
+        </div>
+      )}
     </div>
   );
 }

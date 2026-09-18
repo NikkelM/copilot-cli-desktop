@@ -2497,6 +2497,42 @@ button.group:hover {
   font-family: ui-monospace, monospace;
 }
 
+/* Over whatever is showing rather than in the grid, because it can arrive at any moment and
+   must not move the thing the reader is looking at. Development only. */
+.behind-bar {
+  position: fixed;
+  z-index: 100;
+  top: 8px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 70%;
+  padding: 8px 12px;
+  transform: translateX(-50%);
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+  color: var(--text);
+  font-size: var(--font-sm);
+  line-height: 1.4;
+}
+
+.behind-bar button {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.behind-bar button:hover {
+  color: var(--text);
+}
+
 .fatal {
   margin: 0;
   padding: 24px;
