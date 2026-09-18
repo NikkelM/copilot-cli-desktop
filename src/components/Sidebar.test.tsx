@@ -571,3 +571,73 @@ describe('pinning a session to the top', () => {
 
 
 
+
+describe('Sidebar session menu', () => {
+  const rowFor = (title: string) => screen.getByText(title).closest('.session-row') as HTMLElement;
+
+  it('offers no menu at all when the app supplies no actions', () => {
+    render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} />);
+
+    fireEvent.contextMenu(rowFor('Biomes'));
+
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  it('opens the actions for the session that was right-clicked', () => {
+    const actionsFor = vi.fn((s: SessionSummary) => [
+      { id: 'pin', label: `Pin ${s.title}`, run: () => {} },
+    ]);
+    render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} actionsFor={actionsFor} />);
+
+    fireEvent.contextMenu(rowFor('Desktop app'));
+
+    expect(screen.getByRole('menu')).toBeTruthy();
+    expect(screen.getByText('Pin Desktop app')).toBeTruthy();
+  });
+
+  it('takes the right-click off the browser, which would show its own menu over this one', () => {
+    render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}}
+        actionsFor={() => [{ id: 'pin', label: 'Pin to top', run: () => {} }]} />);
+
+    // fireEvent returns false when the default was prevented.
+    expect(fireEvent.contextMenu(rowFor('Biomes'))).toBe(false);
+  });
+
+  it('asks again for the session as it is now, not as it was when right-clicked', () => {
+    // A session unloads itself on a timer, so what the menu may offer can change between the
+    // right-click and the click on a row (#107).
+    const actionsFor = (s: SessionSummary) => [
+      { id: 'evict', label: s.loaded ? 'Unload from memory' : 'Already unloaded', run: () => {} },
+    ];
+    const loaded = [session({ sessionId: 'a', title: 'Warm', loaded: true })];
+    const view = render(<Sidebar sessions={loaded} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} actionsFor={actionsFor} />);
+
+    fireEvent.contextMenu(rowFor('Warm'));
+    expect(screen.getByText('Unload from memory')).toBeTruthy();
+
+    view.rerender(<Sidebar sessions={[session({ sessionId: 'a', title: 'Warm', loaded: false })]}
+        selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} actionsFor={actionsFor} />);
+
+    expect(screen.getByText('Already unloaded')).toBeTruthy();
+  });
+
+  it('closes the menu when the session it was opened on leaves the list', () => {
+    const actionsFor = () => [{ id: 'pin', label: 'Pin to top', run: () => {} }];
+    const one = [session({ sessionId: 'a', title: 'Warm' })];
+    const view = render(<Sidebar sessions={one} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} actionsFor={actionsFor} />);
+
+    fireEvent.contextMenu(rowFor('Warm'));
+    expect(screen.getByRole('menu')).toBeTruthy();
+
+    view.rerender(<Sidebar sessions={[]} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} actionsFor={actionsFor} />);
+
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+});

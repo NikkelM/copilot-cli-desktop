@@ -38,9 +38,12 @@ import {
   sessionUsage,
   setMcpEnabled,
   sendMessage,
+  evictSession,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, USAGE, WIKI, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
+import { sessionActions } from './lib/sessionActions';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { explain, messageOf } from './lib/errors';
 import { revealPointerForPicker } from './lib/nativePicker';
 import { usageReport } from './lib/usageReport';
@@ -795,6 +798,23 @@ export default function App() {
 
   useTaskbar(sessions.working.size > 0);
 
+  const sessionMenu = useCallback(
+    (session: SessionSummary) =>
+      sessionActions(session, {
+        pinned: pinned.favourites,
+        togglePin: pinned.toggle,
+        working: sessions.working,
+        unload: (sessionId) => {
+          evictSession(sessionId)
+            .then(() => sessions.refresh())
+            .catch((e: unknown) => setError(String(e)));
+        },
+        copy: (text) => void copyText(text),
+        openFolder: (path) => void openPath(path).catch((e: unknown) => setError(String(e))),
+      }),
+    [pinned, sessions],
+  );
+
   return (
     <div className="app">
       <Sidebar
@@ -818,6 +838,7 @@ export default function App() {
         }}
         favourites={pinned.favourites}
         onFavourite={pinned.toggle}
+        actionsFor={sessionMenu}
         onDismissSubagent={(agentId) => {
           subagents.dismiss(agentId);
         }}

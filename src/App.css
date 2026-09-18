@@ -4033,3 +4033,41 @@ pre.fatal,
 
 
 
+
+/* A session's right-click menu. Positioned in script once measured, so it is only given the
+   things that do not depend on where it landed (#107). */
+.session-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 12rem;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.session-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.session-menu-item:hover:not(:disabled),
+.session-menu-item:focus-visible {
+  background: var(--bg-selected, rgba(110, 118, 129, 0.18));
+}
+
+/* Dimmed rather than removed: the title says why, and a menu that keeps its shape is one the
+   reader can point at without checking. */
+.session-menu-item:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}

@@ -4,6 +4,7 @@ import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
 import { useRelative } from '../lib/useRelative';
 import { ChevronIcon } from './Icons';
+import { SessionMenu, type SessionAction } from './SessionMenu';
 
 import type { SessionSummary } from '../../shared/protocol';
 import type { WatchedSubagent } from '../lib/useSubagents';
@@ -38,6 +39,8 @@ interface SidebarProps {
   onSelectSubagent?: (agentId: string) => void;
   /** Take one off the list before it ages out on its own. */
   onDismissSubagent?: (agentId: string) => void;
+  /** What right-clicking a session offers. Absent leaves the rows with no menu at all. */
+  actionsFor?: (session: SessionSummary) => SessionAction[];
   /** Sessions pinned to the top. Absent is none, which is what a fresh install has. */
   favourites?: string[];
   /** Absent leaves the rows readable without offering a pin, as the subagent actions do. */
@@ -155,6 +158,7 @@ export function Sidebar({
   onDismissSubagent,
   favourites = [],
   onFavourite,
+  actionsFor,
 }: SidebarProps) {
   const [query, setQuery] = useState('');
 
@@ -177,6 +181,11 @@ export function Sidebar({
 
   const hidden = useHiddenMatches(query, matches.length === 0);
   const { folded, toggle } = useFolded();
+  /** The session a menu is open on, and where the pointer was when it opened. */
+  const [menu, setMenu] = useState<{ sessionId: string; at: { x: number; y: number } } | null>(null);
+  // Resolved against the current list rather than kept from the right-click, so an action
+  // is offered for what the session is now. Sessions evict themselves while a menu is open.
+  const menuSession = menu ? sessions.find((s) => s.sessionId === menu.sessionId) : undefined;
 
   /**
    * The list, split into the groups the sidebar draws.
@@ -284,7 +293,13 @@ export function Sidebar({
                   <ul className="session-list">
                     {shown.map((session) => (
                       <li key={session.sessionId}>
-                        <div className="session-row">
+                        <div
+                          className="session-row"
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            setMenu({ sessionId: session.sessionId, at: { x: event.clientX, y: event.clientY } });
+                          }}
+                        >
                           <Row
                             session={session}
                             selectedId={selectedId}
@@ -331,6 +346,14 @@ export function Sidebar({
             </li>
           )}
         </ul>
+      )}
+
+      {menu && menuSession && actionsFor && (
+        <SessionMenu
+          at={menu.at}
+          actions={actionsFor(menuSession)}
+          onClose={() => setMenu(null)}
+        />
       )}
     </nav>
   );
@@ -453,6 +476,7 @@ function Row({
     </button>
   );
 }
+
 
 
 

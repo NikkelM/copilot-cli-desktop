@@ -65,6 +65,18 @@ async function request<M extends SidecarMethod>(
   return invoke('sidecar_request', { method, params: params ?? null });
 }
 
+/**
+ * Let a session go now rather than waiting out the idle timer.
+ *
+ * Frees what it holds without touching anything on disk: the transcript, the rewind store
+ * and the database are the CLI's and are untouched, so the session opens again from the log
+ * exactly as it would have. Refused while a turn is running, which the caller is expected to
+ * have ruled out rather than discovered here (#107).
+ */
+export function evictSession(sessionId: string): Promise<void> {
+  return request('sessions.evict', { sessionId });
+}
+
 /** The runtime is asked what it knows. Costs nothing: the sidecar reads a constant. */
 export async function runtimeProtocolVersion(): Promise<string> {
   const { version } = await request('protocol.version');
