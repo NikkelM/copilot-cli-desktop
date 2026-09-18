@@ -46,6 +46,8 @@ import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useConfirmDelete } from './lib/useConfirmDelete';
 import { Confirm } from './components/Confirm';
+import { SidebarGrip } from './components/SidebarGrip';
+import { useSidebarWidth } from './lib/useSidebarWidth';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { explain, messageOf } from './lib/errors';
 import { revealPointerForPicker } from './lib/nativePicker';
@@ -804,6 +806,7 @@ export default function App() {
   /** The session waiting on an answer to "really delete this?". */
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
   const confirmDelete = useConfirmDelete();
+  const width = useSidebarWidth();
 
   /**
    * Delete a session, and leave it if it was the one open.
@@ -850,7 +853,7 @@ export default function App() {
   );
 
   return (
-    <div className="app">
+    <div className={width.dragging ? 'app resizing' : 'app'}>
       <Sidebar
         sessions={sessions.all}
         selectedId={selectedId}
@@ -876,6 +879,13 @@ export default function App() {
         onDismissSubagent={(agentId) => {
           subagents.dismiss(agentId);
         }}
+      />
+
+      <SidebarGrip
+        dragging={width.dragging}
+        onStart={width.start}
+        onNudge={width.nudge}
+        onReset={width.reset}
       />
 
       <main className="main">

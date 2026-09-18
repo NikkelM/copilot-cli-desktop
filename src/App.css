@@ -34,6 +34,10 @@
    * rounded into a tidier ratio: this raises the scale, it does not redesign it.
    */
   --font-base: 16px;
+  /* The sidebar's column. On the root rather than on .app so that a width someone chose,
+     written as an inline style, wins over it: a custom property set on .app itself would
+     beat anything inherited. */
+  --sidebar-column: calc(160px + var(--font-base) * 8.75);
   --font-xs: calc(var(--font-base) * 0.715);
   --font-sm: calc(var(--font-base) * 0.785);
   --font-md: calc(var(--font-base) * 0.858);
@@ -75,9 +79,51 @@ body {
      the letters are bigger; it does not need twice the window, and scaling this one to one
      left the sidebar taking half the screen at the largest size (#139). Just over half the
      rate keeps the header's own words intact - 300px by default, 440px at twice the scale,
-     which is where "Sessions" stops being truncated to "Sessi...". */
-  grid-template-columns: min(calc(160px + var(--font-base) * 8.75), 40vw) 1fr;
+     which is where "Sessions" stops being truncated to "Sessi...".
+
+     A width someone dragged to replaces that rate rather than being added to it, and is a
+     multiple of the text size for the same reason the default grows at all: it should still
+     be the same amount of sidebar after the text is made larger (#189). The vw ceiling
+     applies either way, since a width that suits this window may be the whole of a smaller
+     one. */
+  grid-template-columns: min(var(--sidebar-column), 40vw) 1fr;
   height: 100vh;
+  /* So the grip can be placed over the boundary rather than given a column of its own. */
+  position: relative;
+}
+
+/* Everywhere, not only over the grip: during a drag the pointer spends most of its time over
+   the transcript, and a caret there would say this was about selecting text. */
+.app.resizing,
+.app.resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+/* Over the line between the panes, wide enough to hit without being wide enough to see. */
+.sidebar-grip {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  bottom: 0;
+  left: min(var(--sidebar-column), 40vw);
+  width: 9px;
+  margin-left: -4px;
+  cursor: col-resize;
+}
+
+/* Only says it is there once it is pointed at, since it marks a line that is already drawn. */
+.sidebar-grip:hover::after,
+.sidebar-grip:focus-visible::after,
+.sidebar-grip.dragging::after {
+  content: '';
+  position: absolute;
+  inset: 0 4px;
+  background: var(--accent);
+}
+
+.sidebar-grip:focus-visible {
+  outline: none;
 }
 
 .sidebar {
