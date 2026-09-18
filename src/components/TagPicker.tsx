@@ -110,7 +110,7 @@ export function TagPicker({
         {offered.length > 0 && (
           <ul className="tag-list">
             {offered.map((tag) => (
-              <li key={tag} className="tag-row">
+              <li key={tag}>
                 {/* The pill is a container rather than a control: it holds two, and one
                     cannot be nested in the other. */}
                 <span className={held.includes(tag) ? 'tag on' : 'tag'}>

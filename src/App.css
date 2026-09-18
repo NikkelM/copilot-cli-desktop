@@ -4588,16 +4588,12 @@ pre.fatal,
   font-size: var(--font-lg);
   line-height: 1.4;
   cursor: pointer;
-  /* Only once the pill is pointed at: it is the destructive one, and a row of crosses down a
-     list of tags reads as a list of things to delete. */
-  opacity: 0;
 }
 
-.tag-row:hover .tag-retire,
+/* Always drawn, though quietly. Hidden until hover it still took its space, so every pill
+   carried a gap that read as broken padding rather than as something waiting to be pointed
+   at. Dim is enough to keep it from reading as a row of things to delete. */
+.tag-retire:hover,
 .tag-retire:focus-visible {
-  opacity: 1;
-}
-
-.tag-retire:hover {
   color: var(--danger);
 }
