@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 
 import App from './App';
+import { adviceFor, windowOrphaned } from './lib/staleWindow';
 
 const root = document.getElementById('root') as HTMLElement;
 
@@ -18,17 +19,42 @@ function showFatal(detail: string): void {
   root.appendChild(pre);
 }
 
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
-  state = { error: null as Error | null };
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { error: Error | null; advice: string | null }
+> {
+  state = { error: null as Error | null, advice: null as string | null };
 
   static getDerivedStateFromError(error: Error) {
     return { error };
   }
 
+  /**
+   * Ask, once, whether this window is running code that exists nowhere.
+   *
+   * After the error rather than before it: a window that is fine has no reason to be
+   * checking on its own server, and the answer is only worth anything beside a crash.
+   */
+  componentDidCatch() {
+    void windowOrphaned().then((orphaned) => this.setState({ advice: adviceFor(orphaned) }));
+  }
+
   render() {
-    const { error } = this.state;
+    const { error, advice } = this.state;
     if (!error) return this.props.children;
-    return <pre className="fatal">{`Something broke while rendering.\n\n${error.stack ?? error.message}`}</pre>;
+
+    return (
+      <div className="fatal">
+        <p>Something broke while rendering.</p>
+        {/* Said before the stack, because the stack names whatever was being drawn and
+            that is the wrong place to start looking when the build is the problem. */}
+        {advice && <p className="fatal-advice">{advice}</p>}
+        <button type="button" onClick={() => window.location.reload()}>
+          Reload
+        </button>
+        <pre>{error.stack ?? error.message}</pre>
+      </div>
+    );
   }
 }
 

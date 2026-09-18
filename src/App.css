@@ -2533,14 +2533,51 @@ button.group:hover {
   color: var(--text);
 }
 
+/* Used both for a boundary that caught a render and for a start-up failure written straight
+   into the page, which is a bare <pre>. So the wrapping belongs to the text rather than to
+   the container: on a <div> it would preserve every newline in the markup. */
 .fatal {
   margin: 0;
   padding: 24px;
   color: var(--danger);
   font-family: ui-monospace, monospace;
   font-size: var(--font-lg);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+pre.fatal,
+.fatal pre {
+  margin: 16px 0 0;
+  white-space: pre-wrap;
+  font-size: var(--font-sm);
+}
+
+.fatal p {
+  margin: 0 0 8px;
+}
+
+/* Above the stack and not in the stack's colour: it is the part worth reading first, and
+   the part that is not about whatever happened to be on screen. */
+.fatal-advice {
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-md);
+  line-height: 1.5;
+}
+
+.fatal button {
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-md);
+  cursor: pointer;
+}
+
+.fatal button:hover {
+  border-color: var(--accent);
 }
 
 /* What actually ran, below what it returned. Wrapped rather than clipped: a long command
