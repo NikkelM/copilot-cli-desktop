@@ -58,3 +58,33 @@ describe('SidebarToggle', () => {
     expect(button.querySelector('.caret')?.getAttribute('data-open')).toBe('true');
   });
 });
+
+describe('marking that something is waiting', () => {
+  const at = (hidden: boolean, waiting: number) => {
+    render(<SidebarToggle hidden={hidden} waiting={waiting} onToggle={vi.fn()} />);
+    return screen.getByRole('button');
+  };
+
+  it('marks the control when the sidebar it would be counted in is away', () => {
+    expect(at(true, 2).querySelector('.toggle-waiting')).toBeTruthy();
+  });
+
+  it('says nothing when nothing is waiting', () => {
+    expect(at(true, 0).querySelector('.toggle-waiting')).toBeNull();
+  });
+
+  it('leaves it to the count while the sidebar is open', () => {
+    // Two marks a few pixels apart saying the same thing say it less clearly than one.
+    expect(at(false, 2).querySelector('.toggle-waiting')).toBeNull();
+  });
+
+  it('says how many, since the mark alone cannot', () => {
+    expect(at(true, 2).getAttribute('title')).toContain('2 sessions waiting');
+    cleanup();
+    expect(at(true, 1).getAttribute('title')).toContain('1 session waiting');
+  });
+
+  it('says it where a screen reader will reach it too', () => {
+    expect(at(true, 3).getAttribute('aria-label')).toBe('Show the sidebar, 3 waiting for an answer');
+  });
+});

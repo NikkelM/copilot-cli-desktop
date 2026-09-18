@@ -700,3 +700,97 @@ describe('folding the sidebar away from its own header', () => {
     expect(inHeader).toEqual(['Hide the sidebar', 'Wiki', 'New']);
   });
 });
+
+/**
+ * A session stopped on a question is the one case where the list stops being only what was
+ * asked for: the agent is stopped until it is answered and a permission request expires
+ * after five minutes, so hiding it costs a turn rather than a scroll (#187).
+ */
+describe('a session waiting for an answer', () => {
+  const three = [
+    session({ sessionId: 'a', title: 'Alpha' }),
+    session({ sessionId: 'b', title: 'Beta' }),
+    session({ sessionId: 'c', title: 'Gamma' }),
+  ];
+  const blocked = (...ids: string[]) =>
+    Object.fromEntries(ids.map((id) => [id, { state: 'blocked' as const, queued: 0 }]));
+
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={three}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        {...over}
+      />,
+    );
+
+  it('says nothing at the top when nothing is waiting', () => {
+    shown();
+
+    expect(screen.queryByText(/waiting/)).toBeNull();
+    expect(screen.queryByText('Waiting for you')).toBeNull();
+  });
+
+  it('counts them where someone not looking at the list will see it', () => {
+    shown({ activity: blocked('b', 'c') });
+
+    expect(screen.getByText(/2 waiting/)).toBeTruthy();
+  });
+
+  it('puts them above everything, including what was favourited', () => {
+    shown({ activity: blocked('c'), favourites: ['a'], onFavourite: () => {} });
+
+    const headings = screen.getAllByText(/Waiting for you|Favourites|Not loaded/).map((n) => n.textContent);
+    expect(headings[0]).toBe('Waiting for you');
+  });
+
+  it('keeps one out of the group it would otherwise be in', () => {
+    // Drawn once, like a favourite that is also loaded.
+    shown({ activity: blocked('a'), favourites: ['a'], onFavourite: () => {} });
+
+    expect(screen.getAllByText('Alpha')).toHaveLength(1);
+  });
+
+  it('shows one the filter would have hidden', async () => {
+    shown({ activity: blocked('c') });
+
+    await userEvent.type(screen.getByRole('searchbox'), 'Alpha');
+
+    // Beta proves the filter actually ran: without this the test passes whether or not it did.
+    expect(screen.queryByText('Beta')).toBeNull();
+    expect(screen.getByText('Alpha')).toBeTruthy();
+    expect(screen.getByText('Gamma')).toBeTruthy();
+  });
+
+  it('goes to one when the count is pressed', async () => {
+    const onSelect = vi.fn();
+    shown({ activity: blocked('b'), onSelect });
+
+    await userEvent.click(screen.getByText(/1 waiting/));
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('b', expect.objectContaining({ sessionId: 'b' }));
+  });
+
+  it('walks them rather than returning to the same one', async () => {
+    const onSelect = vi.fn();
+    shown({ activity: blocked('a', 'c'), selectedId: 'a', onSelect });
+
+    await userEvent.click(screen.getByText(/2 waiting/));
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('c', expect.objectContaining({ sessionId: 'c' }));
+  });
+
+  it('comes back round to the first from the last', async () => {
+    const onSelect = vi.fn();
+    shown({ activity: blocked('a', 'c'), selectedId: 'c', onSelect });
+
+    await userEvent.click(screen.getByText(/2 waiting/));
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('a', expect.objectContaining({ sessionId: 'a' }));
+  });
+});

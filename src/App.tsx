@@ -810,6 +810,12 @@ export default function App() {
 
   useTaskbar(sessions.working.size > 0);
 
+  /** Sessions stopped on a question, for the fold control to mark while the sidebar is away. */
+  const waitingCount = useMemo(
+    () => Object.values(activity).filter((mark) => mark.state === 'blocked').length,
+    [activity],
+  );
+
   /** The session waiting on an answer to "really delete this?". */
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
   const confirmDelete = useConfirmDelete();
@@ -897,7 +903,7 @@ export default function App() {
 
       {/* The sidebar takes its own control with it, so the way back is drawn here instead,
           at the corner the reader was already looking at. */}
-      {width.hidden && <SidebarToggle hidden onToggle={width.toggle} />}
+      {width.hidden && <SidebarToggle hidden waiting={waitingCount} onToggle={width.toggle} />}
 
       <main className="main">
         {/* Nothing here works once the sidecar is gone, so it says so instead of showing

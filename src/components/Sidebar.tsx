@@ -7,6 +7,7 @@ import { useRelative } from '../lib/useRelative';
 import { ChevronIcon } from './Icons';
 import { SessionMenu, type SessionAction } from './SessionMenu';
 import { SidebarToggle } from './SidebarToggle';
+import { Waiting } from './Waiting';
 
 import type { SessionSummary } from '../../shared/protocol';
 import type { WatchedSubagent } from '../lib/useSubagents';
@@ -208,27 +209,59 @@ export function Sidebar({
    * spliced into the middle of a flat list by index. Made explicit so they can fold, and
    * so a third group is a row in this array rather than another index comparison.
    */
+  /** Sessions stopped on a question, which both the count and the top group read. */
+  const waiting = useMemo(
+    () => sessions.filter((session) => activity[session.sessionId]?.state === 'blocked'),
+    [sessions, activity],
+  );
+
+  /**
+   * Move to the next session waiting, so the count is actionable rather than only a number.
+   *
+   * Next rather than first: with several waiting, pressing it repeatedly should walk them
+   * instead of returning to the same one.
+   */
+  const jump = useCallback(() => {
+    if (waiting.length === 0) return;
+    const at = waiting.findIndex((session) => session.sessionId === selectedId);
+    const next = waiting[(at + 1) % waiting.length];
+    if (next) onSelect(next.sessionId, next);
+  }, [waiting, selectedId, onSelect]);
+
   const groups = useMemo(() => {
-    // Favourites first and only once: a favourite that is also loaded belongs to the group
+    // Waiting first, and out of the filter's reach: a session stopped on a question is the
+    // one case where what the list was asked for matters less than what it is hiding. The
+    // agent is stopped until it is answered and a permission request expires after five
+    // minutes, so a filter that hides it costs a turn rather than a scroll (#187).
+    const asked = new Set(waiting.map((session) => session.sessionId));
+
+    // Favourites next and only once: a favourite that is also loaded belongs to the group
     // someone chose it for, not to both. Each group keeps the order it was given, which is
     // by activity, so favouriting changes where a session sits and nothing else about it.
-    const favoured = matches.filter((session) => favourites.includes(session.sessionId));
-    const rest = matches.filter((session) => !favourites.includes(session.sessionId));
-    const loaded = rest.filter((session) => session.loaded);
-    const cold = rest.filter((session) => !session.loaded);
+    const rest = matches.filter((session) => !asked.has(session.sessionId));
+    const favoured = rest.filter((session) => favourites.includes(session.sessionId));
+    const plain = rest.filter((session) => !favourites.includes(session.sessionId));
+    const loaded = plain.filter((session) => session.loaded);
+    const cold = plain.filter((session) => !session.loaded);
 
     return [
+      { key: 'waiting', label: 'Waiting for you', sessions: waiting },
       { key: 'favourites', label: 'Favourites', sessions: favoured },
       { key: 'loaded', label: 'In memory', sessions: loaded },
       // Only named when there is something above it to tell it apart from.
-      { key: 'cold', label: loaded.length > 0 || favoured.length > 0 ? 'Not loaded' : null, sessions: cold },
+      {
+        key: 'cold',
+        label: loaded.length > 0 || favoured.length > 0 || waiting.length > 0 ? 'Not loaded' : null,
+        sessions: cold,
+      },
     ].filter((group) => group.sessions.length > 0);
-  }, [matches, favourites]);
+  }, [waiting, matches, favourites]);
 
   return (
     <nav className="sidebar">
       <header className="sidebar-header">
         {onToggle && <SidebarToggle hidden={false} onToggle={onToggle} />}
+        <Waiting count={waiting.length} onJump={jump} />
         {/* The wiki is a destination rather than something about a session, so it is
             reached from the app's own chrome rather than from a session's header. */}
         <button
