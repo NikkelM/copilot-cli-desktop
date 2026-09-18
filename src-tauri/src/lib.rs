@@ -197,10 +197,7 @@ impl Supervisor {
         }
 
         let mut child = command.spawn().map_err(|e| {
-            let message = format!(
-                "failed to spawn sidecar: {node} {}: {e}",
-                script.display()
-            );
+            let message = format!("failed to spawn sidecar: {node} {}: {e}", script.display());
             log(&message);
             message
         })?;
