@@ -3,6 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 import { BINDINGS, useShortcuts, type Shortcut } from './useShortcuts';
+import { moduleReplaced } from './hotGeneration';
 
 const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = window) => {
   const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
@@ -547,3 +548,61 @@ describe('ctrl and the wheel', () => {
     expect(on).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The listener has to be the one that was just edited, or a change to a key looks like a
+ * key that does nothing - which is exactly how the wheel binding appeared when it was
+ * first added (#181).
+ */
+describe('surviving a hot update', () => {
+  /**
+   * The listener function itself is what goes stale - the handler is already read through a
+   * ref, so a test that only replaces the handler passes either way and proves nothing. What
+   * the counter buys is the subscription being torn down and made again, with whatever the
+   * edited module now defines.
+   */
+  it('registers its listeners again', () => {
+    const added = vi.spyOn(window, 'addEventListener');
+    const removed = vi.spyOn(window, 'removeEventListener');
+    renderHook(() => useShortcuts(on));
+    added.mockClear();
+    removed.mockClear();
+
+    act(() => moduleReplaced());
+
+    expect(removed.mock.calls.map(([type]) => type)).toEqual(['keydown', 'wheel']);
+    expect(added.mock.calls.map(([type]) => type)).toEqual(['keydown', 'wheel']);
+    added.mockRestore();
+    removed.mockRestore();
+  });
+
+  it('does not register again without one', () => {
+    const added = vi.spyOn(window, 'addEventListener');
+    const { rerender } = renderHook(() => useShortcuts(on));
+    added.mockClear();
+
+    rerender();
+
+    expect(added).not.toHaveBeenCalled();
+    added.mockRestore();
+  });
+
+  it('does not answer twice after re-registering', () => {
+    renderHook(() => useShortcuts(on));
+
+    act(() => moduleReplaced());
+    press('+', { ctrlKey: true });
+
+    expect(on).toHaveBeenCalledTimes(1);
+  });
+
+  it('still answers the wheel after one', () => {
+    renderHook(() => useShortcuts(on));
+
+    act(() => moduleReplaced());
+    act(() => void window.dispatchEvent(new WheelEvent('wheel', { deltaY: -120, ctrlKey: true, cancelable: true })));
+
+    expect(on).toHaveBeenCalledExactlyOnceWith('larger');
+  });
+});
+

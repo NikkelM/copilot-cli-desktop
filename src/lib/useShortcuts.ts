@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 
+import { useHotGeneration } from './hotGeneration';
+
 /** How long a second Escape still counts as part of the first. */
 const DOUBLE_ESCAPE_MS = 800;
 
@@ -115,6 +117,15 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
   const written = useRef(writing);
   written.current = writing;
   const lastEscape = useRef(0);
+  /**
+   * Re-registers the listeners after every hot update, and never in a built app.
+   *
+   * Without it an edit to a key is replaced in the module, re-rendered, and left out of the
+   * effect - so the listener still answering the keyboard is the one from before the edit.
+   * A wheel listener added this way appeared to do nothing at all until the app was
+   * restarted, which is the same false trail #181 recorded for Tauri events.
+   */
+  const hot = useHotGeneration();
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -212,7 +223,12 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('wheel', onWheel);
     };
-  }, []);
+    // Only the hot counter, which stands still outside development: the handlers are read
+    // through refs, so nothing else this closure sees can go stale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hot]);
 }
+
+
 
 
