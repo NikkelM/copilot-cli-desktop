@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
@@ -183,9 +184,18 @@ export function Sidebar({
   const { folded, toggle } = useFolded();
   /** The session a menu is open on, and where the pointer was when it opened. */
   const [menu, setMenu] = useState<{ sessionId: string; at: { x: number; y: number } } | null>(null);
+  const openMenu = useCallback(
+    (sessionId: string) => (event: ReactMouseEvent) => {
+      event.preventDefault();
+      setMenu({ sessionId, at: { x: event.clientX, y: event.clientY } });
+    },
+    [],
+  );
   // Resolved against the current list rather than kept from the right-click, so an action
   // is offered for what the session is now. Sessions evict themselves while a menu is open.
-  const menuSession = menu ? sessions.find((s) => s.sessionId === menu.sessionId) : undefined;
+  const menuSession = menu
+    ? [...sessions, ...hidden].find((s) => s.sessionId === menu.sessionId)
+    : undefined;
 
   /**
    * The list, split into the groups the sidebar draws.
@@ -294,16 +304,13 @@ export function Sidebar({
                     {shown.map((session) => (
                       <li key={session.sessionId}>
                         <div
-                          className="session-row"
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            setMenu({ sessionId: session.sessionId, at: { x: event.clientX, y: event.clientY } });
-                          }}
+                          className={`session-row${session.sessionId === selectedId ? ' selected' : ''}`}
+                          onClick={() => onSelect(session.sessionId, session)}
+                          onContextMenu={openMenu(session.sessionId)}
                         >
                           <Row
                             session={session}
                             selectedId={selectedId}
-                            onSelect={onSelect}
                             activity={activity[session.sessionId]}
                           />
                           {onFavourite && (
@@ -339,7 +346,13 @@ export function Sidebar({
               <ul className="session-list">
                 {hidden.map((session) => (
                   <li key={session.sessionId}>
-                    <Row session={session} selectedId={selectedId} onSelect={onSelect} activity={activity[session.sessionId]} />
+                    <div
+                      className={`session-row${session.sessionId === selectedId ? ' selected' : ''}`}
+                      onClick={() => onSelect(session.sessionId, session)}
+                      onContextMenu={openMenu(session.sessionId)}
+                    >
+                      <Row session={session} selectedId={selectedId} activity={activity[session.sessionId]} />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -429,7 +442,10 @@ function Favourite({ on, title, onToggle }: { on: boolean; title: string; onTogg
     <button
       type="button"
       className={on ? 'favourite on' : 'favourite'}
-      onClick={onToggle}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
       aria-pressed={on}
       aria-label={on ? `Unfavourite ${title}` : `Favourite ${title}`}
       title={on ? 'Remove from favourites' : 'Keep among the favourites'}
@@ -442,22 +458,18 @@ function Favourite({ on, title, onToggle }: { on: boolean; title: string; onTogg
 function Row({
   session,
   selectedId,
-  onSelect,
   activity,
 }: {
   session: SessionSummary;
   selectedId: string | null;
-  onSelect: (sessionId: string, session?: SessionSummary) => void;
   activity?: ActivityMark;
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
 
+  // Selecting is the whole row's job, so this button does not also do it: the click it
+  // raises, including the one Enter raises for a keyboard, reaches the row on the way up.
   return (
-    <button
-      type="button"
-      className={`session${session.sessionId === selectedId ? ' selected' : ''}`}
-      onClick={() => onSelect(session.sessionId, session)}
-    >
+    <button type="button" className={`session${session.sessionId === selectedId ? ' selected' : ''}`}>
       <span className="session-title">
         {session.title ?? 'Untitled session'}
         {/* Shape first, colour second: five states is more than a hue can carry, and a

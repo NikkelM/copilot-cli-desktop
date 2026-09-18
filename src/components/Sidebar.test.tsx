@@ -513,6 +513,36 @@ describe('keeping a session among the favourites', () => {
     expect(onFavourite).toHaveBeenCalledExactlyOnceWith('b');
   });
 
+  it('does not also select the session whose mark was pressed', async () => {
+    // The row selects when clicked, and the mark sits inside it: without stopping the click
+    // on the way up, marking a session would also open it.
+    const onSelect = vi.fn();
+    shown({ onFavourite: () => {}, onSelect });
+
+    await userEvent.click(screen.getByLabelText('Favourite Beta'));
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('selects from anywhere on the row, not only from the part with the text', async () => {
+    const onSelect = vi.fn();
+    shown({ onSelect });
+
+    await userEvent.click(screen.getByText('Beta').closest('.session-row') as HTMLElement);
+
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('b', expect.objectContaining({ sessionId: 'b' }));
+  });
+
+  it('selects once when the click lands on the text itself', async () => {
+    // The text is a button inside the clickable row, so a handler on both would count twice.
+    const onSelect = vi.fn();
+    shown({ onSelect });
+
+    await userEvent.click(screen.getByText('Beta'));
+
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+
   it('offers to unfavourite one that already is', () => {
     shown({ favourites: ['b'] });
 

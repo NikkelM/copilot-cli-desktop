@@ -221,11 +221,22 @@ body {
 
 /* The row and its two controls. The line under them belongs to the row rather than to each
    part of it: drawn per part it broke into segments that did not quite meet, which is what
-   made the column look assembled rather than laid out. */
+   made the column look assembled rather than laid out. Hover and selection sit here too: the
+   star is outside the button, so lighting the button alone drew a seam down the row. */
 .session-row {
   display: flex;
   align-items: flex-start;
   border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.session-row:hover {
+  background: #1c2128;
+}
+
+.session-row.selected {
+  background: #1f2937;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .session-row .session {
@@ -311,15 +322,6 @@ body {
   font: inherit;
   text-align: left;
   cursor: pointer;
-}
-
-.session:hover {
-  background: #1c2128;
-}
-
-.session.selected {
-  background: #1f2937;
-  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .session-title {
@@ -4028,11 +4030,6 @@ pre.fatal,
   opacity: 0.4;
   cursor: default;
 }
-
-
-
-
-
 
 /* A session's right-click menu. Positioned in script once measured, so it is only given the
    things that do not depend on where it landed (#107). */
