@@ -22,6 +22,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   unload: vi.fn(),
   copy: vi.fn(),
   openFolder: vi.fn(),
+  remove: vi.fn(),
   ...over,
 });
 
@@ -35,6 +36,7 @@ describe('sessionActions', () => {
       'unload',
       'copy-id',
       'folder',
+      'delete',
     ]);
   });
 
@@ -95,6 +97,31 @@ describe('sessionActions', () => {
       expect(action.refused).toMatch(/not started in a folder/i);
       action.run();
       expect(openFolder).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deleting', () => {
+    it('hands the session up rather than deleting it here', () => {
+      // Confirming belongs to the caller: this list has no way to ask anything.
+      const remove = vi.fn();
+      const target = session({ sessionId: 'doomed' });
+      byId(target, deps({ remove })).delete.run();
+
+      expect(remove).toHaveBeenCalledExactlyOnceWith(target);
+    });
+
+    it('refuses a session mid-turn', () => {
+      const action = byId(session({ loaded: true }), deps({ working: new Set(['abc']) })).delete;
+      expect(action.refused).toMatch(/still working/i);
+    });
+
+    it('deletes a session that is not loaded, since the log is what goes', () => {
+      expect(byId(session({ loaded: false }), deps()).delete.refused).toBeUndefined();
+    });
+
+    it('is marked apart from the actions that lose nothing', () => {
+      const actions = sessionActions(session(), deps());
+      expect(actions.filter((a) => a.destructive).map((a) => a.id)).toEqual(['delete']);
     });
   });
 

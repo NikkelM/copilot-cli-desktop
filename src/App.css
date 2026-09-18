@@ -4068,3 +4068,99 @@ pre.fatal,
   color: var(--text-dim);
   cursor: default;
 }
+
+/* The question asked before something irreversible. Over everything, because the answer
+   decides whether it happens at all. */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(1, 4, 9, 0.7);
+}
+
+.confirm {
+  width: min(32rem, 100%);
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.confirm-title {
+  margin: 0 0 12px;
+  font-size: var(--font-2xl);
+}
+
+.confirm-body {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: var(--font-lg);
+}
+
+.confirm-body p {
+  margin: 0 0 8px;
+}
+
+.confirm-body strong {
+  color: var(--text);
+}
+
+.confirm-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+  cursor: pointer;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.confirm-actions button {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-lg);
+  cursor: pointer;
+}
+
+.confirm-cancel:hover {
+  border-color: var(--text-muted);
+}
+
+/* The one that cannot be taken back wears the colour that says so. */
+.confirm-go {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.confirm-go:hover {
+  background: var(--danger);
+  color: var(--bg);
+}
+
+/* Set apart from the rest of the menu, since it is the only row that loses anything. */
+.session-menu-item.destructive {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 5px 5px;
+  padding-top: 8px;
+  color: var(--danger);
+}
+
+.session-menu-item.destructive:hover:not(:disabled) {
+  background: var(--danger);
+  color: var(--bg);
+}

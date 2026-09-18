@@ -831,6 +831,15 @@ export interface SidecarRequests {
   'sessions.shell': { params: { sessionId: string; requestId: string; command: string }; result: ShellResult };
   'sessions.cancelShell': { params: { sessionId: string; requestId: string }; result: void };
   'sessions.evict': { params: { sessionId: string }; result: void };
+  /**
+   * Remove a session and everything it wrote. There is no undo.
+   *
+   * The CLI deletes the session's state directory, which is where the transcript, the
+   * checkpoints and the rewind snapshots all live. Its row in the history database is left
+   * behind, but the sidebar already hides a row whose log has gone, so a deleted session
+   * leaves the list on the next refresh.
+   */
+  'sessions.delete': { params: { sessionId: string }; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'sessions.resolvePlan': { params: ResolvePlanParams; result: void };
@@ -1100,6 +1109,7 @@ export const SIDECAR_METHODS = [
   'sessions.shell',
   'sessions.cancelShell',
   'sessions.evict',
+  'sessions.delete',
   'sessions.resolvePermission',
   'sessions.resolveElicitation',
   'sessions.resolvePlan',

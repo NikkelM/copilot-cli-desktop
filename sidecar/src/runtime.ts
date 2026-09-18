@@ -699,6 +699,24 @@ export class SessionRuntime {
     entry.idleTimer.unref(); // Never keep the sidecar alive just to evict.
   }
 
+  /**
+   * Delete a session and everything it wrote.
+   *
+   * Let go of here first rather than left to the CLI, which closes the session on its own
+   * account: doing it through evict is what takes the session out of this runtime's books,
+   * ends its subscription and tells the app it is no longer loaded. Skipping that leaves an
+   * entry pointing at a session the CLI has already destroyed.
+   *
+   * What survives is the row in the history database, which the CLI does not remove either.
+   * The sidebar drops a row whose log has gone, so the session leaves the list regardless.
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.evict(sessionId);
+
+    const client = await this.ensureClient();
+    await client.deleteSession(sessionId);
+  }
+
   /** Disconnect least recently used sessions until the cap is satisfied. */
   private async enforceCap(): Promise<void> {
     // Zero means the reader decides how many sessions are worth keeping, which is the

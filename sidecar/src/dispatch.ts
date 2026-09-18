@@ -90,6 +90,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.evict': ({ sessionId }) => runtime.evict(sessionId),
 
+    'sessions.delete': ({ sessionId }) => runtime.deleteSession(sessionId),
+
     'sessions.resolvePermission': ({ requestId, choice }) => runtime.resolvePermission(requestId, choice),
 
     'sessions.resolveElicitation': ({ requestId, action, content }) =>

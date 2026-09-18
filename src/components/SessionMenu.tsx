@@ -6,6 +6,8 @@ export interface SessionAction {
   label: string;
   /** Absent when the action can be taken. Present to say why it cannot, in place of doing it. */
   refused?: string;
+  /** Drawn apart from the rest and in the warning colour, for the ones that lose something. */
+  destructive?: boolean;
   run: () => void;
 }
 
@@ -68,7 +70,7 @@ export function SessionMenu({
           key={action.id}
           type="button"
           role="menuitem"
-          className="session-menu-item"
+          className={action.destructive ? 'session-menu-item destructive' : 'session-menu-item'}
           disabled={action.refused !== undefined}
           title={action.refused}
           onClick={() => {

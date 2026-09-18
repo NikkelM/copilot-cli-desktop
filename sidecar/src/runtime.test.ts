@@ -224,6 +224,9 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
       sessions.set('made', session);
       return session;
     }),
+    deleteSession: vi.fn(async (id: string) => {
+      sessions.delete(id);
+    }),
   };
 
   const runtime = new SessionRuntime({
@@ -379,6 +382,57 @@ describe('SessionRuntime', () => {
 
     await runtime.evict('busy');
     expect(sessions.get('busy')?.disconnected).toBe(true);
+  });
+
+  it('lets a session go before asking the CLI to destroy it', async () => {
+    // The CLI closes the session too, but only on its own side. Skipping evict would leave
+    // this runtime holding an entry, a subscription and a loaded flag for something gone.
+    const { runtime, client, sessions } = makeRuntime();
+    await sendAndFinish({ runtime, sessions }, 'doomed');
+    expect(runtime.isActive('doomed')).toBe(true);
+    // Held now, because the CLI drops it from its own map as part of deleting.
+    const held = sessions.get('doomed');
+
+    await runtime.deleteSession('doomed');
+
+    expect(held?.disconnected).toBe(true);
+    expect(runtime.isActive('doomed')).toBe(false);
+    expect(client.deleteSession).toHaveBeenCalledExactlyOnceWith('doomed');
+  });
+
+  it('deletes a session it was never holding', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.deleteSession('never-opened');
+
+    expect(client.deleteSession).toHaveBeenCalledExactlyOnceWith('never-opened');
+  });
+
+  it('says a session is no longer loaded before the CLI is asked', async () => {
+    // Reversed, the app would hear the session is gone while still being told it is loaded.
+    const order: string[] = [];
+    const { runtime, sessions, client } = makeRuntime({
+      onLoadedChange: (_id: string, loaded: boolean) => order.push(loaded ? 'loaded' : 'unloaded'),
+    });
+    client.deleteSession.mockImplementation(async () => {
+      order.push('deleted');
+    });
+    await sendAndFinish({ runtime, sessions }, 'doomed');
+
+    await runtime.deleteSession('doomed');
+
+    expect(order).toEqual(['loaded', 'unloaded', 'deleted']);
+  });
+
+  it('leaves the session loaded when the CLI refuses to delete it', async () => {
+    // Evicting first means a refusal costs the resident session, which is the lesser of the
+    // two: what must not happen is a runtime still holding one the CLI destroyed.
+    const { runtime, client, sessions } = makeRuntime();
+    client.deleteSession.mockRejectedValue(new Error('Session file not found for doomed'));
+    await sendAndFinish({ runtime, sessions }, 'doomed');
+
+    await expect(runtime.deleteSession('doomed')).rejects.toThrow(/Session file not found/);
+    expect(runtime.isActive('doomed')).toBe(false);
   });
 
   it('reports a session as loaded only while it is resident', async () => {

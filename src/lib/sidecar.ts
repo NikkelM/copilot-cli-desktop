@@ -77,6 +77,16 @@ export function evictSession(sessionId: string): Promise<void> {
   return request('sessions.evict', { sessionId });
 }
 
+/**
+ * Remove a session and everything it wrote. There is no undo.
+ *
+ * The caller is expected to have asked first: nothing here confirms anything, and the CLI
+ * destroys the session's state directory the moment this is called.
+ */
+export function deleteSession(sessionId: string): Promise<void> {
+  return request('sessions.delete', { sessionId });
+}
+
 /** The runtime is asked what it knows. Costs nothing: the sidecar reads a constant. */
 export async function runtimeProtocolVersion(): Promise<string> {
   const { version } = await request('protocol.version');

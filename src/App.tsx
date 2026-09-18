@@ -39,10 +39,13 @@ import {
   setMcpEnabled,
   sendMessage,
   evictSession,
+  deleteSession,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, USAGE, WIKI, wantsDirectory } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
+import { useConfirmDelete } from './lib/useConfirmDelete';
+import { Confirm } from './components/Confirm';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { explain, messageOf } from './lib/errors';
 import { revealPointerForPicker } from './lib/nativePicker';
@@ -798,6 +801,28 @@ export default function App() {
 
   useTaskbar(sessions.working.size > 0);
 
+  /** The session waiting on an answer to "really delete this?". */
+  const [deleting, setDeleting] = useState<SessionSummary | null>(null);
+  const confirmDelete = useConfirmDelete();
+
+  /**
+   * Delete a session, and leave it if it was the one open.
+   *
+   * Moving away first: the transcript would otherwise go on asking for a session that no
+   * longer has a log, and the error it raises would be about a file rather than about what
+   * just happened.
+   */
+  const removeSession = useCallback(
+    (target: SessionSummary) => {
+      if (target.sessionId === selectedId) setSelectedId(null);
+
+      deleteSession(target.sessionId)
+        .then(() => sessions.refresh())
+        .catch((e: unknown) => setError(messageOf(e)));
+    },
+    [selectedId, sessions],
+  );
+
   const sessionMenu = useCallback(
     (session: SessionSummary) =>
       sessionActions(session, {
@@ -811,8 +836,9 @@ export default function App() {
         },
         copy: (text) => void copyText(text),
         openFolder: (path) => void openPath(path).catch((e: unknown) => setError(String(e))),
+        remove: (target) => (confirmDelete.confirms ? setDeleting(target) : void removeSession(target)),
       }),
-    [favourites, toggleFavourite, sessions],
+    [favourites, toggleFavourite, sessions, confirmDelete.confirms, removeSession],
   );
 
   return (
@@ -1142,6 +1168,30 @@ export default function App() {
             ✕
           </button>
         </div>
+      )}
+
+      {deleting && (
+        <Confirm
+          title="Delete this session?"
+          body={
+            <>
+              <p>
+                <strong>{deleting.title ?? 'Untitled session'}</strong> and everything it wrote will be removed:
+                the whole conversation, its checkpoints, and the snapshots that let its file changes be
+                rewound.
+              </p>
+              <p>Nothing it did to your files is undone, and this cannot be reversed.</p>
+            </>
+          }
+          confirmLabel="Delete session"
+          remember="Do not ask again"
+          onConfirm={(dontAskAgain) => {
+            if (dontAskAgain) confirmDelete.stopAsking();
+            removeSession(deleting);
+            setDeleting(null);
+          }}
+          onCancel={() => setDeleting(null)}
+        />
       )}
     </div>
   );

@@ -11,6 +11,8 @@ export interface SessionActionDeps {
   unload: (sessionId: string) => void;
   copy: (text: string) => void;
   openFolder: (path: string) => void;
+  /** Asked to delete. Confirming is the caller's business, not this list's. */
+  remove: (session: SessionSummary) => void;
 }
 
 /**
@@ -35,8 +37,8 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
     {
       id: 'unload',
       label: 'Unload from memory',
-      // A session that is already cold costs nothing, and one that is mid-turn would lose the
-      // turn: the runtime refuses that outright, so saying so beats appearing to do nothing.
+      // A session that is already cold costs nothing. One mid-turn would lose the turn: the
+      // runtime does as it is told and would abandon it, so the refusal belongs here.
       refused: !session.loaded
         ? 'Already unloaded. It costs nothing until it is opened.'
         : deps.working.has(session.sessionId)
@@ -56,6 +58,17 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       run: () => {
         if (session.cwd) deps.openFolder(session.cwd);
       },
+    },
+    {
+      id: 'delete',
+      label: 'Delete session',
+      destructive: true,
+      // The turn would be cut off partway and its record deleted underneath it, which is a
+      // worse thing to do by accident than any of the above.
+      refused: deps.working.has(session.sessionId)
+        ? 'Still working. It can be deleted once the turn finishes.'
+        : undefined,
+      run: () => deps.remove(session),
     },
   ];
 }
