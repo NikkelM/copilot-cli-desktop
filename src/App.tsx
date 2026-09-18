@@ -165,7 +165,7 @@ export default function App() {
   const slash = useCommands(selectedId);
   const subagents = useSubagents();
   const size = useScale();
-  const pinned = useFavourites();
+  const { favourites, toggle: toggleFavourite } = useFavourites();
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, showRepository);
@@ -801,8 +801,8 @@ export default function App() {
   const sessionMenu = useCallback(
     (session: SessionSummary) =>
       sessionActions(session, {
-        pinned: pinned.favourites,
-        togglePin: pinned.toggle,
+        favourites,
+        toggleFavourite,
         working: sessions.working,
         unload: (sessionId) => {
           evictSession(sessionId)
@@ -812,7 +812,7 @@ export default function App() {
         copy: (text) => void copyText(text),
         openFolder: (path) => void openPath(path).catch((e: unknown) => setError(String(e))),
       }),
-    [pinned, sessions],
+    [favourites, toggleFavourite, sessions],
   );
 
   return (
@@ -836,8 +836,8 @@ export default function App() {
           if (entry) open(entry.sessionId);
           subagents.setOpenId(agentId);
         }}
-        favourites={pinned.favourites}
-        onFavourite={pinned.toggle}
+        favourites={favourites}
+        onFavourite={toggleFavourite}
         actionsFor={sessionMenu}
         onDismissSubagent={(agentId) => {
           subagents.dismiss(agentId);

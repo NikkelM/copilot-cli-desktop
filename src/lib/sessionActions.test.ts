@@ -16,8 +16,8 @@ const session = (over: Partial<SessionSummary> = {}): SessionSummary =>
   }) as SessionSummary;
 
 const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
-  pinned: [],
-  togglePin: vi.fn(),
+  favourites: [],
+  toggleFavourite: vi.fn(),
   working: new Set(),
   unload: vi.fn(),
   copy: vi.fn(),
@@ -31,26 +31,26 @@ const byId = (session: SessionSummary, d: SessionActionDeps) =>
 describe('sessionActions', () => {
   it('offers only what the app can do today', () => {
     expect(sessionActions(session(), deps()).map((a) => a.id)).toEqual([
-      'pin',
+      'favourite',
       'unload',
       'copy-id',
       'folder',
     ]);
   });
 
-  describe('pinning', () => {
-    it('offers to pin a session that is not pinned', () => {
-      expect(byId(session(), deps()).pin.label).toBe('Pin to top');
+  describe('favouriting', () => {
+    it('offers to favourite a session that is not', () => {
+      expect(byId(session(), deps()).favourite.label).toBe('Favourite');
     });
 
-    it('offers to unpin one that is', () => {
-      expect(byId(session(), deps({ pinned: ['abc'] })).pin.label).toBe('Unpin');
+    it('offers to unfavourite one that is', () => {
+      expect(byId(session(), deps({ favourites: ['abc'] })).favourite.label).toBe('Unfavourite');
     });
 
     it('toggles the session it was opened on', () => {
-      const togglePin = vi.fn();
-      byId(session({ sessionId: 'xyz' }), deps({ togglePin })).pin.run();
-      expect(togglePin).toHaveBeenCalledWith('xyz');
+      const toggleFavourite = vi.fn();
+      byId(session({ sessionId: 'xyz' }), deps({ toggleFavourite })).favourite.run();
+      expect(toggleFavourite).toHaveBeenCalledWith('xyz');
     });
   });
 

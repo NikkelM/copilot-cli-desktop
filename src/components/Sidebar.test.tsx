@@ -462,7 +462,7 @@ describe('Sidebar subagents', () => {
 });
 
 
-describe('pinning a session to the top', () => {
+describe('keeping a session among the favourites', () => {
   // Folding is remembered in localStorage, and a group folded by an earlier test in this
   // file would hide rows these need to see.
   beforeEach(() => localStorage.clear());
@@ -492,34 +492,34 @@ describe('pinning a session to the top', () => {
   const order = () =>
     [...document.querySelectorAll('.session .session-title')].map((n) => n.textContent?.trim().split(/\s/)[0]);
 
-  it('offers no pin when there is nowhere to keep one', () => {
+  it('offers no mark when there is nowhere to keep one', () => {
     shown({ onFavourite: undefined });
 
-    expect(screen.queryByLabelText(/^Pin /)).toBeNull();
+    expect(screen.queryByLabelText(/^Favourite /)).toBeNull();
   });
 
   it('offers one on every row otherwise', () => {
     shown();
 
-    expect(screen.getAllByLabelText(/^Pin /)).toHaveLength(3);
+    expect(screen.getAllByLabelText(/^Favourite /)).toHaveLength(3);
   });
 
-  it('pins the session whose mark was pressed', async () => {
+  it('favourites the session whose mark was pressed', async () => {
     const onFavourite = vi.fn();
     shown({ onFavourite });
 
-    await userEvent.click(screen.getByLabelText('Pin Beta'));
+    await userEvent.click(screen.getByLabelText('Favourite Beta'));
 
     expect(onFavourite).toHaveBeenCalledExactlyOnceWith('b');
   });
 
-  it('offers to unpin one that is already pinned', () => {
+  it('offers to unfavourite one that already is', () => {
     shown({ favourites: ['b'] });
 
-    expect(screen.getByLabelText('Unpin Beta')).toBeTruthy();
+    expect(screen.getByLabelText('Unfavourite Beta')).toBeTruthy();
   });
 
-  it('puts a pinned session above everything else', () => {
+  it('puts a favourited session above everything else', () => {
     shown({ favourites: ['c'] });
 
     expect(order()[0]).toBe('Gamma');
@@ -534,33 +534,33 @@ describe('pinning a session to the top', () => {
   it('names the group so the ordering does not look arbitrary', () => {
     shown({ favourites: ['c'] });
 
-    expect(screen.getByText('Pinned')).toBeTruthy();
+    expect(screen.getByText('Favourites')).toBeTruthy();
   });
 
-  it('says nothing about pinning when nothing is', () => {
+  it('says nothing about favourites when there are none', () => {
     shown();
 
-    expect(screen.queryByText('Pinned')).toBeNull();
+    expect(screen.queryByText('Favourites')).toBeNull();
   });
 
   // Listing it twice would double the row and make the count wrong.
-  it('draws a pinned session once, not in both groups', () => {
+  it('draws a favourited session once, not in both groups', () => {
     shown({ favourites: ['a'] });
 
     expect(order().filter((title) => title === 'Alpha')).toHaveLength(1);
   });
 
-  it('keeps activity order inside the pinned group', () => {
+  it('keeps activity order inside the favourites group', () => {
     shown({ favourites: ['a', 'b'] });
 
     expect(order()).toEqual(['Alpha', 'Beta', 'Gamma']);
   });
 
   /**
-   * The list always reflects what was asked for. A pinned session that does not match is
+   * The list always reflects what was asked for. A favourited session that does not match is
    * hidden like any other, or the filter would quietly stop meaning what it says.
    */
-  it('hides a pinned session that the filter excludes', async () => {
+  it('hides a favourited session that the filter excludes', async () => {
     shown({ favourites: ['c'] });
 
     await userEvent.type(screen.getByPlaceholderText(/Filter/), 'Alpha');
@@ -586,7 +586,7 @@ describe('Sidebar session menu', () => {
 
   it('opens the actions for the session that was right-clicked', () => {
     const actionsFor = vi.fn((s: SessionSummary) => [
-      { id: 'pin', label: `Pin ${s.title}`, run: () => {} },
+      { id: 'favourite', label: `Favourite ${s.title}`, run: () => {} },
     ]);
     render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
         onWiki={() => {}} creating={false} activity={{}} actionsFor={actionsFor} />);
@@ -594,13 +594,13 @@ describe('Sidebar session menu', () => {
     fireEvent.contextMenu(rowFor('Desktop app'));
 
     expect(screen.getByRole('menu')).toBeTruthy();
-    expect(screen.getByText('Pin Desktop app')).toBeTruthy();
+    expect(screen.getByText('Favourite Desktop app')).toBeTruthy();
   });
 
   it('takes the right-click off the browser, which would show its own menu over this one', () => {
     render(<Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
         onWiki={() => {}} creating={false} activity={{}}
-        actionsFor={() => [{ id: 'pin', label: 'Pin to top', run: () => {} }]} />);
+        actionsFor={() => [{ id: 'favourite', label: 'Favourite', run: () => {} }]} />);
 
     // fireEvent returns false when the default was prevented.
     expect(fireEvent.contextMenu(rowFor('Biomes'))).toBe(false);
@@ -627,7 +627,7 @@ describe('Sidebar session menu', () => {
   });
 
   it('closes the menu when the session it was opened on leaves the list', () => {
-    const actionsFor = () => [{ id: 'pin', label: 'Pin to top', run: () => {} }];
+    const actionsFor = () => [{ id: 'favourite', label: 'Favourite', run: () => {} }];
     const one = [session({ sessionId: 'a', title: 'Warm' })];
     const view = render(<Sidebar sessions={one} selectedId={null} onSelect={() => {}} onCreate={() => {}}
         onWiki={() => {}} creating={false} activity={{}} actionsFor={actionsFor} />);

@@ -18,7 +18,7 @@ beforeEach(() => {
   existingSessions.mockReset().mockImplementation((ids: string[]) => Promise.resolve(ids));
 });
 
-describe('the sessions someone has pinned', () => {
+describe('the sessions someone has favourited', () => {
   it('starts with none', async () => {
     const { useFavourites } = await load();
 
@@ -119,8 +119,8 @@ describe('the sessions someone has pinned', () => {
     expect(result.current.favourites).toEqual(['quiet']);
   });
 
-  // The reader may pin something while the sidecar is still answering, and that is newer.
-  it('keeps something pinned while the prune was in flight', async () => {
+  // The reader may favourite something while the sidecar is still answering, and that is newer.
+  it('keeps a new favourite while the prune was in flight', async () => {
     localStorage.setItem(KEY, JSON.stringify(['gone']));
     let answer: (ids: string[]) => void = () => {};
     existingSessions.mockReturnValue(new Promise<string[]>((resolve) => (answer = resolve)));

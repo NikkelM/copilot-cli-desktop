@@ -16,9 +16,9 @@ describe('SessionMenu', () => {
   it('runs the action that was chosen and closes', () => {
     const run = vi.fn();
     const onClose = vi.fn();
-    open([{ id: 'a', label: 'Pin to top', run }], onClose);
+    open([{ id: 'a', label: 'Favourite', run }], onClose);
 
-    fireEvent.click(screen.getByText('Pin to top'));
+    fireEvent.click(screen.getByText('Favourite'));
 
     expect(run).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
@@ -38,13 +38,13 @@ describe('SessionMenu', () => {
 
   it('keeps a refused action in the menu, so the rows do not move', () => {
     open([
-      { id: 'a', label: 'Pin to top', run: () => {} },
+      { id: 'a', label: 'Favourite', run: () => {} },
       { id: 'b', label: 'Unload from memory', refused: 'Already unloaded.', run: () => {} },
       { id: 'c', label: 'Copy session id', run: () => {} },
     ]);
 
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
-      'Pin to top',
+      'Favourite',
       'Unload from memory',
       'Copy session id',
     ]);
@@ -52,7 +52,7 @@ describe('SessionMenu', () => {
 
   it('closes on Escape', () => {
     const onClose = vi.fn();
-    open([{ id: 'a', label: 'Pin to top', run: () => {} }], onClose);
+    open([{ id: 'a', label: 'Favourite', run: () => {} }], onClose);
 
     fireEvent.keyDown(window, { key: 'Escape' });
 
@@ -61,7 +61,7 @@ describe('SessionMenu', () => {
 
   it('closes when the pointer goes down outside it', () => {
     const onClose = vi.fn();
-    open([{ id: 'a', label: 'Pin to top', run: () => {} }], onClose);
+    open([{ id: 'a', label: 'Favourite', run: () => {} }], onClose);
 
     fireEvent.mouseDown(document.body);
 
@@ -70,9 +70,9 @@ describe('SessionMenu', () => {
 
   it('stays open when the pointer goes down inside it', () => {
     const onClose = vi.fn();
-    open([{ id: 'a', label: 'Pin to top', run: () => {} }], onClose);
+    open([{ id: 'a', label: 'Favourite', run: () => {} }], onClose);
 
-    fireEvent.mouseDown(screen.getByText('Pin to top'));
+    fireEvent.mouseDown(screen.getByText('Favourite'));
 
     expect(onClose).not.toHaveBeenCalled();
   });
@@ -90,7 +90,7 @@ describe('SessionMenu', () => {
     render(
       <SessionMenu
         at={{ x: 980, y: 790 }}
-        actions={[{ id: 'a', label: 'Pin to top', run: () => {} }]}
+        actions={[{ id: 'a', label: 'Favourite', run: () => {} }]}
         onClose={() => {}}
       />,
     );

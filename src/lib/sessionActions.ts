@@ -3,9 +3,9 @@ import type { SessionAction } from '../components/SessionMenu';
 
 /** What the menu needs from the app, named so it can be supplied without one. */
 export interface SessionActionDeps {
-  /** Which sessions are pinned, and how to change that. */
-  pinned: readonly string[];
-  togglePin: (sessionId: string) => void;
+  /** Which sessions are favourited, and how to change that. */
+  favourites: readonly string[];
+  toggleFavourite: (sessionId: string) => void;
   /** Which sessions are mid-turn. Read live: a session can start working while a menu is open. */
   working: ReadonlySet<string>;
   unload: (sessionId: string) => void;
@@ -24,13 +24,13 @@ export interface SessionActionDeps {
  * its shape and the reason is where the reader is already looking.
  */
 export function sessionActions(session: SessionSummary, deps: SessionActionDeps): SessionAction[] {
-  const isPinned = deps.pinned.includes(session.sessionId);
+  const isFavourite = deps.favourites.includes(session.sessionId);
 
   return [
     {
-      id: 'pin',
-      label: isPinned ? 'Unpin' : 'Pin to top',
-      run: () => deps.togglePin(session.sessionId),
+      id: 'favourite',
+      label: isFavourite ? 'Unfavourite' : 'Favourite',
+      run: () => deps.toggleFavourite(session.sessionId),
     },
     {
       id: 'unload',

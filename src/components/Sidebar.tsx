@@ -41,9 +41,9 @@ interface SidebarProps {
   onDismissSubagent?: (agentId: string) => void;
   /** What right-clicking a session offers. Absent leaves the rows with no menu at all. */
   actionsFor?: (session: SessionSummary) => SessionAction[];
-  /** Sessions pinned to the top. Absent is none, which is what a fresh install has. */
+  /** Sessions kept among the favourites. Absent is none, which is what a fresh install has. */
   favourites?: string[];
-  /** Absent leaves the rows readable without offering a pin, as the subagent actions do. */
+  /** Absent leaves the rows readable without offering the mark, as the subagent actions do. */
   onFavourite?: (sessionId: string) => void;
 }
 
@@ -195,19 +195,19 @@ export function Sidebar({
    * so a third group is a row in this array rather than another index comparison.
    */
   const groups = useMemo(() => {
-    // Pinned first and only once: a favourite that is also loaded belongs to the group
+    // Favourites first and only once: a favourite that is also loaded belongs to the group
     // someone chose it for, not to both. Each group keeps the order it was given, which is
-    // by activity, so pinning changes where a session sits and nothing else about it.
-    const pinned = matches.filter((session) => favourites.includes(session.sessionId));
+    // by activity, so favouriting changes where a session sits and nothing else about it.
+    const favoured = matches.filter((session) => favourites.includes(session.sessionId));
     const rest = matches.filter((session) => !favourites.includes(session.sessionId));
     const loaded = rest.filter((session) => session.loaded);
     const cold = rest.filter((session) => !session.loaded);
 
     return [
-      { key: 'pinned', label: 'Pinned', sessions: pinned },
+      { key: 'favourites', label: 'Favourites', sessions: favoured },
       { key: 'loaded', label: 'In memory', sessions: loaded },
       // Only named when there is something above it to tell it apart from.
-      { key: 'cold', label: loaded.length > 0 || pinned.length > 0 ? 'Not loaded' : null, sessions: cold },
+      { key: 'cold', label: loaded.length > 0 || favoured.length > 0 ? 'Not loaded' : null, sessions: cold },
     ].filter((group) => group.sessions.length > 0);
   }, [matches, favourites]);
 
@@ -431,8 +431,8 @@ function Favourite({ on, title, onToggle }: { on: boolean; title: string; onTogg
       className={on ? 'favourite on' : 'favourite'}
       onClick={onToggle}
       aria-pressed={on}
-      aria-label={on ? `Unpin ${title}` : `Pin ${title}`}
-      title={on ? 'Unpin from the top' : 'Pin to the top'}
+      aria-label={on ? `Unfavourite ${title}` : `Favourite ${title}`}
+      title={on ? 'Remove from favourites' : 'Keep among the favourites'}
     >
       {on ? '★' : '☆'}
     </button>
