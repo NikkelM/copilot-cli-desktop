@@ -109,7 +109,7 @@ describe('sessionActions', () => {
     });
 
     it('offers to take back one that is', () => {
-      expect(byId(session(), deps({ archived: ['abc'] })).archive.label).toBe('Take out of the archive');
+      expect(byId(session(), deps({ archived: ['abc'] })).archive.label).toBe('Unarchive');
     });
 
     it('marks the session it was opened on', () => {

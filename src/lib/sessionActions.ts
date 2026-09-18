@@ -51,7 +51,7 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
     },
     {
       id: 'archive',
-      label: deps.archived.includes(session.sessionId) ? 'Take out of the archive' : 'Archive',
+      label: deps.archived.includes(session.sessionId) ? 'Unarchive' : 'Archive',
       // Nothing on disk changes and the group is one press from open, so unlike deleting
       // this asks nothing first. What it does refuse is putting away a session mid-turn:
       // archiving lets it go, and letting go mid-turn loses the turn.
