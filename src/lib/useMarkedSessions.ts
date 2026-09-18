@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { existingSessions } from './sidecar';
+import { goneFrom, needsPruning } from './pruneSessions';
 
 /**
  * A set of sessions this app has marked, remembered across restarts.
@@ -24,38 +24,21 @@ function read(key: string): string[] {
   }
 }
 
-/**
- * Drop marks for sessions that no longer exist.
- *
- * Nothing else removes an entry, so without this the list grows for the life of the install
- * and keeps state about sessions that are gone - the same reason the review marks are
- * pruned (#152), and the same test: what is on disk, rather than what the sidebar happens
- * to be showing. A session can be missing from the list for reasons that have nothing to do
- * with deletion, and throwing away a deliberate mark over that would be worse than keeping
- * a stale one.
- */
+/** Drop marks for sessions that no longer exist. */
 async function prune(key: string): Promise<void> {
-  const ids = read(key);
-  if (ids.length === 0) return;
+  const gone = await goneFrom(read(key));
+  if (!gone) return;
 
-  const alive = new Set(await existingSessions(ids));
-  if (alive.size === ids.length) return;
-
-  // Reread rather than filtering the copy above: something may have been marked while the
-  // sidecar was answering, and that entry is newer than anything here.
-  const kept = read(key).filter((id) => alive.has(id) || !ids.includes(id));
-  localStorage.setItem(key, JSON.stringify(kept));
+  // Reread rather than filtering the copy asked about: something may have been marked while
+  // the sidecar was answering, and dropping only what is known gone keeps it.
+  localStorage.setItem(key, JSON.stringify(read(key).filter((id) => !gone.has(id))));
 }
-
-/** Which sets have been pruned. Each answers about the whole install, so once each is enough. */
-const pruned = new Set<string>();
 
 export function useMarkedSessions(key: string) {
   const [ids, setIds] = useState<string[]>(() => read(key));
 
   useEffect(() => {
-    if (pruned.has(key)) return;
-    pruned.add(key);
+    if (!needsPruning(key)) return;
     void prune(key).then(() => setIds(read(key)));
   }, [key]);
 

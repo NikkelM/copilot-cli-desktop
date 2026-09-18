@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { existingSessions } from './sidecar';
+import { goneFrom, needsPruning } from './pruneSessions';
 
 /**
  * What is true about a session right now, as the reader sees it.
@@ -60,39 +60,25 @@ function write(tags: Tags): void {
   localStorage.setItem(TAGS, JSON.stringify(tags));
 }
 
-/**
- * Forget tags for sessions that are gone.
- *
- * The same reason and the same test as the favourites: nothing else removes an entry, so
- * without this the store grows for the life of the install. A session missing from the list
- * for some other reason must not lose its tags, so this asks disk rather than the sidebar.
- */
+/** Forget tags for sessions that are gone. */
 async function prune(): Promise<void> {
-  const held = read();
-  const ids = Object.keys(held);
-  if (ids.length === 0) return;
+  const gone = await goneFrom(Object.keys(read()));
+  if (!gone) return;
 
-  const alive = new Set(await existingSessions(ids));
-  if (alive.size === ids.length) return;
-
-  // Reread rather than filtering the copy above: something may have been tagged while the
-  // sidecar was answering, and that entry is newer than anything here.
-  const now = read();
+  // Reread rather than filtering the copy asked about: something may have been tagged while
+  // the sidecar was answering, and dropping only what is known gone keeps it.
   const kept: Record<string, readonly string[]> = {};
-  for (const [sessionId, tags] of Object.entries(now)) {
-    if (alive.has(sessionId) || !ids.includes(sessionId)) kept[sessionId] = tags;
+  for (const [sessionId, tags] of Object.entries(read())) {
+    if (!gone.has(sessionId)) kept[sessionId] = tags;
   }
   write(kept);
 }
-
-let pruned = false;
 
 export function useTags() {
   const [tags, setTags] = useState<Tags>(read);
 
   useEffect(() => {
-    if (pruned) return;
-    pruned = true;
+    if (!needsPruning(TAGS)) return;
     void prune().then(() => setTags(read()));
   }, []);
 
