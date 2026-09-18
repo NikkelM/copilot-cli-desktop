@@ -158,3 +158,60 @@ describe('what each session is doing', () => {
     expect([...result.current.working]).toEqual(['s2']);
   });
 });
+
+describe('taking a session out of the list before disk agrees', () => {
+  beforeEach(() => {
+    listSessions.mockReset().mockResolvedValue({ sessions: [summary('s1'), summary('s2')] });
+    runtimeStatus.mockReset().mockResolvedValue({ maxLoadedSessions: 3 });
+  });
+
+  it('hides it at once, without waiting for a fetch', async () => {
+    const { result } = await listed();
+
+    act(() => result.current.drop('s1'));
+
+    expect(result.current.all.map((s) => s.sessionId)).toEqual(['s2']);
+    // Nothing was asked for: the point is not to wait on anything.
+    expect(listSessions).toHaveBeenCalledOnce();
+  });
+
+  it('keeps it hidden through a fetch that still finds it on disk', async () => {
+    // Deleting a large session takes a while, and the store watcher can refetch during it.
+    const { result } = await listed();
+    act(() => result.current.drop('s1'));
+
+    await act(() => result.current.refresh());
+
+    expect(result.current.all.map((s) => s.sessionId)).toEqual(['s2']);
+  });
+
+  it('puts it back when whatever was removing it did not', async () => {
+    const { result } = await listed();
+    act(() => result.current.drop('s1'));
+
+    act(() => result.current.restore('s1'));
+
+    expect(result.current.all.map((s) => s.sessionId)).toEqual(['s1', 's2']);
+  });
+
+  it('stops holding a note about a session that has genuinely gone', async () => {
+    const { result } = await listed();
+    act(() => result.current.drop('s1'));
+
+    listSessions.mockResolvedValue({ sessions: [summary('s2')] });
+    await act(() => result.current.refresh());
+    // Back on disk under the same id: without the prune the stale note would hide it.
+    listSessions.mockResolvedValue({ sessions: [summary('s1'), summary('s2')] });
+    await act(() => result.current.refresh());
+
+    expect(result.current.all.map((s) => s.sessionId)).toEqual(['s1', 's2']);
+  });
+
+  it('leaves the rest of the list alone', async () => {
+    const { result } = await listed();
+
+    act(() => result.current.drop('nobody-by-that-name'));
+
+    expect(result.current.all.map((s) => s.sessionId)).toEqual(['s1', 's2']);
+  });
+});

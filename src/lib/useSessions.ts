@@ -29,15 +29,48 @@ export function useSessions(onError: (message: string) => void) {
   const [maxLoaded, setMaxLoaded] = useState<number | undefined>(undefined);
   /** Sessions with a turn running, whichever one is on screen. */
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set());
+  /**
+   * Sessions taken out of the list before disk agrees.
+   *
+   * Deleting is the slow kind of disk work - a large session is a gigabyte of event log and
+   * thousands of snapshot blobs - and waiting for it before redrawing left a row someone had
+   * just confirmed the deletion of sitting there, for longer the larger the session was.
+   */
+  const [dropped, setDropped] = useState<ReadonlySet<string>>(() => new Set());
 
   const refresh = useCallback(() => {
     // Returned so a caller that needs the list to contain something can wait for it.
     return listSessions()
       // A fetch that lands between a reply and the write that announces it would otherwise
       // show the session a turn behind, so what the app has already heard wins.
-      .then((result) => setSessions(result.sessions))
+      .then((result) => {
+        setSessions(result.sessions);
+        // A session the fetch no longer knows about is gone for real, so the note saying to
+        // hide it has nothing left to hide and would otherwise be kept for the app's life.
+        setDropped((current) => {
+          if (current.size === 0) return current;
+          const listed = new Set(result.sessions.map((session) => session.sessionId));
+          const next = new Set([...current].filter((id) => listed.has(id)));
+          return next.size === current.size ? current : next;
+        });
+      })
       .catch((e: unknown) => onError(String(e)));
   }, [onError]);
+
+  /** Take a session out of the list now, without waiting to be told it has gone. */
+  const drop = useCallback((sessionId: string) => {
+    setDropped((current) => (current.has(sessionId) ? current : new Set(current).add(sessionId)));
+  }, []);
+
+  /** Put one back, for when whatever was going to remove it did not. */
+  const restore = useCallback((sessionId: string) => {
+    setDropped((current) => {
+      if (!current.has(sessionId)) return current;
+      const next = new Set(current);
+      next.delete(sessionId);
+      return next;
+    });
+  }, []);
 
   useEffect(() => void refresh(), [refresh]);
 
@@ -103,13 +136,16 @@ export function useSessions(onError: (message: string) => void) {
     }
   }, []);
 
-  const all = useMemo(() => orderSessions(sessions, activeOrder), [sessions, activeOrder]);
+  const all = useMemo(
+    () => orderSessions(sessions, activeOrder).filter((session) => !dropped.has(session.sessionId)),
+    [sessions, activeOrder, dropped],
+  );
 
   const find = useCallback(
     (sessionId: string | null) => all.find((session) => session.sessionId === sessionId) ?? null,
     [all],
   );
 
-  return { all, find, maxLoaded, working, refresh, observe, observeLoaded };
+  return { all, find, maxLoaded, working, refresh, drop, restore, observe, observeLoaded };
 }
 

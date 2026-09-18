@@ -808,17 +808,25 @@ export default function App() {
   /**
    * Delete a session, and leave it if it was the one open.
    *
-   * Moving away first: the transcript would otherwise go on asking for a session that no
-   * longer has a log, and the error it raises would be about a file rather than about what
-   * just happened.
+   * Out of the list before the CLI is asked, rather than after it answers. Removing a large
+   * session is a gigabyte of event log and thousands of snapshot blobs, and nobody who has
+   * just confirmed a deletion wants to watch the row sit there while that happens. It goes
+   * back if the delete fails, which is the only case where it still exists.
+   *
+   * Leaving the session first for the same reason: the transcript would otherwise go on
+   * asking for a log that is being removed underneath it.
    */
   const removeSession = useCallback(
     (target: SessionSummary) => {
       if (target.sessionId === selectedId) setSelectedId(null);
+      sessions.drop(target.sessionId);
 
       deleteSession(target.sessionId)
         .then(() => sessions.refresh())
-        .catch((e: unknown) => setError(messageOf(e)));
+        .catch((e: unknown) => {
+          sessions.restore(target.sessionId);
+          setError(messageOf(e));
+        });
     },
     [selectedId, sessions],
   );
