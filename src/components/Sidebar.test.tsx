@@ -157,6 +157,71 @@ describe('Sidebar finding a session the list hides', () => {
  * app. They were marked by a four-pixel dot that explained neither why they sat at the top
  * nor what was different about them.
  */
+/**
+ * A title is not always a title. A session this app starts keeps its whole first prompt as
+ * its name until something shortens it, and nothing does: every session made through the
+ * SDK on this machine still has `summary_count: 0`. One of them is 303 characters, which
+ * filled thirteen lines of the sidebar (#197).
+ */
+describe('a title too long to be one', () => {
+  const long = 'To my global copilot instructions add this type of guidance: all external facing text should go through the relevant writer persona and avoid the usual markers. Do we have a good enough personality file to cover these?';
+
+  const shown = (title: string | null) =>
+    render(
+      <Sidebar
+        sessions={[session({ sessionId: 'a', title })]}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+      />,
+    );
+
+  const drawn = () => document.querySelector('.session-title')!;
+
+  it('cuts one that would crowd out the list', () => {
+    shown(long);
+
+    const text = drawn().textContent!;
+    expect(text.length).toBeLessThan(long.length);
+    expect(text.endsWith('…')).toBe(true);
+  });
+
+  it('keeps the whole of it within reach', () => {
+    shown(long);
+
+    expect(drawn().getAttribute('title')).toBe(long);
+  });
+
+  // The names that are actually names must come through untouched, or this has cost more
+  // than it saved: the longest the runtime generates on this machine is 44 characters.
+  it.each([
+    ['Investigate Arcana Navigation Bug', 33],
+    ['Export Active Sessions Excluding Current', 40],
+    ['A name as long as the longest one seen here.x', 44],
+  ])('leaves %s alone', (title) => {
+    shown(title);
+
+    expect(drawn().textContent).toBe(title);
+    expect(drawn().getAttribute('title')).toBe(title);
+  });
+
+  it('draws a prompt that spans lines as one line', () => {
+    shown('A question\n\nwith a blank line in it');
+
+    expect(drawn().textContent).toBe('A question with a blank line in it');
+  });
+
+  it('still says when a session has no title at all', () => {
+    shown(null);
+
+    expect(drawn().textContent).toBe('Untitled session');
+    expect(drawn().getAttribute('title')).toBeNull();
+  });
+});
+
 describe('Sidebar grouping', () => {
   const grouped = [
     session({ sessionId: 'a', title: 'Working', loaded: true }),

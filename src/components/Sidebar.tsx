@@ -586,6 +586,22 @@ function Favourite({ on, title, onToggle }: { on: boolean; title: string; onTogg
   );
 }
 
+/**
+ * Longest title drawn in a row, in characters.
+ *
+ * Well past any name the runtime generates - the longest on this machine is 44 - and past
+ * most that anyone types, so this only bites on a title that is not really a title. A
+ * session this app starts keeps its entire first prompt as its name, and one of those is
+ * 303 characters, which fills thirteen lines of the sidebar on its own (#197).
+ */
+const MAX_TITLE = 90;
+
+/** The title as a single line, cut if it is long enough to crowd out the list. */
+function clipTitle(title: string): string {
+  const flat = title.replace(/\s+/g, ' ').trim();
+  return flat.length > MAX_TITLE ? `${flat.slice(0, MAX_TITLE - 1)}…` : flat;
+}
+
 function Row({
   session,
   selectedId,
@@ -601,8 +617,8 @@ function Row({
   // raises, including the one Enter raises for a keyboard, reaches the row on the way up.
   return (
     <button type="button" className={`session${session.sessionId === selectedId ? ' selected' : ''}`}>
-      <span className="session-title">
-        {session.title ?? 'Untitled session'}
+      <span className="session-title" title={session.title ?? undefined}>
+        {session.title === null ? 'Untitled session' : clipTitle(session.title)}
         {/* Shape first, colour second: five states is more than a hue can carry, and a
             reader who cannot separate hues gets none of it at all.
 

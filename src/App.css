@@ -402,8 +402,10 @@ body {
  */
 .session-title {
   font-weight: 500;
-  /* A long title wraps rather than being cut: which session it is is the whole point of
-     the row, and the end of a name is often the part that distinguishes it. */
+  /* A long title wraps rather than being cut mid-line: which session it is is the whole
+     point of the row, and the end of a name is often the part that distinguishes it. How
+     far it may wrap is bounded by clipping the text itself rather than with a CSS clamp,
+     since the state dot sits inline at the end and a clamp would take that with it. */
   overflow-wrap: anywhere;
 }
 
