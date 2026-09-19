@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { useTranscript } from './useTranscript';
 import { toEntries } from './transcriptEntries';
+import { showsInTranscript } from '../../shared/protocol';
 
 const getTranscript = vi.fn();
 vi.mock('./sidecar', () => ({ getTranscript: (...args: unknown[]) => getTranscript(...args) }));
@@ -166,11 +167,11 @@ describe('useTranscript', () => {
  */
 /**
  * #186: a sitting only ever appends to the live list, so anything held is held for as long
- * as the session stays open. Half the events a long session receives are turn and hook
- * markers with no case in `toEntries` - held at roughly 2.4 kB each, filtered out again on
- * every chunk, and drawn never.
+ * as the session stays open. Most of what a long session receives are turn markers, hook
+ * markers and session bookkeeping with no row in the transcript - held at roughly 2 kB
+ * each, walked on every chunk, and drawn never.
  */
-describe('useTranscript holding only what can be drawn', () => {
+describe('useTranscript holding only what the transcript shows', () => {
   const marker = (type: string, id: string) => ({ type, data: {}, id });
   const said = (content: string, id: string) => ({ type: 'assistant.message', data: { content }, id });
 
@@ -179,19 +180,24 @@ describe('useTranscript holding only what can be drawn', () => {
     getTranscript.mockResolvedValue({ events: [], nextBefore: null });
   });
 
-  it.each(['assistant.turn_start', 'assistant.turn_end', 'hook.start', 'hook.end'])(
-    'does not hold %s, which draws nothing',
-    async (type) => {
-      const { result } = renderHook(() => useTranscript('s1', () => {}));
-      await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+  it.each([
+    ['assistant.turn_start', 'a turn marker the busy clock reads as it passes'],
+    ['assistant.turn_end', 'the other turn marker'],
+    ['hook.start', 'a hook firing'],
+    ['hook.end', 'a hook finishing'],
+    ['session.plan_changed', 'session bookkeeping, which history never held either'],
+    ['session.binary_asset', 'an asset the transcript has no row for'],
+    ['system.message', 'the commonest of them'],
+  ])('does not hold %s: %s', async (type) => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
 
-      act(() => result.current.push(marker(type, 'x1')));
+    act(() => result.current.push(marker(type, 'x1')));
 
-      expect(result.current.events).toEqual([]);
-    },
-  );
+    expect(result.current.events).toEqual([]);
+  });
 
-  it('holds what does draw, so the drop is about the type and not about pushing', async () => {
+  it('holds what the transcript shows, so the drop is about the type and not about pushing', async () => {
     const { result } = renderHook(() => useTranscript('s1', () => {}));
     await waitFor(() => expect(getTranscript).toHaveBeenCalled());
 
@@ -200,6 +206,29 @@ describe('useTranscript holding only what can be drawn', () => {
     act(() => result.current.push(marker('assistant.turn_end', 'x2')));
 
     expect(result.current.events.map((event) => event.id)).toEqual(['e1']);
+  });
+
+  /**
+   * The same rule the sidecar reads history through, or the two would disagree about what a
+   * transcript is: an event dropped from every page fetched from the log but kept forever
+   * when it arrived live.
+   */
+  it('keeps exactly what a page read from the log would have kept', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    const arriving = [
+      marker('assistant.turn_start', 'x1'),
+      { type: 'user.message', data: { content: 'a question' }, id: 'e1' },
+      marker('session.plan_changed', 'x2'),
+      said('an answer', 'e2'),
+      marker('hook.end', 'x3'),
+    ];
+    for (const event of arriving) act(() => result.current.push(event));
+
+    expect(result.current.events.map((event) => event.id)).toEqual(
+      arriving.filter((event) => showsInTranscript(event.type)).map((event) => event.id),
+    );
   });
 
   // What is held is what is drawn, so the rows must come out the same as before.
@@ -240,6 +269,16 @@ describe('useTranscript holding only what can be drawn', () => {
     act(() => result.current.push({ type: 'abort', data: { reason: 'user_initiated' }, id: 'a1' }));
 
     expect(result.current.abandoned?.get('a1')).toBe('half a thought');
+  });
+
+  // A row this app invented is not an event, so it does not go through the same gate.
+  it('still shows a prompt before the runtime has echoed it', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    act(() => result.current.showSent('do the thing'));
+
+    expect(result.current.events).toHaveLength(1);
   });
 });
 
