@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { explain } from './errors';
 import { getTranscript } from './sidecar';
 import { appendLive, timelineOf, type TimelineEvent } from './timeline';
 
@@ -79,7 +80,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
         setOlderCursor(result.nextBefore);
         setOpening({ count: result.events.length, cursor: result.nextBefore });
       })
-      .catch((e: unknown) => current && report.current(String(e)));
+      .catch((e: unknown) => current && report.current(explain(e)));
 
     return () => {
       current = false;
@@ -98,7 +99,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
         setHistory((current) => [...result.events, ...current]);
         setOlderCursor(result.nextBefore);
       })
-      .catch((e: unknown) => report.current(String(e)))
+      .catch((e: unknown) => report.current(explain(e)))
       .finally(() => setLoadingOlder(false));
   }, [sessionId, olderCursor]);
 

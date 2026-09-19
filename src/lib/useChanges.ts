@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol';
+import { messageOf } from './errors';
 import { existingSessions, getChanges, getDiff } from './sidecar';
 import { read, save } from './store';
 
@@ -120,7 +121,7 @@ export function useChanges(sessionId: string | null) {
       setDiffs({});
       getChanges(sessionId, from)
         .then((result) => span === asked.current && setChanges(result.changes))
-        .catch((error: unknown) => span === asked.current && setFailed(String(error)))
+        .catch((error: unknown) => span === asked.current && setFailed(messageOf(error)))
         .finally(() => {
           if (span === asked.current) setLoading(false);
         });
@@ -141,7 +142,7 @@ export function useChanges(sessionId: string | null) {
           if (span !== asked.current) return;
           setDiffs((current) => ({ ...current, [path]: result }));
         })
-        .catch((error: unknown) => span === asked.current && setFailed(String(error)))
+        .catch((error: unknown) => span === asked.current && setFailed(messageOf(error)))
         .finally(() => asking.current.delete(path));
     },
     [sessionId, diffs, since],

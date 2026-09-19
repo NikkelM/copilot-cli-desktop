@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { SessionEnvironment } from '../../shared/protocol';
+import { explain } from './errors';
 import { describeEnvironment } from './sidecar';
 
 /**
@@ -43,7 +44,7 @@ export function useEnvironment(cwd: string | null) {
         if (ask === asked.current) setEnvironment(result);
       })
       .catch((error: unknown) => {
-        if (ask === asked.current) setFailed(String(error));
+        if (ask === asked.current) setFailed(explain(error));
       })
       .finally(() => {
         if (ask === asked.current) setLoading(false);

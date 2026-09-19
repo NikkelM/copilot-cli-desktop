@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { explain } from './errors';
 import { deselectAgent, listAgents, selectAgent, sessionAgent } from './sidecar';
 import type { AgentSummary, SessionAgent, TranscriptEvent } from '../../shared/protocol';
 
@@ -67,7 +68,7 @@ export function useAgent(sessionId: string | null, cwd: string | null, onError: 
 
     setCurrent(agent && { name: agent.name, displayName: agent.displayName });
     const done = agent ? selectAgent(forSession, agent.name) : deselectAgent(forSession);
-    done.catch((e: unknown) => report.current(String(e)));
+    done.catch((e: unknown) => report.current(explain(e)));
   }, []);
 
   /** Ask which agents exist, which is what starting the shared server is for. */
@@ -80,7 +81,7 @@ export function useAgent(sessionId: string | null, cwd: string | null, onError: 
       // Only the ones a reader may pick: the rest exist to be spawned by other agents, and
       // offering them would be offering something that does nothing.
       .then((found) => setAgents(found.filter((agent) => agent.userInvocable)))
-      .catch((e: unknown) => setFailed(String(e)))
+      .catch((e: unknown) => setFailed(explain(e)))
       .finally(() => (asking.current = false));
   }, [cwd]);
 

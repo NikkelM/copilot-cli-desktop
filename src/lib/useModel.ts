@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { explain } from './errors';
 import { listModels, sessionModel, setSessionModel } from './sidecar';
 import type {
   ContextTier,
@@ -102,7 +103,7 @@ export function useModel(sessionId: string | null, onError: (message: string) =>
       // the runtime's own event replaces this when it arrives.
       setCurrent({ model: choice.model, reasoningEffort: choice.reasoningEffort, contextTier: choice.contextTier });
       setSessionModel(forSession, choice.model, choice.reasoningEffort, choice.contextTier).catch((e: unknown) =>
-        report.current(String(e)),
+        report.current(explain(e)),
       );
     },
     [],
@@ -122,7 +123,7 @@ export function useModel(sessionId: string | null, onError: (message: string) =>
       })
       .catch((e: unknown) => {
         asking = null; // So a failure can be retried rather than remembered forever.
-        setFailed(String(e));
+        setFailed(explain(e));
       });
   }, []);
 

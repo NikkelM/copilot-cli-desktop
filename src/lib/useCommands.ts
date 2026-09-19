@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
+import { explain } from './errors';
 import { listCommands } from './sidecar';
 import { LOCAL_COMMANDS, isLocal, withLocalChoices } from './localCommands';
 import type { SlashCommand } from '../../shared/protocol';
@@ -146,7 +147,7 @@ export function useCommands(sessionId: string | null) {
             return merged;
           });
         })
-        .catch((e: unknown) => setFailed(String(e)))
+        .catch((e: unknown) => setFailed(explain(e)))
         .finally(() => (asking.current = false));
     },
     [],

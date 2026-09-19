@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { explain } from './errors';
 import { disabledSkills, setSkillEnabled } from './sidecar';
 
 /**
@@ -32,7 +33,7 @@ export function useDisabledSkills(sessionId: string | null) {
         if (asked.current === sessionId) setDisabled(result.disabled);
       })
       .catch((error: unknown) => {
-        if (asked.current === sessionId) setFailed(String(error));
+        if (asked.current === sessionId) setFailed(explain(error));
       });
   }, [sessionId]);
 
@@ -49,7 +50,7 @@ export function useDisabledSkills(sessionId: string | null) {
           if (asked.current === sessionId) setDisabled(result.disabled);
         })
         .catch((error: unknown) => {
-          if (asked.current === sessionId) setFailed(String(error));
+          if (asked.current === sessionId) setFailed(explain(error));
         });
     },
     [sessionId],

@@ -58,6 +58,24 @@ describe('explain', () => {
     expect(explain('Cannot create session from empty events array')).toBe(explain('First event must be session.start'));
   });
 
+  /**
+   * From `runtime.node` rather than the JS bundle, which is why it went untranslated: a
+   * session whose log had been rewritten reported this verbatim, path and all.
+   */
+  it('says the same for the native reader, which words it differently', () => {
+    const raw =
+      'session resume failed: Failed to read JSONL from C:\\Users\\me\\.copilot\\session-state\\abc\\events.jsonl: ' +
+      'Session history cannot be recovered: no valid session.start event was found';
+
+    expect(explain(raw)).toBe(explain('First event must be session.start'));
+  });
+
+  it('says the same when the session has no start event to send', () => {
+    const raw = "LocalRpcSession: 'session.getMessages' did not include a 'session.start' event for session abc123";
+
+    expect(explain(raw)).toBe(explain('First event must be session.start'));
+  });
+
   it('separates damaged history from missing history', () => {
     expect(explain('Session file is corrupted (line 12)')).toBe(
       'The history for this session is damaged and cannot be replayed.',
@@ -65,6 +83,42 @@ describe('explain', () => {
     expect(explain('Failed to load session events: Session not found: abc123')).toBe(
       'This session is no longer in the session store, so there is nothing to reopen.',
     );
+  });
+
+  it('leaves a git failure to speak for itself, since these patterns are not about git', () => {
+    // messageOf is what git surfaces use. Proving the hazard is real rather than theoretical:
+    // run through explain, this would claim Copilot is not signed in.
+    const raw = "remote: Support for password authentication was removed.\nfatal: Authentication failed for 'https://github.com/me/thing.git/'";
+
+    expect(messageOf(raw)).toBe(raw);
+    expect(explain(raw)).not.toBe(raw);
+  });
+
+  /**
+   * The bug this guards is not visible at runtime: a call site reporting `String(error)`
+   * works, it just says "Error: session resume failed: Failed to read JSONL from ..." where
+   * it could have said what that means. Nothing fails, so nothing catches it, and it is how
+   * the same untranslated message reached a reader after the translation for it was written.
+   *
+   * Reading the source asks the question directly: does anywhere still report an error
+   * without going through one of the two functions that know how to?
+   */
+  it('has no call site reporting an error without unwrapping it first', async () => {
+    const { globSync, readFileSync } = await import('node:fs');
+    const root = new URL('../', import.meta.url);
+    const files = globSync('**/*.{ts,tsx}', { cwd: root }).filter((f) => !f.endsWith('.test.ts') && !f.endsWith('.test.tsx'));
+
+    // Or a glob that quietly matched nothing would make this pass forever.
+    expect(files.length).toBeGreaterThan(30);
+
+    const offenders = files.flatMap((file) => {
+      const source = readFileSync(new URL(file, root), 'utf8');
+      return [...source.matchAll(/\b(setError|setFailed|report\.current)\(String\(/g)].map(
+        (match) => `${file}: ${match[1]}(String(...))`,
+      );
+    });
+
+    expect(offenders, 'report through explain for runtime errors, messageOf for git and the shell').toEqual([]);
   });
 
   it('says the working directory is gone', () => {

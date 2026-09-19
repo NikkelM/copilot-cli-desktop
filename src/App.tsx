@@ -879,7 +879,7 @@ export default function App() {
         .then(() => sessions.refresh())
         .catch((e: unknown) => {
           sessions.restore(target.sessionId);
-          setError(messageOf(e));
+          setError(explain(e));
         });
     },
     [selectedId, sessions],
@@ -917,15 +917,17 @@ export default function App() {
         load: (sessionId) => {
           loadSession(sessionId)
             .then(() => sessions.refresh())
-            .catch((e: unknown) => setError(messageOf(e)));
+            .catch((e: unknown) => setError(explain(e)));
         },
         unload: (sessionId) => {
           evictSession(sessionId)
             .then(() => sessions.refresh())
-            .catch((e: unknown) => setError(String(e)));
+            .catch((e: unknown) => setError(explain(e)));
         },
         copy: (text) => void copyText(text),
-        openDirectory: (path) => void openPath(path).catch((e: unknown) => setError(String(e))),
+        // Not explained: these translations are about the Copilot runtime, and a path that
+        // happens to contain "copilot" would be read as the CLI failing to start.
+        openDirectory: (path) => void openPath(path).catch((e: unknown) => setError(messageOf(e))),
         remove: (target) => (confirmDelete.confirms ? setDeleting(target) : void removeSession(target)),
       }),
     [favourites, toggleFavourite, archived, toggleArchived, sessions, confirmDelete.confirms, removeSession],
@@ -1281,7 +1283,7 @@ export default function App() {
           onRename={(name) => {
             renameSession(naming.sessionId, name)
               .then(() => sessions.refresh())
-              .catch((e: unknown) => setError(messageOf(e)));
+              .catch((e: unknown) => setError(explain(e)));
           }}
           onClose={() => setNaming(null)}
         />

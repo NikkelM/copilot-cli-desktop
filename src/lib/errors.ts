@@ -47,7 +47,12 @@ const PLAINLY: Array<{ when: RegExp; say: string | ((match: RegExpMatchArray) =>
       `The runtime does not know ${match[1]}, which means it was built before this window. Restart the app.`,
   },
   {
-    when: /first event must be session\.(start|resume)|cannot create session from empty events array/i,
+    /**
+     * Three wordings for the same thing, from three places. The first two come from the JS
+     * bundle; the third from `runtime.node`, the native half, which is why it was missed
+     * until a session turned up unopenable with the message passed through untouched.
+     */
+    when: /first event must be session\.(start|resume)|cannot create session from empty events array|session history cannot be recovered|did not include an? ['"]?session\.start['"]? event/i,
     say: 'This session has no history left to reopen. Its record in the session store is empty or was removed.',
   },
   {
@@ -78,6 +83,13 @@ const PLAINLY: Array<{ when: RegExp; say: string | ((match: RegExpMatchArray) =>
  * Anything unrecognised is returned as it arrived: an error nobody anticipated is still the
  * only real evidence of what happened, and replacing it with a guess would lose the part
  * that mattered.
+ *
+ * Use this for anything the Copilot runtime answered, and `messageOf` for anything else -
+ * git, the shell, the filesystem. The patterns here are about the runtime, so applying them
+ * elsewhere invents a meaning: `git push` failing with "Authentication failed" would be
+ * reported as Copilot not being signed in, and a path with `.copilot` in it failing to open
+ * would be reported as the CLI failing to start. Since this falls back to `messageOf`,
+ * reaching for it on a runtime error is never worse and is usually better.
  */
 export function explain(error: unknown): string {
   const message = messageOf(error);
