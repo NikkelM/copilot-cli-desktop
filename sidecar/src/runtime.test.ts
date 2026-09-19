@@ -399,6 +399,34 @@ describe('SessionRuntime', () => {
       expect(client.resumeSession).toHaveBeenCalledTimes(1);
     });
 
+    it('says it is coming before it arrives, since a resume is not instant', async () => {
+      // The row the reader just pressed has to answer, and the only thing that knows a
+      // resume has begun is the thing beginning it.
+      const seen: [string, boolean, boolean | undefined][] = [];
+      const { runtime } = makeRuntime({
+        onLoadedChange: (id: string, loaded: boolean, loading?: boolean) => seen.push([id, loaded, loading]),
+      });
+
+      await runtime.load('cold');
+
+      expect(seen).toEqual([
+        ['cold', false, true],
+        ['cold', true, false],
+      ]);
+    });
+
+    it('takes it back when the resume fails, so a row does not pulse for ever', async () => {
+      const seen: boolean[] = [];
+      const { runtime, client } = makeRuntime({
+        onLoadedChange: (_id: string, _loaded: boolean, loading?: boolean) => seen.push(loading === true),
+      });
+      client.resumeSession.mockRejectedValue(new Error('no such session'));
+
+      await expect(runtime.load('cold')).rejects.toThrow(/no such session/);
+
+      expect(seen).toEqual([true, false]);
+    });
+
     it('says so, so the list can move it', async () => {
       const seen: [string, boolean][] = [];
       const { runtime } = makeRuntime({ onLoadedChange: (id: string, on: boolean) => seen.push([id, on]) });
@@ -463,9 +491,12 @@ describe('SessionRuntime', () => {
 
   it('says a session is no longer loaded before the CLI is asked', async () => {
     // Reversed, the app would hear the session is gone while still being told it is loaded.
+    // A resume in flight says nothing about either, so it is left out rather than counted.
     const order: string[] = [];
     const { runtime, sessions, client } = makeRuntime({
-      onLoadedChange: (_id: string, loaded: boolean) => order.push(loaded ? 'loaded' : 'unloaded'),
+      onLoadedChange: (_id: string, loaded: boolean, loading?: boolean) => {
+        if (loading !== true) order.push(loaded ? 'loaded' : 'unloaded');
+      },
     });
     client.deleteSession.mockImplementation(async () => {
       order.push('deleted');

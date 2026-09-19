@@ -130,8 +130,14 @@ export interface RuntimeOptions {
   permissionTimeoutMs?: number;
   /** Receives every session event, for forwarding to the UI. */
   onEvent?: (sessionId: string, event: SessionEvent) => void;
-  /** Notifies that a session's loaded state changed, so the sidebar can update. */
-  onLoadedChange?: (sessionId: string, loaded: boolean) => void;
+  /**
+   * Notifies that a session's loaded state changed, so the sidebar can update.
+   *
+   * `loading` is a resume in flight, which is neither loaded nor not: it is the only one of
+   * the three that takes long enough to be worth drawing, and the reader who asked for it is
+   * watching the row they asked about (#107).
+   */
+  onLoadedChange?: (sessionId: string, loaded: boolean, loading?: boolean) => void;
   /**
    * A turn's changes were written to the session's rewind store.
    *
@@ -208,7 +214,7 @@ export class SessionRuntime {
   private readonly maxLoadedSessions: number;
   private readonly idleTimeoutMs: number;
   private readonly onEvent?: (sessionId: string, event: SessionEvent) => void;
-  private readonly onLoadedChange?: (sessionId: string, loaded: boolean) => void;
+  private readonly onLoadedChange?: (sessionId: string, loaded: boolean, loading?: boolean) => void;
   private readonly onChangesRecorded?: (sessionId: string) => void;
   private readonly onPermissionRequest?: (
     sessionId: string,
@@ -445,6 +451,21 @@ export class SessionRuntime {
   }
 
   private async resume(sessionId: string): Promise<CopilotSession> {
+    // Said before anything is awaited, so a row shows it is coming rather than sitting still
+    // for however long the CLI takes. Taken back by dopt on the way in, and below when
+    // the resume fails - a row left pulsing over a session that is not coming would be worse
+    // than never having said anything.
+    this.onLoadedChange?.(sessionId, false, true);
+
+    try {
+      return await this.resumed(sessionId);
+    } catch (error) {
+      this.onLoadedChange?.(sessionId, false, false);
+      throw error;
+    }
+  }
+
+  private async resumed(sessionId: string): Promise<CopilotSession> {
     const client = await this.ensureClient();
     const pluginDirectories = await this.pluginDirectories(client);
 
@@ -497,7 +518,7 @@ export class SessionRuntime {
       idleTimer: null,
     });
     this.touch(sessionId);
-    this.onLoadedChange?.(sessionId, true);
+    this.onLoadedChange?.(sessionId, true, false);
   }
 
   /**

@@ -611,7 +611,7 @@ function Row({
 
             Kept when the row is short: it is the one thing on it that is not a reminder of
             what the session is, but a claim about what it is doing now (#187). */}
-        {session.loaded && (
+        {(session.loaded || mark.state === 'loading') && (
           <span className={`activity activity-${mark.state}`} role="img" aria-label={describeActivity(mark)} />
         )}
       </span>

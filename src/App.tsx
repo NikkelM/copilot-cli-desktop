@@ -327,8 +327,8 @@ export default function App() {
   );
 
   useTauriEvent(() =>
-    onSessionLoaded(({ sessionId, loaded }) => {
-      sessions.observeLoaded(sessionId, loaded);
+    onSessionLoaded(({ sessionId, loaded, loading }) => {
+      sessions.observeLoaded(sessionId, loaded, loading);
 
       // The queue lives in the session that was let go, so nothing is waiting any more.
       if (!loaded) queue.clear(sessionId);
@@ -827,8 +827,9 @@ export default function App() {
         sessions.working,
         prompts.blocking,
         Object.fromEntries(Object.entries(queue.queues).map(([id, waiting]) => [id, waiting.length])),
+        sessions.loading,
       ),
-    [sessions.working, prompts.blocking, queue.queues],
+    [sessions.working, prompts.blocking, queue.queues, sessions.loading],
   );
 
   useTaskbar(sessions.working.size > 0);

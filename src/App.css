@@ -418,6 +418,19 @@ body {
 }
 
 /**
+ * Coming into memory, which is the only state a session can be in without being loaded yet.
+ *
+ * The colour the composer already breathes while a session wakes, in the place the green dot
+ * will be - so the row answers the press that asked for it rather than sitting still for
+ * however long the CLI takes. A filled disc where working is a ring: both are blue and both
+ * breathe, and shape is what tells them apart, as it does for the rest of these (#107).
+ */
+.activity-loading {
+  background: var(--accent);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+/**
  * Working reads as motion, since it is the one state that resolves on its own. A ring
  * rather than a disc, so it is a different shape and not only a different brightness, and
  * the same breathe the composer uses while a session wakes: one kind of waiting, one motion.
@@ -2570,6 +2583,13 @@ button.group:hover {
 
 @media (prefers-reduced-motion: reduce) {
   .composer-spinner {
+    animation: none;
+  }
+
+  /* Still told apart by colour and shape without the motion, which is what carries the
+     meaning anyway. Working was already breathing and was already missing from here. */
+  .activity-loading,
+  .activity-working {
     animation: none;
   }
 

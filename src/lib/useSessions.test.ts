@@ -215,3 +215,66 @@ describe('taking a session out of the list before disk agrees', () => {
     expect(result.current.all.map((s) => s.sessionId)).toEqual(['s1', 's2']);
   });
 });
+
+describe('a session being resumed', () => {
+  beforeEach(() => {
+    listSessions.mockReset().mockResolvedValue({ sessions: [summary('s1'), summary('s2')] });
+    runtimeStatus.mockReset().mockResolvedValue({ maxLoadedSessions: 3 });
+  });
+
+  it('says nothing to begin with', async () => {
+    const { result } = await listed();
+
+    expect([...result.current.loading]).toEqual([]);
+  });
+
+  it('holds it from the moment the resume starts', async () => {
+    const { result } = await listed();
+
+    act(() => result.current.observeLoaded('s1', false, true));
+
+    expect([...result.current.loading]).toEqual(['s1']);
+    // Not loaded yet: that is the whole point of a third state.
+    expect(result.current.all.find((s) => s.sessionId === 's1')?.loaded).toBe(false);
+  });
+
+  it('lets go once the session is there', async () => {
+    const { result } = await listed();
+    act(() => result.current.observeLoaded('s1', false, true));
+
+    act(() => result.current.observeLoaded('s1', true, false));
+
+    expect([...result.current.loading]).toEqual([]);
+    expect(result.current.all.find((s) => s.sessionId === 's1')?.loaded).toBe(true);
+  });
+
+  it('lets go when the resume fails, so a row does not pulse for ever', async () => {
+    const { result } = await listed();
+    act(() => result.current.observeLoaded('s1', false, true));
+
+    act(() => result.current.observeLoaded('s1', false, false));
+
+    expect([...result.current.loading]).toEqual([]);
+    expect(result.current.all.find((s) => s.sessionId === 's1')?.loaded).toBe(false);
+  });
+
+  it('takes an unloading that says nothing about resuming', async () => {
+    // Every other caller omits the argument, and omitting it must not mean "still loading".
+    const { result } = await listed();
+    act(() => result.current.observeLoaded('s1', false, true));
+
+    act(() => result.current.observeLoaded('s1', false));
+
+    expect([...result.current.loading]).toEqual([]);
+  });
+
+  it('keeps two apart', async () => {
+    const { result } = await listed();
+
+    act(() => result.current.observeLoaded('s1', false, true));
+    act(() => result.current.observeLoaded('s2', false, true));
+    act(() => result.current.observeLoaded('s1', true, false));
+
+    expect([...result.current.loading]).toEqual(['s2']);
+  });
+});

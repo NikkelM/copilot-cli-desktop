@@ -1145,3 +1145,61 @@ describe('filtering by tags chosen from the menu', () => {
     expect(screen.getByText('Beta')).toBeTruthy();
   });
 });
+
+describe('a session on its way into memory', () => {
+  const two = [session({ sessionId: 'a', title: 'Alpha' }), session({ sessionId: 'b', title: 'Beta' })];
+
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={two}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        {...over}
+      />,
+    );
+
+  const markOn = (title: string) =>
+    (screen.getByText(title).closest('.session') as HTMLElement).querySelector('.activity');
+
+  it('is marked even though it is not loaded yet', () => {
+    // The mark is otherwise only drawn for a loaded session, and this one is not - which is
+    // the whole reason the state exists.
+    shown({ activity: { a: { state: 'loading', queued: 0 } } });
+
+    expect(markOn('Alpha')?.className).toContain('activity-loading');
+  });
+
+  it('says what it is doing, for a reader who cannot see the colour', () => {
+    shown({ activity: { a: { state: 'loading', queued: 0 } } });
+
+    expect(markOn('Alpha')?.getAttribute('aria-label')).toBe('Coming into memory');
+  });
+
+  it('leaves a session nobody is waking unmarked', () => {
+    shown({ activity: { a: { state: 'loading', queued: 0 } } });
+
+    expect(markOn('Beta')).toBeNull();
+  });
+
+  it('gives the mark back to the loaded state once it arrives', () => {
+    const loaded = [session({ sessionId: 'a', title: 'Alpha', loaded: true })];
+    render(
+      <Sidebar
+        sessions={loaded}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{ a: { state: 'idle', queued: 0 } }}
+      />,
+    );
+
+    expect(markOn('Alpha')?.className).toContain('activity-idle');
+  });
+});

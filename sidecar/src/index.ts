@@ -70,7 +70,7 @@ function notify(method: string, params: unknown): void {
 
 const runtime = new SessionRuntime({
   onEvent: (sessionId, event) => notify(NOTIFY_SESSION_EVENT, { sessionId, event }),
-  onLoadedChange: (sessionId, loaded) => notify(NOTIFY_SESSION_LOADED, { sessionId, loaded }),
+  onLoadedChange: (sessionId, loaded, loading) => notify(NOTIFY_SESSION_LOADED, { sessionId, loaded, loading }),
   onChangesRecorded: (sessionId) => notify(NOTIFY_SESSION_CHANGES, { sessionId }),
   onPermissionRequest: (sessionId, requestId, request, expiresAt) =>
     notify(NOTIFY_PERMISSION_REQUESTED, { sessionId, requestId, request, expiresAt }),

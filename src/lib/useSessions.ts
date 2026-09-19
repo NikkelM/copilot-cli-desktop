@@ -27,6 +27,8 @@ export function useSessions(onError: (message: string) => void) {
   /** Session ids in activation order, most recent first. Fixes the active group's order. */
   const [activeOrder, setActiveOrder] = useState<string[]>([]);
   const [maxLoaded, setMaxLoaded] = useState<number | undefined>(undefined);
+  /** Sessions being resumed, which is neither loaded nor not and is worth saying. */
+  const [loading, setLoading] = useState<ReadonlySet<string>>(() => new Set());
   /** Sessions with a turn running, whichever one is on screen. */
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set());
   /**
@@ -109,7 +111,17 @@ export function useSessions(onError: (message: string) => void) {
   }, []);
 
   /** Take a session waking or being let go, which moves it between the sidebar's groups. */
-  const observeLoaded = useCallback((sessionId: string, loaded: boolean) => {
+  const observeLoaded = useCallback((sessionId: string, loaded: boolean, loading = false) => {
+    // Said before anything else, because a resume reports itself starting before it reports
+    // itself done and the row should show it for the whole of that rather than at the end.
+    setLoading((current) => {
+      if (current.has(sessionId) === loading) return current;
+      const next = new Set(current);
+      if (loading) next.add(sessionId);
+      else next.delete(sessionId);
+      return next;
+    });
+
     setSessions((current) =>
       current.map((session) => (session.sessionId === sessionId ? { ...session, loaded } : session)),
     );
@@ -146,6 +158,6 @@ export function useSessions(onError: (message: string) => void) {
     [all],
   );
 
-  return { all, find, maxLoaded, working, refresh, drop, restore, observe, observeLoaded };
+  return { all, find, maxLoaded, working, loading, refresh, drop, restore, observe, observeLoaded };
 }
 

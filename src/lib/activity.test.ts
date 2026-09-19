@@ -70,3 +70,38 @@ describe('describeActivity', () => {
     expect(describeActivity({ state: 'working', queued: 2 })).toBe('Working. 2 messages waiting');
   });
 });
+
+/**
+ * A resume is the only thing a session can be doing without being loaded, and it is the one
+ * state slow enough to be worth drawing: the reader who asked for it is watching the row
+ * they asked about, and a row that sits still reads as nothing having happened.
+ */
+describe('a session coming into memory', () => {
+  it('says so', () => {
+    expect(activityOf(new Set(), [], {}, new Set(['a']))).toEqual({ a: { state: 'loading', queued: 0 } });
+  });
+
+  it('gives way to anything the session turns out to be doing', () => {
+    // A resume that has already produced a question is answering it, not still arriving.
+    expect(activityOf(new Set(['a']), [], {}, new Set(['a'])).a?.state).toBe('working');
+    expect(activityOf(new Set(), [permission('a')], {}, new Set(['a'])).a?.state).toBe('blocked');
+    expect(activityOf(new Set(), [], { a: 2 }, new Set(['a'])).a?.state).toBe('queued');
+  });
+
+  it('outranks idle, which is what a session with nothing to say reads as', () => {
+    expect(activityOf(new Set(), [], { a: 0 }, new Set(['a'])).a?.state).toBe('loading');
+  });
+
+  it('says nothing about a session that is not coming', () => {
+    expect(activityOf(new Set(), [], {}, new Set(['a'])).b).toBeUndefined();
+  });
+
+  it('is described in a way that says it is not there yet', () => {
+    expect(describeActivity({ state: 'loading', queued: 0 })).toBe('Coming into memory');
+  });
+
+  it('leaves every other reading alone when nothing is loading', () => {
+    // The argument is optional, since most callers have nothing to say about it.
+    expect(activityOf(new Set(['a']), [], {})).toEqual({ a: { state: 'working', queued: 0 } });
+  });
+});

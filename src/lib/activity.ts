@@ -7,10 +7,10 @@ import type { PendingElicitation, PendingPermission, PendingPlanApproval } from 
  * reader has one question: does this need me. Ordered by how much it asks of them, so
  * combining two states is a matter of taking the larger.
  */
-export type Activity = 'idle' | 'queued' | 'working' | 'blocked';
+export type Activity = 'idle' | 'loading' | 'queued' | 'working' | 'blocked';
 
 /** Ascending by what it asks of the reader, which is what makes `Math.max` the right merge. */
-const RANK: Record<Activity, number> = { idle: 0, queued: 1, working: 2, blocked: 3 };
+const RANK: Record<Activity, number> = { idle: 0, loading: 1, queued: 2, working: 3, blocked: 4 };
 
 export interface ActivityMark {
   state: Activity;
@@ -39,6 +39,7 @@ export function activityOf(
   working: ReadonlySet<string>,
   blocked: readonly Blocking[],
   queued: Readonly<Record<string, number>>,
+  loading: ReadonlySet<string> = new Set(),
 ): Record<string, ActivityMark> {
   const marks: Record<string, ActivityMark> = {};
 
@@ -47,6 +48,9 @@ export function activityOf(
     marks[sessionId] = { ...held, state: RANK[state] > RANK[held.state] ? state : held.state };
   };
 
+  // Lowest of the four, so anything the session turns out to be doing wins: a resume that
+  // has already produced a question is answering it, not still arriving.
+  for (const sessionId of loading) raise(sessionId, 'loading');
   for (const sessionId of working) raise(sessionId, 'working');
   for (const pending of blocked) raise(pending.sessionId, 'blocked');
 
@@ -70,6 +74,8 @@ export function describeActivity({ state, queued }: ActivityMark): string {
       return `Working${queued ? `. ${waiting}` : ''}`;
     case 'queued':
       return waiting;
+    case 'loading':
+      return 'Coming into memory';
     default:
       return 'Loaded in memory';
   }

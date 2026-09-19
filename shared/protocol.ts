@@ -1205,6 +1205,14 @@ export interface SessionEventNotification {
 export interface SessionLoadedNotification {
   sessionId: string;
   loaded: boolean;
+  /**
+   * A resume in flight, which is neither loaded nor not.
+   *
+   * Reported because it is the one of the three that takes long enough to be worth drawing:
+   * the reader who asked for it is watching the row they asked about, and a row that sits
+   * still reads as nothing having happened.
+   */
+  loading?: boolean;
 }
 
 /** Sent when a pending request is answered or abandoned, so the UI can clear it. */
