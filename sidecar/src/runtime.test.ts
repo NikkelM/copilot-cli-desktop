@@ -182,6 +182,10 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
   const client = {
     start: vi.fn(async () => undefined),
     stop: vi.fn(async () => []),
+    // Titling a session on `auto` needs a model that can answer, and picks the cheapest
+    // named one it is offered (#197). The expensive one is first, so preferring the cheap
+    // one and merely taking the first are different answers.
+    listModels: vi.fn(async () => [{ id: 'auto' }, { id: 'an-expensive-model' }, { id: 'a-haiku-model' }]),
     rpc: {
       commands: {
         list: vi.fn(async () => ({
@@ -2297,6 +2301,65 @@ describe('SessionRuntime writing a title for a new session', () => {
     expect(harness.sessions.get('s1')!.rpc.name.setAuto).not.toHaveBeenCalled();
   });
 
+  /**
+   * `auto` is the default and cannot answer the question - the inference comes back as "the
+   * requested model is not supported" - so the session is moved to one that can. Safe only
+   * because it is idle: the same mid-turn would run part of somebody's turn on a model they
+   * did not choose.
+   */
+  it('moves the session to a model that can answer when its own cannot', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'the prompt');
+    const session = harness.sessions.get('s1')!;
+    session.rpc.ui.ephemeralQuery.mockRejectedValueOnce(new Error('the requested model is not supported'));
+
+    session.emit({ type: 'session.idle', data: {} });
+
+    await vi.waitFor(() => expect(session.rpc.name.setAuto).toHaveBeenCalled());
+    // The cheapest named one it was offered, never `auto`, which is what could not answer.
+    expect(session.setModel.mock.calls[0]?.[0]).toBe('a-haiku-model');
+  });
+
+  // `auto` is the one model that cannot answer, so it is never the one moved to - not even
+  // when nothing on offer looks cheap and the choice falls back to whatever is first.
+  it('never moves to auto, whatever the list looks like', async () => {
+    const harness = makeRuntime();
+    harness.client.listModels.mockResolvedValue([{ id: 'auto' }, { id: 'some-model' }]);
+    await harness.runtime.send('s1', 'the prompt');
+    const session = harness.sessions.get('s1')!;
+    session.rpc.ui.ephemeralQuery.mockRejectedValueOnce(new Error('the requested model is not supported'));
+
+    session.emit({ type: 'session.idle', data: {} });
+
+    await vi.waitFor(() => expect(session.setModel).toHaveBeenCalled());
+    expect(session.setModel.mock.calls[0]?.[0]).toBe('some-model');
+  });
+
+  // Being left on a model nobody chose is worse than having no title.
+  it('puts the model back afterwards', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'the prompt');
+    const session = harness.sessions.get('s1')!;
+    session.rpc.ui.ephemeralQuery.mockRejectedValueOnce(new Error('the requested model is not supported'));
+
+    session.emit({ type: 'session.idle', data: {} });
+
+    await vi.waitFor(() => expect(session.rpc.name.setAuto).toHaveBeenCalled());
+    expect(session.setModel.mock.calls.at(-1)?.[0]).toBe('a-named-model');
+  });
+
+  it('puts the model back even when the second question fails too', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'the prompt');
+    const session = harness.sessions.get('s1')!;
+    session.rpc.ui.ephemeralQuery.mockRejectedValue(new Error('the requested model is not supported'));
+
+    session.emit({ type: 'session.idle', data: {} });
+
+    await vi.waitFor(() => expect(session.setModel.mock.calls.length).toBe(2));
+    expect(session.setModel.mock.calls.at(-1)?.[0]).toBe('a-named-model');
+    expect(session.rpc.name.setAuto).not.toHaveBeenCalled();
+  });
   it('keeps the name it had when the question cannot be answered at all', async () => {
     const harness = makeRuntime();
     await harness.runtime.send('s1', 'the prompt');
@@ -2309,5 +2372,3 @@ describe('SessionRuntime writing a title for a new session', () => {
     expect(session.rpc.name.setAuto).not.toHaveBeenCalled();
   });
 });
-
-

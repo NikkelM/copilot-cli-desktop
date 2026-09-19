@@ -696,6 +696,13 @@ export class SessionRuntime {
       // A finished turn is the first moment there is anything to write a title about, and
       // the session is idle, so asking its model a question of our own costs it nothing it
       // was about to do anyway.
+      //
+      // Not at `assistant.turn_start`, which is the first moment the prompt is in context
+      // and would seem to be earlier: measured, a question asked mid-turn is served behind
+      // the work already running and comes back as the turn ends. On a 32-second turn the
+      // title arrived at 31.8 seconds, about a second before it would have anyway, and
+      // paid for it with an attempt that must not move the model and so cannot title a
+      // session on `auto` at all.
       if (event.type === 'session.idle') void this.titleIfUnnamed(sessionId);
 
       this.touch(sessionId);
@@ -1411,23 +1418,17 @@ export class SessionRuntime {
    * and one carried a 303-character name. The CLI does not have this problem because it
    * writes a title itself and hands it over. So does this now (#197).
    *
-   * Three things happen here and any of them may decline:
-   *
-   * - The session's own model is asked the runtime's own title question, so a title written
-   *   here reads like one the CLI wrote.
-   * - `auto` cannot answer it - the inference is refused with "the requested model is not
-   *   supported" - so a session on `auto`, which is the default, is moved to a named model
-   *   for the length of the question and moved back. Only when needed, and always back.
-   * - The answer is set as a name that nobody chose, so the runtime is still free to
-   *   replace it later, and a rename still outranks it.
+   * Tried once, when the session goes idle after a turn. The answer is set as a name that
+   * nobody chose, so the runtime is still free to replace it later and a rename still
+   * outranks it.
    *
    * Failure is silence. A session keeping the name it had is the situation this improves on,
    * not a fault, and nothing here is worth interrupting a reader over.
    */
   private async titleIfUnnamed(sessionId: string): Promise<void> {
     // Once per session per run, whatever the outcome: a session that could not be titled
-    // after its first turn will not be any easier to title after its twentieth, and asking
-    // every time would spend a model call on every idle.
+    // after its first turn will be no easier after its twentieth, and asking again on every
+    // idle would spend a model call each time.
     if (this.titled.has(sessionId)) return;
     this.titled.add(sessionId);
 
@@ -1454,9 +1455,13 @@ export class SessionRuntime {
   /**
    * Put the title question to a session's model, moving it off `auto` only if it has to.
    *
-   * Asked as it stands first, so a session on a named model is never touched. `auto` is the
-   * only model that cannot answer, and it is the default, so the fallback is the path most
-   * sessions take rather than an edge case - which is why the restore is in a `finally`.
+   * Asked as it stands first, so a session on a named model is never moved at all. `auto` is
+   * the only model that cannot answer - the inference comes back as "the requested model is
+   * not supported" - and it is the default, so the fallback is the path most sessions take
+   * rather than an edge case. Which is why the restore is in a `finally`.
+   *
+   * Safe to move it here because the session is idle: doing the same mid-turn would run part
+   * of somebody's turn on a model they did not choose.
    */
   private async askForTitle(session: CopilotSession): Promise<string | null> {
     try {
