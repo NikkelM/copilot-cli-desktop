@@ -71,8 +71,19 @@ export function TagPicker({
     setDraft('');
   };
 
-  // The ones already on the session first, as they were when the dialog opened.
-  const offered = order;
+  /**
+   * What is offered, narrowed by whatever is being typed.
+   *
+   * The box that adds a tag also finds one, which is how most tag inputs behave and is the
+   * only version that needs no second control and no threshold: it is as useful at three
+   * tags as at three hundred. Typing a name that exists finds it; typing one that does not
+   * leaves an empty list and the Add button, which is exactly the choice being made.
+   *
+   * The order is the one taken when the dialog opened, filtered rather than rebuilt, so
+   * clearing the box puts everything back where it was.
+   */
+  const needle = normalise(draft);
+  const offered = needle ? order.filter((tag) => tag.includes(needle)) : order;
 
   return (
     <div className="confirm-backdrop" onMouseDown={onClose}>
@@ -98,11 +109,18 @@ export function TagPicker({
             type="text"
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
-            placeholder="Add a tag"
-            aria-label="Add a tag"
+            placeholder="Find or add a tag"
+            aria-label="Find or add a tag"
             spellCheck={false}
           />
-          <button type="submit" disabled={normalise(draft) === ''}>
+          {/* Refused for one the session already has: the pill in the list below is marked
+              and is what takes it off, and a button that silently did nothing would be the
+              only thing here that does. */}
+          <button
+            type="submit"
+            disabled={needle === '' || held.includes(needle)}
+            title={held.includes(needle) ? `This session already has ${needle}` : undefined}
+          >
             Add
           </button>
         </form>

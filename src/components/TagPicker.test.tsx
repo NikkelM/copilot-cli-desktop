@@ -33,7 +33,7 @@ describe('TagPicker', () => {
   it('adds what was typed', async () => {
     const { onToggle } = show();
 
-    await userEvent.type(screen.getByLabelText('Add a tag'), 'bug');
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'bug');
     await userEvent.click(screen.getByText('Add'));
 
     expect(onToggle).toHaveBeenCalledExactlyOnceWith('bug');
@@ -42,14 +42,14 @@ describe('TagPicker', () => {
   it('adds on Enter, since that is what a box with one field means', async () => {
     const { onToggle } = show();
 
-    await userEvent.type(screen.getByLabelText('Add a tag'), 'bug{Enter}');
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'bug{Enter}');
 
     expect(onToggle).toHaveBeenCalledExactlyOnceWith('bug');
   });
 
   it('empties the box afterwards, so the next one starts clean', async () => {
     show();
-    const field = screen.getByLabelText('Add a tag') as HTMLInputElement;
+    const field = screen.getByLabelText('Find or add a tag') as HTMLInputElement;
 
     await userEvent.type(field, 'bug{Enter}');
 
@@ -59,7 +59,7 @@ describe('TagPicker', () => {
   it('will not add nothing', async () => {
     const { onToggle } = show();
 
-    await userEvent.type(screen.getByLabelText('Add a tag'), '   {Enter}');
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), '   {Enter}');
 
     expect(onToggle).not.toHaveBeenCalled();
     expect((screen.getByText('Add') as HTMLButtonElement).disabled).toBe(true);
@@ -69,7 +69,7 @@ describe('TagPicker', () => {
     // Typing a name into a box called Add cannot reasonably mean remove.
     const { onToggle } = show({ held: ['bug'] });
 
-    await userEvent.type(screen.getByLabelText('Add a tag'), 'bug{Enter}');
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'bug{Enter}');
 
     expect(onToggle).not.toHaveBeenCalled();
   });
@@ -175,7 +175,7 @@ describe('TagPicker', () => {
   it('opens with the box focused, since adding one is why it was opened', () => {
     show();
 
-    expect(document.activeElement?.getAttribute('aria-label')).toBe('Add a tag');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Find or add a tag');
   });
 });
 
@@ -230,5 +230,85 @@ describe('retiring a tag', () => {
     expect(pill.tagName).toBe('SPAN');
     expect(pill.querySelector('.tag-name')?.textContent).toBe('bug');
     expect(pill.querySelector('.tag-retire')).toBeTruthy();
+  });
+});
+
+/**
+ * The box that adds a tag also finds one. No second control and no threshold: it is as
+ * useful at three tags as at three hundred, and typing a name that does not exist leaves an
+ * empty list beside the Add button, which is exactly the choice being made.
+ */
+describe('finding a tag by typing', () => {
+  const many = ['bug', 'spike', 'needs review', 'unity'];
+
+  it('narrows to what matches', async () => {
+    show({ known: many });
+
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'u');
+
+    expect(chips().map((c) => c.textContent)).toEqual(['bug', 'unity']);
+  });
+
+  it('matches anywhere in the name, not only the start', async () => {
+    show({ known: many });
+
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'review');
+
+    expect(chips().map((c) => c.textContent)).toEqual(['needs review']);
+  });
+
+  it('ignores case, as the tags themselves do', async () => {
+    show({ known: many });
+
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'BUG');
+
+    expect(chips().map((c) => c.textContent)).toEqual(['bug']);
+  });
+
+  it('keeps the order it opened with rather than rebuilding it', async () => {
+    show({ held: ['unity'], known: many });
+
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'u');
+
+    // held-first, then the rest as they were - filtered, not reordered.
+    expect(chips().map((c) => c.textContent)).toEqual(['unity', 'bug']);
+  });
+
+  it('puts everything back when the box is emptied', async () => {
+    show({ known: many });
+    const field = screen.getByLabelText('Find or add a tag');
+
+    await userEvent.type(field, 'u');
+    await userEvent.clear(field);
+
+    expect(chips().map((c) => c.textContent)).toEqual(many);
+  });
+
+  it('offers nothing when nothing matches, which is the case for adding one', async () => {
+    const { onToggle } = show({ known: many });
+
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'brand new');
+    expect(chips()).toHaveLength(0);
+
+    await userEvent.click(screen.getByText('Add'));
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith('brand new');
+  });
+
+  it('refuses to add one the session already has, and says why', async () => {
+    show({ held: ['bug'], known: many });
+
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'bug');
+
+    const add = screen.getByText('Add') as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    expect(add.getAttribute('title')).toBe('This session already has bug');
+  });
+
+  it('still offers to add one that exists but is not on this session', async () => {
+    show({ held: [], known: many });
+
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'bug');
+
+    expect((screen.getByText('Add') as HTMLButtonElement).disabled).toBe(false);
   });
 });
