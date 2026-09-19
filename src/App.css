@@ -387,14 +387,31 @@ body {
   cursor: pointer;
 }
 
+/**
+ * The title and, beside it, what the session is doing.
+ *
+ * Laid out inline rather than as a flex row. A dot has no text in it, so it has no baseline
+ * of its own, and a flex row aligning on baselines synthesises one at its bottom edge - which
+ * leaves it resting on the line the letters stand on instead of sitting among them.
+ *
+ * Raised to half the cap height rather than to `middle`, which is the baseline plus half the
+ * x-height. A title is written in title case and the eye reads it as centred on the capitals,
+ * so aligning to the lowercase letters still looks low. Said as a calc rather than a number
+ * because the two halves scale differently: the cap height follows the text, the dot does
+ * not, and the offset has to hold at every size (#139).
+ */
 .session-title {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
   font-weight: 500;
   /* A long title wraps rather than being cut: which session it is is the whole point of
      the row, and the end of a name is often the part that distinguishes it. */
   overflow-wrap: anywhere;
+}
+
+.session-title .activity {
+  display: inline-block;
+  /* Bottom edge here, so the middle of a 6px dot lands on half the cap height. */
+  vertical-align: calc(0.36em - 3px);
+  margin-left: 6px;
 }
 
 /**
