@@ -11,6 +11,7 @@ import { Waiting } from './Waiting';
 import { isEmpty, matchesQuery, parseQuery } from '../lib/sessionFilter';
 import { TagFilter } from './TagFilter';
 import { countTags } from '../lib/useTags';
+import { read as readStore, save } from '../lib/store';
 import type { Tags } from '../lib/useTags';
 
 import type { SessionSummary } from '../../shared/protocol';
@@ -86,7 +87,7 @@ const FOLDED = 'copilot-desktop.folded';
 
 function readFolded(): Record<string, boolean> {
   try {
-    const stored = localStorage.getItem(FOLDED);
+    const stored = readStore('sessions', FOLDED);
     return stored ? (JSON.parse(stored) as Record<string, boolean>) : {};
   } catch {
     // A store that cannot be read is one nobody can fix from here. Everything open is the
@@ -115,7 +116,7 @@ function useFolded() {
     setFolded((current) => {
       const next = { ...current, [key]: !shut };
       try {
-        localStorage.setItem(FOLDED, JSON.stringify(next));
+        save('sessions', FOLDED, JSON.stringify(next));
       } catch {
         // Folding still works for this run; only remembering it does not.
       }

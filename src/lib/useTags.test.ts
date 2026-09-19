@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { read, save } from './store';
 
 const { existingSessions } = vi.hoisted(() => ({ existingSessions: vi.fn() }));
 vi.mock('./sidecar', () => ({ existingSessions: (ids: string[]) => existingSessions(ids) }));
 
-const TAGS = 'copilot-desktop.tags';
+const TAGS = 'tags';
 
 /** The module remembers that it has pruned, which is per install rather than per hook. */
 async function load() {
@@ -76,7 +77,7 @@ describe('what is true about a session', () => {
   });
 
   it('sorts a store that was written in some other order', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ s1: ['unity', 'hades', 'mod'] }));
+    save('sessions', TAGS, JSON.stringify({ s1: ['unity', 'hades', 'mod'] }));
     const { useTags } = await load();
 
     expect(renderHook(() => useTags()).result.current.tags.s1).toEqual(['hades', 'mod', 'unity']);
@@ -92,7 +93,7 @@ describe('what is true about a session', () => {
     act(() => result.current.toggle('s1', 'spike'));
 
     expect(result.current.tags).toEqual({});
-    expect(localStorage.getItem(TAGS)).toBe('{}');
+    expect(read('sessions', TAGS)).toBe('{}');
   });
 
   it('normalises on the way in, so one spelling wins', async () => {
@@ -127,21 +128,21 @@ describe('what is true about a session', () => {
   });
 
   it('is still tagged next time', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ s1: ['bug'] }));
+    save('sessions', TAGS, JSON.stringify({ s1: ['bug'] }));
     const { useTags } = await load();
 
     expect(renderHook(() => useTags()).result.current.tags).toEqual({ s1: ['bug'] });
   });
 
   it('survives a store written by something else', async () => {
-    localStorage.setItem(TAGS, 'not json at all');
+    save('sessions', TAGS, 'not json at all');
     const { useTags } = await load();
 
     expect(renderHook(() => useTags()).result.current.tags).toEqual({});
   });
 
   it('ignores entries that are not lists of tags', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ s1: 'bug', s2: ['spike'], s3: [] }));
+    save('sessions', TAGS, JSON.stringify({ s1: 'bug', s2: ['spike'], s3: [] }));
     const { useTags } = await load();
 
     expect(renderHook(() => useTags()).result.current.tags).toEqual({ s2: ['spike'] });
@@ -149,14 +150,14 @@ describe('what is true about a session', () => {
 
   it('reads a tag once however many times it was written', async () => {
     // A store written by an older version, or by hand, should not make a row say bug twice.
-    localStorage.setItem(TAGS, JSON.stringify({ s1: ['bug', 'Bug', ' bug ', 'spike'] }));
+    save('sessions', TAGS, JSON.stringify({ s1: ['bug', 'Bug', ' bug ', 'spike'] }));
     const { useTags } = await load();
 
     expect(renderHook(() => useTags()).result.current.tags).toEqual({ s1: ['bug', 'spike'] });
   });
 
   it('forgets a session that is no longer on disk', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ gone: ['bug'], here: ['spike'] }));
+    save('sessions', TAGS, JSON.stringify({ gone: ['bug'], here: ['spike'] }));
     existingSessions.mockResolvedValue(['here']);
     const { useTags } = await load();
 
@@ -166,31 +167,31 @@ describe('what is true about a session', () => {
   });
 });
 
-describe('allTags', () => {
+describe('the order tags are offered in', () => {
   it('is empty when nothing is tagged', async () => {
-    const { allTags } = await load();
+    const { countTags } = await load();
 
-    expect(allTags({})).toEqual([]);
+    expect(countTags({}).map(({ tag }) => tag)).toEqual([]);
   });
 
   it('names each tag once, however many sessions carry it', async () => {
-    const { allTags } = await load();
+    const { countTags } = await load();
 
-    expect(allTags({ a: ['bug'], b: ['bug'] })).toEqual(['bug']);
+    expect(countTags({ a: ['bug'], b: ['bug'] }).map(({ tag }) => tag)).toEqual(['bug']);
   });
 
   it('puts the commonest first, since that is what is being reached for', async () => {
     // Names chosen so frequency and the alphabet disagree: sorted by name alone this would
     // read the other way round, and the test could not tell the two orders apart.
-    const { allTags } = await load();
+    const { countTags } = await load();
 
-    expect(allTags({ a: ['zebra', 'apple'], b: ['zebra'], c: ['zebra'] })).toEqual(['zebra', 'apple']);
+    expect(countTags({ a: ['zebra', 'apple'], b: ['zebra'], c: ['zebra'] }).map(({ tag }) => tag)).toEqual(['zebra', 'apple']);
   });
 
   it('breaks a tie alphabetically rather than by whatever order the store was in', async () => {
-    const { allTags } = await load();
+    const { countTags } = await load();
 
-    expect(allTags({ a: ['zebra'], b: ['apple'] })).toEqual(['apple', 'zebra']);
+    expect(countTags({ a: ['zebra'], b: ['apple'] }).map(({ tag }) => tag)).toEqual(['apple', 'zebra']);
   });
 });
 
@@ -267,7 +268,7 @@ describe('countTags once something is chosen', () => {
 
 describe('retiring a tag', () => {
   it('takes it off every session carrying it', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug', 'unity'], b: ['bug'], c: ['unity'] }));
+    save('sessions', TAGS, JSON.stringify({ a: ['bug', 'unity'], b: ['bug'], c: ['unity'] }));
     const { useTags } = await load();
     const { result } = renderHook(() => useTags());
 
@@ -277,18 +278,18 @@ describe('retiring a tag', () => {
   });
 
   it('drops a session left with nothing, so the store does not keep empty entries', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug'] }));
+    save('sessions', TAGS, JSON.stringify({ a: ['bug'] }));
     const { useTags } = await load();
     const { result } = renderHook(() => useTags());
 
     act(() => result.current.retire('bug'));
 
     expect(result.current.tags).toEqual({});
-    expect(localStorage.getItem(TAGS)).toBe('{}');
+    expect(read('sessions', TAGS)).toBe('{}');
   });
 
   it('is still gone next time', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug', 'unity'] }));
+    save('sessions', TAGS, JSON.stringify({ a: ['bug', 'unity'] }));
     const first = await load();
     const opened = renderHook(() => first.useTags());
     act(() => opened.result.current.retire('bug'));
@@ -298,7 +299,7 @@ describe('retiring a tag', () => {
   });
 
   it('normalises, so retiring Bug retires bug', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug'] }));
+    save('sessions', TAGS, JSON.stringify({ a: ['bug'] }));
     const { useTags } = await load();
     const { result } = renderHook(() => useTags());
 
@@ -308,7 +309,7 @@ describe('retiring a tag', () => {
   });
 
   it('leaves everything else alone', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug', 'unity', 'hades'] }));
+    save('sessions', TAGS, JSON.stringify({ a: ['bug', 'unity', 'hades'] }));
     const { useTags } = await load();
     const { result } = renderHook(() => useTags());
 
@@ -318,7 +319,7 @@ describe('retiring a tag', () => {
   });
 
   it('does nothing for a name nobody used', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug'] }));
+    save('sessions', TAGS, JSON.stringify({ a: ['bug'] }));
     const { useTags } = await load();
     const { result } = renderHook(() => useTags());
 
@@ -328,12 +329,102 @@ describe('retiring a tag', () => {
   });
 
   it('ignores a name that is nothing but space', async () => {
-    localStorage.setItem(TAGS, JSON.stringify({ a: ['bug'] }));
+    save('sessions', TAGS, JSON.stringify({ a: ['bug'] }));
     const { useTags } = await load();
     const { result } = renderHook(() => useTags());
 
     act(() => result.current.retire('   '));
 
     expect(result.current.tags).toEqual({ a: ['bug'] });
+  });
+});
+
+/**
+ * A tag is a name someone invented, and it outlives the sessions carrying it. Taking a tag
+ * off the last session says the session is not that; it does not say the name is unwanted.
+ * Retiring is the only thing that says that.
+ */
+describe('a name nobody is using', () => {
+  it('is still offered after the last session carrying it is untagged', async () => {
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+    act(() => result.current.toggle('s1', 'bug'));
+
+    act(() => result.current.toggle('s1', 'bug'));
+
+    expect(result.current.tags).toEqual({});
+    expect(result.current.known).toEqual(['bug']);
+  });
+
+  it('is still there next time', async () => {
+    const first = await load();
+    const opened = renderHook(() => first.useTags());
+    act(() => opened.result.current.toggle('s1', 'bug'));
+    act(() => opened.result.current.toggle('s1', 'bug'));
+
+    const { useTags } = await load();
+    expect(renderHook(() => useTags()).result.current.known).toEqual(['bug']);
+  });
+
+  it('can be put on a session again', async () => {
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+    act(() => result.current.toggle('s1', 'bug'));
+    act(() => result.current.toggle('s1', 'bug'));
+
+    act(() => result.current.toggle('s2', 'bug'));
+
+    expect(result.current.tags).toEqual({ s2: ['bug'] });
+  });
+
+  it('goes when it is retired, which is the thing that means it', async () => {
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+    act(() => result.current.toggle('s1', 'bug'));
+
+    act(() => result.current.retire('bug'));
+
+    expect(result.current.known).toEqual([]);
+    expect(result.current.tags).toEqual({});
+  });
+
+  it('is offered even when it was only ever named, never used', async () => {
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.toggle('s1', 'spike'));
+    act(() => result.current.toggle('s1', 'spike'));
+
+    expect(result.current.known).toContain('spike');
+  });
+});
+
+describe('the names there are', () => {
+  it('puts the ones in use first, commonest first among those', async () => {
+    const { useTags } = await load();
+    const { result } = renderHook(() => useTags());
+
+    act(() => result.current.toggle('s1', 'used'));
+    act(() => result.current.toggle('s2', 'used'));
+    act(() => result.current.toggle('s1', 'once'));
+    act(() => result.current.toggle('s3', 'spare'));
+    act(() => result.current.toggle('s3', 'spare'));
+
+    expect(result.current.known).toEqual(['used', 'once', 'spare']);
+  });
+
+  it('offers what a store written before names were kept still holds', async () => {
+    // Nothing wrote tagNames then, so the names have to be recovered from the sessions.
+    save('sessions', 'tags', JSON.stringify({ s1: ['old'] }));
+    const { useTags } = await load();
+
+    expect(renderHook(() => useTags()).result.current.known).toEqual(['old']);
+  });
+
+  it('holds each name once, however it was written', async () => {
+    save('sessions', 'tagNames', JSON.stringify(['bug', 'Bug', ' bug ']));
+    const { useTags } = await load();
+
+    expect(renderHook(() => useTags()).result.current.known).toEqual(['bug']);
   });
 });

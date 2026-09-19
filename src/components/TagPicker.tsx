@@ -79,11 +79,14 @@ export function TagPicker({
    * tags as at three hundred. Typing a name that exists finds it; typing one that does not
    * leaves an empty list and the Add button, which is exactly the choice being made.
    *
-   * The order is the one taken when the dialog opened, filtered rather than rebuilt, so
-   * clearing the box puts everything back where it was.
+   * The order is the one taken when the dialog opened, so ticking a tag does not move it out
+   * from under the pointer - but a name that has gone since is dropped rather than held in
+   * place, or retiring one would leave it on screen until the dialog was opened again.
    */
   const needle = normalise(draft);
-  const offered = needle ? order.filter((tag) => tag.includes(needle)) : order;
+  const offered = order
+    .filter((tag) => known.includes(tag) || held.includes(tag))
+    .filter((tag) => !needle || tag.includes(needle));
 
   return (
     <div className="confirm-backdrop" onMouseDown={onClose}>

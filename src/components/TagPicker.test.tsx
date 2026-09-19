@@ -312,3 +312,47 @@ describe('finding a tag by typing', () => {
     expect((screen.getByText('Add') as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+describe('a tag retired while the dialog is open', () => {
+  it('leaves at once rather than waiting to be reopened', async () => {
+    // The order is frozen so ticking does not move anything, which is why a name that has
+    // gone has to be dropped deliberately.
+    const view = render(
+      <TagPicker title="Biomes" held={[]} known={['bug', 'spike']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(chips().map((c) => c.textContent)).toEqual(['bug', 'spike']);
+
+    view.rerender(
+      <TagPicker title="Biomes" held={[]} known={['spike']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    expect(chips().map((c) => c.textContent)).toEqual(['spike']);
+  });
+
+  it('leaves the rest where they were', async () => {
+    const view = render(
+      <TagPicker title="Biomes" held={['unity']} known={['bug', 'spike', 'unity']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(chips().map((c) => c.textContent)).toEqual(['unity', 'bug', 'spike']);
+
+    view.rerender(
+      <TagPicker title="Biomes" held={['unity']} known={['spike', 'unity']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    expect(chips().map((c) => c.textContent)).toEqual(['unity', 'spike']);
+  });
+
+  it('keeps one the session still carries, whatever the known list says', async () => {
+    // A tag on the session in front of the reader is a fact about it, and dropping it from
+    // the list would leave no way to take it off.
+    const view = render(
+      <TagPicker title="Biomes" held={[]} known={['bug']} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    view.rerender(
+      <TagPicker title="Biomes" held={['bug']} known={[]} onToggle={vi.fn()} onRetire={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    expect(chips().map((c) => c.textContent)).toEqual(['bug']);
+  });
+});

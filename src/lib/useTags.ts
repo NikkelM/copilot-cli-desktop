@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { goneFrom, needsPruning } from './pruneSessions';
+import { read as readStore, save } from './store';
 
 /**
  * What is true about a session right now, as the reader sees it.
@@ -15,7 +16,16 @@ import { goneFrom, needsPruning } from './pruneSessions';
  */
 
 /** Where they live, beside the app's other choices. */
-export const TAGS = 'copilot-desktop.tags';
+/**
+ * The names there are, apart from which sessions carry them.
+ *
+ * A tag is a name someone invented, and it goes on existing when the last session carrying
+ * it is untagged: taking a tag off a session says nothing about wanting the name gone. The
+ * only thing that removes a name is retiring it deliberately.
+ */
+export const TAG_NAMES = 'tagNames';
+
+export const TAGS = 'tags';
 
 /**
  * Tags per session, each session's own sorted alphabetically.
@@ -39,7 +49,7 @@ export function normalise(tag: string): string {
 
 function read(): Tags {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(TAGS) ?? '{}');
+    const parsed: unknown = JSON.parse(readStore('sessions', TAGS) ?? '{}');
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {};
 
     const out: Record<string, string[]> = {};
@@ -57,7 +67,7 @@ function read(): Tags {
 }
 
 function write(tags: Tags): void {
-  localStorage.setItem(TAGS, JSON.stringify(tags));
+  save('sessions', TAGS, JSON.stringify(tags));
 }
 
 /** Forget tags for sessions that are gone. */
@@ -74,18 +84,46 @@ async function prune(): Promise<void> {
   write(kept);
 }
 
+/** The names there are, whether or not any session carries them. */
+function readNames(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(readStore('sessions', TAG_NAMES) ?? '[]');
+    if (!Array.isArray(parsed)) return [];
+    return [...new Set(parsed.filter((t): t is string => typeof t === 'string').map(normalise))].filter(Boolean).sort();
+  } catch {
+    return [];
+  }
+}
+
+function writeNames(names: readonly string[]): void {
+  save('sessions', TAG_NAMES, JSON.stringify(names));
+}
+
 export function useTags() {
   const [tags, setTags] = useState<Tags>(read);
+  const [names, setNames] = useState<string[]>(readNames);
 
   useEffect(() => {
     if (!needsPruning(TAGS)) return;
-    void prune().then(() => setTags(read()));
+    void prune().then(() => {
+      setTags(read());
+      setNames(readNames());
+    });
   }, []);
 
   /** Add a tag to a session, or take it off if it is already there. */
   const toggle = useCallback((sessionId: string, raw: string) => {
     const tag = normalise(raw);
     if (!tag) return;
+
+    // Naming a tag is what brings it into existence, and taking it off the last session
+    // carrying it does not take it back out again.
+    setNames((current) => {
+      if (current.includes(tag)) return current;
+      const next = [...current, tag].sort();
+      writeNames(next);
+      return next;
+    });
 
     setTags((current) => {
       const held = current[sessionId] ?? [];
@@ -101,15 +139,20 @@ export function useTags() {
   }, []);
 
   /**
-   * Take a tag off every session that carries it.
+   * Take a tag off every session, and forget the name.
    *
-   * A tag someone has stopped using otherwise stays in the picker and the filter menu
-   * forever, since nothing else removes one: pruning only forgets sessions, not names. This
-   * is the only way to retire a spelling, so it is also how a mistyped one is fixed.
+   * The only thing that removes a name. Untagging says the session is not that; this says
+   * the name itself is not wanted, which is also how a mistyped one is fixed.
    */
   const retire = useCallback((raw: string) => {
     const tag = normalise(raw);
     if (!tag) return;
+
+    setNames((current) => {
+      const next = current.filter((t) => t !== tag);
+      writeNames(next);
+      return next;
+    });
 
     setTags((current) => {
       const all: Record<string, readonly string[]> = {};
@@ -123,7 +166,23 @@ export function useTags() {
     });
   }, []);
 
-  return { tags, toggle, retire };
+  /**
+   * Every name there is, in the order they read best.
+   *
+   * The ones in use first and commonest first among those, since that is what is being
+   * reached for; then the rest alphabetically. A name nobody is using is still offered -
+   * that is the whole point of keeping it - but it is not what someone is looking for.
+   *
+   * Names in use are folded in whether or not the list of names knows about them, so a store
+   * written before names were kept separately still offers everything it holds.
+   */
+  const known = useMemo(() => {
+    const used = countTags(tags).map(({ tag }) => tag);
+    const rest = names.filter((tag) => !used.includes(tag));
+    return [...used, ...rest];
+  }, [tags, names]);
+
+  return { tags, known, toggle, retire };
 }
 
 /**
@@ -158,9 +217,4 @@ export function countTags(tags: Tags, chosen: readonly string[] = []): { tag: st
   return [...counts.entries()]
     .sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b))
     .map(([tag, count]) => ({ tag, count }));
-}
-
-/** Every tag in use, commonest first. */
-export function allTags(tags: Tags): string[] {
-  return countTags(tags).map(({ tag }) => tag);
 }

@@ -43,9 +43,10 @@ import {
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, TAG, USAGE, WIKI, wantsDirectory, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
+import { read as readSetting, save } from './lib/store';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
-import { allTags, normalise, useTags } from './lib/useTags';
+import { normalise, useTags } from './lib/useTags';
 import { TagPicker } from './components/TagPicker';
 import { HeaderTags } from './components/HeaderTags';
 import { useConfirmDelete } from './lib/useConfirmDelete';
@@ -88,7 +89,7 @@ import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
 /** Where showing the model's thinking is remembered, so ctrl+t survives a restart. */
-const REASONING = 'copilot-desktop.reasoning';
+const REASONING = 'reasoning';
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export default function App() {
    */
   const [showWiki, setShowWiki] = useState(false);
   /** Whether the model's thinking is shown. Off is a preference, not a session's state. */
-  const [reasoning, setReasoning] = useState(() => localStorage.getItem(REASONING) !== 'false');
+  const [reasoning, setReasoning] = useState(() => readSetting('settings', REASONING) !== 'false');
   /**
    * Unsent text and the one prompt each session may have set aside, which are two states
    * of the same writing and so have one owner.
@@ -178,7 +179,7 @@ export default function App() {
   const width = useSidebarWidth();
   const { favourites, toggle: toggleFavourite } = useFavourites();
   const { archived, toggle: toggleArchived } = useArchived();
-  const { tags, toggle: toggleTag, retire: retireTag } = useTags();
+  const { tags, known: knownTags, toggle: toggleTag, retire: retireTag } = useTags();
   /** The session whose tags are being changed, if any. */
   const [tagging, setTagging] = useState<SessionSummary | null>(null);
   const wiki = useWiki(showWiki);
@@ -430,7 +431,7 @@ export default function App() {
 
         if (shortcut === 'reasoning') {
           setReasoning((showing) => {
-            localStorage.setItem(REASONING, String(!showing));
+            save('settings', REASONING, String(!showing));
             return !showing;
           });
           return;
@@ -887,8 +888,8 @@ export default function App() {
    * `/session id` is.
    */
   const commands = useMemo(
-    () => withTagChoices(slash.commands, allTags(tags), selectedId ? (tags[selectedId] ?? []) : []),
-    [slash.commands, tags, selectedId],
+    () => withTagChoices(slash.commands, knownTags, selectedId ? (tags[selectedId] ?? []) : []),
+    [slash.commands, knownTags, tags, selectedId],
   );
 
   const sessionMenu = useCallback(
@@ -1267,7 +1268,7 @@ export default function App() {
         <TagPicker
           title={tagging.title ?? 'Untitled session'}
           held={tags[tagging.sessionId] ?? []}
-          known={allTags(tags)}
+          known={knownTags}
           onToggle={(tag) => toggleTag(tagging.sessionId, tag)}
           onRetire={retireTag}
           onClose={() => setTagging(null)}
