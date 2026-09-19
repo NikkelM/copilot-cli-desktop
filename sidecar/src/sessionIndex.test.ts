@@ -129,7 +129,9 @@ function makeStore() {
         if (branch !== undefined) lines.push(`branch: ${branch}`);
         if (name !== undefined) {
           lines.push(`name: ${name}`);
-          if (userNamed !== false) lines.push('user_named: true');
+          // The CLI writes the flag either way, so a session it named itself carries a false
+          // rather than nothing. Renaming has to overwrite that line, not add a second.
+          lines.push(`user_named: ${userNamed !== false}`);
         }
         writeFileSync(join(dir, 'workspace.yaml'), `${lines.join('\n')}\n`);
       }
@@ -596,7 +598,7 @@ describe('naming a session', () => {
     const { renameSession } = await loadIndex();
     store.addSession('s1', {});
     store.addState('s1', { name: 'Auto', userNamed: false });
-    expect(workspaceOf('s1')).not.toMatch(/user_named/);
+    expect(workspaceOf('s1')).toMatch(/^user_named: false$/m);
 
     renameSession('s1', 'Chosen');
 
