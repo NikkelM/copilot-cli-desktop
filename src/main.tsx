@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 
 import App from './App';
 import { adviceFor, windowOrphaned } from './lib/staleWindow';
+import { loadStores } from './lib/store';
 
 const root = document.getElementById('root') as HTMLElement;
 
@@ -66,14 +67,26 @@ window.addEventListener('unhandledrejection', (event) => {
   if (!root.hasChildNodes()) showFatal(String(event.reason));
 });
 
-try {
-  ReactDOM.createRoot(root).render(
-    <React.StrictMode>
-      <ErrorBoundary>
-        <App />
-      </ErrorBoundary>
-    </React.StrictMode>,
-  );
-} catch (error) {
-  showFatal(error instanceof Error ? (error.stack ?? error.message) : String(error));
-}
+/**
+ * Read what the app remembers before drawing anything.
+ *
+ * Awaited rather than fetched as the app runs, because every hook that reads a setting does
+ * so while rendering and cannot wait. One await here means all of them stay synchronous.
+ *
+ * A failure is swallowed by `loadStores` itself: an app with default settings beats no app.
+ */
+loadStores()
+  .catch(() => undefined)
+  .then(() => {
+    try {
+      ReactDOM.createRoot(root).render(
+        <React.StrictMode>
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        </React.StrictMode>,
+      );
+    } catch (error) {
+      showFatal(error instanceof Error ? (error.stack ?? error.message) : String(error));
+    }
+  });

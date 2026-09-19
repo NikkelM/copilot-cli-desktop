@@ -1,7 +1,9 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
+
+import { resetStores } from '../src/lib/store';
 
 /**
  * Point the tests at a copilot home of their own, before anything reads the real one.
@@ -30,3 +32,13 @@ afterEach(async () => {
   const { cleanup } = await import('@testing-library/react');
   cleanup();
 });
+
+/**
+ * Start each test with the app remembering nothing.
+ *
+ * What the app remembers used to be in `localStorage`, which jsdom rebuilds per file and
+ * which tests cleared for themselves. It is now held in memory by `store.ts` for the life of
+ * the module, so without this a pin set by one test is still set for the next - which is how
+ * forty-one of them failed the moment it moved (#191).
+ */
+beforeEach(() => resetStores());

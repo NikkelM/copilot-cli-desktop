@@ -2,8 +2,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useConfirmDelete } from './useConfirmDelete';
+import { save } from './store';
 
-const KEY = 'copilot-desktop.confirmDelete';
+const KEY = 'confirmDelete';
 
 beforeEach(() => localStorage.clear());
 
@@ -30,7 +31,7 @@ describe('whether deleting asks first', () => {
   it('asks again when the stored answer is something it does not recognise', () => {
     // Anything but the exact stored no leaves the question in place: skipping it is the
     // answer that cannot be taken back.
-    localStorage.setItem(KEY, 'null');
+    save('settings', KEY, 'null');
 
     expect(renderHook(() => useConfirmDelete()).result.current.confirms).toBe(true);
   });

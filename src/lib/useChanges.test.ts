@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useChanges } from './useChanges';
+import { read, save } from './store';
 
 const { getChanges, getDiff, existingSessions } = vi.hoisted(() => ({
   getChanges: vi.fn(),
@@ -211,7 +212,7 @@ describe('useChanges, reviewing', () => {
   });
 
   it('fetches diffs over the span on show', async () => {
-    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ s1: '2026-01-01T00:00:00.000Z' }));
+    save('sessions', 'reviewed', JSON.stringify({ s1: '2026-01-01T00:00:00.000Z' }));
     const { result } = renderHook(() => useChanges('s1'));
 
     act(() => result.current.diff('a.ts'));
@@ -219,7 +220,7 @@ describe('useChanges, reviewing', () => {
   });
 
   it('survives a stored mark that is not readable', () => {
-    localStorage.setItem('copilot-desktop.reviewed', 'not json');
+    save('sessions', 'reviewed', 'not json');
     const { result } = renderHook(() => useChanges('s1'));
     expect(result.current.reviewedAt).toBeNull();
   });
@@ -230,7 +231,7 @@ describe('useChanges, reviewing', () => {
  * The module runs the prune once, so each test reloads it to get a fresh run.
  */
 describe('useChanges, pruning marks for sessions that are gone', () => {
-  const marks = () => JSON.parse(localStorage.getItem('copilot-desktop.reviewed') ?? '{}');
+  const marks = () => JSON.parse(read('sessions', 'reviewed') ?? '{}');
 
   beforeEach(() => {
     vi.resetModules();
@@ -241,7 +242,7 @@ describe('useChanges, pruning marks for sessions that are gone', () => {
   });
 
   it('drops the mark of a session that no longer exists', async () => {
-    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ gone: 'a', here: 'b' }));
+    save('sessions', 'reviewed', JSON.stringify({ gone: 'a', here: 'b' }));
     existingSessions.mockResolvedValue(['here']);
 
     const { useChanges: fresh } = await import('./useChanges');
@@ -252,7 +253,7 @@ describe('useChanges, pruning marks for sessions that are gone', () => {
   });
 
   it('leaves the store alone when every session is still there', async () => {
-    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ s1: 'a' }));
+    save('sessions', 'reviewed', JSON.stringify({ s1: 'a' }));
 
     const { useChanges: fresh } = await import('./useChanges');
     renderHook(() => fresh('s1'));
@@ -271,9 +272,9 @@ describe('useChanges, pruning marks for sessions that are gone', () => {
 
   /** A mark set while the sidecar was answering is newer than the reading being pruned. */
   it('keeps a mark made while the check was in flight', async () => {
-    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ gone: 'a' }));
+    save('sessions', 'reviewed', JSON.stringify({ gone: 'a' }));
     existingSessions.mockImplementation(async () => {
-      localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ gone: 'a', fresh: 'c' }));
+      save('sessions', 'reviewed', JSON.stringify({ gone: 'a', fresh: 'c' }));
       return [];
     });
 
@@ -284,7 +285,7 @@ describe('useChanges, pruning marks for sessions that are gone', () => {
   });
 
   it('runs the check once however many times the hook mounts', async () => {
-    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ s1: 'a' }));
+    save('sessions', 'reviewed', JSON.stringify({ s1: 'a' }));
 
     const { useChanges: fresh } = await import('./useChanges');
     renderHook(() => fresh('s1'));
@@ -294,7 +295,7 @@ describe('useChanges, pruning marks for sessions that are gone', () => {
   });
 
   it('survives the check failing', async () => {
-    localStorage.setItem('copilot-desktop.reviewed', JSON.stringify({ s1: 'a' }));
+    save('sessions', 'reviewed', JSON.stringify({ s1: 'a' }));
     existingSessions.mockRejectedValue(new Error('sidecar is down'));
 
     const { useChanges: fresh } = await import('./useChanges');

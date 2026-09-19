@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { STEP, SCALE_KEY, applyScale, clampScale, readScale } from './scale';
+import { save } from './store';
 
 /**
  * The scale everything is drawn at, applied at once and remembered for next time.
@@ -15,7 +16,7 @@ export function useScale() {
   // is drawn at the default and then jumps.
   useEffect(() => {
     applyScale(scale);
-    localStorage.setItem(SCALE_KEY, String(scale));
+    save('settings', SCALE_KEY, String(scale));
   }, [scale]);
 
   const larger = useCallback(() => setScale((current) => clampScale(current + STEP)), []);

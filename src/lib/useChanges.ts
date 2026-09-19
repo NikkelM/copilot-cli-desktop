@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol';
 import { existingSessions, getChanges, getDiff } from './sidecar';
+import { read, save } from './store';
 
 /** Where each session's review mark is kept, by session id. */
-const REVIEWED = 'copilot-desktop.reviewed';
+const REVIEWED = 'reviewed';
 
 /**
  * How far each session has been reviewed.
@@ -15,7 +16,7 @@ const REVIEWED = 'copilot-desktop.reviewed';
  */
 function readMarks(): Record<string, string> {
   try {
-    const stored = localStorage.getItem(REVIEWED);
+    const stored = read('sessions', REVIEWED);
     const parsed: unknown = stored ? JSON.parse(stored) : {};
     return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {};
   } catch {
@@ -47,7 +48,7 @@ async function pruneMarks(): Promise<void> {
   // seen while the sidecar was answering, and that entry is newer than anything here.
   const current = readMarks();
   const kept = Object.fromEntries(Object.entries(current).filter(([id]) => alive.has(id) || !(id in marks)));
-  localStorage.setItem(REVIEWED, JSON.stringify(kept));
+  save('sessions', REVIEWED, JSON.stringify(kept));
 }
 
 /** Whether the prune has already run. It answers about the whole install, so once is enough. */
@@ -158,7 +159,7 @@ export function useChanges(sessionId: string | null) {
     const newest = changes.reduce((latest, change) => (change.changedAt > latest ? change.changedAt : latest), '');
     if (!newest) return;
 
-    localStorage.setItem(REVIEWED, JSON.stringify({ ...readMarks(), [sessionId]: newest }));
+    save('sessions', REVIEWED, JSON.stringify({ ...readMarks(), [sessionId]: newest }));
     setReviewedAt(newest);
     setShowAll(false);
     read(newest);

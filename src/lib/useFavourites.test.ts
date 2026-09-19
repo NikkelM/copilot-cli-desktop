@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { save } from './store';
 
 const { existingSessions } = vi.hoisted(() => ({ existingSessions: vi.fn() }));
 vi.mock('./sidecar', () => ({ existingSessions: (ids: string[]) => existingSessions(ids) }));
 
-const KEY = 'copilot-desktop.favourites';
+const KEY = 'favourites';
 
 /** The module remembers that it has pruned, which is per install rather than per hook. */
 async function load() {
@@ -60,7 +61,7 @@ describe('the sessions someone has favourited', () => {
 
   // Anything could be in there, including something another version of the app wrote.
   it('ignores stored rubbish', async () => {
-    localStorage.setItem(KEY, 'not json');
+    save('sessions', KEY, 'not json');
     const { useFavourites } = await load();
 
     const { result } = renderHook(() => useFavourites());
@@ -69,7 +70,7 @@ describe('the sessions someone has favourited', () => {
   });
 
   it('ignores entries that are not ids', async () => {
-    localStorage.setItem(KEY, JSON.stringify(['a', 7, null]));
+    save('sessions', KEY, JSON.stringify(['a', 7, null]));
     const { useFavourites } = await load();
 
     const { result } = renderHook(() => useFavourites());
@@ -82,7 +83,7 @@ describe('the sessions someone has favourited', () => {
    * install and keeps state about sessions that are gone (#152).
    */
   it('drops a session that no longer exists', async () => {
-    localStorage.setItem(KEY, JSON.stringify(['gone', 'here']));
+    save('sessions', KEY, JSON.stringify(['gone', 'here']));
     existingSessions.mockResolvedValue(['here']);
     const { useFavourites } = await load();
 
@@ -92,7 +93,7 @@ describe('the sessions someone has favourited', () => {
   });
 
   it('asks about the ones it holds, and only those', async () => {
-    localStorage.setItem(KEY, JSON.stringify(['a', 'b']));
+    save('sessions', KEY, JSON.stringify(['a', 'b']));
     const { useFavourites } = await load();
 
     renderHook(() => useFavourites());
@@ -110,7 +111,7 @@ describe('the sessions someone has favourited', () => {
 
   /** Absence from the sidebar is deliberately not the test; only what is on disk is. */
   it('keeps one that is merely not on screen', async () => {
-    localStorage.setItem(KEY, JSON.stringify(['quiet']));
+    save('sessions', KEY, JSON.stringify(['quiet']));
     const { useFavourites } = await load();
 
     const { result } = renderHook(() => useFavourites());
@@ -121,7 +122,7 @@ describe('the sessions someone has favourited', () => {
 
   // The reader may favourite something while the sidecar is still answering, and that is newer.
   it('keeps a new favourite while the prune was in flight', async () => {
-    localStorage.setItem(KEY, JSON.stringify(['gone']));
+    save('sessions', KEY, JSON.stringify(['gone']));
     let answer: (ids: string[]) => void = () => {};
     existingSessions.mockReturnValue(new Promise<string[]>((resolve) => (answer = resolve)));
     const { useFavourites } = await load();
@@ -134,7 +135,7 @@ describe('the sessions someone has favourited', () => {
   });
 
   it('prunes once for the install rather than once per hook', async () => {
-    localStorage.setItem(KEY, JSON.stringify(['a']));
+    save('sessions', KEY, JSON.stringify(['a']));
     const { useFavourites } = await load();
 
     renderHook(() => useFavourites());

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { goneFrom, needsPruning } from './pruneSessions';
+import { read as readStore, save } from './store';
 
 /**
  * A set of sessions this app has marked, remembered across restarts.
@@ -17,7 +18,7 @@ import { goneFrom, needsPruning } from './pruneSessions';
 /** The ids marked, in no particular order: the sidebar orders by activity, not by this. */
 function read(key: string): string[] {
   try {
-    const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
+    const parsed: unknown = JSON.parse(readStore('sessions', key) ?? '[]');
     return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
   } catch {
     return [];
@@ -31,7 +32,7 @@ async function prune(key: string): Promise<void> {
 
   // Reread rather than filtering the copy asked about: something may have been marked while
   // the sidecar was answering, and dropping only what is known gone keeps it.
-  localStorage.setItem(key, JSON.stringify(read(key).filter((id) => !gone.has(id))));
+  save('sessions', key, JSON.stringify(read(key).filter((id) => !gone.has(id))));
 }
 
 export function useMarkedSessions(key: string) {
@@ -48,7 +49,7 @@ export function useMarkedSessions(key: string) {
         const next = current.includes(sessionId)
           ? current.filter((id) => id !== sessionId)
           : [...current, sessionId];
-        localStorage.setItem(key, JSON.stringify(next));
+        save('sessions', key, JSON.stringify(next));
         return next;
       });
     },

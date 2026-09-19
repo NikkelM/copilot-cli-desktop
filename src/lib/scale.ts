@@ -1,3 +1,5 @@
+import { read } from './store';
+
 /**
  * How large everything is drawn, as one scale rather than a size per element.
  *
@@ -10,8 +12,8 @@
  * that is", which survives the default moving under them.
  */
 
-/** Where the scale is remembered, in the same place the app keeps its other choices. */
-export const SCALE_KEY = 'copilot-desktop.scale';
+/** What the scale is called in the settings the app keeps. */
+export const SCALE_KEY = 'scale';
 
 /** The base every ratio in the stylesheet is derived from. */
 export const BASE_PX = 16;
@@ -36,8 +38,8 @@ export function clampScale(scale: number): number {
 }
 
 /** The scale remembered from last time, or 1 when there is none or it is unreadable. */
-export function readScale(store: Pick<Storage, 'getItem'> = localStorage): number {
-  const saved = store.getItem(SCALE_KEY);
+export function readScale(): number {
+  const saved = read('settings', SCALE_KEY);
   return saved === null ? 1 : clampScale(Number(saved));
 }
 

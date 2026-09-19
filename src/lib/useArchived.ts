@@ -1,7 +1,7 @@
 import { useMarkedSessions } from './useMarkedSessions';
 
 /** Where the choice lives, beside the favourites and kept the same way. */
-export const ARCHIVED = 'copilot-desktop.archived';
+export const ARCHIVED = 'archived';
 
 /**
  * Sessions put away: finished with, but not worth destroying.

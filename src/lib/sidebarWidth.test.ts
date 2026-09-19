@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MULTIPLE,
+  HIDDEN_KEY,
   NARROWEST,
   WIDEST,
   WIDTH_KEY,
@@ -11,8 +12,13 @@ import {
   readHidden,
   readWidth,
 } from './sidebarWidth';
+import { resetStores, save } from './store';
 
-const store = (value: string | null) => ({ getItem: () => value });
+/** Put a value where the settings live, since that is where these read from now. */
+function stored(key: string, value: string | null) {
+  resetStores();
+  if (value !== null) save('settings', key, value);
+}
 
 describe('clampWidth', () => {
   it('keeps a width that is already usable', () => {
@@ -42,19 +48,19 @@ describe('clampWidth', () => {
 describe('readWidth', () => {
   it('says nothing was chosen when nothing was', () => {
     // Distinct from the default: never having chosen follows the default if it ever moves.
-    expect(readWidth(store(null))).toBeNull();
+    expect((stored(WIDTH_KEY, null), readWidth())).toBeNull();
   });
 
   it('reads a width that was', () => {
-    expect(readWidth(store('22.5'))).toBe(22.5);
+    expect((stored(WIDTH_KEY, '22.5'), readWidth())).toBe(22.5);
   });
 
   it('brings a stored width that is out of range back inside it', () => {
-    expect(readWidth(store('900'))).toBe(WIDEST);
+    expect((stored(WIDTH_KEY, '900'), readWidth())).toBe(WIDEST);
   });
 
   it('ignores a stored value that is not a number', () => {
-    expect(readWidth(store('wide'))).toBeNull();
+    expect((stored(WIDTH_KEY, 'wide'), readWidth())).toBeNull();
   });
 });
 
@@ -80,24 +86,24 @@ describe('applyWidth', () => {
 });
 
 describe('what the sidebar width is stored under', () => {
-  it('sits beside the app other choices', () => {
-    expect(WIDTH_KEY).toBe('copilot-desktop.sidebarWidth');
+  it('is a decision someone made, so it lives with the settings', () => {
+    expect(WIDTH_KEY).toBe('sidebarWidth');
   });
 });
 
 describe('whether the sidebar is hidden', () => {
   it('is shown when nothing says otherwise', () => {
-    expect(readHidden(store(null))).toBe(false);
+    expect((stored(HIDDEN_KEY, null), readHidden())).toBe(false);
   });
 
   it('is hidden when that is what was stored', () => {
-    expect(readHidden(store('true'))).toBe(true);
+    expect((stored(HIDDEN_KEY, 'true'), readHidden())).toBe(true);
   });
 
   it('is shown for anything it does not recognise', () => {
     // A sidebar that is hidden by a value nobody wrote is the harder state to get out of.
-    expect(readHidden(store('yes'))).toBe(false);
-    expect(readHidden(store(''))).toBe(false);
+    expect((stored(HIDDEN_KEY, 'yes'), readHidden())).toBe(false);
+    expect((stored(HIDDEN_KEY, ''), readHidden())).toBe(false);
   });
 
   it('marks the document rather than setting a width of zero', () => {

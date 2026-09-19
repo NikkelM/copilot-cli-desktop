@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fs::{create_dir_all, File, OpenOptions};
+use std::fs::{create_dir_all, read_to_string, remove_file, rename, write, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{ChildStdin, Command, Stdio};
@@ -502,6 +502,81 @@ fn built_sidecar() -> PathBuf {
  * that lives in the source tree and has npm within reach; this only swaps the process,
  * which is the half it cannot do.
  */
+/**
+ * Which of the app's two stores is meant.
+ *
+ * An enum rather than a filename, so a name arriving from the window can only ever be one of
+ * these two - a string would be a path this process opens on the window's say-so.
+ */
+#[derive(serde::Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum Store {
+    /// Decisions someone made: text size, sidebar width. Small, rare, worth carrying to
+    /// another machine and worth opening by hand.
+    Settings,
+    /// What the app noticed: pinned ids, tags, review marks. Grows with the session list,
+    /// written constantly, and meaningless anywhere the sessions are not.
+    Sessions,
+}
+
+impl Store {
+    fn file(self) -> &'static str {
+        match self {
+            Store::Settings => "settings.json",
+            Store::Sessions => "sessions.json",
+        }
+    }
+}
+
+/// Where the app keeps what it remembers, made if it is not there yet.
+fn store_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("no config directory: {e}"))?;
+    create_dir_all(&dir).map_err(|e| format!("could not make {}: {e}", dir.display()))?;
+    Ok(dir)
+}
+
+/**
+ * Read one of the stores, or nothing at all when it has never been written.
+ *
+ * An absent file is not a failure: it is what a fresh install looks like, and the window
+ * seeds it from whatever it finds. Only an unreadable one is worth reporting.
+ */
+#[tauri::command]
+fn read_store(app: tauri::AppHandle, store: Store) -> Result<Option<String>, String> {
+    let path = store_dir(&app)?.join(store.file());
+    match read_to_string(&path) {
+        Ok(contents) => Ok(Some(contents)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("could not read {}: {e}", path.display())),
+    }
+}
+
+/**
+ * Write one of the stores, replacing what was there.
+ *
+ * Through a temporary file and a rename, which is the whole reason this is worth doing in
+ * the shell rather than the window: a crash partway through a plain write leaves a truncated
+ * file, and for the settings that is every preference someone ever set. A rename either
+ * happens or does not.
+ */
+#[tauri::command]
+fn write_store(app: tauri::AppHandle, store: Store, contents: String) -> Result<(), String> {
+    let dir = store_dir(&app)?;
+    let path = dir.join(store.file());
+    let temporary = dir.join(format!("{}.writing", store.file()));
+
+    write(&temporary, contents)
+        .map_err(|e| format!("could not write {}: {e}", temporary.display()))?;
+    rename(&temporary, &path).map_err(|e| {
+        // Leaving the half-written file behind would have it tried again next time.
+        let _ = remove_file(&temporary);
+        format!("could not replace {}: {e}", path.display())
+    })
+}
+
 #[tauri::command]
 fn restart_runtime(app: tauri::AppHandle) {
     let sidecar = app.state::<Sidecar>();
@@ -549,7 +624,12 @@ pub fn run() {
             )?);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![sidecar_request, restart_runtime])
+        .invoke_handler(tauri::generate_handler![
+            sidecar_request,
+            restart_runtime,
+            read_store,
+            write_store
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -558,6 +638,31 @@ pub fn run() {
 mod tests {
     use super::*;
 
+    /**
+     * The two stores are two files, and the window names which by an enum rather than by a
+     * path. A name it could spell freely would be a file this process opens on its say-so.
+     */
+    #[test]
+    fn each_store_is_its_own_file() {
+        assert_eq!(Store::Settings.file(), "settings.json");
+        assert_eq!(Store::Sessions.file(), "sessions.json");
+        assert_ne!(Store::Settings.file(), Store::Sessions.file());
+    }
+
+    /** The window sends a bare word, so the spelling it must send is worth pinning down. */
+    #[test]
+    fn a_store_is_named_in_lower_case() {
+        assert_eq!(
+            serde_json::from_str::<Store>("\"settings\"").unwrap(),
+            Store::Settings
+        );
+        assert_eq!(
+            serde_json::from_str::<Store>("\"sessions\"").unwrap(),
+            Store::Sessions
+        );
+        assert!(serde_json::from_str::<Store>("\"Settings\"").is_err());
+        assert!(serde_json::from_str::<Store>("\"../../etc/passwd\"").is_err());
+    }
     /**
      * The bug that made every installed copy fail: `resource_dir()` returns a verbatim path,
      * Rust accepts it happily, and Node's module resolver then tries to `lstat` the bare

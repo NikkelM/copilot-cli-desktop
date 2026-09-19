@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { read, save } from './store';
 
 const { existingSessions } = vi.hoisted(() => ({ existingSessions: vi.fn() }));
 vi.mock('./sidecar', () => ({ existingSessions: (ids: string[]) => existingSessions(ids) }));
 
-const ARCHIVED = 'copilot-desktop.archived';
-const FAVOURITES = 'copilot-desktop.favourites';
+const ARCHIVED = 'archived';
+const FAVOURITES = 'favourites';
 
 /** The module remembers which sets it has pruned, which is per install rather than per hook. */
 async function load() {
@@ -41,7 +42,7 @@ describe('the sessions someone has put away', () => {
   });
 
   it('is still put away next time', async () => {
-    localStorage.setItem(ARCHIVED, JSON.stringify(['s1']));
+    save('sessions', ARCHIVED, JSON.stringify(['s1']));
     const { useArchived } = await load();
 
     expect(renderHook(() => useArchived()).result.current.archived).toEqual(['s1']);
@@ -60,7 +61,7 @@ describe('the sessions someone has put away', () => {
 
     expect(archived.result.current.archived).toEqual(['s1']);
     expect(favourites.result.current.favourites).toEqual([]);
-    expect(localStorage.getItem(FAVOURITES)).toBeNull();
+    expect(read('sessions', FAVOURITES)).toBeNull();
   });
 
   it('can be both, since being kept within reach says nothing about being finished with', async () => {
@@ -76,7 +77,7 @@ describe('the sessions someone has put away', () => {
   });
 
   it('forgets a session that is no longer on disk', async () => {
-    localStorage.setItem(ARCHIVED, JSON.stringify(['gone', 'here']));
+    save('sessions', ARCHIVED, JSON.stringify(['gone', 'here']));
     existingSessions.mockResolvedValue(['here']);
     const { useArchived } = await load();
 
@@ -86,20 +87,20 @@ describe('the sessions someone has put away', () => {
   });
 
   it('prunes its own set rather than the favourites', async () => {
-    localStorage.setItem(ARCHIVED, JSON.stringify(['gone']));
-    localStorage.setItem(FAVOURITES, JSON.stringify(['gone']));
+    save('sessions', ARCHIVED, JSON.stringify(['gone']));
+    save('sessions', FAVOURITES, JSON.stringify(['gone']));
     existingSessions.mockResolvedValue([]);
     const { useArchived } = await load();
 
     const { result } = renderHook(() => useArchived());
 
     await waitFor(() => expect(result.current.archived).toEqual([]));
-    expect(localStorage.getItem(FAVOURITES)).toBe(JSON.stringify(['gone']));
+    expect(read('sessions', FAVOURITES)).toBe(JSON.stringify(['gone']));
   });
   it('is pruned even when the favourites were pruned first', async () => {
     // The two sets are tracked separately, or whichever mounted first would be the only one
     // ever cleaned up and the other would grow for the life of the install.
-    localStorage.setItem(ARCHIVED, JSON.stringify(['gone']));
+    save('sessions', ARCHIVED, JSON.stringify(['gone']));
     existingSessions.mockResolvedValue([]);
     const { useArchived, useFavourites } = await load();
 

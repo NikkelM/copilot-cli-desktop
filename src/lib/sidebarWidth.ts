@@ -10,8 +10,10 @@
  * default" differ: the first follows the default if it ever moves, the second does not.
  */
 
-/** Where the width is remembered, beside the app's other choices. */
-export const WIDTH_KEY = 'copilot-desktop.sidebarWidth';
+import { read } from './store';
+
+/** What the width is called in the settings the app keeps. */
+export const WIDTH_KEY = 'sidebarWidth';
 
 /**
  * The default, as a multiple of the base.
@@ -39,8 +41,8 @@ export function clampWidth(multiple: number): number {
 }
 
 /** The width remembered from last time, or null when none was ever chosen. */
-export function readWidth(store: Pick<Storage, 'getItem'> = localStorage): number | null {
-  const saved = store.getItem(WIDTH_KEY);
+export function readWidth(): number | null {
+  const saved = read('settings', WIDTH_KEY);
   if (saved === null) return null;
 
   const parsed = Number(saved);
@@ -59,12 +61,12 @@ export function applyWidth(multiple: number | null, root: HTMLElement = document
   else root.style.setProperty('--sidebar-column', `calc(var(--font-base) * ${multiple})`);
 }
 
-/** Where whether the sidebar is shown at all is remembered. */
-export const HIDDEN_KEY = 'copilot-desktop.sidebarHidden';
+/** What being folded away is called in the settings the app keeps. */
+export const HIDDEN_KEY = 'sidebarHidden';
 
 /** Whether the sidebar was hidden last time. Absent means shown, which is the default. */
-export function readHidden(store: Pick<Storage, 'getItem'> = localStorage): boolean {
-  return store.getItem(HIDDEN_KEY) === 'true';
+export function readHidden(): boolean {
+  return read('settings', HIDDEN_KEY) === 'true';
 }
 
 /**

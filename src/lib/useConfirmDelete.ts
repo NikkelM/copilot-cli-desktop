@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { read as readStore, save } from './store';
 
 /**
  * Whether deleting still asks first.
@@ -8,19 +9,19 @@ import { useCallback, useState } from 'react';
  * through the app's settings. Keeping it separate means a future settings file can carry it
  * without this having waited for one.
  */
-const CONFIRM_DELETE = 'copilot-desktop.confirmDelete';
+const CONFIRM_DELETE = 'confirmDelete';
 
 function read(): boolean {
   // Absent means ask. Only the exact stored false turns it off, so a key holding anything
   // unexpected leaves the question in place rather than silently skipping it.
-  return localStorage.getItem(CONFIRM_DELETE) !== 'false';
+  return readStore('settings', CONFIRM_DELETE) !== 'false';
 }
 
 export function useConfirmDelete() {
   const [confirms, setConfirms] = useState(read);
 
   const stopAsking = useCallback(() => {
-    localStorage.setItem(CONFIRM_DELETE, 'false');
+    save('settings', CONFIRM_DELETE, 'false');
     setConfirms(false);
   }, []);
 

@@ -4,8 +4,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { BASE_PX, LARGEST, SCALE_KEY, SMALLEST, STEP, applyScale, clampScale, readScale } from './scale';
 import { useScale } from './useScale';
+import { resetStores, save } from './store';
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  resetStores();
+});
 
 describe('keeping a scale usable', () => {
   it('leaves an ordinary one alone', () => {
@@ -36,20 +40,20 @@ describe('remembering it', () => {
   });
 
   it('reads back what was stored', () => {
-    localStorage.setItem(SCALE_KEY, '1.25');
+    save('settings', SCALE_KEY, '1.25');
 
     expect(readScale()).toBe(1.25);
   });
 
   // Anything could be in there, including something another version of the app wrote.
   it('ignores a stored value that is not a number', () => {
-    localStorage.setItem(SCALE_KEY, 'enormous');
+    save('settings', SCALE_KEY, 'enormous');
 
     expect(readScale()).toBe(1);
   });
 
   it('brings a stored value that is out of range back in', () => {
-    localStorage.setItem(SCALE_KEY, '40');
+    save('settings', SCALE_KEY, '40');
 
     expect(readScale()).toBe(LARGEST);
   });
@@ -68,7 +72,7 @@ describe('putting it into effect', () => {
 
 describe('changing it while the app is open', () => {
   it('applies a remembered scale before anything is drawn at the default', () => {
-    localStorage.setItem(SCALE_KEY, '1.25');
+    save('settings', SCALE_KEY, '1.25');
 
     renderHook(() => useScale());
 

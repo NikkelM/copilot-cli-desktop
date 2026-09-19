@@ -11,6 +11,7 @@ import {
   readHidden,
   readWidth,
 } from './sidebarWidth';
+import { forget, save } from './store';
 
 /**
  * The sidebar's width, dragged in pixels and remembered as a multiple of the text size.
@@ -30,13 +31,13 @@ export function useSidebarWidth() {
   // sidebar is drawn at the default and then jumps.
   useEffect(() => {
     applyWidth(multiple);
-    if (multiple === null) localStorage.removeItem(WIDTH_KEY);
-    else localStorage.setItem(WIDTH_KEY, String(multiple));
+    if (multiple === null) forget('settings', WIDTH_KEY);
+    else save('settings', WIDTH_KEY, String(multiple));
   }, [multiple]);
 
   useEffect(() => {
     applyHidden(hidden);
-    localStorage.setItem(HIDDEN_KEY, String(hidden));
+    save('settings', HIDDEN_KEY, String(hidden));
   }, [hidden]);
 
   const toggle = useCallback(() => setHidden((current) => !current), []);

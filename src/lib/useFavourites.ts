@@ -1,7 +1,7 @@
 import { useMarkedSessions } from './useMarkedSessions';
 
-/** Where the choice lives. The CLI owns its own store and this app only ever reads it. */
-export const FAVOURITES = 'copilot-desktop.favourites';
+/** What the choice is called in the app's own store. The CLI's is read-only here. */
+export const FAVOURITES = 'favourites';
 
 /** Sessions someone marked to keep within reach, which the sidebar puts above the rest. */
 export function useFavourites() {

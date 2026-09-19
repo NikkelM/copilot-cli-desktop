@@ -4,6 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 
 import { useSidebarWidth } from './useSidebarWidth';
 import { DEFAULT_MULTIPLE, HIDDEN_KEY, NARROWEST, WIDEST, WIDTH_KEY } from './sidebarWidth';
+import { read, resetStores } from './store';
 
 const column = () => document.documentElement.style.getPropertyValue('--sidebar-column');
 
@@ -18,6 +19,7 @@ function drag(start: () => void, xs: number[]) {
 
 beforeEach(() => {
   localStorage.clear();
+  resetStores();
   document.documentElement.style.removeProperty('--sidebar-column');
   // jsdom reports 16px for the root font size, which is the app's own default base.
   document.documentElement.style.fontSize = '16px';
@@ -94,7 +96,7 @@ describe('the sidebar width', () => {
   it('remembers a width, and is still at it next time', () => {
     const first = renderHook(() => useSidebarWidth());
     drag(first.result.current.start, [400]);
-    expect(localStorage.getItem(WIDTH_KEY)).toBe('25');
+    expect(read('settings', WIDTH_KEY)).toBe('25');
 
     const { result } = renderHook(() => useSidebarWidth());
     expect(result.current.multiple).toBe(25);
@@ -108,7 +110,7 @@ describe('the sidebar width', () => {
     act(() => result.current.reset());
 
     expect(result.current.multiple).toBeNull();
-    expect(localStorage.getItem(WIDTH_KEY)).toBeNull();
+    expect(read('settings', WIDTH_KEY)).toBeNull();
     expect(column()).toBe('');
   });
 
@@ -181,7 +183,7 @@ describe('hiding the sidebar', () => {
   it('is still hidden next time', () => {
     const first = renderHook(() => useSidebarWidth());
     act(() => first.result.current.toggle());
-    expect(localStorage.getItem(HIDDEN_KEY)).toBe('true');
+    expect(read('settings', HIDDEN_KEY)).toBe('true');
 
     const { result } = renderHook(() => useSidebarWidth());
     expect(result.current.hidden).toBe(true);
