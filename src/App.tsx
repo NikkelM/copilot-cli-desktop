@@ -41,11 +41,11 @@ import {
   evictSession,
   deleteSession,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, GIT, USAGE, WIKI, wantsDirectory } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, GIT, TAG, USAGE, WIKI, wantsDirectory, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
-import { allTags, useTags } from './lib/useTags';
+import { allTags, normalise, useTags } from './lib/useTags';
 import { TagPicker } from './components/TagPicker';
 import { HeaderTags } from './components/HeaderTags';
 import { useConfirmDelete } from './lib/useConfirmDelete';
@@ -517,6 +517,30 @@ export default function App() {
   }
 
   /**
+   * Answer `/tag`, which either names one or opens the picker.
+   *
+   * An argument acts and no argument asks, which is the shape every other command with an
+   * optional argument already has. Tagging is a toggle, so the same line both adds and
+   * removes and the reply says which it was: the header and the sidebar are both a long way
+   * from the composer, and a change with no acknowledgement reads as nothing happening.
+   */
+  function tagFromCommand(sessionId: string, argument: string) {
+    const tag = normalise(argument);
+    if (!tag) {
+      // Only the picker needs the whole session; naming a tag needs nothing but the id.
+      const session = sessions.find(sessionId);
+      if (session) setTagging(session);
+      return;
+    }
+
+    const had = (tags[sessionId] ?? []).includes(tag);
+    toggleTag(sessionId, tag);
+    transcript.showLocal('command.output', {
+      text: had ? `Removed the tag ${tag} from this session.` : `Tagged this session ${tag}.`,
+    });
+  }
+
+  /**
    * Answer `/usage` in the transcript, where the CLI puts it.
    *
    * A row rather than a panel: it is a handful of figures that are read once and scrolled
@@ -545,7 +569,7 @@ export default function App() {
 
     // A leading slash naming a command is a command, not a message. Anything else that
     // starts with one - a path, a fraction, a sentence - is text, and is sent as text.
-    const what = dispatch(prompt, slash.commands);
+    const what = dispatch(prompt, commands);
 
     if (what.kind === 'local') {
       drafts.clear(selectedId);
@@ -556,6 +580,7 @@ export default function App() {
       else if (what.command.name === ENVIRONMENT.name) openEnvironment();
       else if (what.command.name === USAGE.name) void showUsage(selectedId);
       else if (what.command.name === WIKI.name) setShowWiki(true);
+      else if (what.command.name === TAG.name) tagFromCommand(selectedId, what.input);
       else if (what.command.name === GIT.name) {
         // One panel at a time: both are tall, and stacking them pushes the transcript off.
         setShowChanges(false);
@@ -854,6 +879,18 @@ export default function App() {
     [selectedId, sessions],
   );
 
+  /**
+   * The commands the menu offers, with the tags there are folded in as arguments to `/tag`.
+   *
+   * Not in `useCommands` with the fixed choices: these change as sessions are tagged and
+   * depend on which one is open, so they cannot be baked into the command the way
+   * `/session id` is.
+   */
+  const commands = useMemo(
+    () => withTagChoices(slash.commands, allTags(tags), selectedId ? (tags[selectedId] ?? []) : []),
+    [slash.commands, tags, selectedId],
+  );
+
   const sessionMenu = useCallback(
     (session: SessionSummary) =>
       sessionActions(session, {
@@ -1072,7 +1109,7 @@ export default function App() {
               {/* Above the composer and below everything else, because that is where the
                   CLI puts it and where someone typing is already looking. */}
               {help && (
-                <Shortcuts commands={help === 'full' ? slash.commands : undefined} onClose={() => setHelp(null)} />
+                <Shortcuts commands={help === 'full' ? commands : undefined} onClose={() => setHelp(null)} />
               )}
 
               {showChanges && (
@@ -1177,7 +1214,7 @@ export default function App() {
                 onSend={(prompt) => void handleSend(prompt)}
                 onAbort={interrupt}
                 history={history}
-                commands={slash.commands}
+                commands={commands}
                 cwd={selected.cwd}
                 onCommandsNeeded={slash.open}
                 mode={mode.mode}

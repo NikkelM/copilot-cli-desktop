@@ -101,12 +101,28 @@ export const GIT: SlashCommand = {
 };
 
 /**
+ * Tag the session, or open the picker to see what it has.
+ *
+ * The argument is the tag, and tagging is a toggle, so the same line both adds and removes:
+ * `/tag bug` on a session already tagged takes it off. Spaces are part of the name rather
+ * than separators, which is what the picker's own box does - `/tag needs review` is one tag
+ * (#123).
+ */
+export const TAG: SlashCommand = {
+  name: 'tag',
+  description: 'tag this session, or see what it has',
+  aliases: [],
+  hint: 'tag',
+  allowDuringTurn: true,
+};
+
+/**
  * The commands this app answers itself.
  *
  * Folded into the runtime's list so they are offered by the menu alongside it - the reader
  * has no reason to care which side of the wire answers them.
  */
-export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT, USAGE, WIKI, GIT];
+export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT, USAGE, WIKI, GIT, TAG];
 
 /** Whether a command is one of ours, and so must not be sent to the runtime. */
 export function isLocal(name: string): boolean {
@@ -213,4 +229,29 @@ export function withLocalChoices(commands: SlashCommand[]): SlashCommand[] {
     const missing = extra.filter((choice) => !known.some((each) => each.name === choice.name));
     return missing.length === 0 ? command : { ...command, choices: [...known, ...missing] };
   });
+}
+
+/**
+ * Offer the tags there are as arguments to `/tag`.
+ *
+ * Apart from `withLocalChoices`, which folds in a fixed list: these change as sessions are
+ * tagged, and they depend on which session is open, so they cannot be baked into the command
+ * the way `/session id` is.
+ *
+ * Each says what choosing it would do rather than what it is, since tagging is a toggle and
+ * the same name means opposite things depending on the session in front of the reader.
+ */
+export function withTagChoices(
+  commands: SlashCommand[],
+  known: readonly string[],
+  held: readonly string[],
+): SlashCommand[] {
+  if (known.length === 0) return commands;
+
+  const choices: CommandChoice[] = known.map((tag) => ({
+    name: tag,
+    description: held.includes(tag) ? 'remove from this session' : 'add to this session',
+  }));
+
+  return commands.map((command) => (command.name === TAG.name ? { ...command, choices } : command));
 }

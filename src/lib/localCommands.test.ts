@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { BROWSE, LOCAL_COMMANDS, isLocal, typedServerName, wantsDirectory, withLocalChoices } from './localCommands';
+import {
+  BROWSE,
+  LOCAL_COMMANDS,
+  TAG,
+  isLocal,
+  typedServerName,
+  wantsDirectory,
+  withLocalChoices,
+  withTagChoices,
+} from './localCommands';
 import type { SlashCommand } from '../../shared/protocol';
 
 const command = (over: Partial<SlashCommand> = {}): SlashCommand => ({
@@ -167,5 +176,59 @@ describe('typedServerName', () => {
   // A server name can be anything, including something with a space in it.
   it('keeps the rest of the argument whole', () => {
     expect(typedServerName(mcp, 'disable my server')).toBe('my server');
+  });
+});
+
+describe('withTagChoices', () => {
+  const commands = [command({ name: 'tag' }), command({ name: 'git' })];
+
+  it('offers each tag there is as an argument', () => {
+    const [tag] = withTagChoices(commands, ['bug', 'spike'], []);
+
+    expect(tag?.choices?.map((c) => c.name)).toEqual(['bug', 'spike']);
+  });
+
+  it('says what choosing one would do, which depends on the session', () => {
+    // Tagging is a toggle, so the same name means opposite things on two sessions.
+    const [tag] = withTagChoices(commands, ['bug', 'spike'], ['bug']);
+
+    expect(tag?.choices).toEqual([
+      { name: 'bug', description: 'remove from this session' },
+      { name: 'spike', description: 'add to this session' },
+    ]);
+  });
+
+  it('leaves every other command alone', () => {
+    const [, git] = withTagChoices(commands, ['bug'], []);
+
+    expect(git?.choices).toBeUndefined();
+  });
+
+  it('changes nothing when nothing has been tagged', () => {
+    expect(withTagChoices(commands, [], [])).toBe(commands);
+  });
+
+  it('replaces what was offered rather than adding to it', () => {
+    // A tag retired between two openings of the menu must not still be offered.
+    const stale = [command({ name: 'tag', choices: [{ name: 'gone', description: 'add to this session' }] })];
+
+    const [tag] = withTagChoices(stale, ['bug'], []);
+
+    expect(tag?.choices?.map((c) => c.name)).toEqual(['bug']);
+  });
+});
+
+describe('the tag command', () => {
+  it('is answered by this app rather than the runtime', () => {
+    expect(isLocal('tag')).toBe(true);
+    expect(LOCAL_COMMANDS).toContain(TAG);
+  });
+
+  it('runs while a turn is in flight, since it touches nothing the agent is doing', () => {
+    expect(TAG.allowDuringTurn).toBe(true);
+  });
+
+  it('does not insist on an argument, since naming none opens the picker', () => {
+    expect(TAG.required).toBeUndefined();
   });
 });
