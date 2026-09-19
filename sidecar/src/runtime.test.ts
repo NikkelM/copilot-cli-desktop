@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
 import type { CopilotSession, ExitPlanModeRequest, ExitPlanModeResult } from '@github/copilot-sdk';
 
@@ -15,6 +15,18 @@ vi.mock('./eventLog.js', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   lastMode,
   lastUsage,
+}));
+
+/**
+ * What a session's workspace file says it is called, stubbed so a test can put a session in
+ * a naming state without a fixture directory. The rules that read it are #197's.
+ */
+const { nameState } = vi.hoisted(() => ({
+  nameState: vi.fn(() => ({ name: null as string | null, named: false })),
+}));
+vi.mock('./sessionIndex.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  nameState,
 }));
 
 /** Tied to the SDK's own signature so a shape change fails the build rather than the fake. */
@@ -46,6 +58,7 @@ function makeSession(id: string) {
       for (const handler of [...handlers]) handler(event);
     },
     send: vi.fn(async (_options: { prompt: string; mode?: string }) => `msg-${id}`),
+    setModel: vi.fn(async (_model: string, _options?: Record<string, unknown>) => undefined),
     rpc: {
       history: { listRewindPoints: vi.fn(async () => ({ points: [] })) },
       shell: {
@@ -77,6 +90,20 @@ function makeSession(id: string) {
         set: vi.fn(
           async (_params: { mode: string }): Promise<ModeSetResult> => ({ status: 'unchanged', modelChanged: false }),
         ),
+      },
+      // Titling a new session asks its model a question of the app's own and sets the
+      // answer as a name nobody chose (#197).
+      name: {
+        setAuto: vi.fn(async (_params: { summary: string }) => ({ applied: true })),
+        set: vi.fn(async (_params: { name: string }) => undefined),
+      },
+      ui: {
+        ephemeralQuery: vi.fn(async (_params: { question: string }) => ({
+          answer: '<session-title>A Written Title</session-title>',
+        })),
+      },
+      model: {
+        getCurrent: vi.fn(async () => ({ modelId: 'a-named-model' })),
       },
       agent: {
         select: vi.fn(async (_params: { name: string }) => ({})),
@@ -2176,3 +2203,111 @@ describe('switching an MCP server on and off', () => {
     expect(parts.client.resumeSession).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * A session made through the SDK is named with its whole first prompt and keeps that name
+ * forever - every one this app has ever made still has `summary_count: 0`, and one carried
+ * 303 characters. The CLI does not have this problem because it writes a title itself (#197).
+ */
+describe('SessionRuntime writing a title for a new session', () => {
+  const asked = (session: FakeSession) => session.rpc.ui.ephemeralQuery.mock.calls.length;
+  const titleSet = (session: FakeSession) => session.rpc.name.setAuto.mock.calls[0]?.[0]?.summary;
+
+  beforeEach(() => {
+    nameState.mockReset();
+    // The state a new session is in: named after the prompt, by nobody.
+    nameState.mockImplementation(() => ({ name: 'the prompt', named: false }));
+  });
+
+  it('writes one for a session still wearing its prompt', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 's1', 'the prompt');
+    await vi.waitFor(() => expect(titleSet(harness.sessions.get('s1')!)).toBe('A Written Title'));
+  });
+
+  it('asks the runtime own question, so the title reads like one the CLI wrote', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 's1', 'the prompt');
+
+    await vi.waitFor(() => expect(asked(harness.sessions.get('s1')!)).toBe(1));
+    const question = harness.sessions.get('s1')!.rpc.ui.ephemeralQuery.mock.calls[0]![0].question;
+    expect(question).toContain('2-6 words, title case');
+  });
+
+  // Set as a name nobody chose, so a rename still outranks it and the runtime may still
+  // replace it. Writing it as a chosen name would be claiming the reader asked for it.
+  it('sets it as a name nobody chose', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 's1', 'the prompt');
+
+    await vi.waitFor(() => expect(harness.sessions.get('s1')!.rpc.name.setAuto).toHaveBeenCalled());
+    expect(harness.sessions.get('s1')!.rpc.name.set).not.toHaveBeenCalled();
+  });
+
+  it('tells the list to read the name again', async () => {
+    const onChangesRecorded = vi.fn();
+    const harness = makeRuntime({ onChangesRecorded });
+    await sendAndFinish(harness, 's1', 'the prompt');
+
+    // Once for the turn, once for the name.
+    await vi.waitFor(() => expect(onChangesRecorded.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('leaves a name somebody chose alone', async () => {
+    nameState.mockImplementation(() => ({ name: 'A Name Somebody Chose', named: true }));
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 's1', 'the prompt');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(asked(harness.sessions.get('s1')!)).toBe(0);
+  });
+
+  it('leaves a title the CLI already wrote alone', async () => {
+    nameState.mockImplementation(() => ({ name: 'Investigate Arcana Navigation Bug', named: false }));
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 's1', 'the prompt');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(asked(harness.sessions.get('s1')!)).toBe(0);
+  });
+
+  // Or every idle for the rest of the sitting would spend a model call. The same prompt
+  // throughout, so the only thing that can stop the second and third asking is the guard:
+  // a different prompt would stop them by looking unlike the name, proving nothing.
+  it('asks once per session, however many turns it takes', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 's1', 'the prompt');
+    await vi.waitFor(() => expect(asked(harness.sessions.get('s1')!)).toBe(1));
+
+    await sendAndFinish(harness, 's1', 'the prompt');
+    await sendAndFinish(harness, 's1', 'the prompt');
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(asked(harness.sessions.get('s1')!)).toBe(1);
+  });
+
+  it('keeps the name it had when the model answers with something that is not a title', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'the prompt');
+    harness.sessions.get('s1')!.rpc.ui.ephemeralQuery.mockResolvedValueOnce({ answer: 'I think it is about logins.' });
+
+    harness.sessions.get('s1')!.emit({ type: 'session.idle', data: {} });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(harness.sessions.get('s1')!.rpc.name.setAuto).not.toHaveBeenCalled();
+  });
+
+  it('keeps the name it had when the question cannot be answered at all', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'the prompt');
+    const session = harness.sessions.get('s1')!;
+    session.rpc.ui.ephemeralQuery.mockRejectedValue(new Error('the requested model is not supported'));
+
+    session.emit({ type: 'session.idle', data: {} });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(session.rpc.name.setAuto).not.toHaveBeenCalled();
+  });
+});
+
+

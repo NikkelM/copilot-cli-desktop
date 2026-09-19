@@ -69,6 +69,30 @@ function readWorkspace(sessionId: string): Workspace | null {
 const MAX_NAME = 200;
 
 /**
+ * What a session is called, and whether that was somebody's choice.
+ *
+ * Read from the file rather than asked over the wire, because `session.name.get` answers
+ * with the name alone and the flag beside it is the whole question: a name somebody typed
+ * must never be replaced, however much it looks like a prompt (#197). Uncached, since this
+ * is asked once per session rather than for every row of the list.
+ */
+export function nameState(sessionId: string): { name: string | null; named: boolean } {
+  const path = join(sessionStateDir(sessionId), 'workspace.yaml');
+
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return { name: null, named: false };
+  }
+
+  return {
+    name: parseWorkspace(path)?.name ?? null,
+    named: /^user_named:\s*true\s*$/m.test(text),
+  };
+}
+
+/**
  * Give a session a name of somebody's choosing.
  *
  * Written into `workspace.yaml` because there is nowhere else to write it. The CLI renames

@@ -40,6 +40,8 @@ import { lastMode, lastUsage } from './eventLog.js';
 
 import { PendingRequests } from './pending.js';
 import { disabledSkills, setSkillDisabled } from './skills.js';
+import { nameState } from './sessionIndex.js';
+import { TITLE_QUESTION, isPlaceholder, titleIn } from './sessionTitle.js';
 
 /**
  * The legacy ask_user shapes. Declared here because the package root does not re-export
@@ -213,6 +215,15 @@ export class SessionRuntime {
 
   private readonly maxLoadedSessions: number;
   private readonly idleTimeoutMs: number;
+  /**
+   * Sessions this run has already tried to title, whether or not it managed to.
+   *
+   * A session that could not be titled after its first turn will be no easier after its
+   * twentieth, and asking again on every idle would spend a model call each time.
+   */
+  private readonly titled = new Set<string>();
+  /** The model titles are written on when the session's own cannot answer. Asked once. */
+  private titlingModel: string | null | undefined = undefined;
   private readonly onEvent?: (sessionId: string, event: SessionEvent) => void;
   private readonly onLoadedChange?: (sessionId: string, loaded: boolean, loading?: boolean) => void;
   private readonly onChangesRecorded?: (sessionId: string) => void;
@@ -681,6 +692,11 @@ export class SessionRuntime {
       // that is the moment the list is worth reading again - announcing the round trips
       // instead showed the panel the state before the change it was announcing.
       if (event.type === 'session.idle') this.onChangesRecorded?.(sessionId);
+
+      // A finished turn is the first moment there is anything to write a title about, and
+      // the session is idle, so asking its model a question of our own costs it nothing it
+      // was about to do anyway.
+      if (event.type === 'session.idle') void this.titleIfUnnamed(sessionId);
 
       this.touch(sessionId);
     }
@@ -1388,6 +1404,104 @@ export class SessionRuntime {
   /**
    * Change the model a session uses, from its next message onwards.
    *
+   * Write a title for a session that is still wearing its first prompt as a name.
+   *
+   * The runtime names a new session with the prompt it was given, whole and verbatim, and
+   * replaces it with nothing: every session this app has made still has `summary_count: 0`,
+   * and one carried a 303-character name. The CLI does not have this problem because it
+   * writes a title itself and hands it over. So does this now (#197).
+   *
+   * Three things happen here and any of them may decline:
+   *
+   * - The session's own model is asked the runtime's own title question, so a title written
+   *   here reads like one the CLI wrote.
+   * - `auto` cannot answer it - the inference is refused with "the requested model is not
+   *   supported" - so a session on `auto`, which is the default, is moved to a named model
+   *   for the length of the question and moved back. Only when needed, and always back.
+   * - The answer is set as a name that nobody chose, so the runtime is still free to
+   *   replace it later, and a rename still outranks it.
+   *
+   * Failure is silence. A session keeping the name it had is the situation this improves on,
+   * not a fault, and nothing here is worth interrupting a reader over.
+   */
+  private async titleIfUnnamed(sessionId: string): Promise<void> {
+    // Once per session per run, whatever the outcome: a session that could not be titled
+    // after its first turn will not be any easier to title after its twentieth, and asking
+    // every time would spend a model call on every idle.
+    if (this.titled.has(sessionId)) return;
+    this.titled.add(sessionId);
+
+    const entry = this.loaded.get(sessionId);
+    const prompt = entry?.lastPrompt;
+    if (!entry || !prompt) return;
+
+    const { name, named } = nameState(sessionId);
+    if (!isPlaceholder(name, prompt, named)) return;
+
+    try {
+      const answer = await this.askForTitle(entry.session);
+      const title = answer === null ? null : titleIn(answer);
+      if (!title) return;
+
+      await entry.session.rpc.name.setAuto({ summary: title });
+      // The sidebar reads the name from the file, so it has to be told to look again.
+      this.onChangesRecorded?.(sessionId);
+    } catch {
+      // Nothing here is worth telling anyone about: the session keeps the name it had.
+    }
+  }
+
+  /**
+   * Put the title question to a session's model, moving it off `auto` only if it has to.
+   *
+   * Asked as it stands first, so a session on a named model is never touched. `auto` is the
+   * only model that cannot answer, and it is the default, so the fallback is the path most
+   * sessions take rather than an edge case - which is why the restore is in a `finally`.
+   */
+  private async askForTitle(session: CopilotSession): Promise<string | null> {
+    try {
+      return (await session.rpc.ui.ephemeralQuery({ question: TITLE_QUESTION })).answer;
+    } catch {
+      // Falls through to asking on a model that can answer.
+    }
+
+    const was = (await session.rpc.model.getCurrent()).modelId;
+    const able = await this.modelForTitling();
+    if (!able || able === was) return null;
+
+    try {
+      await session.setModel(able);
+      return (await session.rpc.ui.ephemeralQuery({ question: TITLE_QUESTION })).answer;
+    } finally {
+      // Back where it was, whatever happened. Being left on a model nobody chose is worse
+      // than having no title.
+      if (was) await session.setModel(was).catch(() => undefined);
+    }
+  }
+
+  /**
+   * A model that can answer a question about a conversation, preferring a small one.
+   *
+   * The title is four words about a prompt that has already been read, so the cheapest
+   * model that exists is the right one. The preferences are matched loosely because model
+   * names change faster than this app does; anything named at all will do if none matches.
+   */
+  private async modelForTitling(): Promise<string | null> {
+    if (this.titlingModel !== undefined) return this.titlingModel;
+
+    try {
+      const client = await this.ensureClient();
+      const ids = (await client.listModels()).map((model) => model.id).filter((id) => id !== 'auto');
+      const cheap = ids.find((id) => /haiku|mini|flash|fast|small/i.test(id));
+      this.titlingModel = cheap ?? ids[0] ?? null;
+    } catch {
+      this.titlingModel = null;
+    }
+
+    return this.titlingModel;
+  }
+
+  /**
    * The session has to be loaded for this, since the choice belongs to the running session
    * rather than to anything on disk. That makes choosing a model for a cold session cost a
    * resume, which is the same price as sending to it.
