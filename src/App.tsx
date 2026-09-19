@@ -50,6 +50,7 @@ import { normalise, useTags } from './lib/useTags';
 import { TagPicker } from './components/TagPicker';
 import { HeaderTags } from './components/HeaderTags';
 import { useConfirmDelete } from './lib/useConfirmDelete';
+import { usePanel } from './lib/usePanel';
 import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
 import { SidebarToggle } from './components/SidebarToggle';
@@ -127,13 +128,11 @@ export default function App() {
    * Two lists, not two components: `?` asks for the keys, `/help` for the keys and every
    * command. Split so the reminder stays short enough to read at a glance.
    */
+  const panel = usePanel(selectedId);
   const [help, setHelp] = useState<'keys' | 'full' | null>(null);
   /** Whether the list of files this session changed is showing. */
-  const [showChanges, setShowChanges] = useState(false);
   /** Whether what this session would load is showing. */
-  const [showEnvironment, setShowEnvironment] = useState(false);
   /** Whether the source control panel is open, which is what asks git for the tree state. */
-  const [showRepository, setShowRepository] = useState(false);
   /**
    * The session being woken, if one is.
    *
@@ -184,7 +183,7 @@ export default function App() {
   const [tagging, setTagging] = useState<SessionSummary | null>(null);
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
-  const repository = useRepoStatus(selected?.cwd ?? null, showRepository);
+  const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
   const prompts = usePrompts(selectedId, setError);
@@ -245,12 +244,6 @@ export default function App() {
   // session: it is a reference, so wanting it back is a keypress away.
   useEffect(() => setHelp(null), [selectedId]);
 
-  // The same for the list of changes, which is about the session that was open, not this one.
-  useEffect(() => setShowChanges(false), [selectedId]);
-
-  // And for the environment, which is read for one directory and says nothing about another.
-  useEffect(() => setShowEnvironment(false), [selectedId]);
-  useEffect(() => setShowRepository(false), [selectedId]);
 
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
@@ -377,12 +370,12 @@ export default function App() {
   useTauriEvent(
     () =>
       onSessionChanges(({ sessionId }) => {
-        if (showChanges && sessionId === selectedId) changes.load();
+        if (panel.open === 'changes' && sessionId === selectedId) changes.load();
         // The agent editing files is the main thing that changes what git would say, and
         // the app already knows when it happened - so the panel does not need a timer.
-        if (showRepository && sessionId === selectedId) repository.refresh();
+        if (panel.open === 'repository' && sessionId === selectedId) repository.refresh();
       }),
-    [showChanges, showRepository, selectedId, changes.load, repository.refresh],
+    [panel.open, selectedId, changes.load, repository.refresh],
   );
 
 
@@ -471,14 +464,13 @@ export default function App() {
 
   /** Open the panel and read the list, from wherever the request came from. */
   function openChanges() {
-    setShowEnvironment(false);
-    setShowChanges(true);
+    panel.show('changes');
     changes.load();
     toComposer();
   }
 
   function closeChanges() {
-    setShowChanges(false);
+    panel.hide();
     toComposer();
   }
 
@@ -490,14 +482,13 @@ export default function App() {
    * both are tall, and stacking them pushes the transcript off the screen.
    */
   function openEnvironment() {
-    setShowChanges(false);
-    setShowEnvironment(true);
+    panel.show('environment');
     void environment.load();
     toComposer();
   }
 
   function closeEnvironment() {
-    setShowEnvironment(false);
+    panel.hide();
     toComposer();
   }
 
@@ -583,10 +574,7 @@ export default function App() {
       else if (what.command.name === WIKI.name) setShowWiki(true);
       else if (what.command.name === TAG.name) tagFromCommand(selectedId, what.input);
       else if (what.command.name === GIT.name) {
-        // One panel at a time: both are tall, and stacking them pushes the transcript off.
-        setShowChanges(false);
-        setShowEnvironment(false);
-        setShowRepository(true);
+        panel.show('repository');
         repository.refresh();
       } else setHelp('full');
       return;
@@ -708,7 +696,7 @@ export default function App() {
        * Only while it is open: it re-reads on every open anyway, so refreshing a panel
        * nobody is looking at would be work for an answer that is thrown away.
        */
-      if (outcome.settingsChanged && showEnvironment) void environment.load();
+      if (outcome.settingsChanged && panel.open === 'environment') void environment.load();
 
       switch (outcome.kind) {
         case 'text':
@@ -1061,9 +1049,9 @@ export default function App() {
                       it is asked for - and then costs enough to be worth asking for. */}
                   <button
                     type="button"
-                    className={showChanges ? 'header-button on' : 'header-button'}
-                    onClick={() => (showChanges ? closeChanges() : openChanges())}
-                    aria-pressed={showChanges}
+                    className={panel.open === 'changes' ? 'header-button on' : 'header-button'}
+                    onClick={() => (panel.open === 'changes' ? closeChanges() : openChanges())}
+                    aria-pressed={panel.open === 'changes'}
                     title="What this session changed, and the diff for any of it"
                   >
                     Changes
@@ -1113,7 +1101,7 @@ export default function App() {
                 <Shortcuts commands={help === 'full' ? commands : undefined} onClose={() => setHelp(null)} />
               )}
 
-              {showChanges && (
+              {panel.open === 'changes' && (
                 <Changes
                   changes={changes.changes}
                   loading={changes.loading}
@@ -1129,7 +1117,7 @@ export default function App() {
                 />
               )}
 
-              {showRepository && (
+              {panel.open === 'repository' && (
                 <Repository
                   status={repository.status}
                   loading={repository.loading}
@@ -1149,13 +1137,13 @@ export default function App() {
                   failed={repository.failed}
                   onRefresh={repository.refresh}
                   onClose={() => {
-                    setShowRepository(false);
+                    panel.hide();
                     toComposer();
                   }}
                 />
               )}
 
-              {showEnvironment && (
+              {panel.open === 'environment' && (
                 <Environment
                   environment={environment.environment}
                   loading={environment.loading}
