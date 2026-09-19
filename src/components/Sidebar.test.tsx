@@ -38,6 +38,10 @@ const show = (query?: string) => {
 
 const titles = () => screen.getAllByRole('button').map((b) => b.textContent);
 
+/** The session rows in the order they are drawn, by first word of each title. */
+const order = () =>
+  [...document.querySelectorAll('.session .session-title')].map((n) => n.textContent?.trim().split(/\s/)[0]);
+
 describe('Sidebar filtering', () => {
   it.each([
     ['a title', 'biomes', 'Biomes'],
@@ -489,9 +493,6 @@ describe('keeping a session among the favourites', () => {
     );
 
   /** Rows in the order the sidebar draws them, whichever group each is in. */
-  const order = () =>
-    [...document.querySelectorAll('.session .session-title')].map((n) => n.textContent?.trim().split(/\s/)[0]);
-
   it('offers no mark when there is nowhere to keep one', () => {
     shown({ onFavourite: undefined });
 
@@ -549,16 +550,24 @@ describe('keeping a session among the favourites', () => {
     expect(screen.getByLabelText('Unfavourite Beta')).toBeTruthy();
   });
 
-  it('puts a favourited session above everything else', () => {
+  it('puts a favourite above the sessions nobody marked', () => {
     shown({ favourites: ['c'] });
 
-    expect(order()[0]).toBe('Gamma');
+    expect(order()).toEqual(['Alpha', 'Gamma', 'Beta']);
   });
 
-  it('puts it above a session that is in memory', () => {
+  // The group says what a session costs, not what was once decided about it.
+  it('leaves a loaded session above it, since what is resident comes first', () => {
     shown({ favourites: ['c'] });
 
-    expect(order()).toEqual(['Gamma', 'Alpha', 'Beta']);
+    expect(order()[0]).toBe('Alpha');
+  });
+
+  it('shows a favourite that is loaded among what is in memory, not under Favourites', () => {
+    shown({ favourites: ['a'] });
+
+    expect(order()).toEqual(['Alpha', 'Beta', 'Gamma']);
+    expect(screen.queryByText('Favourites')).toBeNull();
   });
 
   it('names the group so the ordering does not look arbitrary', () => {
@@ -702,9 +711,10 @@ describe('folding the sidebar away from its own header', () => {
 });
 
 /**
- * A session stopped on a question is the one case where the list stops being only what was
- * asked for: the agent is stopped until it is answered and a permission request expires
- * after five minutes, so hiding it costs a turn rather than a scroll (#187).
+ * A session stopped on a question is not lifted out of the list: it sits where its loadedness
+ * puts it, which is among what is in memory, since an agent stopped on a question is resident
+ * by definition. What makes it actionable is the count above the list, which is visible
+ * whatever the list is showing and jumps straight to one (#187).
  */
 describe('a session waiting for an answer', () => {
   const three = [
@@ -742,29 +752,42 @@ describe('a session waiting for an answer', () => {
     expect(screen.getByText(/2 waiting/)).toBeTruthy();
   });
 
-  it('puts them above everything, including what was favourited', () => {
-    shown({ activity: blocked('c'), favourites: ['a'], onFavourite: () => {} });
+  it('leaves it where it sits rather than lifting it to the top', () => {
+    const loaded = [
+      session({ sessionId: 'a', title: 'Alpha', loaded: true }),
+      session({ sessionId: 'b', title: 'Beta' }),
+      session({ sessionId: 'c', title: 'Gamma' }),
+    ];
+    shown({ sessions: loaded, activity: blocked('c'), favourites: ['c'], onFavourite: () => {} });
 
-    const headings = screen.getAllByText(/Waiting for you|Favourites|Not loaded/).map((n) => n.textContent);
-    expect(headings[0]).toBe('Waiting for you');
+    // Gamma is waiting, but it is cold and favourited, so that is where it is drawn.
+    // The "In memory" heading carries its count, so match the name rather than the label.
+    const headings = screen.getAllByText(/In memory|Favourites|Not loaded|Waiting for you/).map((n) => n.textContent ?? '');
+    expect(headings[0]).toMatch(/^In memory/);
+    expect(headings.slice(1)).toEqual(['Favourites', 'Not loaded']);
+    expect(order()).toEqual(['Alpha', 'Gamma', 'Beta']);
   });
 
-  it('keeps one out of the group it would otherwise be in', () => {
-    // Drawn once, like a favourite that is also loaded.
-    shown({ activity: blocked('a'), favourites: ['a'], onFavourite: () => {} });
+  it('draws no group of its own', () => {
+    shown({ activity: blocked('a', 'b', 'c') });
 
-    expect(screen.getAllByText('Alpha')).toHaveLength(1);
+    expect(screen.queryByText('Waiting for you')).toBeNull();
   });
 
-  it('shows one the filter would have hidden', async () => {
-    shown({ activity: blocked('c') });
+  it('is hidden by a filter like anything else, and still reachable from the count', async () => {
+    const onSelect = vi.fn();
+    shown({ activity: blocked('c'), onSelect });
 
     await userEvent.type(screen.getByRole('searchbox'), 'Alpha');
 
     // Beta proves the filter actually ran: without this the test passes whether or not it did.
     expect(screen.queryByText('Beta')).toBeNull();
+    expect(screen.queryByText('Gamma')).toBeNull();
     expect(screen.getByText('Alpha')).toBeTruthy();
-    expect(screen.getByText('Gamma')).toBeTruthy();
+
+    // The count is what keeps it one press away rather than the list.
+    await userEvent.click(screen.getByText(/1 waiting/));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('c', expect.objectContaining({ sessionId: 'c' }));
   });
 
   it('goes to one when the count is pressed', async () => {
@@ -879,11 +902,15 @@ describe('a session put away', () => {
     expect(screen.getByText('Gamma')).toBeTruthy();
   });
 
-  it('comes back out when it is no longer waiting to be dealt with', () => {
-    // Being stopped on a question outranks having been finished with.
-    shown({ archived: ['b'], activity: { b: { state: 'blocked', queued: 0 } } });
+  it('comes back out once it is loaded, since using it says it is not finished with', () => {
+    const loaded = [
+      session({ sessionId: 'a', title: 'Alpha' }),
+      session({ sessionId: 'b', title: 'Beta', loaded: true }),
+      session({ sessionId: 'c', title: 'Gamma' }),
+    ];
+    shown({ sessions: loaded, archived: ['b'] });
 
-    expect(screen.getByText('Waiting for you')).toBeTruthy();
+    expect(screen.getByText('In memory')).toBeTruthy();
     expect(screen.getByText('Beta')).toBeTruthy();
     expect(screen.queryByText('Archived')).toBeNull();
   });

@@ -259,45 +259,39 @@ export function Sidebar({
   }, [waiting, selectedId, onSelect]);
 
   const groups = useMemo(() => {
-    // Waiting first, and out of the filter's reach: a session stopped on a question is the
-    // one case where what the list was asked for matters less than what it is hiding. The
-    // agent is stopped until it is answered and a permission request expires after five
-    // minutes, so a filter that hides it costs a turn rather than a scroll (#187).
-    const asked = new Set(waiting.map((session) => session.sessionId));
+    // In memory first, and everything loaded is in it: what is resident is the one thing
+    // this app is about, and a session's group should say what it costs rather than what
+    // was once decided about it. So a favourite that is loaded sits here rather than under
+    // Favourites, and a session stopped on a question sits here in its turn rather than
+    // being lifted out - the count above the list is what makes that actionable, not a
+    // group of its own.
+    const loaded = matches.filter((session) => session.loaded);
 
-    // Put away next, and out of every other group. #101 warns that three overlapping reasons
-    // a session might not appear is one more than can be reasoned about, so archiving hides
-    // nothing: it folds a group away. What is in it can always be counted, and opening it
-    // costs one press.
-    //
-    // A session that is waiting is not put away, whatever was decided about it earlier. It
-    // has an agent stopped on it, which is the one thing more urgent than being finished.
-    const put = matches.filter((session) => !asked.has(session.sessionId) && archived.includes(session.sessionId));
+    const rest = matches.filter((session) => !session.loaded);
 
-    // Favourites next and only once: a favourite that is also loaded belongs to the group
-    // someone chose it for, not to both. Each group keeps the order it was given, which is
-    // by activity, so favouriting changes where a session sits and nothing else about it.
-    const rest = matches.filter(
-      (session) => !asked.has(session.sessionId) && !archived.includes(session.sessionId),
-    );
-    const favoured = rest.filter((session) => favourites.includes(session.sessionId));
-    const plain = rest.filter((session) => !favourites.includes(session.sessionId));
-    const loaded = plain.filter((session) => session.loaded);
-    const cold = plain.filter((session) => !session.loaded);
+    // Put away next. #101 warns that three overlapping reasons a session might not appear is
+    // one more than can be reasoned about, so archiving hides nothing: it folds a group away.
+    // Only cold sessions reach here, since loading one takes it out of the archive.
+    const put = rest.filter((session) => archived.includes(session.sessionId));
+    const around = rest.filter((session) => !archived.includes(session.sessionId));
+
+    // Favourites are what is left of the choice once loadedness has had its say: the ones
+    // kept within reach that are not currently costing anything.
+    const favoured = around.filter((session) => favourites.includes(session.sessionId));
+    const cold = around.filter((session) => !favourites.includes(session.sessionId));
 
     return [
-      { key: 'waiting', label: 'Waiting for you', sessions: waiting },
-      { key: 'favourites', label: 'Favourites', sessions: favoured },
       { key: 'loaded', label: 'In memory', sessions: loaded },
+      { key: 'favourites', label: 'Favourites', sessions: favoured },
       // Only named when there is something above it to tell it apart from.
       {
         key: 'cold',
-        label: loaded.length > 0 || favoured.length > 0 || waiting.length > 0 ? 'Not loaded' : null,
+        label: loaded.length > 0 || favoured.length > 0 ? 'Not loaded' : null,
         sessions: cold,
       },
       { key: 'archived', label: 'Archived', sessions: put, foldedByDefault: true },
     ].filter((group) => group.sessions.length > 0);
-  }, [waiting, matches, favourites, archived]);
+  }, [matches, favourites, archived]);
 
   return (
     <nav className="sidebar">

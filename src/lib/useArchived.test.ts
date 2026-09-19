@@ -110,3 +110,69 @@ describe('the sessions someone has put away', () => {
     await waitFor(() => expect(result.current.archived).toEqual([]));
   });
 });
+
+/**
+ * Using an archived session takes it back out. Archiving evicts, so everything in there is
+ * cold, and loading one again says plainly that it is not finished with - leaving it archived
+ * would drop it back into a folded group the moment it was unloaded.
+ */
+describe('taking a session back out of the archive', () => {
+  it('takes one out', async () => {
+    save('sessions', ARCHIVED, JSON.stringify(['s1', 's2']));
+    const { useArchived } = await load();
+    const { result } = renderHook(() => useArchived());
+
+    act(() => result.current.unarchive(['s1']));
+
+    expect(result.current.archived).toEqual(['s2']);
+  });
+
+  it('remembers it next time, rather than putting it back on restart', async () => {
+    save('sessions', ARCHIVED, JSON.stringify(['s1', 's2']));
+    const { useArchived } = await load();
+    const { result } = renderHook(() => useArchived());
+
+    act(() => result.current.unarchive(['s1']));
+
+    expect(read('sessions', ARCHIVED)).toBe(JSON.stringify(['s2']));
+  });
+
+  it('takes several out at once, since anything loaded qualifies', async () => {
+    save('sessions', ARCHIVED, JSON.stringify(['s1', 's2', 's3']));
+    const { useArchived } = await load();
+    const { result } = renderHook(() => useArchived());
+
+    act(() => result.current.unarchive(['s1', 's3']));
+
+    expect(result.current.archived).toEqual(['s2']);
+  });
+
+  /**
+   * It is called with every loaded session on each list refresh, so the common case is that
+   * none of them is archived. That has to change nothing, or the identity of the array would
+   * change on every refresh and whatever depends on it would run forever.
+   */
+  it('changes nothing when none of them was archived', async () => {
+    save('sessions', ARCHIVED, JSON.stringify(['s1']));
+    const { useArchived } = await load();
+    const { result } = renderHook(() => useArchived());
+    const before = result.current.archived;
+
+    act(() => result.current.unarchive(['s2', 's3']));
+
+    expect(result.current.archived).toBe(before);
+  });
+
+  it('leaves the favourites alone', async () => {
+    save('sessions', ARCHIVED, JSON.stringify(['s1']));
+    save('sessions', FAVOURITES, JSON.stringify(['s1']));
+    const { useArchived, useFavourites } = await load();
+    const archived = renderHook(() => useArchived());
+    const favourites = renderHook(() => useFavourites());
+
+    act(() => archived.result.current.unarchive(['s1']));
+
+    expect(archived.result.current.archived).toEqual([]);
+    expect(favourites.result.current.favourites).toEqual(['s1']);
+  });
+});

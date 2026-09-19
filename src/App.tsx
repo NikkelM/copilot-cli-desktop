@@ -180,12 +180,23 @@ export default function App() {
   const size = useScale();
   const width = useSidebarWidth();
   const { favourites, toggle: toggleFavourite } = useFavourites();
-  const { archived, toggle: toggleArchived } = useArchived();
+  const { archived, toggle: toggleArchived, unarchive } = useArchived();
   const { tags, known: knownTags, toggle: toggleTag, retire: retireTag } = useTags();
   /** The session whose tags are being changed, if any. */
   const [tagging, setTagging] = useState<SessionSummary | null>(null);
   /** The session whose name is being changed, if any. */
   const [naming, setNaming] = useState<SessionSummary | null>(null);
+  /**
+   * Using an archived session takes it back out of the archive.
+   *
+   * Archiving evicts, so everything in there is cold; loading one again is a clear enough
+   * statement that it is not finished with. Without this it would drop back into a folded
+   * group the moment it was unloaded, having just been worked in.
+   */
+  useEffect(() => {
+    unarchive(sessions.all.filter((session) => session.loaded).map((session) => session.sessionId));
+  }, [sessions.all, unarchive]);
+
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');

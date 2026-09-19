@@ -56,5 +56,20 @@ export function useMarkedSessions(key: string) {
     [key],
   );
 
-  return { ids, toggle };
+  /** Take marks off, ignoring any that were never on, so calling it twice costs nothing. */
+  const drop = useCallback(
+    (sessionIds: readonly string[]) => {
+      setIds((current) => {
+        const going = new Set(sessionIds);
+        if (!current.some((id) => going.has(id))) return current;
+
+        const next = current.filter((id) => !going.has(id));
+        save('sessions', key, JSON.stringify(next));
+        return next;
+      });
+    },
+    [key],
+  );
+
+  return { ids, toggle, drop };
 }
