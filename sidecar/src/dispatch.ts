@@ -88,6 +88,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.cancelShell': ({ sessionId, requestId }) => runtime.cancelShell(sessionId, requestId),
 
+    'sessions.load': ({ sessionId }) => runtime.load(sessionId),
+
     'sessions.evict': ({ sessionId }) => runtime.evict(sessionId),
 
     'sessions.delete': ({ sessionId }) => runtime.deleteSession(sessionId),

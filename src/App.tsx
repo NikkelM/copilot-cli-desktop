@@ -39,6 +39,7 @@ import {
   setMcpEnabled,
   sendMessage,
   evictSession,
+  loadSession,
   deleteSession,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, TAG, USAGE, WIKI, wantsDirectory, withTagChoices } from './lib/localCommands';
@@ -896,6 +897,11 @@ export default function App() {
           if (putting) evictSession(sessionId).then(() => sessions.refresh()).catch(() => undefined);
         },
         working: sessions.working,
+        load: (sessionId) => {
+          loadSession(sessionId)
+            .then(() => sessions.refresh())
+            .catch((e: unknown) => setError(messageOf(e)));
+        },
         unload: (sessionId) => {
           evictSession(sessionId)
             .then(() => sessions.refresh())

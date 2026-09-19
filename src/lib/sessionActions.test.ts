@@ -23,6 +23,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   tag: vi.fn(),
   working: new Set(),
   unload: vi.fn(),
+  load: vi.fn(),
   copy: vi.fn(),
   openDirectory: vi.fn(),
   remove: vi.fn(),
@@ -36,7 +37,7 @@ describe('sessionActions', () => {
   it('offers only what the app can do today', () => {
     expect(sessionActions(session(), deps()).map((a) => a.id)).toEqual([
       'favourite',
-      'unload',
+      'memory',
       'tag',
       'archive',
       'copy-id',
@@ -61,29 +62,55 @@ describe('sessionActions', () => {
     });
   });
 
-  describe('unloading', () => {
+  describe('loading and unloading', () => {
     it('unloads a loaded session that is idle', () => {
       const unload = vi.fn();
-      const action = byId(session({ loaded: true }), deps({ unload })).unload;
+      const action = byId(session({ loaded: true }), deps({ unload })).memory;
 
       expect(action.refused).toBeUndefined();
       action.run();
       expect(unload).toHaveBeenCalledWith('abc');
     });
 
-    it('refuses a session that is not loaded, since it already costs nothing', () => {
-      expect(byId(session({ loaded: false }), deps()).unload.refused).toMatch(/already unloaded/i);
+    it('offers to bring in a session that is not loaded, rather than refusing', () => {
+      // The opposite of unloading, and the reason evicting exists: a session nobody has
+      // asked anything of is free, so waking one is a deliberate purchase.
+      const load = vi.fn();
+      const action = byId(session({ loaded: false }), deps({ load })).memory;
+
+      expect(action.label).toBe('Load into memory');
+      expect(action.refused).toBeUndefined();
+      action.run();
+      expect(load).toHaveBeenCalledWith('abc');
+    });
+
+    it('says which way it goes, since it is the same row either way', () => {
+      expect(byId(session({ loaded: true }), deps()).memory.label).toBe('Unload from memory');
+      expect(byId(session({ loaded: false }), deps()).memory.label).toBe('Load into memory');
+    });
+
+    it('does not unload a session it was asked to load', () => {
+      const unload = vi.fn();
+      byId(session({ loaded: false }), deps({ unload })).memory.run();
+
+      expect(unload).not.toHaveBeenCalled();
+    });
+
+    it('never refuses a session that is not loaded, since no turn can be running on one', () => {
+      const action = byId(session({ loaded: false }), deps({ working: new Set(['abc']) })).memory;
+
+      expect(action.refused).toBeUndefined();
     });
 
     it('refuses a session mid-turn rather than appearing to do nothing', () => {
       // The runtime returns early for a busy session, so without this the reader clicks and
       // watches nothing happen (#107).
-      const action = byId(session({ loaded: true }), deps({ working: new Set(['abc']) })).unload;
+      const action = byId(session({ loaded: true }), deps({ working: new Set(['abc']) })).memory;
       expect(action.refused).toMatch(/still working/i);
     });
 
     it('is not confused by a different session working', () => {
-      const action = byId(session({ loaded: true }), deps({ working: new Set(['other']) })).unload;
+      const action = byId(session({ loaded: true }), deps({ working: new Set(['other']) })).memory;
       expect(action.refused).toBeUndefined();
     });
   });

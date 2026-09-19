@@ -384,6 +384,59 @@ describe('SessionRuntime', () => {
     expect(sessions.get('busy')?.disconnected).toBe(true);
   });
 
+  /**
+   * The opposite of evicting, and the reason evicting exists: nothing is resumed until it is
+   * needed, so the first message of the day waits on a resume. Waking one pays that while
+   * the reader is still reading (#107).
+   */
+  describe('waking a session', () => {
+    it('resumes one that is not loaded', async () => {
+      const { runtime, client } = makeRuntime();
+
+      await runtime.load('cold');
+
+      expect(runtime.isActive('cold')).toBe(true);
+      expect(client.resumeSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('says so, so the list can move it', async () => {
+      const seen: [string, boolean][] = [];
+      const { runtime } = makeRuntime({ onLoadedChange: (id: string, on: boolean) => seen.push([id, on]) });
+
+      await runtime.load('cold');
+
+      expect(seen).toContainEqual(['cold', true]);
+    });
+
+    it('resumes nothing for one already loaded', async () => {
+      const { runtime, client, sessions } = makeRuntime();
+      await sendAndFinish({ runtime, sessions }, 'warm');
+      const before = client.resumeSession.mock.calls.length;
+
+      await runtime.load('warm');
+
+      expect(client.resumeSession).toHaveBeenCalledTimes(before);
+      expect(runtime.isActive('warm')).toBe(true);
+    });
+
+    it('resumes once when asked twice at the same moment', async () => {
+      const { runtime, client } = makeRuntime();
+
+      await Promise.all([runtime.load('cold'), runtime.load('cold')]);
+
+      expect(client.resumeSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('can be sent to straight away, without resuming again', async () => {
+      const { runtime, client, sessions } = makeRuntime();
+      await runtime.load('cold');
+
+      await sendAndFinish({ runtime, sessions }, 'cold');
+
+      expect(client.resumeSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('lets a session go before asking the CLI to destroy it', async () => {
     // The CLI closes the session too, but only on its own side. Skipping evict would leave
     // this runtime holding an entry, a subscription and a loaded flag for something gone.

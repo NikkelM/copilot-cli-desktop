@@ -14,6 +14,8 @@ export interface SessionActionDeps {
   /** Which sessions are mid-turn. Read live: a session can start working while a menu is open. */
   working: ReadonlySet<string>;
   unload: (sessionId: string) => void;
+  /** Brings one into memory before anything is asked of it. */
+  load: (sessionId: string) => void;
   copy: (text: string) => void;
   openDirectory: (path: string) => void;
   /** Asked to delete. Confirming is the caller's business, not this list's. */
@@ -40,16 +42,16 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       run: () => deps.toggleFavourite(session.sessionId),
     },
     {
-      id: 'unload',
-      label: 'Unload from memory',
-      // A session that is already cold costs nothing. One mid-turn would lose the turn: the
-      // runtime does as it is told and would abandon it, so the refusal belongs here.
-      refused: !session.loaded
-        ? 'Already unloaded. It costs nothing until it is opened.'
-        : deps.working.has(session.sessionId)
+      id: 'memory',
+      label: session.loaded ? 'Unload from memory' : 'Load into memory',
+      // One row rather than two, since a session is either resident or not and the reader is
+      // asking about the same thing either way. Only unloading can be refused: a turn cannot
+      // be running on a session that was never resumed.
+      refused:
+        session.loaded && deps.working.has(session.sessionId)
           ? 'Still working. It can be unloaded once the turn finishes.'
           : undefined,
-      run: () => deps.unload(session.sessionId),
+      run: () => (session.loaded ? deps.unload(session.sessionId) : deps.load(session.sessionId)),
     },
     {
       id: 'tag',

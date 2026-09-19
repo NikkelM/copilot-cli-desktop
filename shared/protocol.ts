@@ -830,8 +830,15 @@ export interface SidecarRequests {
    */
   'sessions.shell': { params: { sessionId: string; requestId: string; command: string }; result: ShellResult };
   'sessions.cancelShell': { params: { sessionId: string; requestId: string }; result: void };
-  'sessions.evict': { params: { sessionId: string }; result: void };
   /**
+   * Bring a session into memory before anything is asked of it.
+   *
+   * The opposite of `sessions.evict`. Nothing is resumed until it is needed, which is what
+   * makes a long list free - but it means the first message waits on a resume, and somebody
+   * who knows they are about to use a session can pay that while they are still reading.
+   */
+  'sessions.load': { params: { sessionId: string }; result: void };
+  'sessions.evict': { params: { sessionId: string }; result: void };  /**
    * Remove a session and everything it wrote. There is no undo.
    *
    * The CLI deletes the session's state directory, which is where the transcript, the
@@ -1108,6 +1115,7 @@ export const SIDECAR_METHODS = [
   'sessions.abort',
   'sessions.shell',
   'sessions.cancelShell',
+  'sessions.load',
   'sessions.evict',
   'sessions.delete',
   'sessions.resolvePermission',

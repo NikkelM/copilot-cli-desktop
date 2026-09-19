@@ -66,6 +66,16 @@ async function request<M extends SidecarMethod>(
 }
 
 /**
+ * Bring a session into memory before anything is asked of it.
+ *
+ * Costs a resume, which is the thing this app otherwise refuses to pay until it has to. Paid
+ * deliberately here, by somebody who knows they are about to use it.
+ */
+export function loadSession(sessionId: string): Promise<void> {
+  return request('sessions.load', { sessionId });
+}
+
+/**
  * Let a session go now rather than waiting out the idle timer.
  *
  * Frees what it holds without touching anything on disk: the transcript, the rewind store

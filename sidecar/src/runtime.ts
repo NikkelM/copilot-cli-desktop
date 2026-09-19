@@ -413,6 +413,21 @@ export class SessionRuntime {
     return this.pluginDirs;
   }
 
+  /**
+   * Bring a session into memory now, rather than on the next send.
+   *
+   * The opposite of `evict`, and the reason it exists: this app resumes nothing until
+   * something is asked of it, which is what makes two hundred sessions free - but it also
+   * means the first message of the day waits on a resume. Somebody who knows they are about
+   * to use a session can pay that cost while they are still reading (#107).
+   *
+   * The session itself is discarded. Waking one is a request about memory rather than about
+   * the conversation, and `ensureSession` has already put it where everything else looks.
+   */
+  async load(sessionId: string): Promise<void> {
+    await this.ensureSession(sessionId);
+  }
+
   /** Resume a session if it is not already loaded, evicting another if needed. */
   private async ensureSession(sessionId: string): Promise<CopilotSession> {
     const existing = this.loaded.get(sessionId);
