@@ -42,6 +42,16 @@ const titles = () => screen.getAllByRole('button').map((b) => b.textContent);
 const order = () =>
   [...document.querySelectorAll('.session .session-title')].map((n) => n.textContent?.trim().split(/\s/)[0]);
 
+/** The group headings in order, without the count that follows each label. */
+const groupNames = () =>
+  [...document.querySelectorAll('button.group')].map((heading) =>
+    [...heading.childNodes]
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent)
+      .join('')
+      .trim(),
+  );
+
 describe('Sidebar filtering', () => {
   it.each([
     ['a title', 'biomes', 'Biomes'],
@@ -267,6 +277,18 @@ describe('folding a group', () => {
     await userEvent.click(screen.getByText('Not loaded'));
 
     expect(screen.getByText('2')).toBeTruthy();
+  });
+
+  /**
+   * And open too. A count that appears only on folding reads as the number having changed,
+   * and it is the fastest answer to how much is in a group either way.
+   */
+  it('says how many are in it while it is open', () => {
+    show();
+
+    const heading = screen.getByText('Not loaded');
+    expect(heading.getAttribute('aria-expanded')).toBe('true');
+    expect(heading.querySelector('.group-count')?.textContent).toBe('2');
   });
 
   it('says whether it is open, for a reader who cannot see the caret', async () => {
@@ -761,10 +783,7 @@ describe('a session waiting for an answer', () => {
     shown({ sessions: loaded, activity: blocked('c'), favourites: ['c'], onFavourite: () => {} });
 
     // Gamma is waiting, but it is cold and favourited, so that is where it is drawn.
-    // The "In memory" heading carries its count, so match the name rather than the label.
-    const headings = screen.getAllByText(/In memory|Favourites|Not loaded|Waiting for you/).map((n) => n.textContent ?? '');
-    expect(headings[0]).toMatch(/^In memory/);
-    expect(headings.slice(1)).toEqual(['Favourites', 'Not loaded']);
+    expect(groupNames()).toEqual(['In memory', 'Favourites', 'Not loaded']);
     expect(order()).toEqual(['Alpha', 'Gamma', 'Beta']);
   });
 
@@ -880,10 +899,7 @@ describe('a session put away', () => {
   it('is last, under everything still in use', () => {
     shown({ archived: ['c'], favourites: ['a'], onFavourite: () => {} });
 
-    // A folded group carries its count, so match the name rather than the whole label.
-    const headings = screen.getAllByText(/Favourites|Not loaded|Archived/).map((n) => n.textContent ?? '');
-    expect(headings[headings.length - 1]).toMatch(/^Archived/);
-    expect(headings[0]).toBe('Favourites');
+    expect(groupNames()).toEqual(['Favourites', 'Not loaded', 'Archived']);
   });
 
   it('still shows the one being read, folded or not', () => {

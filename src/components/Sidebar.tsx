@@ -359,9 +359,12 @@ export function Sidebar({
                   >
                     <ChevronIcon open={!shut} />
                     {group.label}
-                    {/* The count is what stops folding from hiding the fact that something
-                        is there. The resident group carries it either way, because how many
-                        sessions cost memory is the number this app exists to keep down. */}
+                    {/* Every group carries its count, open or folded. Folded it is what
+                        stops the group hiding the fact that something is there; open it is
+                        still the fastest answer to how much is in there, and a count that
+                        appears only on folding reads as the number having changed. The
+                        resident group adds the cap, because how many sessions cost memory is
+                        the number this app exists to keep down. */}
                     {group.key === 'loaded' ? (
                       <span
                         className="group-count"
@@ -376,7 +379,7 @@ export function Sidebar({
                           : group.sessions.length}
                       </span>
                     ) : (
-                      shut && <span className="group-count">{group.sessions.length}</span>
+                      <span className="group-count">{group.sessions.length}</span>
                     )}
                   </button>
                 )}
