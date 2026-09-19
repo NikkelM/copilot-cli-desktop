@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { explain } from './errors';
 import { getTranscript } from './sidecar';
 import { appendLive, timelineOf, type TimelineEvent } from './timeline';
+import { DRAWS_NOTHING } from './transcriptEntries';
 
 /** How many stopped replies to keep per session. Whole replies, so a few is enough. */
 const MAX_ABANDONED = 20;
@@ -135,6 +136,21 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
    * What decides where it goes is `toEntries`, which has the delegation to hang it on (#11).
    */
   const push = useCallback((event: TimelineEvent) => {
+    /**
+     * Held only if it could ever be drawn.
+     *
+     * A sitting only ever appends to this list, so anything kept is kept for as long as the
+     * session stays open. Half the events a long session receives are turn and hook markers
+     * that `toEntries` has no case for: about 2.4 kB each, held to be filtered out again on
+     * every chunk, and drawn never.
+     *
+     * Dropping them here rather than on arrival is deliberate. They are still delivered, and
+     * some are read as they pass - the busy clock starts on `assistant.turn_start` and the
+     * Send button waits for it. Every observer has already seen this event by the time it
+     * reaches the transcript. What is decided here is only what is *kept*.
+     */
+    if (DRAWS_NOTHING.has(event.type)) return;
+
     // Captured here rather than read inside the updater below, which React may run later
     // and more than once: the session on screen at that point is not necessarily the one
     // this event belongs to.

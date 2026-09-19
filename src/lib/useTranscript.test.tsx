@@ -164,6 +164,85 @@ describe('useTranscript', () => {
  * A stopped turn is the one case where what was on screen is never written down: the
  * runtime records streamed text only when a turn finishes.
  */
+/**
+ * #186: a sitting only ever appends to the live list, so anything held is held for as long
+ * as the session stays open. Half the events a long session receives are turn and hook
+ * markers with no case in `toEntries` - held at roughly 2.4 kB each, filtered out again on
+ * every chunk, and drawn never.
+ */
+describe('useTranscript holding only what can be drawn', () => {
+  const marker = (type: string, id: string) => ({ type, data: {}, id });
+  const said = (content: string, id: string) => ({ type: 'assistant.message', data: { content }, id });
+
+  beforeEach(() => {
+    getTranscript.mockReset();
+    getTranscript.mockResolvedValue({ events: [], nextBefore: null });
+  });
+
+  it.each(['assistant.turn_start', 'assistant.turn_end', 'hook.start', 'hook.end'])(
+    'does not hold %s, which draws nothing',
+    async (type) => {
+      const { result } = renderHook(() => useTranscript('s1', () => {}));
+      await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+      act(() => result.current.push(marker(type, 'x1')));
+
+      expect(result.current.events).toEqual([]);
+    },
+  );
+
+  it('holds what does draw, so the drop is about the type and not about pushing', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    act(() => result.current.push(marker('assistant.turn_start', 'x1')));
+    act(() => result.current.push(said('an answer', 'e1')));
+    act(() => result.current.push(marker('assistant.turn_end', 'x2')));
+
+    expect(result.current.events.map((event) => event.id)).toEqual(['e1']);
+  });
+
+  // What is held is what is drawn, so the rows must come out the same as before.
+  it('draws the same rows as holding everything would have', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    const all = [
+      marker('assistant.turn_start', 'x1'),
+      { type: 'user.message', data: { content: 'a question' }, id: 'e1' },
+      marker('hook.start', 'x2'),
+      said('an answer', 'e2'),
+      marker('hook.end', 'x3'),
+      marker('assistant.turn_end', 'x4'),
+    ];
+    for (const event of all) act(() => result.current.push(event));
+
+    expect(toEntries(result.current.events, null)).toEqual(toEntries(all, null));
+  });
+
+  /**
+   * The one interaction that could have broken: a stopped turn is rescued by scanning the
+   * live list backwards, and a turn always ends with markers after the last delta.
+   */
+  it('still rescues a stopped reply with markers interleaved', async () => {
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+
+    act(() => result.current.push(marker('assistant.turn_start', 'x1')));
+    act(() =>
+      result.current.push({
+        type: 'assistant.message_delta',
+        data: { messageId: 'm1', deltaContent: 'half a thought' },
+        id: 'd1',
+      }),
+    );
+    act(() => result.current.push(marker('hook.start', 'x2')));
+    act(() => result.current.push({ type: 'abort', data: { reason: 'user_initiated' }, id: 'a1' }));
+
+    expect(result.current.abandoned?.get('a1')).toBe('half a thought');
+  });
+});
+
 describe('useTranscript keeping what a stopped turn had said', () => {
   const streaming = (text: string, messageId = 'm1') => ({
     type: 'assistant.message_delta',
