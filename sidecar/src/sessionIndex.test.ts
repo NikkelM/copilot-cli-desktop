@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -103,6 +103,7 @@ function makeStore() {
         repository,
         branch,
         workspace,
+        userNamed,
       }: {
         name?: string;
         logMtime?: Date;
@@ -111,6 +112,11 @@ function makeStore() {
         branch?: string;
         /** Write the file with only what is named, as a session outside a repository has. */
         workspace?: boolean;
+        /**
+         * Whether the name was somebody's choosing. A session the CLI named itself carries
+         * the name without the flag, which is the state a rename has to correct.
+         */
+        userNamed?: boolean;
       } = {},
     ) {
       const dir = join(home, 'session-state', sessionId);
@@ -121,7 +127,10 @@ function makeStore() {
         if (cwd !== undefined) lines.push(`cwd: ${cwd}`);
         if (repository !== undefined) lines.push(`repository: ${repository}`);
         if (branch !== undefined) lines.push(`branch: ${branch}`);
-        if (name !== undefined) lines.push(`name: ${name}`, 'user_named: true');
+        if (name !== undefined) {
+          lines.push(`name: ${name}`);
+          if (userNamed !== false) lines.push('user_named: true');
+        }
         writeFileSync(join(dir, 'workspace.yaml'), `${lines.join('\n')}\n`);
       }
       // Every real session has one, and its absence is what marks a session as no longer
@@ -549,5 +558,180 @@ describe('what a session says about its workspace', () => {
 
     const [session] = findSessions('11111111');
     expect(session?.repository).toBe('me/real');
+  });
+});
+
+/**
+ * There is no RPC for renaming: the CLI does it through an in-process native binding, so the
+ * only way to give a session a name the CLI will also show is to write the file it reads.
+ * Tested against a real store first - a name written this way survived the CLI taking another
+ * turn on the same session.
+ */
+
+/**
+ * There is no RPC for renaming: the CLI does it through an in-process native binding, so the
+ * only way to give a session a name the CLI will also show is to write the file it reads.
+ * Tested against a real store before it was written - a name put there by hand survived the
+ * CLI taking another turn on the same session, with the CLI rewriting the rest of the file.
+ */
+describe('naming a session', () => {
+  /** What the file says now. */
+  const workspaceOf = (sessionId: string) =>
+    readFileSync(join(store.home, 'session-state', sessionId, 'workspace.yaml'), 'utf8');
+
+  it('writes the name where the CLI reads it', async () => {
+    const { listSessions, renameSession } = await loadIndex();
+    store.addSession('s1', { summary: 'Auto-generated' });
+    store.addState('s1', { name: 'What it was called' });
+
+    renameSession('s1', 'What I called it');
+
+    expect(listSessions()[0]?.title).toBe('What I called it');
+  });
+
+  it('says the name was somebody choice, or the CLI makes up another later', async () => {
+    // Ten of the fourteen named sessions on a real machine were auto-named first, so the
+    // flag is what stops the next summary overwriting the name. The session here is in that
+    // state: named by the CLI, and so carrying no flag of its own yet.
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { name: 'Auto', userNamed: false });
+    expect(workspaceOf('s1')).not.toMatch(/user_named/);
+
+    renameSession('s1', 'Chosen');
+
+    expect(workspaceOf('s1')).toMatch(/^user_named:\s*true$/m);
+  });
+
+  it('gives a session one name rather than a second one', async () => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { name: 'Before' });
+
+    renameSession('s1', 'After');
+    renameSession('s1', 'After again');
+
+    const lines = workspaceOf('s1').split('\n');
+    expect(lines.filter((line) => line.startsWith('name:'))).toEqual(['name: After again']);
+    expect(lines.filter((line) => line.startsWith('user_named:'))).toHaveLength(1);
+  });
+
+  it('names one the CLI never named', async () => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { workspace: true });
+
+    renameSession('s1', 'First name');
+
+    expect(workspaceOf('s1')).toMatch(/^name:\s*First name$/m);
+  });
+
+  it('leaves everything else in the file alone', async () => {
+    const { listSessions, renameSession } = await loadIndex();
+    // A summary, since a session with neither that nor a turn is left out of the list.
+    store.addSession('s1', { summary: 'Something' });
+    store.addState('s1', { name: 'Before', cwd: '/work/here', repository: 'me/thing', branch: 'main' });
+
+    renameSession('s1', 'After');
+
+    const [session] = listSessions();
+    expect(session?.cwd).toBe('/work/here');
+    expect(session?.repository).toBe('me/thing');
+    expect(session?.branch).toBe('main');
+  });
+
+  it('quotes a name that would otherwise read as something else', async () => {
+    const { listSessions, renameSession } = await loadIndex();
+    store.addSession('s1', { summary: 'Something' });
+    store.addState('s1', { name: 'Before' });
+
+    renameSession('s1', 'Reply with exactly: PONG');
+
+    expect(workspaceOf('s1')).toContain("name: 'Reply with exactly: PONG'");
+    // And reads back as what was asked for, rather than as the quoting.
+    expect(listSessions()[0]?.title).toBe('Reply with exactly: PONG');
+  });
+
+  it('survives a name carrying the quote it would be wrapped in', async () => {
+    const { listSessions, renameSession } = await loadIndex();
+    store.addSession('s1', { summary: 'Something' });
+    store.addState('s1', { name: 'Before' });
+
+    renameSession('s1', "Nikkel's: sessions");
+
+    // Doubled on the way out, which is YAML's own escape. Reading it back is not proof on
+    // its own: the reader's match is greedy, so it happens to undo an unescaped quote too.
+    expect(workspaceOf('s1')).toContain("name: 'Nikkel''s: sessions'");
+    expect(listSessions()[0]?.title).toBe("Nikkel's: sessions");
+  });
+
+  it('leaves a plain name unquoted, since most names are plain', async () => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { name: 'Before' });
+
+    renameSession('s1', 'Revamp Personal Website');
+
+    expect(workspaceOf('s1')).toMatch(/^name: Revamp Personal Website$/m);
+  });
+
+  it.each([
+    ['nothing at all', ''],
+    ['only space', '   '],
+  ])('refuses %s', async (_what, name) => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { name: 'Before' });
+
+    expect(() => renameSession('s1', name)).toThrow(/needs a name/i);
+  });
+
+  it('refuses one that would span lines, which would be a different file', async () => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { name: 'Before' });
+
+    expect(() => renameSession('s1', 'one\nuser_named: false')).toThrow(/span lines/i);
+  });
+
+  it('refuses one longer than the CLI would take', async () => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { name: 'Before' });
+
+    expect(() => renameSession('s1', 'x'.repeat(201))).toThrow(/at most/i);
+  });
+
+  it('says so rather than inventing a workspace for a session too old to have one', async () => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.removeState('s1');
+
+    expect(() => renameSession('s1', 'Anything')).toThrow(/no workspace/i);
+  });
+
+  it('leaves the file it had when the write fails partway', async () => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { name: 'Before' });
+    const dir = join(store.home, 'session-state', 's1');
+    // A directory where the temporary file wants to be, so writing it cannot succeed. The
+    // point is what the session is left with: writing in place would have truncated it.
+    mkdirSync(join(dir, 'workspace.yaml.writing'));
+
+    expect(() => renameSession('s1', 'After')).toThrow();
+
+    expect(workspaceOf('s1')).toMatch(/^name: Before$/m);
+  });
+
+  it('leaves no temporary file behind', async () => {
+    const { renameSession } = await loadIndex();
+    store.addSession('s1', {});
+    store.addState('s1', { name: 'Before' });
+
+    renameSession('s1', 'After');
+
+    const dir = join(store.home, 'session-state', 's1');
+    expect(readdirSync(dir).filter((f) => f.endsWith('.writing'))).toEqual([]);
   });
 });

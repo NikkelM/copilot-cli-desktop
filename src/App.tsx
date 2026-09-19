@@ -40,6 +40,7 @@ import {
   sendMessage,
   evictSession,
   loadSession,
+  renameSession,
   deleteSession,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, TAG, USAGE, WIKI, wantsDirectory, withTagChoices } from './lib/localCommands';
@@ -49,6 +50,7 @@ import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
 import { normalise, useTags } from './lib/useTags';
 import { TagPicker } from './components/TagPicker';
+import { RenamePrompt } from './components/RenamePrompt';
 import { HeaderTags } from './components/HeaderTags';
 import { useConfirmDelete } from './lib/useConfirmDelete';
 import { usePanel } from './lib/usePanel';
@@ -182,6 +184,8 @@ export default function App() {
   const { tags, known: knownTags, toggle: toggleTag, retire: retireTag } = useTags();
   /** The session whose tags are being changed, if any. */
   const [tagging, setTagging] = useState<SessionSummary | null>(null);
+  /** The session whose name is being changed, if any. */
+  const [naming, setNaming] = useState<SessionSummary | null>(null);
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');
@@ -888,6 +892,7 @@ export default function App() {
         favourites,
         toggleFavourite,
         archived,
+        rename: setNaming,
         tag: setTagging,
         // Archiving is a decision that the session is finished with, so it also stops paying
         // for it: keeping one resumed while hiding it from view is the memory cost this app
@@ -1257,6 +1262,18 @@ export default function App() {
             ✕
           </button>
         </div>
+      )}
+
+      {naming && (
+        <RenamePrompt
+          current={naming.title ?? ''}
+          onRename={(name) => {
+            renameSession(naming.sessionId, name)
+              .then(() => sessions.refresh())
+              .catch((e: unknown) => setError(messageOf(e)));
+          }}
+          onClose={() => setNaming(null)}
+        />
       )}
 
       {tagging && (

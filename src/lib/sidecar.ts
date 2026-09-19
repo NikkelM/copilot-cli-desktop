@@ -71,6 +71,10 @@ async function request<M extends SidecarMethod>(
  * Costs a resume, which is the thing this app otherwise refuses to pay until it has to. Paid
  * deliberately here, by somebody who knows they are about to use it.
  */
+export function renameSession(sessionId: string, name: string): Promise<void> {
+  return request('sessions.rename', { sessionId, name });
+}
+
 export function loadSession(sessionId: string): Promise<void> {
   return request('sessions.load', { sessionId });
 }

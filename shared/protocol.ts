@@ -837,8 +837,14 @@ export interface SidecarRequests {
    * makes a long list free - but it means the first message waits on a resume, and somebody
    * who knows they are about to use a session can pay that while they are still reading.
    */
-  'sessions.load': { params: { sessionId: string }; result: void };
-  'sessions.evict': { params: { sessionId: string }; result: void };  /**
+  /**
+   * Give a session a name of somebody's choosing.
+   *
+   * Costs no session: the name lives in a file beside the transcript rather than in the
+   * runtime, so a session nobody has opened can still be renamed.
+   */
+  'sessions.rename': { params: { sessionId: string; name: string }; result: void };
+  'sessions.load': { params: { sessionId: string }; result: void };  'sessions.evict': { params: { sessionId: string }; result: void };  /**
    * Remove a session and everything it wrote. There is no undo.
    *
    * The CLI deletes the session's state directory, which is where the transcript, the
@@ -1115,6 +1121,7 @@ export const SIDECAR_METHODS = [
   'sessions.abort',
   'sessions.shell',
   'sessions.cancelShell',
+  'sessions.rename',
   'sessions.load',
   'sessions.evict',
   'sessions.delete',

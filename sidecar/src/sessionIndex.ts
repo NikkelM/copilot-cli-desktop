@@ -7,7 +7,7 @@
  * last message with zero Copilot processes. That is the whole bargain, so this stays.
  */
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, readFileSync, statSync, type Stats } from 'node:fs';
+import { existsSync, readFileSync, renameSync, statSync, writeFileSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 
 import type { SessionSummary } from '../../shared/protocol.js';
@@ -65,6 +65,69 @@ function readWorkspace(sessionId: string): Workspace | null {
   return workspace;
 }
 
+/** Longest a session name may be, which is what the CLI's own box accepts. */
+const MAX_NAME = 200;
+
+/**
+ * Give a session a name of somebody's choosing.
+ *
+ * Written into `workspace.yaml` because there is nowhere else to write it. The CLI renames
+ * through an in-process native binding rather than over the wire, so no client can ask it to:
+ * the SDK has no rename, and the RPC surface has none either. Writing the file is the only
+ * way to give a session a name that the CLI will also show.
+ *
+ * Safe to write, which was tested rather than assumed: a name written here survived the CLI
+ * taking another turn on the same session, with the CLI rewriting the rest of the file around
+ * it. Written atomically all the same, through a temporary file and a rename, so a crash
+ * partway through cannot leave a session with no workspace at all.
+ *
+ * `user_named` goes with it. Without it the CLI counts the name as one it generated and will
+ * generate another later - ten of the fourteen named sessions on this machine were auto-named
+ * first, so the two fields genuinely travel together.
+ */
+export function renameSession(sessionId: string, name: string): void {
+  const wanted = name.trim();
+  if (!wanted) throw new Error('A session needs a name.');
+  if (wanted.length > MAX_NAME) throw new Error(`A name can be at most ${MAX_NAME} characters.`);
+  // A newline would not be a long name, it would be a different file.
+  if (/[\r\n]/.test(wanted)) throw new Error('A name cannot span lines.');
+
+  const path = join(sessionStateDir(sessionId), 'workspace.yaml');
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    // Sessions old enough to predate the file cannot be renamed, and inventing one would
+    // describe a workspace this app knows nothing about.
+    throw new Error('This session has no workspace to name.');
+  }
+
+  const written = setField(setField(text, 'name', quoted(wanted)), 'user_named', 'true');
+  const temporary = `${path}.writing`;
+  writeFileSync(temporary, written);
+  renameSync(temporary, path);
+}
+
+/**
+ * A YAML scalar, quoted only when it would otherwise be read as something else.
+ *
+ * Single quotes, doubling any of its own, which is YAML's own escape and the form the CLI
+ * writes: `name: 'Reply with exactly: PONG'`.
+ */
+function quoted(value: string): string {
+  if (!/[:#'"]|^\s|\s$|^[-?&*!|>%@`]/.test(value)) return value;
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/** Replace a field's line, or add it when the file has none. */
+function setField(text: string, field: string, value: string): string {
+  const line = `${field}: ${value}`;
+  const pattern = new RegExp(`^${field}:.*$`, 'm');
+  if (pattern.test(text)) return text.replace(pattern, line);
+
+  return `${text.replace(/\s*$/, '')}\n${line}\n`;
+}
+
 /** The fields the sidebar needs, or null when the file cannot be read at all. */
 function parseWorkspace(path: string): Workspace | null {
   const found: Workspace = { name: null, cwd: null, repository: null, branch: null };
@@ -75,10 +138,14 @@ function parseWorkspace(path: string): Workspace | null {
       if (!match) continue;
 
       // Values are quoted when they contain a colon, e.g. name: 'Reply with exactly: PONG'
+      // A quoted value may carry the quote it is wrapped in, doubled, which is YAML's own
+      // escape - so undoing the quoting means undoing that too, or a name reads back with
+      // more apostrophes than it was given.
       const raw = match[2]?.trim() ?? '';
-      const unquoted = /^(['"])(.*)\1$/.exec(raw);
-      const value = ((unquoted ? unquoted[2] : raw) ?? '').trim();
-      found[match[1] as keyof Workspace] = value || null;
+      const unquoted = /^(['"])([\s\S]*)\1$/.exec(raw);
+      const quote = unquoted?.[1] ?? '';
+      const inner = quote ? (unquoted?.[2] ?? '').split(quote + quote).join(quote) : raw;
+      found[match[1] as keyof Workspace] = inner.trim() || null;
     }
   } catch {
     return null; // A malformed or unreadable file just means falling back to the database.

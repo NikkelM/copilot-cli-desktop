@@ -25,7 +25,7 @@ import {
 import { previewImage } from './images.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
-import { existingSessions, findSessions, listSessions } from './sessionIndex.js';
+import { existingSessions, findSessions, listSessions, renameSession } from './sessionIndex.js';
 import {
   createWiki,
   listWikiPages,
@@ -87,6 +87,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'sessions.shell': ({ sessionId, requestId, command }) => runtime.shell(sessionId, requestId, command),
 
     'sessions.cancelShell': ({ sessionId, requestId }) => runtime.cancelShell(sessionId, requestId),
+
+    // Not the runtime's: a name lives in a file, so a session nobody has opened can be
+    // renamed without waking anything.
+    'sessions.rename': ({ sessionId, name }) => renameSession(sessionId, name),
 
     'sessions.load': ({ sessionId }) => runtime.load(sessionId),
 

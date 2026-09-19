@@ -6,6 +6,8 @@ export interface SessionActionDeps {
   /** Which sessions are favourited, and how to change that. */
   favourites: readonly string[];
   toggleFavourite: (sessionId: string) => void;
+  /** Opens the rename dialog. Naming is a decision, so it asks rather than acting. */
+  rename: (session: SessionSummary) => void;
   /** Opens the tag picker. Tags change in handfuls, so this hands over rather than toggling. */
   tag: (session: SessionSummary) => void;
   /** Which sessions are put away, and how to change that. */
@@ -52,6 +54,11 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
           ? 'Still working. It can be unloaded once the turn finishes.'
           : undefined,
       run: () => (session.loaded ? deps.unload(session.sessionId) : deps.load(session.sessionId)),
+    },
+    {
+      id: 'rename',
+      label: 'Rename…',
+      run: () => deps.rename(session),
     },
     {
       id: 'tag',

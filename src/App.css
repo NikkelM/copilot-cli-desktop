@@ -4666,3 +4666,21 @@ pre.fatal,
 .header-tags:hover .header-tags-empty {
   color: var(--text-muted);
 }
+
+/* The one field in the rename dialog, which is the whole of it. */
+.rename-field {
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-lg);
+}
+
+.rename-field:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
