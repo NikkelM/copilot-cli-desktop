@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { ChevronIcon } from './Icons';
+import { ChevronIcon, TickIcon } from './Icons';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES } from '../lib/useSettings';
 
@@ -149,16 +149,27 @@ export function SettingsWindow({
         <section className="settings-group">
           <h3>Deleting</h3>
 
-          <label className="settings-row settings-check">
-            <input
-              type="checkbox"
-              aria-label="Ask before deleting a session"
-              checked={draft.confirmDelete}
-              onChange={(event) => edit('confirmDelete', event.target.checked)}
-            />
-            <span className="settings-label">Ask before deleting a session</span>
+          <div className="settings-row settings-check">
+            {/* The label wraps the box and its own text and stops there. Taking the note
+                in as well made a sentence explaining the setting into another way to
+                change it, which is easy to do by accident while reading. */}
+            <label className="tick-row">
+              {/* The tick is drawn beside the box rather than in it: a pseudo-element on
+                  an input is not something every engine renders, and this one is ours
+                  either way. The input keeps the name, the focus and the hit area. */}
+              <span className="tickbox">
+                <input
+                  type="checkbox"
+                  aria-label="Ask before deleting a session"
+                  checked={draft.confirmDelete}
+                  onChange={(event) => edit('confirmDelete', event.target.checked)}
+                />
+                <TickIcon />
+              </span>
+              <span className="settings-label">Ask before deleting a session</span>
+            </label>
             <span className="settings-hint">Deleting removes the transcript and everything the session wrote.</span>
-          </label>
+          </div>
         </section>
 
         <div className="confirm-actions">

@@ -4844,46 +4844,70 @@ pre.fatal,
 }
 
 /* The tick box, drawn rather than left to the browser, for the same reason as the steppers
-   above: the native one arrives in its own blue and does not follow the rest of this. */
-.settings-check input[type='checkbox'] {
-  appearance: none;
-  width: 1em;
-  height: 1em;
+   above: the native one arrives in its own blue and does not follow the rest of this.
+
+   The box and the tick are two elements stacked, rather than a box with a pseudo-element:
+   an input is a replaced element, and what it does with ::after is up to the engine. */
+.tickbox {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 1.05em;
+  height: 1.05em;
+}
+
+.tickbox input[type='checkbox'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
-  border: 1px solid var(--border);
+  appearance: none;
+  border: 1px solid var(--text-muted);
   border-radius: 4px;
   background: var(--bg);
   cursor: pointer;
 }
 
-.settings-check input[type='checkbox']:checked {
+.tickbox input[type='checkbox']:hover {
+  border-color: var(--accent);
+}
+
+.tickbox input[type='checkbox']:checked {
   border-color: var(--accent);
   background: var(--accent);
 }
 
-/* The tick: two sides of a box, turned to lean the way a tick leans. Drawn in the box
-   rather than as a character, which would be a different shape on every machine. */
-.settings-check input[type='checkbox']:checked::after {
-  display: block;
-  width: 0.3em;
-  height: 0.55em;
-  margin: -0.06em 0 0 0.28em;
-  border: solid #fff;
-  border-width: 0 2px 2px 0;
-  content: '';
-  transform: rotate(40deg);
-}
-
-.settings-check input[type='checkbox']:focus-visible {
+.tickbox input[type='checkbox']:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.settings-check {
-  grid-template-columns: auto 1fr;
-  cursor: pointer;
+/* Over the box and out of the way of it: the input underneath is what is clicked. */
+.tickbox .tick {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
 }
 
-.settings-check input {
+.tickbox input[type='checkbox']:checked + .tick {
+  opacity: 1;
+}
+
+/* One column: the box and its text are one thing, and the note sits under both. */
+.settings-check {
+  grid-template-columns: 1fr;
+}
+
+/* Exactly as wide as the box and its text, so what can be clicked is what reads as the
+   setting. The note beside it explains the setting rather than offering it again. */
+.tick-row {
+  display: flex;
+  align-items: center;
   justify-self: start;
+  gap: 8px;
+  cursor: pointer;
 }

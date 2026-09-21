@@ -161,6 +161,65 @@ describe('leaving without saving', () => {
   });
 });
 
+describe('the tick box', () => {
+  const tick = () => document.querySelector('.tickbox .tick') as SVGElement | null;
+
+  /**
+   * Drawn beside the box rather than in it: a pseudo-element on an input is not something
+   * every engine renders, and the native box arrives in its own blue either way.
+   */
+  it('draws its own tick rather than leaving it to the browser', () => {
+    show({ confirmDelete: true });
+
+    expect(tick()).not.toBeNull();
+    expect((asks() as HTMLInputElement).type).toBe('checkbox');
+  });
+
+  it('keeps the tick beside the box it belongs to, so the styling can find it', () => {
+    show({ confirmDelete: true });
+
+    // The rule that shows it is `input:checked + .tick`, which only holds while they are
+    // siblings in that order.
+    expect(asks().nextElementSibling).toBe(tick());
+  });
+
+  it('is still the input that carries the name and the state', async () => {
+    show({ confirmDelete: true });
+    expect(asks().checked).toBe(true);
+
+    await userEvent.click(asks());
+
+    expect(asks().checked).toBe(false);
+  });
+
+  it('ticks when its own text is clicked', async () => {
+    show({ confirmDelete: false });
+
+    await userEvent.click(screen.getByText('Ask before deleting a session'));
+
+    expect(asks().checked).toBe(true);
+  });
+
+  /**
+   * The note explains the setting rather than offering it again. Reaching it used to
+   * change it, which is easy to do by accident while reading.
+   */
+  it('does not tick when the note under it is clicked', async () => {
+    show({ confirmDelete: false });
+
+    await userEvent.click(screen.getByText(/Deleting removes the transcript/));
+
+    expect(asks().checked).toBe(false);
+  });
+
+  it('keeps the note out of what can be clicked', () => {
+    show({ confirmDelete: false });
+
+    const note = screen.getByText(/Deleting removes the transcript/);
+    expect(note.closest('label')).toBeNull();
+  });
+});
+
 describe('what a number may be', () => {
   const more = (label: string) => screen.getByLabelText(`More ${label.toLowerCase()}`);
   const fewer = (label: string) => screen.getByLabelText(`Fewer ${label.toLowerCase()}`);

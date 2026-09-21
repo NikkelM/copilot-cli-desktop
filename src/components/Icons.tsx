@@ -100,3 +100,19 @@ export function GearIcon() {
     </svg>
   );
 }
+
+/** A tick, for a box that has been ticked. Stroked like the rest so it scales with the box. */
+export function TickIcon() {
+  return (
+    <svg {...shared} className="tick">
+      <path
+        d="M3.5 8.4 6.4 11.3 12.5 4.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
