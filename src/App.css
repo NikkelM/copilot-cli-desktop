@@ -4345,6 +4345,15 @@ pre.fatal,
   border-color: var(--text-muted);
 }
 
+/* The one that goes through, which is the one with nothing on it saying otherwise. Filled
+   under the pointer the way the irreversible one is: both are the answer the window asked
+   for, and it was the only button in any of these that did not move when pointed at. */
+.confirm-actions button:not(.confirm-cancel):not(.confirm-go):hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+
 /* The one that cannot be taken back wears the colour that says so. */
 .confirm-go {
   border-color: var(--danger);
@@ -4356,13 +4365,27 @@ pre.fatal,
   color: var(--bg);
 }
 
-/* Set apart from the rest of the menu, since it is the only row that loses anything. */
+/*
+ * Set apart from the rest of the menu, since it is the only row that loses anything.
+ *
+ * The line is drawn above the row rather than on it. As a border it was part of the row, so
+ * the fill ran right up under it, and the padding that kept them apart made this row taller
+ * than every other one - a block where the others are neat rounded rows.
+ */
 .session-menu-item.destructive {
-  margin-top: 4px;
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 5px 5px;
-  padding-top: 8px;
+  position: relative;
+  margin-top: 9px;
   color: var(--danger);
+}
+
+/* Out to the edges of the menu, which its padding holds the rows back from. */
+.session-menu-item.destructive::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  right: -4px;
+  left: -4px;
+  border-top: 1px solid var(--border);
 }
 
 .session-menu-item.destructive:hover:not(:disabled) {

@@ -197,3 +197,42 @@ describe('a button with nothing to do', () => {
     expect(css).toContain('.confirm-cancel:hover:not(:disabled) {');
   });
 });
+
+
+/**
+ * Every button in a window answers the pointer.
+ *
+ * The one that goes through wears no class of its own, so a rule written for the others
+ * left it the only button in any of these windows that did not move when pointed at.
+ */
+describe('how a window button answers the pointer', () => {
+  it('fills the one that goes through', () => {
+    const at = css.indexOf('.confirm-actions button:not(.confirm-cancel):not(.confirm-go):hover:not(:disabled) {');
+    expect(at, 'the button that goes through should have a hover of its own').toBeGreaterThan(-1);
+    expect(css.slice(at, css.indexOf('\n}', at))).toContain('background: var(--accent);');
+  });
+});
+
+/**
+ * The row that deletes a session is drawn like every other row in the menu.
+ *
+ * It was set apart with a border of its own and the padding to clear it, which made it
+ * taller than its neighbours and gave it square corners the moment it was pointed at.
+ */
+describe('the row that loses something', () => {
+  const rule = (() => {
+    const at = css.indexOf('.session-menu-item.destructive {');
+    expect(at, 'the destructive row should be in the stylesheet').toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  })();
+
+  it('keeps the shape of the rows around it', () => {
+    expect(rule, 'a radius of its own gives it corners the others do not have').not.toContain('border-radius');
+    expect(rule, 'padding of its own makes it taller than the others').not.toContain('padding');
+  });
+
+  it('is separated by a line beside it rather than one on it', () => {
+    expect(rule, 'a border is part of the row, so the fill runs into it').not.toContain('border-top');
+    expect(css).toContain('.session-menu-item.destructive::before {');
+  });
+});
