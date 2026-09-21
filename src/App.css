@@ -5028,3 +5028,44 @@ pre.fatal,
 .settings-body > .settings-subhead:first-child {
   margin-top: 0;
 }
+
+/* A path and the control that picks one, side by side as a single field. */
+.path-field {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.path-field .settings-text {
+  min-width: 0;
+}
+
+/* The size, shown rather than typed: it moves in eighths, and a box that took a number
+   would invite ones that are not on that scale. */
+.scale-readout {
+  width: 3.5rem;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+  cursor: default;
+}
+
+.settings-reset {
+  align-self: start;
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-reset:hover {
+  text-decoration: underline;
+}

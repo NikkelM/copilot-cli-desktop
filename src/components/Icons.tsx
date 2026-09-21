@@ -131,3 +131,18 @@ export function CloseIcon() {
     </svg>
   );
 }
+
+/** A folder, for the control that opens one. */
+export function FolderIcon() {
+  return (
+    <svg {...shared}>
+      <path
+        d="M1.9 4.1A1 1 0 0 1 2.9 3.1h2.9l1.3 1.6h4.9a1 1 0 0 1 1 1v6.2a1 1 0 0 1-1 1H2.9a1 1 0 0 1-1-1Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

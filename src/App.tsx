@@ -79,7 +79,7 @@ import { useCommands } from './lib/useCommands';
 import { useRepoStatus } from './lib/useRepoStatus';
 import { useRuntimeHealth } from './lib/useRuntimeHealth';
 import { useFavourites } from './lib/useFavourites';
-import { useScale } from './lib/useScale';
+import { STEP, clampScale } from './lib/scale';
 import { useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
 import { dispatch } from './lib/slash';
@@ -178,7 +178,9 @@ export default function App() {
   const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
   const slash = useCommands(selectedId);
   const subagents = useSubagents();
-  const size = useScale();
+  // Up here with the other hooks because the keyboard reads it: Ctrl+= and Ctrl+- change
+  // the text size, which is one of these rather than a value of its own.
+  const { settings, apply: applySettings } = useSettings();
   const width = useSidebarWidth();
   const { favourites, toggle: toggleFavourite } = useFavourites();
   const { archived, toggle: toggleArchived, unarchive } = useArchived();
@@ -429,9 +431,15 @@ export default function App() {
         }
 
         if (shortcut === 'larger' || shortcut === 'smaller' || shortcut === 'reset-size') {
-          if (shortcut === 'larger') size.larger();
-          else if (shortcut === 'smaller') size.smaller();
-          else size.reset();
+          // Straight to the setting, which is the one place the size lives. The keyboard
+          // and the settings window are two ways to the same value rather than two values.
+          const scale =
+            shortcut === 'larger'
+              ? clampScale(settings.scale + STEP)
+              : shortcut === 'smaller'
+                ? clampScale(settings.scale - STEP)
+                : 1;
+          applySettings({ scale });
           return;
         }
 
@@ -463,7 +471,7 @@ export default function App() {
         if (busyRef.current) interrupt();
         else if (selectedRef.current) drafts.clear(selectedRef.current);
       },
-      [interrupt, drafts, size, width],
+      [interrupt, drafts, settings.scale, applySettings, width],
     ),
     // The composer's own text, rather than what a key event can be asked about the field it
     // landed in: this is where it is actually kept.
@@ -859,7 +867,6 @@ export default function App() {
 
   /** The session waiting on an answer to "really delete this?". */
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
-  const { settings, apply: applySettings } = useSettings();
   /** Whether the settings window is open. */
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -1329,7 +1336,24 @@ export default function App() {
         />
       )}
       {settingsOpen && (
-        <SettingsWindow settings={settings} onSave={applySettings} onClose={() => setSettingsOpen(false)} />
+        <SettingsWindow
+          settings={settings}
+          onSave={applySettings}
+          onClose={() => setSettingsOpen(false)}
+          onPickDirectory={async (startingAt) => {
+            // The same wake the composer's picker needs: Windows hides the pointer while
+            // typing, and a native dialog taking focus with it hidden is hard to aim at.
+            await revealPointerForPicker();
+            const picked = await pickFolder({
+              directory: true,
+              title: 'Choose where new sessions start',
+              // Opens where the setting already points, so it starts near the last answer
+              // rather than at the top of the disk.
+              ...(startingAt ? { defaultPath: startingAt } : {}),
+            });
+            return typeof picked === 'string' ? picked : null;
+          }}
+        />
       )}
     </div>
   );

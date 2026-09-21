@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { read, save } from './store';
 import { setRuntimeLimits, updateCli } from './sidecar';
+import { SCALE_KEY, applyScale, readScale } from './scale';
 
 /**
  * The choices this app makes that somebody might reasonably make differently.
@@ -45,6 +46,14 @@ export interface Settings {
   /** Empty means the home directory, which is what the CLI does with no argument. */
   workingDirectory: string;
   updateOnStart: boolean;
+  /**
+   * How large everything is drawn, as a multiple of the app's own size.
+   *
+   * Kept here rather than beside the gesture that used to own it, so there is one answer to
+   * what the size is. Two owners of one value meant the settings window could be showing
+   * a size the keyboard had already changed (#139).
+   */
+  scale: number;
 }
 
 /** The ten minutes the runtime uses when nobody has said otherwise. */
@@ -73,6 +82,8 @@ export function readSettings(): Settings {
     allowAll: read('settings', ALLOW_ALL) === 'true',
     workingDirectory: read('settings', WORKING_DIRECTORY) ?? '',
     updateOnStart: read('settings', UPDATE_ON_START) === 'true',
+    // Its own reader: a scale is a fraction, and the one above floors what it is given.
+    scale: readScale(),
   };
 }
 
@@ -88,6 +99,10 @@ export function readSettings(): Settings {
  */
 export function useSettings() {
   const [settings, setSettings] = useState<Settings>(readSettings);
+
+  // On every change including the first, so a remembered scale is in force before anything
+  // is drawn at the default and then jumps.
+  useEffect(() => applyScale(settings.scale), [settings.scale]);
 
   const { maxLoaded, idleMinutes } = settings;
   useEffect(() => {
@@ -136,4 +151,5 @@ const KEYS: Record<keyof Settings, string> = {
   allowAll: ALLOW_ALL,
   workingDirectory: WORKING_DIRECTORY,
   updateOnStart: UPDATE_ON_START,
+  scale: SCALE_KEY,
 };

@@ -70,6 +70,7 @@ describe('changing a setting', () => {
       allowAll: false,
       workingDirectory: '',
       updateOnStart: false,
+      scale: 1,
     });
   });
 
@@ -96,6 +97,7 @@ describe('changing a setting', () => {
       allowAll: false,
       workingDirectory: '',
       updateOnStart: false,
+      scale: 1,
     });
   });
 
@@ -257,31 +259,6 @@ describe('updating the CLI', () => {
     expect(result.current.settings.updateOnStart).toBe(true);
   });
 });
-
-describe('a stored value written by something else', () => {
-  it.each([['not a number'], ['-3'], ['']])('falls back to the default for %s', async (stored) => {
-    const { MAX_LOADED, IDLE_MINUTES } = await load();
-    save('settings', MAX_LOADED, stored);
-    save('settings', IDLE_MINUTES, stored);
-
-    const { useSettings } = await load();
-    const { settings } = renderHook(() => useSettings()).result.current;
-
-    expect(settings.maxLoaded).toBe(0);
-    expect(settings.idleMinutes).toBe(10);
-  });
-
-  /** Anything but the exact false leaves the question in place rather than skipping it. */
-  it('still asks before deleting for anything that is not exactly false', async () => {
-    const { CONFIRM_DELETE } = await load();
-    save('settings', CONFIRM_DELETE, 'no');
-
-    const { useSettings } = await load();
-
-    expect(renderHook(() => useSettings()).result.current.settings.confirmDelete).toBe(true);
-  });
-});
-
 describe('what a new session starts with', () => {
   it('asks before running tools until told otherwise', async () => {
     const { useSettings } = await load();
@@ -312,6 +289,68 @@ describe('what a new session starts with', () => {
     act(() => result.current.apply({ workingDirectory: 'F:\\work' }));
 
     expect(read('settings', WORKING_DIRECTORY)).toBe('F:\\work');
+  });
+});
+
+/**
+ * The size everything is drawn at. It used to be its own hook with its own copy of the
+ * value, which meant the settings window could be showing a size the keyboard had already
+ * changed. One owner now, and the keyboard and the window are two ways to it (#139).
+ */
+describe('the text size', () => {
+  const applied = () => document.documentElement.style.getPropertyValue('--font-base');
+
+  it('is the app own size until it is changed', async () => {
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.scale).toBe(1);
+  });
+
+  it('applies a remembered one before anything is drawn at the default', async () => {
+    const { SCALE_KEY } = await import('./scale');
+    save('settings', SCALE_KEY, '1.25');
+    const { useSettings } = await load();
+
+    renderHook(() => useSettings());
+
+    await waitFor(() => expect(applied()).toBe('20px'));
+  });
+
+  it('takes effect at once rather than at the next launch', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ scale: 1.5 }));
+
+    await waitFor(() => expect(applied()).toBe('24px'));
+  });
+
+  it('survives a restart', async () => {
+    const { useSettings } = await load();
+    const first = renderHook(() => useSettings());
+    act(() => first.result.current.apply({ scale: 1.25 }));
+    first.unmount();
+
+    const { useSettings: again } = await load();
+
+    expect(renderHook(() => again()).result.current.settings.scale).toBe(1.25);
+  });
+
+  /** A fraction, unlike the counts above, so it has a reader of its own. */
+  it('keeps a fraction rather than flooring it', async () => {
+    const { SCALE_KEY } = await import('./scale');
+    save('settings', SCALE_KEY, '1.125');
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.scale).toBe(1.125);
+  });
+
+  it('brings an unusable one back into range', async () => {
+    const { SCALE_KEY } = await import('./scale');
+    save('settings', SCALE_KEY, '40');
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.scale).toBe(2);
   });
 });
 

@@ -15,6 +15,7 @@ const SAVED: Settings = {
   allowAll: false,
   workingDirectory: '',
   updateOnStart: false,
+  scale: 1,
 };
 
 const show = (over: Partial<Settings> = {}) => {
@@ -378,6 +379,67 @@ describe('the defaults a new session starts with', () => {
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workingDirectory: 'F:\\work' }));
   });
 
+  /**
+   * Typed, pasted or picked. A path is the one setting here that is long enough to be worth
+   * pasting and specific enough to be worth choosing, so it takes both (#173).
+   */
+  it('takes one from the folder picker as well as from the keyboard', async () => {
+    const onPickDirectory = vi.fn(async () => 'F:\\picked');
+    render(
+      <SettingsWindow settings={SAVED} onSave={vi.fn()} onClose={vi.fn()} onPickDirectory={onPickDirectory} />,
+    );
+    await openSessions();
+
+    await userEvent.click(screen.getByLabelText('Choose a working directory'));
+
+    await vi.waitFor(() =>
+      expect((screen.getByLabelText('Working directory') as HTMLInputElement).value).toBe('F:\\picked'),
+    );
+  });
+
+  // Or it would open at the top of the disk every time rather than near the last answer.
+  it('opens the picker where the setting already points', async () => {
+    const onPickDirectory = vi.fn(async () => null);
+    render(
+      <SettingsWindow
+        settings={{ ...SAVED, workingDirectory: 'F:\\work' }}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onPickDirectory={onPickDirectory}
+      />,
+    );
+    await openSessions();
+
+    await userEvent.click(screen.getByLabelText('Choose a working directory'));
+
+    expect(onPickDirectory).toHaveBeenCalledExactlyOnceWith('F:\\work');
+  });
+
+  it('keeps what was there when the picker is dismissed', async () => {
+    render(
+      <SettingsWindow
+        settings={{ ...SAVED, workingDirectory: 'F:\\work' }}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onPickDirectory={async () => null}
+      />,
+    );
+    await openSessions();
+
+    await userEvent.click(screen.getByLabelText('Choose a working directory'));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect((screen.getByLabelText('Working directory') as HTMLInputElement).value).toBe('F:\\work');
+  });
+
+  it('leaves the picker out when there is none to open', async () => {
+    show();
+    await openSessions();
+
+    expect(screen.queryByLabelText('Choose a working directory')).toBeNull();
+    expect(screen.getByLabelText('Working directory')).toBeTruthy();
+  });
+
   // Empty is a real answer rather than a missing one, and it is the one that ships.
   it('says what an empty directory means rather than leaving it blank', async () => {
     show();
@@ -419,6 +481,93 @@ describe('keeping the CLI up to date', () => {
     await openCli();
 
     expect(screen.getByText(/never when this app launches it/)).toBeTruthy();
+  });
+});
+
+/**
+ * The size is picked by looking at the result, so it is the one setting here that takes
+ * effect while it is still a draft, and is put back if it is not saved (#139).
+ */
+describe('the text size', () => {
+  const openAppearance = () => userEvent.click(tab('Appearance'));
+  const readout = () => screen.getByLabelText('Text size') as HTMLInputElement;
+  const applied = () => document.documentElement.style.getPropertyValue('--font-base');
+
+  afterEach(() => document.documentElement.style.removeProperty('--font-base'));
+
+  it('shows the size as a share of the app own', async () => {
+    show({ scale: 1.25 });
+    await openAppearance();
+
+    expect(readout().value).toBe('125%');
+  });
+
+  it('counts up and down in the steps the keyboard uses', async () => {
+    show({ scale: 1 });
+    await openAppearance();
+
+    await userEvent.click(screen.getByLabelText('Larger text'));
+    expect(readout().value).toBe('113%');
+
+    await userEvent.click(screen.getByLabelText('Smaller text'));
+    await userEvent.click(screen.getByLabelText('Smaller text'));
+    expect(readout().value).toBe('88%');
+  });
+
+  it('stops at each end rather than going past it', async () => {
+    show({ scale: 2 });
+    await openAppearance();
+    expect((screen.getByLabelText('Larger text') as HTMLButtonElement).disabled).toBe(true);
+
+    cleanup();
+    show({ scale: 0.75 });
+    await openAppearance();
+    expect((screen.getByLabelText('Smaller text') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('draws at the size being chosen before it is saved', async () => {
+    show({ scale: 1 });
+    await openAppearance();
+
+    await userEvent.click(screen.getByLabelText('Larger text'));
+
+    expect(applied()).toBe('18px');
+  });
+
+  it('still has to be saved like anything else', async () => {
+    const { onSave } = show({ scale: 1 });
+    await openAppearance();
+
+    await userEvent.click(screen.getByLabelText('Larger text'));
+    expect(onSave).not.toHaveBeenCalled();
+
+    await userEvent.click(commit());
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ scale: 1.125 }));
+  });
+
+  // Or the app would be left at a size nobody chose, having only been shown it.
+  it('goes back to the saved size when the window closes without saving', async () => {
+    const { unmount } = render(
+      <SettingsWindow settings={{ ...SAVED, scale: 1 }} onSave={vi.fn()} onClose={vi.fn()} />,
+    );
+    await openAppearance();
+    await userEvent.click(screen.getByLabelText('Larger text'));
+    expect(applied()).toBe('18px');
+
+    unmount();
+
+    expect(applied()).toBe('16px');
+  });
+
+  it('offers a way back to the app own size, and only when it is not there', async () => {
+    show({ scale: 1 });
+    await openAppearance();
+    expect(screen.queryByText(/Back to the app/)).toBeNull();
+
+    await userEvent.click(screen.getByLabelText('Larger text'));
+    await userEvent.click(screen.getByText(/Back to the app/));
+
+    expect(readout().value).toBe('100%');
   });
 });
 

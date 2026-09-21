@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
-import { ChevronIcon, CloseIcon, TickIcon } from './Icons';
+import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
+import { LARGEST, SMALLEST, STEP, applyScale, clampScale } from '../lib/scale';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES } from '../lib/useSettings';
 
@@ -111,6 +112,7 @@ function TickField({
 const CATEGORIES = [
   { id: 'management', label: 'Session management' },
   { id: 'sessions', label: 'New sessions' },
+  { id: 'appearance', label: 'Appearance' },
   { id: 'cli', label: 'Copilot CLI' },
 ] as const satisfies readonly { id: string; label: string }[];
 
@@ -145,11 +147,19 @@ export function SettingsWindow({
   settings,
   onSave,
   onClose,
+  onPickDirectory,
 }: {
   /** What is saved now, which is where the draft starts and what discarding goes back to. */
   settings: Settings;
   onSave: (settings: Settings) => void;
   onClose: () => void;
+  /**
+   * Ask for a folder, starting at the one given, and answer with what was chosen.
+   *
+   * Passed in rather than opened here: the picker is native, and a window that reached
+   * for it directly could not be drawn in a test.
+   */
+  onPickDirectory?: (startingAt: string) => Promise<string | null>;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [category, setCategory] = useState<CategoryId>(CATEGORIES[0].id);
@@ -174,6 +184,18 @@ export function SettingsWindow({
 
   const edit = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+
+  /**
+   * Draw at the size being chosen, before it is saved.
+   *
+   * A size is picked by looking at the result, so this is the one setting here that has to
+   * take effect while it is still a draft. Put back on the way out, which covers cancelling
+   * and closing; saving makes the two the same, so putting it back changes nothing (#139).
+   */
+  useEffect(() => {
+    applyScale(draft.scale);
+    return () => applyScale(settings.scale);
+  }, [draft.scale, settings.scale]);
 
   /** Go, or ask first if there is something that would be lost by going. */
   const leave = (to: Pending) => {
@@ -289,20 +311,91 @@ export function SettingsWindow({
 
                 <label className="settings-row">
                   <span className="settings-label">Working directory</span>
-                  <input
-                    type="text"
-                    className="settings-text"
-                    aria-label="Working directory"
-                    placeholder="Your home directory"
-                    spellCheck={false}
-                    value={draft.workingDirectory}
-                    onChange={(event) => edit('workingDirectory', event.target.value)}
-                  />
+                  <span className="path-field">
+                    <input
+                      type="text"
+                      className="settings-text"
+                      aria-label="Working directory"
+                      placeholder="Your home directory"
+                      spellCheck={false}
+                      value={draft.workingDirectory}
+                      onChange={(event) => edit('workingDirectory', event.target.value)}
+                    />
+                    {/* Typed or pasted either way. The picker is for choosing one, and
+                        starts where the setting already points so it opens near the last
+                        answer rather than at the top of the disk (#173). */}
+                    {onPickDirectory && (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label="Choose a working directory"
+                        title="Choose a folder"
+                        onClick={() => {
+                          void onPickDirectory(draft.workingDirectory).then((picked) => {
+                            if (picked) edit('workingDirectory', picked);
+                          });
+                        }}
+                      >
+                        <FolderIcon />
+                      </button>
+                    )}
+                  </span>
                   <span className="settings-hint">
                     Where a new session starts. Left empty it is your home directory, which is what the CLI
                     does when it is run with no directory.
                   </span>
                 </label>
+              </>
+            )}
+
+            {shown.id === 'appearance' && (
+              <>
+                <p className="settings-note">
+                  One scale rather than a size for each thing. The sizes are in proportion to each other on
+                  purpose, and setting them apart would only let that be broken.
+                </p>
+
+                <label className="settings-row">
+                  <span className="settings-label">Text size</span>
+                  <span className="number-field">
+                    <input
+                      type="text"
+                      readOnly
+                      className="scale-readout"
+                      aria-label="Text size"
+                      value={`${Math.round(draft.scale * 100)}%`}
+                    />
+                    <span className="number-steppers">
+                      <button
+                        type="button"
+                        aria-label="Larger text"
+                        onClick={() => edit('scale', clampScale(draft.scale + STEP))}
+                        disabled={draft.scale >= LARGEST}
+                      >
+                        <ChevronIcon open={false} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Smaller text"
+                        onClick={() => edit('scale', clampScale(draft.scale - STEP))}
+                        disabled={draft.scale <= SMALLEST}
+                      >
+                        <ChevronIcon open={false} />
+                      </button>
+                    </span>
+                  </span>
+                  <span className="settings-hint">
+                    {draft.scale === 1
+                      ? 'The size the app is drawn at. Ctrl and + or - does the same, as does Ctrl and the wheel.'
+                      : `${Math.round(draft.scale * 100)}% of the app's own size. Ctrl and + or - does the same.`}
+                  </span>
+                </label>
+
+                {draft.scale !== 1 && (
+                  <button type="button" className="settings-reset" onClick={() => edit('scale', 1)}>
+                    Back to the app&apos;s own size
+                  </button>
+                )}
               </>
             )}
 
