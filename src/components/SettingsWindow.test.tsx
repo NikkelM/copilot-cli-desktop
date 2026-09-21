@@ -30,35 +30,44 @@ const asks = () => screen.getByLabelText('Ask before deleting a session') as HTM
 const commit = () => screen.getByRole('button', { name: /^(Save|Done)$/ });
 const tab = (name: string) => screen.getByRole('button', { name });
 
-/** Move to the category holding the tick box, which is not the one that opens. */
-const openDeleting = () => userEvent.click(tab('Deleting'));
-
 describe('the settings window', () => {
   it('opens on the first category', () => {
     show();
 
-    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Memory');
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Session management');
     expect(kept()).toBeTruthy();
   });
 
   it('shows only the settings of the category being looked at', async () => {
     show();
-    expect(screen.queryByLabelText('Ask before deleting a session')).toBeNull();
-
-    await openDeleting();
-
+    // The memory settings and the delete question are one category, so both are here.
+    expect(kept()).toBeTruthy();
     expect(asks()).toBeTruthy();
+    expect(screen.queryByLabelText('Run tools without asking')).toBeNull();
+
+    await userEvent.click(tab('New sessions'));
+
+    expect(screen.getByLabelText('Run tools without asking')).toBeTruthy();
     expect(screen.queryByLabelText('Sessions kept in memory')).toBeNull();
+    expect(screen.queryByLabelText('Ask before deleting a session')).toBeNull();
   });
 
   it('says which category is being looked at', async () => {
     show();
-    expect(tab('Memory').getAttribute('aria-current')).toBe('true');
+    expect(tab('Session management').getAttribute('aria-current')).toBe('true');
 
-    await openDeleting();
+    await userEvent.click(tab('New sessions'));
 
-    expect(tab('Deleting').getAttribute('aria-current')).toBe('true');
-    expect(tab('Memory').getAttribute('aria-current')).toBe('false');
+    expect(tab('New sessions').getAttribute('aria-current')).toBe('true');
+    expect(tab('Session management').getAttribute('aria-current')).toBe('false');
+  });
+
+  /** One category, but two ideas in it, and each says which it is. */
+  it('names the groups within a category that holds more than one idea', () => {
+    show();
+
+    const names = [...document.querySelectorAll('.settings-subhead')].map((node) => node.textContent);
+    expect(names).toEqual(['Memory', 'Deleting']);
   });
 
   it('shows what each setting is now', async () => {
@@ -67,7 +76,6 @@ describe('the settings window', () => {
     expect(kept().value).toBe('3');
     expect(idle().value).toBe('25');
 
-    await openDeleting();
     expect(asks().checked).toBe(false);
   });
 });
@@ -150,7 +158,7 @@ describe('leaving with something unsaved', () => {
   const answer = (label: string) => userEvent.click(within(screen.getByRole('alertdialog')).getByText(label));
 
   it.each([
-    ['another category', () => userEvent.click(tab('Deleting'))],
+    ['another category', () => userEvent.click(tab('New sessions'))],
     ['the close button', () => userEvent.click(screen.getByLabelText('Close settings'))],
     ['a click outside', async () => fireEvent.mouseDown(document.querySelector('.confirm-backdrop') as HTMLElement)],
     ['Escape', async () => fireEvent.keyDown(window, { key: 'Escape' })],
@@ -167,35 +175,35 @@ describe('leaving with something unsaved', () => {
   it('goes nowhere while the question is open', async () => {
     await dirty();
 
-    await userEvent.click(tab('Deleting'));
+    await userEvent.click(tab('New sessions'));
 
     // Still on Memory, and still showing what was typed.
-    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Memory');
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Session management');
     expect(kept().value).toBe('9');
   });
 
   it('carries on to the category once it is saved', async () => {
     const { onSave } = await dirty();
-    await userEvent.click(tab('Deleting'));
+    await userEvent.click(tab('New sessions'));
 
     await answer('Save');
 
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ maxLoaded: 9 }));
-    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Deleting');
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('New sessions');
     expect(asked()).toBeNull();
   });
 
   it('carries on to the category once it is discarded, keeping what was saved', async () => {
     const { onSave } = await dirty();
-    await userEvent.click(tab('Deleting'));
+    await userEvent.click(tab('New sessions'));
 
     await answer('Discard');
 
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Deleting');
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('New sessions');
 
     // And going back shows what was saved rather than what was typed.
-    await userEvent.click(tab('Memory'));
+    await userEvent.click(tab('Session management'));
     expect(kept().value).toBe('3');
   });
 
@@ -211,7 +219,7 @@ describe('leaving with something unsaved', () => {
 
   it('stays put when the question is answered with Keep editing', async () => {
     const { onSave, onClose } = await dirty();
-    await userEvent.click(tab('Deleting'));
+    await userEvent.click(tab('New sessions'));
 
     await answer('Keep editing');
 
@@ -224,7 +232,7 @@ describe('leaving with something unsaved', () => {
   /** Or Escape would close the window out from under the question it had just raised. */
   it('answers the question with Escape before closing anything', async () => {
     const { onClose } = await dirty();
-    await userEvent.click(tab('Deleting'));
+    await userEvent.click(tab('New sessions'));
 
     fireEvent.keyDown(window, { key: 'Escape' });
 
@@ -236,9 +244,9 @@ describe('leaving with something unsaved', () => {
   it('asks nothing when there is nothing to lose', async () => {
     const { onClose } = show();
 
-    await userEvent.click(tab('Deleting'));
+    await userEvent.click(tab('New sessions'));
     expect(asked()).toBeNull();
-    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Deleting');
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('New sessions');
 
     await userEvent.click(screen.getByLabelText('Close settings'));
     expect(onClose).toHaveBeenCalledOnce();
@@ -246,10 +254,8 @@ describe('leaving with something unsaved', () => {
 
   it('asks about a change made in either category', async () => {
     show();
-    await openDeleting();
-
     await userEvent.click(asks());
-    await userEvent.click(tab('Memory'));
+    await userEvent.click(tab('Session management'));
 
     expect(asked()).toBeTruthy();
   });
@@ -352,16 +358,12 @@ describe('the tick box', () => {
    */
   it('draws its own tick rather than leaving it to the browser', async () => {
     show({ confirmDelete: true });
-    await openDeleting();
-
     expect(tick()).not.toBeNull();
     expect(asks().type).toBe('checkbox');
   });
 
   it('keeps the tick beside the box it belongs to, so the styling can find it', async () => {
     show({ confirmDelete: true });
-    await openDeleting();
-
     // The rule that shows it is `input:checked + .tick`, which only holds while they are
     // siblings in that order.
     expect(asks().nextElementSibling).toBe(tick());
@@ -369,8 +371,6 @@ describe('the tick box', () => {
 
   it('ticks when its own text is clicked', async () => {
     show({ confirmDelete: false });
-    await openDeleting();
-
     await userEvent.click(screen.getByText('Ask before deleting a session'));
 
     expect(asks().checked).toBe(true);
@@ -382,8 +382,6 @@ describe('the tick box', () => {
    */
   it('does not tick when the note under it is clicked', async () => {
     show({ confirmDelete: false });
-    await openDeleting();
-
     await userEvent.click(screen.getByText(/Deleting removes the transcript/));
 
     expect(asks().checked).toBe(false);
@@ -391,8 +389,6 @@ describe('the tick box', () => {
 
   it('keeps the note out of what can be clicked', async () => {
     show({ confirmDelete: false });
-    await openDeleting();
-
     expect(screen.getByText(/Deleting removes the transcript/).closest('label')).toBeNull();
   });
 });

@@ -101,17 +101,18 @@ function TickField({
 }
 
 /**
- * The groups the settings are divided into, and which settings belong to each.
+ * The groups the settings are divided into.
  *
- * `holds` is what decides whether leaving a category is allowed: a change is only ever
- * pending in the one being looked at, so it is the list of what to compare (#100).
+ * Which settings belong to each is not recorded here, because nothing needs it: what stops
+ * a category being left is whether the draft differs from what is saved at all, and a
+ * setting in another category cannot have been changed without going there first - which
+ * is the thing being stopped (#100).
  */
 const CATEGORIES = [
-  { id: 'memory', label: 'Memory', holds: ['maxLoaded', 'idleMinutes'] },
-  { id: 'sessions', label: 'New sessions', holds: ['allowAll', 'workingDirectory'] },
-  { id: 'deleting', label: 'Deleting', holds: ['confirmDelete'] },
-  { id: 'cli', label: 'Copilot CLI', holds: ['updateOnStart'] },
-] as const satisfies readonly { id: string; label: string; holds: readonly (keyof Settings)[] }[];
+  { id: 'management', label: 'Session management' },
+  { id: 'sessions', label: 'New sessions' },
+  { id: 'cli', label: 'Copilot CLI' },
+] as const satisfies readonly { id: string; label: string }[];
 
 type CategoryId = (typeof CATEGORIES)[number]['id'];
 
@@ -148,7 +149,7 @@ export function SettingsWindow({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
-  const [category, setCategory] = useState<CategoryId>('memory');
+  const [category, setCategory] = useState<CategoryId>(CATEGORIES[0].id);
   const [pending, setPending] = useState<Pending | null>(null);
 
   const unsaved = (Object.keys(draft) as (keyof Settings)[]).some((key) => draft[key] !== settings[key]);
@@ -226,8 +227,9 @@ export function SettingsWindow({
           </header>
 
           <div className="settings-body">
-            {shown.id === 'memory' && (
+            {shown.id === 'management' && (
               <>
+                <h4 className="settings-subhead">Memory</h4>
                 <p className="settings-note">
                   A session costs nothing until it is opened. These decide how much is kept once it has been.
                 </p>
@@ -252,6 +254,15 @@ export function SettingsWindow({
                       ? 'Never. Sessions stay in memory until the app closes or the limit above releases them.'
                       : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`
                   }
+                />
+
+                <h4 className="settings-subhead">Deleting</h4>
+
+                <TickField
+                  label="Ask before deleting a session"
+                  checked={draft.confirmDelete}
+                  onChange={(checked) => edit('confirmDelete', checked)}
+                  hint="Deleting removes the transcript and everything the session wrote."
                 />
               </>
             )}
@@ -302,15 +313,6 @@ export function SettingsWindow({
                     ? 'Runs copilot update as the app starts. It carries on without waiting, so a slow download does not hold the app up.'
                     : 'The CLI updates itself on startup, but never when this app launches it, so it stays on the version it has.'
                 }
-              />
-            )}
-
-            {shown.id === 'deleting' && (
-              <TickField
-                label="Ask before deleting a session"
-                checked={draft.confirmDelete}
-                onChange={(checked) => edit('confirmDelete', checked)}
-                hint="Deleting removes the transcript and everything the session wrote."
               />
             )}
           </div>

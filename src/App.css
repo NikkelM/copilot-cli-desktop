@@ -5016,3 +5016,15 @@ pre.fatal,
 .settings-row:has(> .settings-text) {
   grid-template-columns: 1fr;
 }
+
+/* Names a group of settings inside a category, for a category that holds more than one
+   idea. The first has no space above it: the category name is already there. */
+.settings-subhead {
+  margin: 20px 0 4px;
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+
+.settings-body > .settings-subhead:first-child {
+  margin-top: 0;
+}
