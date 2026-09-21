@@ -281,11 +281,44 @@ describe('ModelPicker', () => {
       expect(screen.getByText('Not priced on its own')).toBeTruthy();
     });
 
-    it('shows no price when nothing is in use yet', async () => {
+    // It used to vanish, which is the largest jump of all: in the settings window nothing is
+    // in use, so the block appeared on hover and collapsed again the moment the pointer moved.
+    it('keeps the block before the pointer has been anywhere', async () => {
       picker({ current: null });
       await openMenu();
 
-      expect(screen.queryByText(/Cost per 1M tokens/)).toBeNull();
+      expect(screen.getByText(/Cost per 1M tokens/)).toBeTruthy();
+      expect(screen.getByText('Point at a model for its price')).toBeTruthy();
+    });
+
+    it('names no model until there is one to name', async () => {
+      picker({ current: null });
+      await openMenu();
+
+      expect(screen.getByRole('listbox').querySelector('.model-prices-of')).toBeNull();
+    });
+
+    // Three prices, one line saying there are none, or nothing at all: the block keeps the
+    // same rows for all of them, or the list under it moves as the pointer goes down it.
+    it('reserves the same rows whatever it has to say', async () => {
+      picker({ current: null });
+      await openMenu();
+
+      // The menu is drawn on the body rather than inside the picker, so it is found by role.
+      const rows = () => screen.getByRole('listbox').querySelectorAll('.model-price').length;
+      const spans = () => screen.getByRole('listbox').querySelectorAll('.model-price.wide').length;
+
+      // Nothing to say, said across the rows three prices would have taken.
+      expect(rows()).toBe(1);
+      expect(spans()).toBe(1);
+
+      await userEvent.hover(screen.getByRole('option', { name: /Claude Opus 5/ }));
+      expect(rows()).toBe(3);
+      expect(spans()).toBe(0);
+
+      await userEvent.hover(screen.getByRole('option', { name: /Grok 4\.6/ }));
+      expect(rows()).toBe(1);
+      expect(spans()).toBe(1);
     });
 
     describe('following what the reader is looking at', () => {

@@ -155,8 +155,7 @@ export function ModelPicker({
           {failed && <p className="error">{failed}</p>}
           {!models && !failed && <p className="model-loading">Starting the runtime to ask what is available.</p>}
 
-          {described && <Prices model={described} />}
-
+          {models && models.length > 0 && <Prices model={described} />}
           {models?.map((model) => (
             <ModelRow
               key={model.id}
@@ -179,23 +178,30 @@ export function ModelPicker({
  * One model at a time rather than a price beside every row, which would bury the list the
  * reader came for. It follows the pointer, so comparing two models is a matter of moving
  * between them, and falls back to the model in use when the pointer is elsewhere.
+ *
+ * Always drawn, and always the same height, whatever it has to say. Everything it can show
+ * is a different number of lines - three prices, one line saying there are none, or nothing
+ * at all before the pointer has been anywhere - and the list sits directly underneath, so a
+ * block that grew and shrank would shunt the rows out from under the pointer that moved it.
  */
-function Prices({ model }: { model: ModelChoice }) {
+function Prices({ model }: { model: ModelChoice | undefined }) {
   const rows: ReadonlyArray<[string, number | undefined]> = [
-    ['Input', model.prices?.input],
-    ['Cached input', model.prices?.cachedInput],
-    ['Output', model.prices?.output],
+    ['Input', model?.prices?.input],
+    ['Cached input', model?.prices?.cachedInput],
+    ['Output', model?.prices?.output],
   ];
   const known = rows.filter(([, amount]) => amount !== undefined);
 
   return (
     <div className="model-prices">
       <p className="model-prices-head">
-        Cost per 1M tokens<span className="model-prices-of"> · {model.name}</span>
+        Cost per 1M tokens{model && <span className="model-prices-of"> · {model.name}</span>}
       </p>
 
       {/* Auto has no price of its own: what it costs depends on where it routes. */}
-      {known.length === 0 && <p className="model-price">Not priced on its own</p>}
+      {known.length === 0 && (
+        <p className="model-price wide">{model ? 'Not priced on its own' : 'Point at a model for its price'}</p>
+      )}
 
       {known.map(([label, amount]) => (
         <p className="model-price" key={label}>

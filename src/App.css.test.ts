@@ -132,3 +132,41 @@ describe('what a floating menu sits over', () => {
     expect(css.slice(at, css.indexOf('\n}', at))).toContain('position: fixed;');
   });
 });
+
+
+/**
+ * The price block above the model list never changes height.
+ *
+ * It says one of three things - three prices, a line saying there are none, or a line
+ * asking the reader to point at something - and the list sits directly under it, so a
+ * block that grew and shrank would shunt the rows out from under the pointer that moved it.
+ *
+ * It was a fixed pixel height before, which held until the text scale moved and until a
+ * model with a long name wrapped the heading onto a second line.
+ */
+describe('the price block above the model list', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('reserves a row for every price whether or not there is one', () => {
+    const rule = block('.model-prices');
+
+    expect(rule, 'the rows should be reserved rather than measured').toMatch(
+      /grid-template-rows:\s*auto repeat\(3,/,
+    );
+    // In the size of the text, so the block follows the scale the way its contents do.
+    expect(rule).toContain('var(--font-sm)');
+    expect(rule, 'a height in pixels does not follow the text scale').not.toMatch(/height:\s*\d+px/);
+  });
+
+  it('keeps the heading to one line however long the name is', () => {
+    expect(block('.model-prices-head')).toContain('white-space: nowrap;');
+  });
+
+  it('spends the reserved rows when there is no price to put in them', () => {
+    expect(block('.model-price.wide')).toContain('grid-row: span 3;');
+  });
+});

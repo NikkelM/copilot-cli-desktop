@@ -672,17 +672,29 @@ body {
 
 /* What the model being looked at costs, above the list rather than repeated on every row. */
 .model-prices {
-  /* Fixed height so following the pointer down the list does not move the list itself. */
-  min-height: 74px;
+  display: grid;
+  /*
+   * The head, then a row for each price whether or not there is one to show.
+   *
+   * Reserved rather than measured, and in the size of the text rather than in pixels: a
+   * fixed pixel height held only until the text scale moved, and the list sits right
+   * underneath, so any change here shunts the rows out from under the pointer.
+   */
+  grid-template-rows: auto repeat(3, calc(var(--font-sm) * 1.5));
   margin: 2px 4px 6px;
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
 }
 
+/* One line however long the name is: wrapped, it added a line to a block that must not
+   change height, and the name is the one part of it the reader already knows. */
 .model-prices-head {
+  overflow: hidden;
   margin: 0 0 4px;
   color: var(--text-muted);
   font-size: var(--font-xs);
+  white-space: nowrap;
+  text-overflow: ellipsis;
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
@@ -693,10 +705,18 @@ body {
 
 .model-price {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin: 0;
   font-size: var(--font-sm);
+}
+
+/* Across the rows the prices would have taken, so a block with none is no shorter. */
+.model-price.wide {
+  grid-row: span 3;
+  align-items: start;
+  color: var(--text-muted);
 }
 
 .model-price-label {
