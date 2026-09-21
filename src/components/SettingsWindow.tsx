@@ -137,6 +137,9 @@ type Pending = { go: 'close' } | { go: 'category'; to: CategoryId };
  * Leaving with something changed is stopped and asked about, wherever the leaving was
  * headed - another category, the corner, the keyboard, or the page behind. Cancel is the
  * exception, because discarding is what it is for and asking would be asking twice.
+ *
+ * Saving does not close. The two are separate decisions, and a window that shut itself on
+ * saving left no way to keep a change and carry on looking at the rest.
  */
 export function SettingsWindow({
   settings,
@@ -318,19 +321,13 @@ export function SettingsWindow({
           </div>
 
           <div className="confirm-actions">
+            {/* Two buttons, each doing one thing. Saving used to close as well, which meant
+                there was no way to keep a change and carry on looking. */}
             <button type="button" className="confirm-cancel" onClick={onClose}>
-              Cancel
+              {unsaved ? 'Cancel' : 'Close'}
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                onSave(draft);
-                onClose();
-              }}
-              // Nothing changed is not nothing to do: the window still has to close, so
-              // this says Done rather than offering a Save that would save nothing.
-            >
-              {unsaved ? 'Save' : 'Done'}
+            <button type="button" onClick={() => onSave(draft)} disabled={!unsaved}>
+              Save
             </button>
           </div>
         </div>

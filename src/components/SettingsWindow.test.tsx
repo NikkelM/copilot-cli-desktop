@@ -20,14 +20,21 @@ const SAVED: Settings = {
 const show = (over: Partial<Settings> = {}) => {
   const onSave = vi.fn();
   const onClose = vi.fn();
-  render(<SettingsWindow settings={{ ...SAVED, ...over }} onSave={onSave} onClose={onClose} />);
-  return { onSave, onClose };
+  const settings = { ...SAVED, ...over };
+  const { rerender } = render(<SettingsWindow settings={settings} onSave={onSave} onClose={onClose} />);
+
+  /** What the app does after a save: hands back the settings it now holds. */
+  const saved = (next: Settings) =>
+    rerender(<SettingsWindow settings={next} onSave={onSave} onClose={onClose} />);
+
+  return { onSave, onClose, saved };
 };
 
 const kept = () => screen.getByLabelText('Sessions kept in memory') as HTMLInputElement;
 const idle = () => screen.getByLabelText('Release an idle session after') as HTMLInputElement;
 const asks = () => screen.getByLabelText('Ask before deleting a session') as HTMLInputElement;
-const commit = () => screen.getByRole('button', { name: /^(Save|Done)$/ });
+const commit = () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+const leaveButton = () => screen.getByRole('button', { name: /^(Cancel|Close)$/ });
 const tab = (name: string) => screen.getByRole('button', { name });
 
 describe('the settings window', () => {
@@ -96,7 +103,7 @@ describe('saving', () => {
   });
 
   it('applies what was changed when saved', async () => {
-    const { onSave, onClose } = show({ maxLoaded: 0, idleMinutes: 10 });
+    const { onSave } = show({ maxLoaded: 0, idleMinutes: 10 });
 
     await userEvent.clear(kept());
     await userEvent.type(kept(), '3');
@@ -105,24 +112,90 @@ describe('saving', () => {
     await userEvent.click(commit());
 
     expect(onSave).toHaveBeenCalledExactlyOnceWith({ ...SAVED, maxLoaded: 3, idleMinutes: 25 });
-    expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('offers to save only once something has been changed', async () => {
+  /**
+   * Saving and leaving are separate decisions. A window that shut itself on saving left no
+   * way to keep a change and carry on looking at the rest.
+   */
+  it('stays open after saving', async () => {
+    const { onClose } = show({ maxLoaded: 0 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '3');
+    await userEvent.click(commit());
+
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('has nothing left to save once it is saved', async () => {
+    const { saved } = show({ maxLoaded: 0 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '3');
+    expect(commit().disabled).toBe(false);
+
+    saved({ ...SAVED, maxLoaded: 3 });
+
+    expect(commit().disabled).toBe(true);
+    expect(kept().value).toBe('3');
+  });
+
+  it('can be saved again after another change', async () => {
+    const { onSave, saved } = show({ maxLoaded: 0 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '3');
+    await userEvent.click(commit());
+    saved({ ...SAVED, maxLoaded: 3 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '5');
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenLastCalledWith({ ...SAVED, maxLoaded: 5 });
+    expect(onSave).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers nothing to save until something has been changed', async () => {
     show({ maxLoaded: 0 });
-    expect(screen.getByText('Done')).toBeTruthy();
+    expect(commit().disabled).toBe(true);
 
     await userEvent.clear(kept());
     await userEvent.type(kept(), '2');
 
-    expect(screen.getByText('Save')).toBeTruthy();
+    expect(commit().disabled).toBe(false);
   });
 
-  // Nothing changed is not nothing to do: the window still has to close.
-  it('closes on Done when nothing was changed', async () => {
+  it('goes back to nothing to save when a change is typed back out again', async () => {
+    show({ maxLoaded: 3 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '4');
+    expect(commit().disabled).toBe(false);
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '3');
+
+    expect(commit().disabled).toBe(true);
+  });
+
+  /** The word changes with what it does: there is nothing to cancel until there is. */
+  it('says Close when there is nothing to discard, and Cancel when there is', async () => {
+    show({ maxLoaded: 3 });
+    expect(leaveButton().textContent).toBe('Close');
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '9');
+
+    expect(leaveButton().textContent).toBe('Cancel');
+  });
+
+  it('closes on Close when nothing was changed', async () => {
     const { onClose } = show();
 
-    await userEvent.click(screen.getByText('Done'));
+    await userEvent.click(leaveButton());
 
     expect(onClose).toHaveBeenCalledOnce();
   });
