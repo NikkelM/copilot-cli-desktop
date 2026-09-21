@@ -3,9 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
 import { ModelPicker } from './ModelPicker';
 import { LARGEST, SMALLEST, STEP, applyScale, clampScale } from '../lib/scale';
-import type { ModelChoice } from '../../shared/protocol';
+import type { BinnedSession, ModelChoice } from '../../shared/protocol';
+import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES } from '../lib/useSettings';
+import { formatRelative } from '../lib/time';
+import { bytes } from '../lib/units';
 
 /**
  * A whole number, with its own steppers.
@@ -168,6 +171,9 @@ const CATEGORIES = [
   { id: 'sessions', label: 'New sessions' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'cli', label: 'Copilot CLI' },
+  // Last, because it is the only one that is about what is there rather than about what
+  // this app should do, and because it is looked at when something has gone wrong.
+  { id: 'bin', label: 'Recycle bin' },
 ] as const satisfies readonly { id: string; label: string }[];
 
 type CategoryId = (typeof CATEGORIES)[number]['id'];
@@ -204,6 +210,10 @@ export function SettingsWindow({
   onPickDirectory,
   models,
   onNeedModels,
+  binned,
+  onNeedBin,
+  onRestore,
+  onPurge,
 }: {
   /** What is saved now, which is where the draft starts and what discarding goes back to. */
   settings: Settings;
@@ -231,6 +241,17 @@ export function SettingsWindow({
    * process, and somebody choosing a model cannot do it from an empty list (#200).
    */
   onNeedModels?: () => void;
+  /**
+   * What is waiting in the recycle bin, or null while that is still being read.
+   *
+   * Handed in for the same reason the models are: this window is drawn in tests, and one
+   * that reached for the sidecar itself could not be.
+   */
+  binned?: BinnedSession[] | null;
+  /** Ask what is in the bin. Called on reaching the category rather than on opening. */
+  onNeedBin?: () => void;
+  onRestore?: (sessionId: string) => void;
+  onPurge?: (sessionId: string) => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [category, setCategory] = useState<CategoryId>(CATEGORIES[0].id);
@@ -268,6 +289,17 @@ export function SettingsWindow({
     askedForModels.current = true;
     onNeedModels?.();
   }, [category, models, onNeedModels]);
+
+  /**
+   * Read the bin on reaching it, and again every time it is reached.
+   *
+   * Unlike the catalogue this is not cached anywhere and costs only a directory listing, so
+   * asking again is how the list is right after something is restored or deleted rather
+   * than showing what was there when the window opened.
+   */
+  useEffect(() => {
+    if (category === 'bin') onNeedBin?.();
+  }, [category, onNeedBin]);
 
   const edit = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -374,7 +406,11 @@ export function SettingsWindow({
                   label="Ask before deleting a session"
                   checked={draft.confirmDelete}
                   onChange={(checked) => edit('confirmDelete', checked)}
-                  hint="Deleting removes the transcript and everything the session wrote."
+                  hint={
+                    draft.binRetentionDays > 0
+                      ? 'Deleting takes the transcript and everything the session wrote out of the list. The recycle bin keeps it for a while.'
+                      : 'Deleting removes the transcript and everything the session wrote. There is no undo.'
+                  }
                 />
               </>
             )}
@@ -539,6 +575,54 @@ export function SettingsWindow({
                     : 'The CLI updates itself on startup, but never when this app launches it, so it stays on the version it has.'
                 }
               />
+            )}
+
+            {shown.id === 'bin' && (
+              <>
+                <p className="settings-note">
+                  Deleted sessions wait here before they are really deleted. Restoring one puts it back
+                  exactly where it was, with its title and its place in the list.
+                </p>
+
+                <NumberField
+                  label="Keep a deleted session for"
+                  value={draft.binRetentionDays}
+                  onChange={(value) => edit('binRetentionDays', value)}
+                  hint={
+                    draft.binRetentionDays === 0
+                      ? 'Deleting is immediate and cannot be undone. What is already here stays until it is dealt with.'
+                      : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}, counted from when it was deleted. The default is ${DEFAULT_BIN_RETENTION_DAYS}.`
+                  }
+                />
+
+                <h4 className="settings-subhead">Waiting to be deleted</h4>
+
+                {binned === null && <p className="settings-note">Reading the bin.</p>}
+                {binned?.length === 0 && <p className="settings-note">Nothing has been deleted.</p>}
+
+                {binned?.map((session) => (
+                  <div className="settings-row bin-row" key={session.sessionId}>
+                    <span className="bin-what">
+                      <span className="bin-title">{session.title ?? 'Untitled session'}</span>
+                      <span className="settings-hint">
+                        Deleted {formatRelative(session.binnedAt)} · {bytes(session.bytes)}
+                      </span>
+                    </span>
+                    <span className="bin-actions">
+                      <button type="button" className="settings-reset" onClick={() => onRestore?.(session.sessionId)}>
+                        Restore
+                      </button>
+                      <button
+                        type="button"
+                        className="settings-reset destructive"
+                        onClick={() => onPurge?.(session.sessionId)}
+                      >
+                        Delete now
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </>
             )}
           </div>
 

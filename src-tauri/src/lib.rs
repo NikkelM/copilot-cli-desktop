@@ -186,6 +186,14 @@ impl Supervisor {
             // everything the sidecar said about why it was failing went nowhere.
             .stderr(Stdio::piped());
 
+        // Where this app keeps what it owns, which the sidecar cannot work out for itself:
+        // it is a plain node process and knows nothing about where Tauri puts things. Only
+        // the recycle bin needs it so far, and a bin somewhere other than beside the
+        // settings would be a second place to look for the same app's data.
+        if let Ok(dir) = store_dir(&self.app) {
+            command.env("COPILOT_DESKTOP_DATA", &dir);
+        }
+
         // Without this every sidecar start flashes a console window on Windows, and a
         // sidecar that dies and is replaced flashes one per attempt - which looks like the
         // app is doing something furtive rather than starting a helper it owns.

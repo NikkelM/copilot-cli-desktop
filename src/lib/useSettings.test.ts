@@ -6,12 +6,14 @@ import { read, save } from './store';
 
 const { updateCli } = vi.hoisted(() => ({ updateCli: vi.fn(async () => ({ ran: true })) }));
 const { setRuntimeLimits } = vi.hoisted(() => ({
-  setRuntimeLimits: vi.fn(async (_maxLoadedSessions: number, _idleTimeoutMs: number) => undefined),
+  setRuntimeLimits: vi.fn(
+    async (_maxLoadedSessions: number, _idleTimeoutMs: number, _binRetentionDays?: number) => undefined,
+  ),
 }));
 vi.mock('./sidecar', () => ({
   updateCli: () => updateCli(),
-  setRuntimeLimits: (maxLoadedSessions: number, idleTimeoutMs: number) =>
-    setRuntimeLimits(maxLoadedSessions, idleTimeoutMs),
+  setRuntimeLimits: (maxLoadedSessions: number, idleTimeoutMs: number, binRetentionDays?: number) =>
+    setRuntimeLimits(maxLoadedSessions, idleTimeoutMs, binRetentionDays),
 }));
 
 async function load() {
@@ -24,6 +26,7 @@ const SAVED_SHAPE = {
   maxLoaded: 0,
   idleMinutes: 10,
   confirmDelete: true,
+  binRetentionDays: 7,
   allowAll: false,
   workingDirectory: '',
   updateOnStart: false,
@@ -82,6 +85,7 @@ describe('changing a setting', () => {
       maxLoaded: 4,
       idleMinutes: 25,
       confirmDelete: false,
+  binRetentionDays: 7,
       allowAll: false,
       workingDirectory: '',
       updateOnStart: false,
@@ -113,6 +117,7 @@ describe('changing a setting', () => {
       maxLoaded: 3,
       idleMinutes: 10,
       confirmDelete: true,
+  binRetentionDays: 7,
       allowAll: false,
       workingDirectory: '',
       updateOnStart: false,
@@ -158,7 +163,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     renderHook(() => useSettings());
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7));
   });
 
   it('says so again when a limit changes', async () => {
@@ -168,7 +173,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ maxLoaded: 2 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 10 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 10 * 60_000, 7));
   });
 
   /**
@@ -182,7 +187,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ maxLoaded: 2, idleMinutes: 25, confirmDelete: false }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 25 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 25 * 60_000, 7));
     expect(setRuntimeLimits).toHaveBeenCalledTimes(2);
   });
 
@@ -193,7 +198,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ idleMinutes: 25 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 25 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 25 * 60_000, 7));
   });
 
   it('says nothing again for a setting that is not the runtime business', async () => {
@@ -215,6 +220,59 @@ describe('telling the runtime what may stay in memory', () => {
 
     await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalled());
     expect(result.current.settings.maxLoaded).toBe(0);
+  });
+
+  /**
+   * The retention rides along with the memory rules because it is the same kind of thing,
+   * and because saying it is also when the bin is swept: the runtime has no other way to
+   * know that what is past its retention has moved.
+   */
+  it('tells the runtime how long a deleted session is kept', async () => {
+    const { useSettings } = await load();
+
+    renderHook(() => useSettings());
+
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7));
+  });
+
+  it('says so again when the retention changes', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalled());
+
+    act(() => result.current.apply({ binRetentionDays: 30 }));
+
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 30));
+  });
+});
+
+describe('how long a deleted session is kept', () => {
+  it('is a week when nobody has said otherwise', async () => {
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.binRetentionDays).toBe(7);
+  });
+
+  it('remembers what was chosen', async () => {
+    const { useSettings, BIN_RETENTION_DAYS } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ binRetentionDays: 30 }));
+
+    expect(result.current.settings.binRetentionDays).toBe(30);
+    expect(read('settings', BIN_RETENTION_DAYS)).toBe('30');
+  });
+
+  // Zero is a real answer - delete immediately - rather than an absent one.
+  it('keeps a zero rather than falling back to the default', async () => {
+    const { useSettings } = await load();
+    const first = renderHook(() => useSettings());
+    act(() => first.result.current.apply({ binRetentionDays: 0 }));
+    first.unmount();
+
+    const { useSettings: again } = await load();
+
+    expect(renderHook(() => again()).result.current.settings.binRetentionDays).toBe(0);
   });
 });
 

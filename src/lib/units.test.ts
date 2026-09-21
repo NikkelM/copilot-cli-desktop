@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { credits, tokens } from './units';
+import { bytes, credits, tokens } from './units';
 
 describe('tokens', () => {
   // A context size is the whole difference between one tier and another, and 200000 is
@@ -46,5 +46,31 @@ describe('credits', () => {
 
   it('writes free as free', () => {
     expect(credits(0)).toBe('0');
+  });
+});
+
+describe('a size on disk', () => {
+  it('leaves bytes alone', () => {
+    expect(bytes(0)).toBe('0 B');
+    expect(bytes(999)).toBe('999 B');
+  });
+
+  it('steps up at a thousand', () => {
+    expect(bytes(1000)).toBe('1 kB');
+    expect(bytes(2_400_000)).toBe('2.4 MB');
+  });
+
+  // One decimal below ten and none above, so a column of them lines up.
+  it('spends a decimal only where it says something', () => {
+    expect(bytes(1500)).toBe('1.5 kB');
+    expect(bytes(12_300)).toBe('12 kB');
+  });
+
+  it('stops at gigabytes rather than naming a unit nobody reads', () => {
+    expect(bytes(5_000_000_000_000)).toBe('5000 GB');
+  });
+
+  it('rounds a whole byte count rather than showing a fraction of one', () => {
+    expect(bytes(1)).toBe('1 B');
   });
 });

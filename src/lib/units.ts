@@ -26,3 +26,22 @@ export function credits(amount: number): string {
     amount,
   );
 }
+
+/**
+ * A size on disk, in the unit that makes it a number worth reading.
+ *
+ * One decimal below ten and none above, so a list of them lines up and the difference
+ * between two sessions is the part that stands out rather than the digits they share.
+ */
+export function bytes(count: number): string {
+  const units = ['B', 'kB', 'MB', 'GB'];
+  let value = count;
+  let unit = 0;
+  while (value >= 1000 && unit < units.length - 1) {
+    value /= 1000;
+    unit += 1;
+  }
+
+  const rounded = unit === 0 || value >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded} ${units[unit]}`;
+}

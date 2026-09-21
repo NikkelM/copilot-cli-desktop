@@ -5200,6 +5200,44 @@ pre.fatal,
   text-decoration: underline;
 }
 
+/*
+ * A session waiting in the recycle bin.
+ *
+ * A settings row like any other - a thing on the left, what can be done with it on the
+ * right - except that both halves stack, since a title and when it was deleted are two
+ * lines about one session rather than a label.
+ */
+.bin-row {
+  align-items: start;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.bin-what {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Long titles are common and the window is not wide: one line, cut where it runs out. */
+.bin-title {
+  overflow: hidden;
+  font-size: var(--font-md);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bin-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* The one that cannot be taken back wears the colour that says so, as it does everywhere. */
+.settings-reset.destructive {
+  color: var(--danger);
+}
+
 /* A choice among a known set, drawn like the boxes beside it. */
 .settings-select {
   padding: 4px 8px;

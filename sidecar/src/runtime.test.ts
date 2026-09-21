@@ -29,6 +29,27 @@ vi.mock('./sessionIndex.js', async (importOriginal) => ({
   nameState,
 }));
 
+/**
+ * The bin, stubbed so a test can say whether there was anything to move without a fixture
+ * directory. What it does with one is its own module's to prove; what the runtime decides
+ * is whether to reach for it at all.
+ *
+ * `binSession` answers false by default, which is what a session with no directory on disk
+ * gets - which is every session in this file.
+ */
+const bin = vi.hoisted(() => ({
+  binSession: vi.fn(() => false),
+  restoreSession: vi.fn(() => true),
+  sweepBin: vi.fn(() => 0),
+}));
+vi.mock('./recycleBin.js', () => bin);
+
+beforeEach(() => {
+  bin.binSession.mockReset().mockReturnValue(false);
+  bin.restoreSession.mockReset().mockReturnValue(true);
+  bin.sweepBin.mockReset().mockReturnValue(0);
+});
+
 /** Tied to the SDK's own signature so a shape change fails the build rather than the fake. */
 type ContextAttribution = Awaited<ReturnType<CopilotSession['rpc']['metadata']['getContextAttribution']>>;
 /** The same, for the command result whose `mode` follow-up was being dropped (#167). */
@@ -551,6 +572,88 @@ describe('SessionRuntime', () => {
 
     await expect(runtime.deleteSession('doomed')).rejects.toThrow(/Session file not found/);
     expect(runtime.isActive('doomed')).toBe(false);
+  });
+
+  /**
+   * With a retention the session's directory is moved out of the CLI's reach and the CLI is
+   * not told at all: it lists sessions by reading that directory, so asking it to delete one
+   * that has moved would only be asking it to fail.
+   */
+  describe('with somewhere to put it', () => {
+    it('bins the session rather than deleting it', async () => {
+      const { runtime, client } = makeRuntime();
+      bin.binSession.mockReturnValue(true);
+
+      await runtime.deleteSession('doomed');
+
+      expect(bin.binSession).toHaveBeenCalledOnce();
+      expect(client.deleteSession).not.toHaveBeenCalled();
+    });
+
+    it('lets go of the session before moving what it wrote', async () => {
+      const order: string[] = [];
+      const { runtime, sessions } = makeRuntime({
+        onLoadedChange: (_id: string, loaded: boolean, loading?: boolean) => {
+          if (loading !== true) order.push(loaded ? 'loaded' : 'unloaded');
+        },
+      });
+      bin.binSession.mockImplementation(() => {
+        order.push('binned');
+        return true;
+      });
+      await sendAndFinish({ runtime, sessions }, 'doomed');
+
+      await runtime.deleteSession('doomed');
+
+      expect(order).toEqual(['loaded', 'unloaded', 'binned']);
+    });
+
+    it('deletes outright when the reader keeps nothing', async () => {
+      const { runtime, client } = makeRuntime();
+      bin.binSession.mockReturnValue(true);
+      await runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, binRetentionDays: 0 });
+
+      await runtime.deleteSession('doomed');
+
+      expect(bin.binSession).not.toHaveBeenCalled();
+      expect(client.deleteSession).toHaveBeenCalledExactlyOnceWith('doomed');
+    });
+
+    // A session with no directory has nothing to keep, and the CLI can say why.
+    it('asks the CLI when there was nothing to move', async () => {
+      const { runtime, client } = makeRuntime();
+      bin.binSession.mockReturnValue(false);
+
+      await runtime.deleteSession('doomed');
+
+      expect(client.deleteSession).toHaveBeenCalledExactlyOnceWith('doomed');
+    });
+
+    it('sweeps the bin whenever it is told the rules', async () => {
+      const { runtime } = makeRuntime();
+
+      await runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, binRetentionDays: 3 });
+
+      expect(bin.sweepBin).toHaveBeenCalledWith(3);
+    });
+
+    /** Rules that say nothing about the bin should not quietly empty it. */
+    it('keeps the retention it had when it is not given one', async () => {
+      const { runtime } = makeRuntime();
+      await runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, binRetentionDays: 3 });
+
+      await runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0 });
+
+      expect(bin.sweepBin).toHaveBeenLastCalledWith(3);
+    });
+
+    it('puts a binned session back when asked', async () => {
+      const { runtime } = makeRuntime();
+
+      expect(runtime.restoreSession('doomed')).toBe(true);
+
+      expect(bin.restoreSession).toHaveBeenCalledExactlyOnceWith('doomed');
+    });
   });
 
   it('reports a session as loaded only while it is resident', async () => {

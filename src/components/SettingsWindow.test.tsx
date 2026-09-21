@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 
 import { SettingsWindow } from './SettingsWindow';
 import type { Settings } from '../lib/useSettings';
+import type { BinnedSession } from '../../shared/protocol';
 
 afterEach(cleanup);
 
@@ -12,6 +13,7 @@ const SAVED: Settings = {
   maxLoaded: 0,
   idleMinutes: 10,
   confirmDelete: true,
+  binRetentionDays: 7,
   allowAll: false,
   workingDirectory: '',
   updateOnStart: false,
@@ -942,14 +944,14 @@ describe('the tick box', () => {
    * change it, which is easy to do by accident while reading.
    */
   it('does not tick when the note under it is clicked', async () => {
-    show({ confirmDelete: false });
+    show({ confirmDelete: false, binRetentionDays: 0 });
     await userEvent.click(screen.getByText(/Deleting removes the transcript/));
 
     expect(asks().checked).toBe(false);
   });
 
   it('keeps the note out of what can be clicked', async () => {
-    show({ confirmDelete: false });
+    show({ confirmDelete: false, binRetentionDays: 0 });
     expect(screen.getByText(/Deleting removes the transcript/).closest('label')).toBeNull();
   });
 });
@@ -1052,5 +1054,144 @@ describe('saying what a setting means', () => {
 
     expect(screen.getByText(/Past 2, the least recently used is released/)).toBeTruthy();
     expect(screen.queryByText(/No limit/)).toBeNull();
+  });
+});
+
+describe('the recycle bin', () => {
+  const catalogue: BinnedSession[] = [
+    {
+      sessionId: 'a',
+      title: 'Wiki browser',
+      binnedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+      updatedAt: '2026-01-02T03:04:05.000Z',
+      bytes: 2_400_000,
+    },
+    {
+      sessionId: 'b',
+      title: null,
+      binnedAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+      updatedAt: null,
+      bytes: 1024,
+    },
+  ];
+
+  const withBin = (binned: BinnedSession[] | null = catalogue, over: Partial<Settings> = {}) => {
+    const onSave = vi.fn();
+    const onNeedBin = vi.fn();
+    const onRestore = vi.fn();
+    const onPurge = vi.fn();
+    render(
+      <SettingsWindow
+        settings={{ ...SAVED, ...over }}
+        onSave={onSave}
+        onClose={vi.fn()}
+        binned={binned}
+        onNeedBin={onNeedBin}
+        onRestore={onRestore}
+        onPurge={onPurge}
+      />,
+    );
+    return { onSave, onNeedBin, onRestore, onPurge };
+  };
+
+  const openBin = () => userEvent.click(tab('Recycle bin'));
+
+  it('is the last category, since it is about what is there rather than what to do', () => {
+    show();
+
+    const names = screen.getAllByRole('button').map((button) => button.textContent);
+    expect(names.filter((name) => name === 'Recycle bin')).toHaveLength(1);
+    expect(names.indexOf('Recycle bin')).toBeGreaterThan(names.indexOf('Copilot CLI'));
+  });
+
+  // Reading it costs a directory listing, which nobody changing the text size asked for.
+  it('reads the bin on reaching it rather than on opening the window', async () => {
+    const { onNeedBin } = withBin();
+    expect(onNeedBin).not.toHaveBeenCalled();
+
+    await openBin();
+
+    expect(onNeedBin).toHaveBeenCalled();
+  });
+
+  it('lists what is waiting, with what it was and what it costs', async () => {
+    withBin();
+    await openBin();
+
+    expect(screen.getByText('Wiki browser')).toBeTruthy();
+    expect(screen.getByText(/2.4 MB/)).toBeTruthy();
+  });
+
+  it('names a session that never had a title', async () => {
+    withBin();
+    await openBin();
+
+    expect(screen.getByText('Untitled session')).toBeTruthy();
+  });
+
+  it('says the bin is empty rather than showing nothing at all', async () => {
+    withBin([]);
+    await openBin();
+
+    expect(screen.getByText('Nothing has been deleted.')).toBeTruthy();
+  });
+
+  /** Otherwise an empty bin and one still being read look the same. */
+  it('says it is reading before it knows', async () => {
+    withBin(null);
+    await openBin();
+
+    expect(screen.getByText('Reading the bin.')).toBeTruthy();
+    expect(screen.queryByText('Nothing has been deleted.')).toBeNull();
+  });
+
+  it('puts one back', async () => {
+    const { onRestore } = withBin();
+    await openBin();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Restore' })[0]!);
+
+    expect(onRestore).toHaveBeenCalledExactlyOnceWith('a');
+  });
+
+  it('deletes one for good', async () => {
+    const { onPurge } = withBin();
+    await openBin();
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Delete now' })[1]!);
+
+    expect(onPurge).toHaveBeenCalledExactlyOnceWith('b');
+  });
+
+  it('changes how long one is kept', async () => {
+    const { onSave } = withBin();
+    await openBin();
+
+    const days = screen.getByLabelText('Keep a deleted session for') as HTMLInputElement;
+    await userEvent.clear(days);
+    await userEvent.type(days, '30');
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ binRetentionDays: 30 }));
+  });
+
+  it('says what no retention means', async () => {
+    withBin(catalogue, { binRetentionDays: 0 });
+    await openBin();
+
+    expect(screen.getByText(/Deleting is immediate and cannot be undone/)).toBeTruthy();
+  });
+
+  // The question before deleting says what deleting does, and that changed.
+  it('tells the delete question there is a bin', async () => {
+    show({ binRetentionDays: 7 });
+
+    expect(screen.getByText(/The recycle bin keeps it for a while/)).toBeTruthy();
+  });
+
+  it('tells it there is not, when there is not', async () => {
+    show({ binRetentionDays: 0 });
+
+    expect(screen.getByText(/There is no undo/)).toBeTruthy();
   });
 });

@@ -24,6 +24,7 @@ import {
   unstagePaths,
 } from './git.js';
 import { previewImage } from './images.js';
+import { binnedSessions, purgeSession } from './recycleBin.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
 import { existingSessions, findSessions, listSessions, renameSession } from './sessionIndex.js';
@@ -95,14 +96,20 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'runtime.update': () => updateCli(),
 
-    'runtime.limits': ({ maxLoadedSessions, idleTimeoutMs }) =>
-      runtime.setLimits({ maxLoadedSessions, idleTimeoutMs }),
+    'runtime.limits': ({ maxLoadedSessions, idleTimeoutMs, binRetentionDays }) =>
+      runtime.setLimits({ maxLoadedSessions, idleTimeoutMs, binRetentionDays }),
 
     'sessions.load': ({ sessionId }) => runtime.load(sessionId),
 
     'sessions.evict': ({ sessionId }) => runtime.evict(sessionId),
 
     'sessions.delete': ({ sessionId }) => runtime.deleteSession(sessionId),
+
+    'bin.list': () => binnedSessions(),
+
+    'bin.restore': ({ sessionId }) => ({ restored: runtime.restoreSession(sessionId) }),
+
+    'bin.purge': ({ sessionId }) => purgeSession(sessionId),
 
     'sessions.resolvePermission': ({ requestId, choice }) => runtime.resolvePermission(requestId, choice),
 

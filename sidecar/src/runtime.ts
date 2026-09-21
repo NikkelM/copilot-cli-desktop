@@ -31,6 +31,7 @@ import type {
   SessionMode,
   SlashCommand,
 } from '../../shared/protocol.js';
+import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,7 +41,8 @@ import { lastMode, lastUsage } from './eventLog.js';
 
 import { PendingRequests } from './pending.js';
 import { disabledSkills, setSkillDisabled } from './skills.js';
-import { nameState } from './sessionIndex.js';
+import { nameState, listSessions } from './sessionIndex.js';
+import { binSession, restoreSession, sweepBin } from './recycleBin.js';
 import { TITLE_QUESTION, isPlaceholder, titleIn } from './sessionTitle.js';
 
 /**
@@ -215,6 +217,14 @@ export class SessionRuntime {
 
   private maxLoadedSessions: number;
   private idleTimeoutMs: number;
+  /**
+   * How many days a deleted session is kept before it is really deleted.
+   *
+   * Starts at what the app's own settings start at rather than at zero, so a delete that
+   * happens before the app has said anything can still be undone. The wrong guess in that
+   * direction costs a directory for a week; the other loses it for good.
+   */
+  private binRetentionDays = DEFAULT_BIN_RETENTION_DAYS;
   /**
    * Sessions this run has already tried to title, whether or not it managed to.
    *
@@ -790,21 +800,38 @@ export class SessionRuntime {
   }
 
   /**
-   * Delete a session and everything it wrote.
+   * Delete a session, or put it in the bin for as long as the reader asked for.
    *
    * Let go of here first rather than left to the CLI, which closes the session on its own
    * account: doing it through evict is what takes the session out of this runtime's books,
    * ends its subscription and tells the app it is no longer loaded. Skipping that leaves an
    * entry pointing at a session the CLI has already destroyed.
    *
-   * What survives is the row in the history database, which the CLI does not remove either.
-   * The sidebar drops a row whose log has gone, so the session leaves the list regardless.
+   * With a retention, the session's directory is moved out of the CLI's reach rather than
+   * deleted, and the CLI is not told at all: it lists sessions by reading that directory,
+   * so one that has moved is one it does not have. Asking it to delete a session whose
+   * directory has gone would only be asking it to fail.
+   *
+   * What survives either way is the row in the history database, which the CLI does not
+   * remove either. The sidebar drops a row whose log has gone, so the session leaves the
+   * list regardless - and comes back with its title when it is restored.
    */
   async deleteSession(sessionId: string): Promise<void> {
     await this.evict(sessionId);
 
+    if (this.binRetentionDays > 0) {
+      const summary = listSessions().find((session) => session.sessionId === sessionId);
+      if (binSession(sessionId, summary?.title ?? null, summary?.updatedAt ?? null)) return;
+      // Nothing there to move, so there is nothing to keep and the CLI can say why.
+    }
+
     const client = await this.ensureClient();
     await client.deleteSession(sessionId);
+  }
+
+  /** Put a binned session back where the CLI looks for it. */
+  restoreSession(sessionId: string): boolean {
+    return restoreSession(sessionId);
   }
 
   /** Disconnect least recently used sessions until the cap is satisfied. */
@@ -834,9 +861,23 @@ export class SessionRuntime {
    * to override: the cap is about memory, and interrupting work to save some is a trade
    * nobody asked for.
    */
-  async setLimits({ maxLoadedSessions, idleTimeoutMs }: { maxLoadedSessions: number; idleTimeoutMs: number }): Promise<void> {
+  async setLimits({
+    maxLoadedSessions,
+    idleTimeoutMs,
+    binRetentionDays,
+  }: {
+    maxLoadedSessions: number;
+    idleTimeoutMs: number;
+    binRetentionDays?: number;
+  }): Promise<void> {
     this.maxLoadedSessions = Math.max(0, Math.floor(maxLoadedSessions));
     this.idleTimeoutMs = Math.max(0, Math.floor(idleTimeoutMs));
+    if (binRetentionDays !== undefined) this.binRetentionDays = Math.max(0, Math.floor(binRetentionDays));
+
+    // Here rather than on a timer of its own: the app says what the retention is as it
+    // starts and whenever it changes, which is exactly when the answer to what is past it
+    // can have moved. A bin is only added to by deleting, and that cannot happen unseen.
+    sweepBin(this.binRetentionDays);
 
     // Restarted rather than left alone: a timer already counting down is counting to the
     // old length, so a reader who shortened it would wait out the old one first.

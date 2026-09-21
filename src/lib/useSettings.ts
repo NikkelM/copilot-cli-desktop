@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { read, save } from './store';
 import { setRuntimeLimits, updateCli } from './sidecar';
+import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import { SCALE_KEY, TEXT_SCALE_KEY, applyScale, readScale, readTextScale } from './scale';
 
 /**
@@ -23,6 +24,8 @@ export const MAX_LOADED = 'maxLoadedSessions';
 export const IDLE_MINUTES = 'idleMinutes';
 /** Whether deleting a session asks first. */
 export const CONFIRM_DELETE = 'confirmDelete';
+/** How many days a deleted session waits in the bin. Zero deletes it outright. */
+export const BIN_RETENTION_DAYS = 'binRetentionDays';
 /** Whether a session this app starts asks before running tools. */
 export const ALLOW_ALL = 'allowAll';
 /** Where a session starts when none was chosen. Empty means the home directory. */
@@ -43,6 +46,14 @@ export interface Settings {
   /** Zero means never, which is a real choice on a machine with memory to spare. */
   idleMinutes: number;
   confirmDelete: boolean;
+  /**
+   * How many days a deleted session waits in the recycle bin before it is really deleted.
+   *
+   * Zero means no bin: deleting is immediate and final, which is what this app did before
+   * there was one. Anything already in the bin stays there, since it was put there under a
+   * different answer and a change about future deletes should not reach back.
+   */
+  binRetentionDays: number;
   /**
    * Whether new sessions run tools without asking.
    *
@@ -98,6 +109,7 @@ export function readSettings(): Settings {
     // Absent means ask. Only the exact stored false turns it off, so a key holding anything
     // unexpected leaves the question in place rather than silently skipping it.
     confirmDelete: read('settings', CONFIRM_DELETE) !== 'false',
+    binRetentionDays: number(BIN_RETENTION_DAYS, DEFAULT_BIN_RETENTION_DAYS),
     // And the same the other way: only the exact stored true gives a new session blanket
     // permission, so nothing unexpected can hand one out.
     allowAll: read('settings', ALLOW_ALL) === 'true',
@@ -129,12 +141,12 @@ export function useSettings() {
   // is drawn at the default and then jumps.
   useEffect(() => applyScale(settings.scale, settings.textScale), [settings.scale, settings.textScale]);
 
-  const { maxLoaded, idleMinutes } = settings;
+  const { maxLoaded, idleMinutes, binRetentionDays } = settings;
   useEffect(() => {
     // Failure here is not worth interrupting anyone: the runtime keeps the rules it had,
     // which are the defaults, and the app is still usable.
-    void setRuntimeLimits(maxLoaded, idleMinutes * 60_000).catch(() => undefined);
-  }, [maxLoaded, idleMinutes]);
+    void setRuntimeLimits(maxLoaded, idleMinutes * 60_000, binRetentionDays).catch(() => undefined);
+  }, [maxLoaded, idleMinutes, binRetentionDays]);
 
   /**
    * Bring the CLI up to date once, if that was asked for.
@@ -205,6 +217,7 @@ const KEYS: Record<keyof Settings, string> = {
   maxLoaded: MAX_LOADED,
   idleMinutes: IDLE_MINUTES,
   confirmDelete: CONFIRM_DELETE,
+  binRetentionDays: BIN_RETENTION_DAYS,
   allowAll: ALLOW_ALL,
   workingDirectory: WORKING_DIRECTORY,
   defaultModel: DEFAULT_MODEL,

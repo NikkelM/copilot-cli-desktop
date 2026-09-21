@@ -18,8 +18,29 @@ export interface SessionSummary {
   loaded: boolean;
 }
 
-/** Lifecycle of a session inside the sidecar runtime. Only `active` holds meaningful memory. */
-export type SessionRuntimeState =
+/**
+ * A session waiting in the recycle bin.
+ *
+ * Remembered beside the directory that was moved rather than inside it, so a restored
+ * session is put back exactly as it was and the bin can be listed without asking the CLI
+ * about sessions it no longer has.
+ */
+export interface BinnedSession {
+  sessionId: string;
+  /** What the sidebar called it when it was deleted. */
+  title: string | null;
+  /** ISO-8601. What the retention is counted from. */
+  binnedAt: string;
+  /** ISO-8601, when it was last used, or null if that was never known. */
+  updatedAt: string | null;
+  /** Bytes on disk, so the bin can say what emptying it is worth. */
+  bytes: number;
+}
+
+/** How long a deleted session is kept when nobody has said otherwise. */
+export const DEFAULT_BIN_RETENTION_DAYS = 7;
+
+/** Lifecycle of a session inside the sidecar runtime. Only `active` holds meaningful memory. */export type SessionRuntimeState =
   | 'cold' // never loaded in this app run; history is read straight from disk
   | 'loading' // resumeSession() in flight
   | 'active' // loaded in the shared CLI server process
@@ -854,8 +875,16 @@ export interface SidecarRequests {
    *
    * `maxLoadedSessions` of zero is no cap, which is the default: how many sessions are worth
    * keeping is the reader's judgement. `idleTimeoutMs` of zero disables the timer.
+   *
+   * `binRetentionDays` rides along because it is the same kind of thing - a rule the app
+   * keeps and the runtime enforces - and because saying it is also when the bin is swept:
+   * the app says it as it starts and whenever it changes, which is exactly when what is
+   * past its retention can have moved. Zero deletes immediately and keeps no bin.
    */
-  'runtime.limits': { params: { maxLoadedSessions: number; idleTimeoutMs: number }; result: void };
+  'runtime.limits': {
+    params: { maxLoadedSessions: number; idleTimeoutMs: number; binRetentionDays?: number };
+    result: void;
+  };
   /**
    * Bring the Copilot CLI up to date, if the reader has asked for that.
    *
@@ -868,14 +897,30 @@ export interface SidecarRequests {
    */
   'runtime.update': { params: Record<string, never>; result: { ran: boolean; said?: string; failed?: string } };
   'sessions.load': { params: { sessionId: string }; result: void };  'sessions.evict': { params: { sessionId: string }; result: void };  /**
-   * Remove a session and everything it wrote. There is no undo.
+   * Delete a session, or put it in the bin for as long as the reader asked for.
    *
-   * The CLI deletes the session's state directory, which is where the transcript, the
-   * checkpoints and the rewind snapshots all live. Its row in the history database is left
-   * behind, but the sidebar already hides a row whose log has gone, so a deleted session
-   * leaves the list on the next refresh.
+   * With no retention the CLI deletes the session's state directory, which is where the
+   * transcript, the checkpoints and the rewind snapshots all live, and there is no undo.
+   * With one, that directory is moved into this app's own recycle bin instead and the CLI
+   * is not told: it lists sessions by reading that directory, so one that has moved is one
+   * it does not have.
+   *
+   * Either way the row in the history database is left behind, and the sidebar already
+   * hides a row whose log has gone - which is why a restored session comes back with its
+   * title and its place in the list intact.
    */
   'sessions.delete': { params: { sessionId: string }; result: void };
+  /** What is in the recycle bin, newest first. Costs no session: it is read from disk. */
+  'bin.list': { params: Record<string, never>; result: BinnedSession[] };
+  /**
+   * Put a binned session back where the CLI looks for it.
+   *
+   * Answers whether it went back. It will not when something is already there under that
+   * id, which would be a live session being replaced by an older copy of itself.
+   */
+  'bin.restore': { params: { sessionId: string }; result: { restored: boolean } };
+  /** Delete a binned session for good, without waiting for its retention to run out. */
+  'bin.purge': { params: { sessionId: string }; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'sessions.resolvePlan': { params: ResolvePlanParams; result: void };
@@ -1178,6 +1223,9 @@ export const SIDECAR_METHODS = [
   'sessions.load',
   'sessions.evict',
   'sessions.delete',
+  'bin.list',
+  'bin.restore',
+  'bin.purge',
   'sessions.resolvePermission',
   'sessions.resolveElicitation',
   'sessions.resolvePlan',

@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 
 import type {
   AgentSummary,
+  BinnedSession,
   CommandOutcome,
   ContextTier,
   ElicitationAction,
@@ -87,8 +88,12 @@ export function updateCli(): Promise<{ ran: boolean; said?: string; failed?: str
   return request('runtime.update', {});
 }
 
-export function setRuntimeLimits(maxLoadedSessions: number, idleTimeoutMs: number): Promise<void> {
-  return request('runtime.limits', { maxLoadedSessions, idleTimeoutMs });
+export function setRuntimeLimits(
+  maxLoadedSessions: number,
+  idleTimeoutMs: number,
+  binRetentionDays?: number,
+): Promise<void> {
+  return request('runtime.limits', { maxLoadedSessions, idleTimeoutMs, binRetentionDays });
 }
 
 export function renameSession(sessionId: string, name: string): Promise<void> {
@@ -119,6 +124,22 @@ export function evictSession(sessionId: string): Promise<void> {
  */
 export function deleteSession(sessionId: string): Promise<void> {
   return request('sessions.delete', { sessionId });
+}
+
+/** What is waiting in the recycle bin, newest first. Costs no session: it is read from disk. */
+export function binnedSessions(): Promise<BinnedSession[]> {
+  return request('bin.list', {});
+}
+
+/** Put a binned session back. False means something is already there under that id. */
+export async function restoreBinned(sessionId: string): Promise<boolean> {
+  const { restored } = await request('bin.restore', { sessionId });
+  return restored;
+}
+
+/** Delete a binned session for good, rather than waiting out its retention. */
+export function purgeBinned(sessionId: string): Promise<void> {
+  return request('bin.purge', { sessionId });
 }
 
 /** The runtime is asked what it knows. Costs nothing: the sidecar reads a constant. */
