@@ -77,6 +77,10 @@ export function FloatingMenu({
     const away = (event: MouseEvent) => {
       const target = event.target as Node;
       if (menu.current?.contains(target) || anchor.current?.contains(target)) return;
+      // Stopped so the click dismisses the menu and nothing else: every window in this app
+      // closes on a press outside itself, and a menu opened inside one is outside it, so
+      // the press that put the menu away took the window with it.
+      event.stopPropagation();
       onDismiss();
     };
     // Stopped here, or Escape would dismiss the menu and then carry on to close the window
@@ -87,10 +91,13 @@ export function FloatingMenu({
       onDismiss();
     };
 
-    document.addEventListener('mousedown', away);
+    // Captured, so this is heard first: a window that stops presses inside itself from
+    // reaching the page stopped them reaching the menu as well, and a press in the window
+    // beside the menu left it open.
+    document.addEventListener('mousedown', away, true);
     document.addEventListener('keydown', escape);
     return () => {
-      document.removeEventListener('mousedown', away);
+      document.removeEventListener('mousedown', away, true);
       document.removeEventListener('keydown', escape);
     };
   }, [anchor, onDismiss]);

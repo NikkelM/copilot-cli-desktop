@@ -465,20 +465,63 @@ describe('the defaults a new session starts with', () => {
 
     const withModels = (over: Partial<Settings> = {}, models: typeof catalogue | [] = catalogue) => {
       const onSave = vi.fn();
+      const onClose = vi.fn();
       render(
         <SettingsWindow
           settings={{ ...SAVED, ...over }}
           onSave={onSave}
-          onClose={vi.fn()}
+          onClose={onClose}
           models={models as never}
           onNeedModels={vi.fn()}
         />,
       );
-      return { onSave };
+      return { onSave, onClose };
     };
 
     /** The picker's own trigger, which is the first button in the row. */
     const trigger = () => screen.getByRole('button', { name: /Whatever the runtime picks|Claude Opus 5/ });
+
+    const menu = () => screen.queryByRole('listbox');
+
+    describe('putting the menu away', () => {
+      it('closes for a press elsewhere in the window', async () => {
+        withModels();
+        await openSessions();
+        await userEvent.click(trigger());
+        expect(menu()).not.toBeNull();
+
+        await userEvent.click(screen.getByText('Working directory'));
+
+        expect(menu()).toBeNull();
+      });
+
+      /**
+       * The menu is drawn on the body, so it is outside the window it was opened in, and a
+       * press that put it away used to close the window along with it.
+       */
+      it('closes only the menu for a press outside the window', async () => {
+        const { onClose } = withModels();
+        await openSessions();
+        await userEvent.click(trigger());
+
+        await userEvent.click(document.querySelector('.confirm-backdrop') as HTMLElement);
+
+        expect(menu()).toBeNull();
+        expect(onClose).not.toHaveBeenCalled();
+      });
+
+      it('closes the window for the next press outside it', async () => {
+        const { onClose } = withModels();
+        await openSessions();
+        await userEvent.click(trigger());
+        const backdrop = document.querySelector('.confirm-backdrop') as HTMLElement;
+
+        await userEvent.click(backdrop);
+        await userEvent.click(backdrop);
+
+        expect(onClose).toHaveBeenCalledOnce();
+      });
+    });
 
     it('leaves the choice to the runtime until one is named', async () => {
       withModels();

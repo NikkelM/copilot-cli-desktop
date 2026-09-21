@@ -142,6 +142,55 @@ describe('FloatingMenu', () => {
       expect(onDismiss).toHaveBeenCalledOnce();
     });
 
+    /**
+     * Every window in this app stops presses inside itself from reaching the page, which is
+     * how it tells a press on its own backdrop from one on its contents. Heard after that,
+     * a menu opened in a window stayed open for every press in the window around it.
+     */
+    it('closes for a press something between it and the page stops', async () => {
+      const onDismiss = vi.fn();
+      render(
+        <div onMouseDown={(event) => event.stopPropagation()}>
+          <button type="button">Elsewhere</button>
+        </div>,
+      );
+      await open({ onDismiss });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Elsewhere' }));
+
+      expect(onDismiss).toHaveBeenCalledOnce();
+    });
+
+    /**
+     * A window closes on a press outside itself, and a menu drawn on the body is outside
+     * it, so the press that put the menu away took the window with it.
+     */
+    it('keeps the press that dismissed it from reaching anything else', async () => {
+      await open({ onDismiss: () => {} });
+      const outside = vi.fn();
+      document.body.addEventListener('mousedown', outside);
+      try {
+        await userEvent.click(document.body);
+
+        expect(outside).not.toHaveBeenCalled();
+      } finally {
+        document.body.removeEventListener('mousedown', outside);
+      }
+    });
+
+    it('leaves a press inside it alone', async () => {
+      await open({ onDismiss: () => {} });
+      const outside = vi.fn();
+      document.body.addEventListener('mousedown', outside);
+      try {
+        await userEvent.click(screen.getByRole('button', { name: 'Row' }));
+
+        expect(outside).toHaveBeenCalledOnce();
+      } finally {
+        document.body.removeEventListener('mousedown', outside);
+      }
+    });
+
     it('stays open for a click inside the menu', async () => {
       const onDismiss = vi.fn();
       await open({ onDismiss });
