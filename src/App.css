@@ -1263,6 +1263,16 @@ body {
   --font-4xl: calc(var(--font-base) * 1.286 * var(--text-scale));
   --font-5xl: calc(var(--font-base) * 1.43 * var(--text-scale));
 
+  /**
+   * And the size everything inside inherits.
+   *
+   * Most of the conversation names no size at all: a paragraph of a reply is whatever it
+   * was given, which without this is the root's size and so does not follow the scale. The
+   * sizes above cover what asks for one by name, which turned out to be the tool rows and
+   * the code blocks - so those grew and the reading did not.
+   */
+  font-size: calc(var(--font-base) * var(--text-scale));
+
   margin: 0;
   padding: 0 4px 0 0;
   /* A grid item will not shrink below its content without this, which would push the

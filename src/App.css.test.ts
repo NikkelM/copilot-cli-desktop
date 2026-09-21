@@ -61,7 +61,17 @@ describe('how far the text scale reaches', () => {
     for (const size of ['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl']) {
       expect(transcript, `--font-${size} should follow the text scale`).toContain(`--font-${size}:`);
     }
-    expect([...transcript.matchAll(/var\(--text-scale\)/g)]).toHaveLength(9);
+
+    /**
+     * And the size inherited by everything that names none, which is most of a reply. With
+     * only the sizes above, the tool rows and the code blocks grew and the reading did not.
+     */
+    expect(transcript, 'the transcript should set the size its content inherits').toMatch(
+      /font-size:\s*calc\(var\(--font-base\) \* var\(--text-scale\)\)/,
+    );
+
+    // Nine named sizes and the inherited one.
+    expect([...transcript.matchAll(/var\(--text-scale\)/g)]).toHaveLength(10);
   });
 
   /**
