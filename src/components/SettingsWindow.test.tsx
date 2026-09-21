@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { SettingsWindow } from './SettingsWindow';
@@ -20,24 +20,48 @@ const show = (over: Partial<Settings> = {}) => {
 const kept = () => screen.getByLabelText('Sessions kept in memory') as HTMLInputElement;
 const idle = () => screen.getByLabelText('Release an idle session after') as HTMLInputElement;
 const asks = () => screen.getByLabelText('Ask before deleting a session') as HTMLInputElement;
-const commit = () => screen.getByRole('button', { name: /Save|Done/ });
+const commit = () => screen.getByRole('button', { name: /^(Save|Done)$/ });
+const tab = (name: string) => screen.getByRole('button', { name });
+
+/** Move to the category holding the tick box, which is not the one that opens. */
+const openDeleting = () => userEvent.click(tab('Deleting'));
 
 describe('the settings window', () => {
-  it('shows what each setting is now', () => {
+  it('opens on the first category', () => {
+    show();
+
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Memory');
+    expect(kept()).toBeTruthy();
+  });
+
+  it('shows only the settings of the category being looked at', async () => {
+    show();
+    expect(screen.queryByLabelText('Ask before deleting a session')).toBeNull();
+
+    await openDeleting();
+
+    expect(asks()).toBeTruthy();
+    expect(screen.queryByLabelText('Sessions kept in memory')).toBeNull();
+  });
+
+  it('says which category is being looked at', async () => {
+    show();
+    expect(tab('Memory').getAttribute('aria-current')).toBe('true');
+
+    await openDeleting();
+
+    expect(tab('Deleting').getAttribute('aria-current')).toBe('true');
+    expect(tab('Memory').getAttribute('aria-current')).toBe('false');
+  });
+
+  it('shows what each setting is now', async () => {
     show({ maxLoaded: 3, idleMinutes: 25, confirmDelete: false });
 
     expect(kept().value).toBe('3');
     expect(idle().value).toBe('25');
+
+    await openDeleting();
     expect(asks().checked).toBe(false);
-  });
-
-  it('shows what has been typed before it is saved', async () => {
-    show({ maxLoaded: 0 });
-
-    await userEvent.clear(kept());
-    await userEvent.type(kept(), '4');
-
-    expect(kept().value).toBe('4');
   });
 });
 
@@ -56,25 +80,16 @@ describe('saving', () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
-  it('changes nothing while a box is being ticked', async () => {
-    const { onSave } = show();
-
-    await userEvent.click(asks());
-
-    expect(onSave).not.toHaveBeenCalled();
-  });
-
-  it('applies everything at once when saved', async () => {
-    const { onSave, onClose } = show({ maxLoaded: 0, idleMinutes: 10, confirmDelete: true });
+  it('applies what was changed when saved', async () => {
+    const { onSave, onClose } = show({ maxLoaded: 0, idleMinutes: 10 });
 
     await userEvent.clear(kept());
     await userEvent.type(kept(), '3');
     await userEvent.clear(idle());
     await userEvent.type(idle(), '25');
-    await userEvent.click(asks());
     await userEvent.click(commit());
 
-    expect(onSave).toHaveBeenCalledExactlyOnceWith({ maxLoaded: 3, idleMinutes: 25, confirmDelete: false });
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ maxLoaded: 3, idleMinutes: 25, confirmDelete: true });
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -86,20 +101,6 @@ describe('saving', () => {
     await userEvent.type(kept(), '2');
 
     expect(screen.getByText('Save')).toBeTruthy();
-    expect(screen.queryByText('Done')).toBeNull();
-  });
-
-  it('goes back to Done when a change is typed back out again', async () => {
-    show({ maxLoaded: 3 });
-
-    await userEvent.clear(kept());
-    await userEvent.type(kept(), '4');
-    expect(screen.getByText('Save')).toBeTruthy();
-
-    await userEvent.clear(kept());
-    await userEvent.type(kept(), '3');
-
-    expect(screen.getByText('Done')).toBeTruthy();
   });
 
   // Nothing changed is not nothing to do: the window still has to close.
@@ -110,54 +111,140 @@ describe('saving', () => {
 
     expect(onClose).toHaveBeenCalledOnce();
   });
-});
 
-describe('leaving without saving', () => {
-  it('keeps what was saved, whatever was typed', async () => {
+  it('discards and closes on Cancel, without asking', async () => {
     const { onSave, onClose } = show({ maxLoaded: 3 });
 
     await userEvent.clear(kept());
     await userEvent.type(kept(), '9');
     await userEvent.click(screen.getByText('Cancel'));
 
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(onSave).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledOnce();
   });
+});
 
-  it('forgets what was typed, so opening it again starts from what is saved', async () => {
-    const { onClose } = show({ maxLoaded: 3 });
+/**
+ * Leaving with something changed is stopped and asked about, wherever the leaving was
+ * headed. Cancel is the exception: discarding is what it is for, and asking would be
+ * asking twice.
+ */
+describe('leaving with something unsaved', () => {
+  const dirty = async (over: Partial<Settings> = {}) => {
+    const harness = show({ maxLoaded: 3, ...over });
     await userEvent.clear(kept());
     await userEvent.type(kept(), '9');
-    await userEvent.click(screen.getByText('Cancel'));
-    expect(onClose).toHaveBeenCalledOnce();
+    return harness;
+  };
 
-    // Closing unmounts the window, so opening it again is a fresh one.
-    cleanup();
-    show({ maxLoaded: 3 });
+  const asked = () => screen.queryByRole('alertdialog');
+  /** Scoped to the question, since the window behind it has a Save of its own. */
+  const answer = (label: string) => userEvent.click(within(screen.getByRole('alertdialog')).getByText(label));
 
+  it.each([
+    ['another category', () => userEvent.click(tab('Deleting'))],
+    ['the close button', () => userEvent.click(screen.getByLabelText('Close settings'))],
+    ['a click outside', async () => fireEvent.mouseDown(document.querySelector('.confirm-backdrop') as HTMLElement)],
+    ['Escape', async () => fireEvent.keyDown(window, { key: 'Escape' })],
+  ])('asks before leaving for %s', async (_what, leave) => {
+    const { onSave, onClose } = await dirty();
+
+    await leave();
+
+    expect(asked()).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('goes nowhere while the question is open', async () => {
+    await dirty();
+
+    await userEvent.click(tab('Deleting'));
+
+    // Still on Memory, and still showing what was typed.
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Memory');
+    expect(kept().value).toBe('9');
+  });
+
+  it('carries on to the category once it is saved', async () => {
+    const { onSave } = await dirty();
+    await userEvent.click(tab('Deleting'));
+
+    await answer('Save');
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ maxLoaded: 9 }));
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Deleting');
+    expect(asked()).toBeNull();
+  });
+
+  it('carries on to the category once it is discarded, keeping what was saved', async () => {
+    const { onSave } = await dirty();
+    await userEvent.click(tab('Deleting'));
+
+    await answer('Discard');
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Deleting');
+
+    // And going back shows what was saved rather than what was typed.
+    await userEvent.click(tab('Memory'));
     expect(kept().value).toBe('3');
   });
 
-  it.each([
-    ['Escape', () => fireEvent.keyDown(window, { key: 'Escape' })],
-    ['a click outside', () => fireEvent.mouseDown(document.querySelector('.confirm-backdrop') as HTMLElement)],
-  ])('discards on %s, as Cancel does', async (_what, leave) => {
-    const { onSave, onClose } = show({ maxLoaded: 3 });
+  it('closes once the question about closing is answered', async () => {
+    const { onSave, onClose } = await dirty();
+    await userEvent.click(screen.getByLabelText('Close settings'));
 
-    await userEvent.clear(kept());
-    await userEvent.type(kept(), '9');
-    leave();
+    await answer('Save');
 
-    expect(onSave).not.toHaveBeenCalled();
+    expect(onSave).toHaveBeenCalledOnce();
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('stays open when the pointer goes down on the window itself', () => {
+  it('stays put when the question is answered with Keep editing', async () => {
+    const { onSave, onClose } = await dirty();
+    await userEvent.click(tab('Deleting'));
+
+    await answer('Keep editing');
+
+    expect(asked()).toBeNull();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(kept().value).toBe('9');
+  });
+
+  /** Or Escape would close the window out from under the question it had just raised. */
+  it('answers the question with Escape before closing anything', async () => {
+    const { onClose } = await dirty();
+    await userEvent.click(tab('Deleting'));
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(asked()).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(kept().value).toBe('9');
+  });
+
+  it('asks nothing when there is nothing to lose', async () => {
     const { onClose } = show();
 
-    fireEvent.mouseDown(screen.getByRole('dialog'));
+    await userEvent.click(tab('Deleting'));
+    expect(asked()).toBeNull();
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Deleting');
 
-    expect(onClose).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByLabelText('Close settings'));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('asks about a change made in either category', async () => {
+    show();
+    await openDeleting();
+
+    await userEvent.click(asks());
+    await userEvent.click(tab('Memory'));
+
+    expect(asked()).toBeTruthy();
   });
 });
 
@@ -168,32 +255,26 @@ describe('the tick box', () => {
    * Drawn beside the box rather than in it: a pseudo-element on an input is not something
    * every engine renders, and the native box arrives in its own blue either way.
    */
-  it('draws its own tick rather than leaving it to the browser', () => {
+  it('draws its own tick rather than leaving it to the browser', async () => {
     show({ confirmDelete: true });
+    await openDeleting();
 
     expect(tick()).not.toBeNull();
-    expect((asks() as HTMLInputElement).type).toBe('checkbox');
+    expect(asks().type).toBe('checkbox');
   });
 
-  it('keeps the tick beside the box it belongs to, so the styling can find it', () => {
+  it('keeps the tick beside the box it belongs to, so the styling can find it', async () => {
     show({ confirmDelete: true });
+    await openDeleting();
 
     // The rule that shows it is `input:checked + .tick`, which only holds while they are
     // siblings in that order.
     expect(asks().nextElementSibling).toBe(tick());
   });
 
-  it('is still the input that carries the name and the state', async () => {
-    show({ confirmDelete: true });
-    expect(asks().checked).toBe(true);
-
-    await userEvent.click(asks());
-
-    expect(asks().checked).toBe(false);
-  });
-
   it('ticks when its own text is clicked', async () => {
     show({ confirmDelete: false });
+    await openDeleting();
 
     await userEvent.click(screen.getByText('Ask before deleting a session'));
 
@@ -206,17 +287,18 @@ describe('the tick box', () => {
    */
   it('does not tick when the note under it is clicked', async () => {
     show({ confirmDelete: false });
+    await openDeleting();
 
     await userEvent.click(screen.getByText(/Deleting removes the transcript/));
 
     expect(asks().checked).toBe(false);
   });
 
-  it('keeps the note out of what can be clicked', () => {
+  it('keeps the note out of what can be clicked', async () => {
     show({ confirmDelete: false });
+    await openDeleting();
 
-    const note = screen.getByText(/Deleting removes the transcript/);
-    expect(note.closest('label')).toBeNull();
+    expect(screen.getByText(/Deleting removes the transcript/).closest('label')).toBeNull();
   });
 });
 
@@ -262,16 +344,6 @@ describe('what a number may be', () => {
     await userEvent.click(fewer('Sessions kept in memory'));
 
     expect(kept().value).toBe('0');
-  });
-
-  it('needs saving like anything else typed', async () => {
-    const { onSave } = show({ maxLoaded: 3 });
-
-    await userEvent.click(more('Sessions kept in memory'));
-    expect(onSave).not.toHaveBeenCalled();
-
-    await userEvent.click(commit());
-    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ maxLoaded: 4 }));
   });
 
   // Both are counts of things, and a negative one would mean nothing to the runtime.

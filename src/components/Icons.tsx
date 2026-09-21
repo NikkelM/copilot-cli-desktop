@@ -116,3 +116,18 @@ export function TickIcon() {
     </svg>
   );
 }
+
+/** Close. An X, drawn rather than taken from the text, like the rest of these. */
+export function CloseIcon() {
+  return (
+    <svg {...shared}>
+      <path
+        d="M4 4 12 12M12 4 4 12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

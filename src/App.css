@@ -4710,27 +4710,110 @@ pre.fatal,
   border-color: var(--accent);
   outline: none;
 }
-/* The settings window (#100). Wider than a confirmation, since each row carries a note
-   saying what the number actually does. */
+/* The settings window (#100). A list of categories down the left and one of them on the
+   right, so each setting is read among the few it belongs with rather than in one long
+   column of everything. */
 .settings {
-  background: var(--bg-raised);
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  width: min(46rem, calc(100vw - 48px));
+  height: min(28rem, calc(100vh - 80px));
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 20px 22px;
-  width: min(34rem, calc(100vw - 48px));
-  max-height: calc(100vh - 80px);
-  overflow-y: auto;
+  background: var(--bg-raised);
   box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
 }
 
-.settings-group {
-  margin-bottom: 20px;
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 11rem;
+  padding: 16px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
 }
 
-.settings-group h3 {
-  margin: 0 0 4px;
+.settings-title {
+  margin: 0 0 12px 10px;
+  font-size: var(--font-xl);
+}
+
+.settings-tab {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
   font-size: var(--font-md);
-  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-tab:hover {
+  color: var(--text);
+  background: var(--bg-raised);
+}
+
+.settings-tab.current {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/* A column, so the actions sit at the bottom however little the category holds. */
+.settings-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 20px 16px;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-head h3 {
+  margin: 0;
+  font-size: var(--font-lg);
+}
+
+/* Scrolls on its own, so the category name and the actions stay where they were. */
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Away from the last setting, so the actions do not read as part of it. */
+.settings-main .confirm-actions {
+  margin-top: 16px;
+}
+
+/* Over the window rather than beside it: what it is asking about is behind it, and a
+   question that moved the thing it was about would be answered by guessing. */
+.settings-pending {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 24px;
+  background: rgb(13 17 23 / 88%);
+  text-align: center;
+}
+
+.settings-pending p {
+  margin: 0 0 8px;
+  font-size: var(--font-lg);
 }
 
 .settings-note,
