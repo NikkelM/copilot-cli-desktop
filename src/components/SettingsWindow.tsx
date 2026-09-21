@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
 import { LARGEST, SMALLEST, STEP, applyScale, clampScale } from '../lib/scale';
+import type { ModelChoice } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES } from '../lib/useSettings';
 
@@ -200,6 +201,7 @@ export function SettingsWindow({
   onSave,
   onClose,
   onPickDirectory,
+  models,
 }: {
   /** What is saved now, which is where the draft starts and what discarding goes back to. */
   settings: Settings;
@@ -212,6 +214,13 @@ export function SettingsWindow({
    * for it directly could not be drawn in a test.
    */
   onPickDirectory?: (startingAt: string) => Promise<string | null>;
+  /**
+   * The models to choose a default from, or nothing when none have been read.
+   *
+   * Handed in rather than asked for: listing them costs a server process, and this app
+   * does not spend one on a window being opened. What is here is what was already known.
+   */
+  models?: ModelChoice[] | null;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [category, setCategory] = useState<CategoryId>(CATEGORIES[0].id);
@@ -360,6 +369,39 @@ export function SettingsWindow({
                       : 'Each tool asks before it runs, which is what the CLI does by default.'
                   }
                 />
+
+                <label className="settings-row">
+                  <span className="settings-label">Model</span>
+                  {/* Built from the catalogue the app already remembers rather than asked
+                      for here: listing models costs a server process, and opening a window
+                      to read a setting must not spend one (#200). */}
+                  <select
+                    className="settings-select"
+                    aria-label="Model"
+                    value={draft.defaultModel}
+                    onChange={(event) => edit('defaultModel', event.target.value)}
+                  >
+                    <option value="">Whatever the runtime picks</option>
+                    {/* A model saved before the catalogue was read, or one that has since
+                        gone, still has to be selectable or the box would silently show
+                        something else. */}
+                    {draft.defaultModel && !(models ?? []).some((entry) => entry.id === draft.defaultModel) && (
+                      <option value={draft.defaultModel}>{draft.defaultModel}</option>
+                    )}
+                    {(models ?? []).map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="settings-hint">
+                    {draft.defaultModel
+                      ? 'Set when the session is made. It can still be changed per session afterwards.'
+                      : models && models.length > 0
+                        ? 'The runtime chooses, which is auto. Naming one also saves the titling a detour, since auto cannot answer the question a title comes from.'
+                        : 'The runtime chooses. The list fills in once models have been read, which happens the first time a model picker is opened.'}
+                  </span>
+                </label>
 
                 <label className="settings-row">
                   <span className="settings-label">Working directory</span>

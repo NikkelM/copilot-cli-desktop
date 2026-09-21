@@ -19,6 +19,19 @@ async function load() {
   return import('./useSettings');
 }
 
+/** Every setting at its default, for the tests that build a session from a whole one. */
+const SAVED_SHAPE = {
+  maxLoaded: 0,
+  idleMinutes: 10,
+  confirmDelete: true,
+  allowAll: false,
+  workingDirectory: '',
+  updateOnStart: false,
+  scale: 1,
+  textScale: 1,
+  defaultModel: '',
+};
+
 beforeEach(() => {
   localStorage.clear();
   setRuntimeLimits.mockReset().mockResolvedValue(undefined);
@@ -72,6 +85,7 @@ describe('changing a setting', () => {
       updateOnStart: false,
       scale: 1,
       textScale: 1,
+      defaultModel: '',
     });
   });
 
@@ -100,6 +114,7 @@ describe('changing a setting', () => {
       updateOnStart: false,
       scale: 1,
       textScale: 1,
+      defaultModel: '',
     });
   });
 
@@ -353,6 +368,66 @@ describe('the text size', () => {
     const { useSettings } = await load();
 
     expect(renderHook(() => useSettings()).result.current.settings.scale).toBe(2);
+  });
+});
+
+/**
+ * What a new session starts with, gathered from the settings.
+ *
+ * Its own function because App is composition and has no tests, so a setting quietly
+ * stopping being passed looked exactly like one that was never wired up - which mutation
+ * testing confirmed twice before this existed (#200).
+ */
+describe('what a new session is given', () => {
+  const saved = { ...SAVED_SHAPE };
+
+  it('says nothing at all when nothing has been set', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults(saved)).toEqual({});
+  });
+
+  it('names the directory when one was chosen', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults({ ...saved, workingDirectory: 'F:\\work' })).toEqual({
+      workingDirectory: 'F:\\work',
+    });
+  });
+
+  it('asks for blanket permission only when it was asked for', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults({ ...saved, allowAll: true })).toEqual({ allowAll: true });
+    expect(sessionDefaults({ ...saved, allowAll: false })).toEqual({});
+  });
+
+  it('names the model when one was chosen', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults({ ...saved, defaultModel: 'gpt-5.5' })).toEqual({ model: 'gpt-5.5' });
+  });
+
+  it('carries all three together', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(
+      sessionDefaults({ ...saved, workingDirectory: 'F:\\work', allowAll: true, defaultModel: 'gpt-5.5' }),
+    ).toEqual({ workingDirectory: 'F:\\work', allowAll: true, model: 'gpt-5.5' });
+  });
+
+  /** Empty means "say nothing", not "say empty": the runtime has its own answer for each. */
+  it('leaves an empty one out rather than passing it on', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults({ ...saved, workingDirectory: '', defaultModel: '' })).toEqual({});
+  });
+
+  // Nothing here belongs to a session: these are about the app and the window it draws in.
+  it('says nothing about the settings a session has no use for', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults({ ...saved, maxLoaded: 3, scale: 1.5, confirmDelete: false })).toEqual({});
   });
 });
 

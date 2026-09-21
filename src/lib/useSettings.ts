@@ -27,6 +27,9 @@ export const CONFIRM_DELETE = 'confirmDelete';
 export const ALLOW_ALL = 'allowAll';
 /** Where a session starts when none was chosen. Empty means the home directory. */
 export const WORKING_DIRECTORY = 'workingDirectory';
+/** Which model a new session starts on. Empty means whatever the runtime picks. */
+export const DEFAULT_MODEL = 'defaultModel';
+
 /** Whether to bring the Copilot CLI up to date when the app starts. */
 export const UPDATE_ON_START = 'updateOnStart';
 
@@ -45,6 +48,14 @@ export interface Settings {
   allowAll: boolean;
   /** Empty means the home directory, which is what the CLI does with no argument. */
   workingDirectory: string;
+  /**
+   * Which model a new session starts on, or empty for whatever the runtime picks.
+   *
+   * Empty is the default and means `auto`, which is the runtime's own answer. Naming one
+   * also spares the titling a detour: `auto` cannot answer the question a title comes from,
+   * so a session on it is moved to a named model and back again (#197).
+   */
+  defaultModel: string;
   updateOnStart: boolean;
   /**
    * How large everything is drawn, as a multiple of the app's own size.
@@ -83,6 +94,7 @@ export function readSettings(): Settings {
     // permission, so nothing unexpected can hand one out.
     allowAll: read('settings', ALLOW_ALL) === 'true',
     workingDirectory: read('settings', WORKING_DIRECTORY) ?? '',
+    defaultModel: read('settings', DEFAULT_MODEL) ?? '',
     updateOnStart: read('settings', UPDATE_ON_START) === 'true',
     // Its own reader: a scale is a fraction, and the one above floors what it is given.
     scale: readScale(),
@@ -146,6 +158,28 @@ export function useSettings() {
   return { settings, apply };
 }
 
+/**
+ * What a new session should start with, from the settings.
+ *
+ * Its own function rather than three arguments read off at the call site, because that is
+ * where it kept going untested: App is composition and has no tests, so a setting quietly
+ * stopping being passed looked exactly like one that was never wired up (#200).
+ *
+ * Empty means "say nothing", not "say empty": the runtime has its own answer for each of
+ * these, and an empty string is not it.
+ */
+export function sessionDefaults(settings: Settings): {
+  workingDirectory?: string;
+  allowAll?: boolean;
+  model?: string;
+} {
+  return {
+    ...(settings.workingDirectory ? { workingDirectory: settings.workingDirectory } : {}),
+    ...(settings.allowAll ? { allowAll: true } : {}),
+    ...(settings.defaultModel ? { model: settings.defaultModel } : {}),
+  };
+}
+
 /** Which stored key each setting is kept under. */
 const KEYS: Record<keyof Settings, string> = {
   maxLoaded: MAX_LOADED,
@@ -153,6 +187,7 @@ const KEYS: Record<keyof Settings, string> = {
   confirmDelete: CONFIRM_DELETE,
   allowAll: ALLOW_ALL,
   workingDirectory: WORKING_DIRECTORY,
+  defaultModel: DEFAULT_MODEL,
   updateOnStart: UPDATE_ON_START,
   scale: SCALE_KEY,
   textScale: TEXT_SCALE_KEY,

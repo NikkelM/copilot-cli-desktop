@@ -361,7 +361,10 @@ export class SessionRuntime {
    * asking rather than in anticipation. The session is left loaded because someone who
    * has just made one is about to write in it.
    */
-  async create(workingDirectory?: string, defaults?: { allowAll?: boolean }): Promise<{ sessionId: string }> {
+  async create(
+    workingDirectory?: string,
+    defaults?: { allowAll?: boolean; model?: string },
+  ): Promise<{ sessionId: string }> {
     const client = await this.ensureClient();
     const pluginDirectories = await this.pluginDirectories(client);
 
@@ -370,6 +373,10 @@ export class SessionRuntime {
     let id = '';
     const session = await client.createSession({
       workingDirectory: workingDirectory ?? homedir(),
+      // Given at creation rather than set afterwards, unlike the permission mode: this one
+      // is a field on the config the runtime already takes, so there is nothing to undo if
+      // it is not wanted. Absent leaves the runtime's own choice, which is `auto`.
+      ...(defaults?.model ? { model: defaults.model } : {}),
       onPermissionRequest: (request) => this.decidePermission(id, request),
       onUserInputRequest: (request) => this.askUserInput(id, request),
       onElicitationRequest: (context) => this.askElicitation(id, context),

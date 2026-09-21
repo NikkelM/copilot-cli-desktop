@@ -5115,3 +5115,20 @@ pre.fatal,
 .settings-reset:hover {
   text-decoration: underline;
 }
+
+/* A choice among a known set, drawn like the boxes beside it. */
+.settings-select {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-md);
+  cursor: pointer;
+}
+
+.settings-select:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}

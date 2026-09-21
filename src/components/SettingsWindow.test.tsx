@@ -17,6 +17,7 @@ const SAVED: Settings = {
   updateOnStart: false,
   scale: 1,
   textScale: 1,
+  defaultModel: '',
 };
 
 const show = (over: Partial<Settings> = {}) => {
@@ -439,6 +440,80 @@ describe('the defaults a new session starts with', () => {
 
     expect(screen.queryByLabelText('Choose a working directory')).toBeNull();
     expect(screen.getByLabelText('Working directory')).toBeTruthy();
+  });
+
+  /**
+   * Built from the catalogue the app already remembers. Listing models costs a server
+   * process, and opening a window to read a setting must not spend one (#200).
+   */
+  describe('the model a session starts on', () => {
+    const catalogue = [
+      { id: 'claude-opus-5', name: 'Claude Opus 5', reasoningEfforts: [], contexts: [], needsAgreement: false },
+      { id: 'gpt-5.5', name: 'GPT-5.5', reasoningEfforts: [], contexts: [], needsAgreement: false },
+    ];
+
+    const withModels = (over: Partial<Settings> = {}, models = catalogue) => {
+      const onSave = vi.fn();
+      render(
+        <SettingsWindow settings={{ ...SAVED, ...over }} onSave={onSave} onClose={vi.fn()} models={models} />,
+      );
+      return { onSave };
+    };
+
+    const field = () => screen.getByLabelText('Model') as HTMLSelectElement;
+
+    it('leaves the choice to the runtime until one is named', async () => {
+      withModels();
+      await openSessions();
+
+      expect(field().value).toBe('');
+      expect(screen.getByText('Whatever the runtime picks')).toBeTruthy();
+    });
+
+    it('offers what the app already knows about', async () => {
+      withModels();
+      await openSessions();
+
+      expect([...field().options].map((option) => option.textContent)).toEqual([
+        'Whatever the runtime picks',
+        'Claude Opus 5',
+        'GPT-5.5',
+      ]);
+    });
+
+    it('saves the one chosen', async () => {
+      const { onSave } = withModels();
+      await openSessions();
+
+      await userEvent.selectOptions(field(), 'gpt-5.5');
+      await userEvent.click(commit());
+
+      expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ defaultModel: 'gpt-5.5' }));
+    });
+
+    /** Or the box would quietly show a different model from the one that is saved. */
+    it('keeps showing one that is no longer in the catalogue', async () => {
+      withModels({ defaultModel: 'a-model-that-went-away' });
+      await openSessions();
+
+      expect(field().value).toBe('a-model-that-went-away');
+    });
+
+    it('offers the runtime choice alone when nothing has been read yet', async () => {
+      withModels({}, []);
+      await openSessions();
+
+      expect([...field().options]).toHaveLength(1);
+      expect(screen.getByText(/The list fills in once models have been read/)).toBeTruthy();
+    });
+
+    // The reason to name one is not only preference, so the note says the other half.
+    it('says what naming one saves', async () => {
+      withModels();
+      await openSessions();
+
+      expect(screen.getByText(/auto cannot answer the question a title comes from/)).toBeTruthy();
+    });
   });
 
   // Empty is a real answer rather than a missing one, and it is the one that ships.

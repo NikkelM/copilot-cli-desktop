@@ -2538,4 +2538,33 @@ describe('SessionRuntime starting a session as it was asked to', () => {
       expect.objectContaining({ workingDirectory: 'F:\\work' }),
     );
   });
+
+  /**
+   * Given at creation rather than set afterwards, unlike the permission mode: the model is
+   * a field the runtime's own session config already takes (#200).
+   */
+  it('starts it on the model it was given', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create(undefined, { model: 'gpt-5.5' });
+
+    expect(harness.client.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-5.5' }));
+  });
+
+  // Absent leaves the runtime's own choice, which is what an empty setting means.
+  it('says nothing about the model when none was named', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create();
+
+    expect(harness.client.createSession.mock.calls[0]![0]).not.toHaveProperty('model');
+  });
+
+  it('says nothing about it for an empty name either', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create(undefined, { model: '' });
+
+    expect(harness.client.createSession.mock.calls[0]![0]).not.toHaveProperty('model');
+  });
 });

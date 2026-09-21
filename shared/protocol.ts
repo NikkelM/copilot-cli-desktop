@@ -890,6 +890,13 @@ export interface SidecarRequests {
        * it goes on to create - tested, and they come back `manual` either way (#199).
        */
       allowAll?: boolean;
+      /**
+       * The model to start on. Absent leaves the runtime's own choice, which is `auto`.
+       *
+       * Given at creation rather than set afterwards, unlike the permission mode: this is
+       * a field the runtime's own session config already takes (#200).
+       */
+      model?: string;
     };
     result: { sessionId: string };
   };

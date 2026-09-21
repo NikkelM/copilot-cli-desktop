@@ -52,7 +52,7 @@ import { normalise, useTags } from './lib/useTags';
 import { TagPicker } from './components/TagPicker';
 import { RenamePrompt } from './components/RenamePrompt';
 import { HeaderTags } from './components/HeaderTags';
-import { useSettings } from './lib/useSettings';
+import { sessionDefaults, useSettings } from './lib/useSettings';
 import { SettingsWindow } from './components/SettingsWindow';
 import { usePanel } from './lib/usePanel';
 import { Confirm } from './components/Confirm';
@@ -219,7 +219,7 @@ export default function App() {
       // No folder asked for: not every session is about a project, and wanting to ask
       // something quickly should not begin with choosing a directory. What was set as the
       // default is used, and empty means the home directory as it always did.
-      const { sessionId } = await createSession(settings.workingDirectory || undefined, settings.allowAll);
+      const { sessionId } = await createSession(sessionDefaults(settings));
       // Selected only once the list holds it, or the pane has nothing to show and the
       // button looks as though it did nothing.
       await sessions.refresh();

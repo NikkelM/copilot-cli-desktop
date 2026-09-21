@@ -464,11 +464,12 @@ export function getDiff(sessionId: string, path: string, since?: string): Promis
 }
 
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */
-export function createSession(
-  workingDirectory?: string,
-  allowAll?: boolean,
-): Promise<{ sessionId: string }> {
-  return request('sessions.create', { workingDirectory, allowAll });
+export function createSession(defaults: {
+  workingDirectory?: string;
+  allowAll?: boolean;
+  model?: string;
+} = {}): Promise<{ sessionId: string }> {
+  return request('sessions.create', defaults);
 }
 
 /** Resumes the session if it is cold, then sends. This is the only call that costs memory. */

@@ -111,7 +111,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'sessions.resolvePlan': ({ requestId, approved, selectedAction, feedback }) =>
       runtime.resolvePlan(requestId, approved, selectedAction, feedback),
 
-    'sessions.create': ({ workingDirectory, allowAll }) => runtime.create(workingDirectory, { allowAll }),
+    'sessions.create': ({ workingDirectory, allowAll, model }) =>
+      runtime.create(workingDirectory, { allowAll, model }),
 
     'attachments.stash': (params) => ({ path: stashPaste(params) }),
 
