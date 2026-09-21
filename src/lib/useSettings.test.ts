@@ -71,6 +71,7 @@ describe('changing a setting', () => {
       workingDirectory: '',
       updateOnStart: false,
       scale: 1,
+      textScale: 1,
     });
   });
 
@@ -98,6 +99,7 @@ describe('changing a setting', () => {
       workingDirectory: '',
       updateOnStart: false,
       scale: 1,
+      textScale: 1,
     });
   });
 

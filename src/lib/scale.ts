@@ -12,8 +12,11 @@ import { read } from './store';
  * that is", which survives the default moving under them.
  */
 
-/** What the scale is called in the settings the app keeps. */
+/** What the app scale is called in the settings the app keeps. */
 export const SCALE_KEY = 'scale';
+
+/** And the text size, which is a scale of its own on top of that. */
+export const TEXT_SCALE_KEY = 'textScale';
 
 /** The base every ratio in the stylesheet is derived from. */
 export const BASE_PX = 16;
@@ -43,13 +46,28 @@ export function readScale(): number {
   return saved === null ? 1 : clampScale(Number(saved));
 }
 
+/** The scale remembered for the text, on top of the app's own. */
+export function readTextScale(): number {
+  const saved = read('settings', TEXT_SCALE_KEY);
+  return saved === null ? 1 : clampScale(Number(saved));
+}
+
 /**
- * Put a scale into effect.
+ * Put both scales into effect.
  *
  * Set on the document element rather than written into the stylesheet, because that is the
  * one place a custom property can be overridden from without a rebuild - and every size in
- * the app is already a ratio of it, so nothing else has to be told.
+ * the app is already a ratio of one of these, so nothing else has to be told.
+ *
+ * Two units rather than one. The app scale moves everything, including the panes, the lanes
+ * and the controls; the text scale moves only the letters, on top of it. Somebody who finds
+ * the text small is usually asking for the second rather than the first.
  */
-export function applyScale(scale: number, root: HTMLElement = document.documentElement): void {
+export function applyScale(
+  scale: number,
+  textScale = 1,
+  root: HTMLElement = document.documentElement,
+): void {
   root.style.setProperty('--font-base', `${BASE_PX * scale}px`);
+  root.style.setProperty('--font-text', `${BASE_PX * scale * textScale}px`);
 }

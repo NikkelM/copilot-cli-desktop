@@ -102,6 +102,58 @@ function TickField({
 }
 
 /**
+ * A size chosen as a share of something, with steppers rather than a box.
+ *
+ * Shown as a percentage because that is how a size relative to another size reads, and it
+ * moves in the same eighths the keyboard takes rather than letting any number be typed.
+ */
+function ScaleField({
+  label,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  hint: string;
+}) {
+  return (
+    <label className="settings-row">
+      <span className="settings-label">{label}</span>
+      <span className="number-field">
+        <input
+          type="text"
+          readOnly
+          className="scale-readout"
+          aria-label={label}
+          value={`${Math.round(value * 100)}%`}
+        />
+        <span className="number-steppers">
+          <button
+            type="button"
+            aria-label={`Increase ${label.toLowerCase()}`}
+            onClick={() => onChange(clampScale(value + STEP))}
+            disabled={value >= LARGEST}
+          >
+            <ChevronIcon open={false} />
+          </button>
+          <button
+            type="button"
+            aria-label={`Decrease ${label.toLowerCase()}`}
+            onClick={() => onChange(clampScale(value - STEP))}
+            disabled={value <= SMALLEST}
+          >
+            <ChevronIcon open={false} />
+          </button>
+        </span>
+      </span>
+      <span className="settings-hint">{hint}</span>
+    </label>
+  );
+}
+
+/**
  * The groups the settings are divided into.
  *
  * Which settings belong to each is not recorded here, because nothing needs it: what stops
@@ -193,9 +245,9 @@ export function SettingsWindow({
    * and closing; saving makes the two the same, so putting it back changes nothing (#139).
    */
   useEffect(() => {
-    applyScale(draft.scale);
-    return () => applyScale(settings.scale);
-  }, [draft.scale, settings.scale]);
+    applyScale(draft.scale, draft.textScale);
+    return () => applyScale(settings.scale, settings.textScale);
+  }, [draft.scale, draft.textScale, settings.scale, settings.textScale]);
 
   /** Go, or ask first if there is something that would be lost by going. */
   const leave = (to: Pending) => {
@@ -351,54 +403,43 @@ export function SettingsWindow({
             {shown.id === 'appearance' && (
               <>
                 <p className="settings-note">
-                  One scale rather than a size for each thing. The sizes are in proportion to each other on
-                  purpose, and setting them apart would only let that be broken.
+                  Two scales, each keeping its own proportions. The app scale moves everything; the text
+                  size moves only the letters, on top of it.
                 </p>
 
-                <label className="settings-row">
-                  <span className="settings-label">Text size</span>
-                  <span className="number-field">
-                    <input
-                      type="text"
-                      readOnly
-                      className="scale-readout"
-                      aria-label="Text size"
-                      value={`${Math.round(draft.scale * 100)}%`}
-                    />
-                    <span className="number-steppers">
-                      <button
-                        type="button"
-                        aria-label="Larger text"
-                        onClick={() => edit('scale', clampScale(draft.scale + STEP))}
-                        disabled={draft.scale >= LARGEST}
-                      >
-                        <ChevronIcon open={false} />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label="Smaller text"
-                        onClick={() => edit('scale', clampScale(draft.scale - STEP))}
-                        disabled={draft.scale <= SMALLEST}
-                      >
-                        <ChevronIcon open={false} />
-                      </button>
-                    </span>
-                  </span>
-                  <span className="settings-hint">
-                    {draft.scale === 1
-                      ? 'The size the app is drawn at. Ctrl and + or - does the same, as does Ctrl and the wheel.'
-                      : `${Math.round(draft.scale * 100)}% of the app's own size. Ctrl and + or - does the same.`}
-                  </span>
-                </label>
+                <ScaleField
+                  label="App scale"
+                  value={draft.scale}
+                  onChange={(value) => edit('scale', value)}
+                  hint={
+                    draft.scale === 1
+                      ? 'Everything: the panes, the lanes and the controls as well as the letters. Ctrl and + or - does the same, as does Ctrl and the wheel.'
+                      : `% of the app's own size. Ctrl and + or - does the same.`
+                  }
+                />
 
-                {draft.scale !== 1 && (
-                  <button type="button" className="settings-reset" onClick={() => edit('scale', 1)}>
-                    Back to the app&apos;s own size
+                <ScaleField
+                  label="Text size"
+                  value={draft.textScale}
+                  onChange={(value) => edit('textScale', value)}
+                  hint={
+                    draft.textScale === 1
+                      ? 'The letters alone, if they read small at a scale that otherwise suits.'
+                      : `% of the size the app scale would give them.`
+                  }
+                />
+
+                {(draft.scale !== 1 || draft.textScale !== 1) && (
+                  <button
+                    type="button"
+                    className="settings-reset"
+                    onClick={() => setDraft((current) => ({ ...current, scale: 1, textScale: 1 }))}
+                  >
+                    Back to the app&apos;s own sizes
                   </button>
                 )}
               </>
             )}
-
             {shown.id === 'cli' && (
               <TickField
                 label="Update the CLI when the app starts"

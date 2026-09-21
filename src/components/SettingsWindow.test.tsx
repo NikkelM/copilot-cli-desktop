@@ -16,6 +16,7 @@ const SAVED: Settings = {
   workingDirectory: '',
   updateOnStart: false,
   scale: 1,
+  textScale: 1,
 };
 
 const show = (over: Partial<Settings> = {}) => {
@@ -488,9 +489,9 @@ describe('keeping the CLI up to date', () => {
  * The size is picked by looking at the result, so it is the one setting here that takes
  * effect while it is still a draft, and is put back if it is not saved (#139).
  */
-describe('the text size', () => {
+describe('the app scale', () => {
   const openAppearance = () => userEvent.click(tab('Appearance'));
-  const readout = () => screen.getByLabelText('Text size') as HTMLInputElement;
+  const readout = () => screen.getByLabelText('App scale') as HTMLInputElement;
   const applied = () => document.documentElement.style.getPropertyValue('--font-base');
 
   afterEach(() => document.documentElement.style.removeProperty('--font-base'));
@@ -506,30 +507,30 @@ describe('the text size', () => {
     show({ scale: 1 });
     await openAppearance();
 
-    await userEvent.click(screen.getByLabelText('Larger text'));
+    await userEvent.click(screen.getByLabelText('Increase app scale'));
     expect(readout().value).toBe('113%');
 
-    await userEvent.click(screen.getByLabelText('Smaller text'));
-    await userEvent.click(screen.getByLabelText('Smaller text'));
+    await userEvent.click(screen.getByLabelText('Decrease app scale'));
+    await userEvent.click(screen.getByLabelText('Decrease app scale'));
     expect(readout().value).toBe('88%');
   });
 
   it('stops at each end rather than going past it', async () => {
     show({ scale: 2 });
     await openAppearance();
-    expect((screen.getByLabelText('Larger text') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Increase app scale') as HTMLButtonElement).disabled).toBe(true);
 
     cleanup();
     show({ scale: 0.75 });
     await openAppearance();
-    expect((screen.getByLabelText('Smaller text') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText('Decrease app scale') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('draws at the size being chosen before it is saved', async () => {
     show({ scale: 1 });
     await openAppearance();
 
-    await userEvent.click(screen.getByLabelText('Larger text'));
+    await userEvent.click(screen.getByLabelText('Increase app scale'));
 
     expect(applied()).toBe('18px');
   });
@@ -538,7 +539,7 @@ describe('the text size', () => {
     const { onSave } = show({ scale: 1 });
     await openAppearance();
 
-    await userEvent.click(screen.getByLabelText('Larger text'));
+    await userEvent.click(screen.getByLabelText('Increase app scale'));
     expect(onSave).not.toHaveBeenCalled();
 
     await userEvent.click(commit());
@@ -551,7 +552,7 @@ describe('the text size', () => {
       <SettingsWindow settings={{ ...SAVED, scale: 1 }} onSave={vi.fn()} onClose={vi.fn()} />,
     );
     await openAppearance();
-    await userEvent.click(screen.getByLabelText('Larger text'));
+    await userEvent.click(screen.getByLabelText('Increase app scale'));
     expect(applied()).toBe('18px');
 
     unmount();
@@ -564,10 +565,88 @@ describe('the text size', () => {
     await openAppearance();
     expect(screen.queryByText(/Back to the app/)).toBeNull();
 
-    await userEvent.click(screen.getByLabelText('Larger text'));
+    await userEvent.click(screen.getByLabelText('Increase app scale'));
     await userEvent.click(screen.getByText(/Back to the app/));
 
     expect(readout().value).toBe('100%');
+  });
+});
+
+/**
+ * A scale of its own on top of the app's. Somebody who finds the letters small is asking
+ * for them to grow, not for the panes and the lanes to grow with them - which is what one
+ * number gives you (#139).
+ */
+describe('the text size, apart from the app scale', () => {
+  const openAppearance = () => userEvent.click(tab('Appearance'));
+  const size = () => screen.getByLabelText('Text size') as HTMLInputElement;
+  const appScale = () => screen.getByLabelText('App scale') as HTMLInputElement;
+  const base = () => document.documentElement.style.getPropertyValue('--font-base');
+  const text = () => document.documentElement.style.getPropertyValue('--font-text');
+
+  afterEach(() => {
+    document.documentElement.style.removeProperty('--font-base');
+    document.documentElement.style.removeProperty('--font-text');
+  });
+
+  it('is its own control', async () => {
+    show({ scale: 1, textScale: 1.25 });
+    await openAppearance();
+
+    expect(size().value).toBe('125%');
+    expect(appScale().value).toBe('100%');
+  });
+
+  it('moves the letters and leaves everything else alone', async () => {
+    show({ scale: 1, textScale: 1 });
+    await openAppearance();
+
+    await userEvent.click(screen.getByLabelText('Increase text size'));
+
+    // The app is still drawn at its own size; only what is sized from the letters moved.
+    expect(base()).toBe('16px');
+    expect(text()).toBe('18px');
+  });
+
+  it('sits on top of the app scale rather than replacing it', async () => {
+    show({ scale: 1.5, textScale: 1.25 });
+    await openAppearance();
+
+    expect(base()).toBe('24px');
+    expect(text()).toBe('30px');
+  });
+
+  it('is saved as its own setting', async () => {
+    const { onSave } = show({ scale: 1, textScale: 1 });
+    await openAppearance();
+
+    await userEvent.click(screen.getByLabelText('Increase text size'));
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ scale: 1, textScale: 1.125 }));
+  });
+
+  it('is put back with the other one when the window closes without saving', async () => {
+    const { unmount } = render(
+      <SettingsWindow settings={{ ...SAVED, scale: 1, textScale: 1 }} onSave={vi.fn()} onClose={vi.fn()} />,
+    );
+    await openAppearance();
+    await userEvent.click(screen.getByLabelText('Increase text size'));
+    expect(text()).toBe('18px');
+
+    unmount();
+
+    expect(text()).toBe('16px');
+  });
+
+  it('is taken back to the app own sizes along with the app scale', async () => {
+    show({ scale: 1.25, textScale: 1.25 });
+    await openAppearance();
+
+    await userEvent.click(screen.getByText(/Back to the app/));
+
+    expect(appScale().value).toBe('100%');
+    expect(size().value).toBe('100%');
   });
 });
 

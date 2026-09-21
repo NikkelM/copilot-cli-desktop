@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { read, save } from './store';
 import { setRuntimeLimits, updateCli } from './sidecar';
-import { SCALE_KEY, applyScale, readScale } from './scale';
+import { SCALE_KEY, TEXT_SCALE_KEY, applyScale, readScale, readTextScale } from './scale';
 
 /**
  * The choices this app makes that somebody might reasonably make differently.
@@ -54,6 +54,8 @@ export interface Settings {
    * a size the keyboard had already changed (#139).
    */
   scale: number;
+  /** How large the letters are, on top of the app scale. One rather than the other. */
+  textScale: number;
 }
 
 /** The ten minutes the runtime uses when nobody has said otherwise. */
@@ -84,6 +86,7 @@ export function readSettings(): Settings {
     updateOnStart: read('settings', UPDATE_ON_START) === 'true',
     // Its own reader: a scale is a fraction, and the one above floors what it is given.
     scale: readScale(),
+    textScale: readTextScale(),
   };
 }
 
@@ -102,7 +105,7 @@ export function useSettings() {
 
   // On every change including the first, so a remembered scale is in force before anything
   // is drawn at the default and then jumps.
-  useEffect(() => applyScale(settings.scale), [settings.scale]);
+  useEffect(() => applyScale(settings.scale, settings.textScale), [settings.scale, settings.textScale]);
 
   const { maxLoaded, idleMinutes } = settings;
   useEffect(() => {
@@ -152,4 +155,5 @@ const KEYS: Record<keyof Settings, string> = {
   workingDirectory: WORKING_DIRECTORY,
   updateOnStart: UPDATE_ON_START,
   scale: SCALE_KEY,
+  textScale: TEXT_SCALE_KEY,
 };

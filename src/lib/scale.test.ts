@@ -58,12 +58,32 @@ describe('remembering it', () => {
 });
 
 describe('putting it into effect', () => {
-  /** Every size in the app is a ratio of this one, so nothing else has to be told. */
-  it('sets the base the whole scale is derived from', () => {
+  /** Every size in the app is a ratio of one of these, so nothing else has to be told. */
+  it('sets the base the app is sized from', () => {
     const root = document.createElement('div');
 
-    applyScale(1.5, root);
+    applyScale(1.5, 1, root);
 
     expect(root.style.getPropertyValue('--font-base')).toBe(`${BASE_PX * 1.5}px`);
+  });
+
+  /**
+   * Two units rather than one. The app scale moves the panes, the lanes and the controls as
+   * well as the letters; the text scale moves the letters alone, on top of it (#139).
+   */
+  it('sets the letters from the two together', () => {
+    const root = document.createElement('div');
+
+    applyScale(1.5, 1.25, root);
+
+    expect(root.style.getPropertyValue('--font-base')).toBe(`${BASE_PX * 1.5}px`);
+    expect(root.style.getPropertyValue('--font-text')).toBe(`${BASE_PX * 1.5 * 1.25}px`);
+  });
+
+  it('leaves the letters where the app scale put them when nothing else was asked', () => {
+    applyScale(1.5);
+
+    const root = document.documentElement.style;
+    expect(root.getPropertyValue('--font-text')).toBe(root.getPropertyValue('--font-base'));
   });
 });
