@@ -1182,6 +1182,94 @@ describe('the recycle bin', () => {
     expect(screen.getByText(/Deleting is immediate and cannot be undone/)).toBeTruthy();
   });
 
+  /**
+   * Saving applies the new rule to what is already in the bin, and the rows below are all
+   * that is left of those sessions - so what it is about to cost is said before it is saved
+   * rather than discovered afterwards.
+   */
+  describe('shortening how long one is kept', () => {
+    const shorten = async (days: string) => {
+      const field = screen.getByLabelText('Keep a deleted session for') as HTMLInputElement;
+      await userEvent.clear(field);
+      if (days !== '') await userEvent.type(field, days);
+    };
+
+    it('says nothing while the new rule reaches nothing', async () => {
+      withBin(catalogue, { binRetentionDays: 30 });
+      await openBin();
+
+      expect(screen.queryByText(/Saving will delete/)).toBeNull();
+    });
+
+    // One is two hours old and one is twenty-six, so a day reaches the older of the two.
+    it('counts what the new rule would take', async () => {
+      withBin(catalogue, { binRetentionDays: 30 });
+      await openBin();
+
+      await shorten('1');
+
+      expect(screen.getByText(/Saving will delete the session below/)).toBeTruthy();
+    });
+
+    it('counts them all when nothing is to be kept', async () => {
+      withBin(catalogue, { binRetentionDays: 30 });
+      await openBin();
+
+      await shorten('0');
+
+      expect(screen.getByText(/Saving will delete 2 of the sessions below/)).toBeTruthy();
+    });
+
+    it('says nothing when the bin is empty', async () => {
+      withBin([], { binRetentionDays: 30 });
+      await openBin();
+
+      await shorten('0');
+
+      expect(screen.queryByText(/Saving will delete/)).toBeNull();
+    });
+
+    /** Or the rows stay on screen after the save that deleted them. */
+    it('reads the bin again once the change is saved', async () => {
+      const onNeedBin = vi.fn();
+      const settings = { ...SAVED, binRetentionDays: 30 };
+      const { rerender } = render(
+        <SettingsWindow
+          settings={settings}
+          onSave={vi.fn()}
+          onClose={vi.fn()}
+          binned={catalogue}
+          onNeedBin={onNeedBin}
+        />,
+      );
+      await openBin();
+      onNeedBin.mockClear();
+
+      // What the app does after a save: hands back the settings it now holds.
+      rerender(
+        <SettingsWindow
+          settings={{ ...settings, binRetentionDays: 1 }}
+          onSave={vi.fn()}
+          onClose={vi.fn()}
+          binned={catalogue}
+          onNeedBin={onNeedBin}
+        />,
+      );
+
+      expect(onNeedBin).toHaveBeenCalledOnce();
+    });
+
+    it('does not read it again for a change that is only typed', async () => {
+      const { onNeedBin } = withBin(catalogue, { binRetentionDays: 30 });
+      await openBin();
+      onNeedBin.mockClear();
+
+      await shorten('1');
+
+      expect(onNeedBin).not.toHaveBeenCalled();
+    });
+  });
+
   // The question before deleting says what deleting does, and that changed.
   it('tells the delete question there is a bin', async () => {
     show({ binRetentionDays: 7 });

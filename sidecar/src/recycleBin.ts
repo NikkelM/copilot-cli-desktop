@@ -183,13 +183,12 @@ export function purgeSession(sessionId: string): void {
  * that deleting can be undone for so many days, and a session nobody had touched for a
  * month would otherwise be past its retention the moment it was deleted.
  *
- * Zero days is not swept here. It means there is no bin at all, so deleting is immediate
- * and nothing was ever put in one - but anything binned while the setting was higher stays
- * until it is asked for, rather than being taken away by a change of setting.
+ * Zero keeps nothing, so a bin under that rule is an empty one. Shortening the retention
+ * applies to what is already there rather than only to what is deleted next - the setting
+ * says how long a deleted session is kept, and something kept longer than that is past it
+ * however long ago it was put there.
  */
 export function sweepBin(retentionDays: number, now = Date.now()): number {
-  if (retentionDays <= 0) return 0;
-
   const oldest = now - retentionDays * 24 * 60 * 60 * 1000;
   let swept = 0;
   for (const binned of binnedSessions()) {

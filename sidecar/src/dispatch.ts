@@ -24,7 +24,7 @@ import {
   unstagePaths,
 } from './git.js';
 import { previewImage } from './images.js';
-import { binnedSessions, purgeSession } from './recycleBin.js';
+import { purgeSession } from './recycleBin.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
 import { existingSessions, findSessions, listSessions, renameSession } from './sessionIndex.js';
@@ -105,7 +105,7 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.delete': ({ sessionId }) => runtime.deleteSession(sessionId),
 
-    'bin.list': () => binnedSessions(),
+    'bin.list': () => runtime.binnedSessions(),
 
     'bin.restore': ({ sessionId }) => ({ restored: runtime.restoreSession(sessionId) }),
 

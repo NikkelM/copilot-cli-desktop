@@ -39,6 +39,7 @@ vi.mock('./sessionIndex.js', async (importOriginal) => ({
  */
 const bin = vi.hoisted(() => ({
   binSession: vi.fn(() => false),
+  binnedSessions: vi.fn((): unknown[] => []),
   restoreSession: vi.fn(() => true),
   sweepBin: vi.fn(() => 0),
 }));
@@ -46,6 +47,7 @@ vi.mock('./recycleBin.js', () => bin);
 
 beforeEach(() => {
   bin.binSession.mockReset().mockReturnValue(false);
+  bin.binnedSessions.mockReset().mockReturnValue([]);
   bin.restoreSession.mockReset().mockReturnValue(true);
   bin.sweepBin.mockReset().mockReturnValue(0);
 });
@@ -653,6 +655,30 @@ describe('SessionRuntime', () => {
       expect(runtime.restoreSession('doomed')).toBe(true);
 
       expect(bin.restoreSession).toHaveBeenCalledExactlyOnceWith('doomed');
+    });
+
+    /**
+     * Otherwise shortening the retention and then reading the bin is a race between the
+     * sweep and the read, and whoever asked sees rows that are already on their way out.
+     */
+    it('applies the rules before saying what is in the bin', async () => {
+      const order: string[] = [];
+      const { runtime } = makeRuntime();
+      bin.sweepBin.mockImplementation(() => {
+        order.push('swept');
+        return 0;
+      });
+      bin.binnedSessions.mockImplementation(() => {
+        order.push('listed');
+        return [];
+      });
+      await runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, binRetentionDays: 3 });
+      order.length = 0;
+
+      runtime.binnedSessions();
+
+      expect(order).toEqual(['swept', 'listed']);
+      expect(bin.sweepBin).toHaveBeenLastCalledWith(3);
     });
   });
 

@@ -32,6 +32,7 @@ import type {
   SlashCommand,
 } from '../../shared/protocol.js';
 import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol.js';
+import type { BinnedSession } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -42,7 +43,7 @@ import { lastMode, lastUsage } from './eventLog.js';
 import { PendingRequests } from './pending.js';
 import { disabledSkills, setSkillDisabled } from './skills.js';
 import { nameState, listSessions } from './sessionIndex.js';
-import { binSession, restoreSession, sweepBin } from './recycleBin.js';
+import { binSession, binnedSessions, restoreSession, sweepBin } from './recycleBin.js';
 import { TITLE_QUESTION, isPlaceholder, titleIn } from './sessionTitle.js';
 
 /**
@@ -832,6 +833,20 @@ export class SessionRuntime {
   /** Put a binned session back where the CLI looks for it. */
   restoreSession(sessionId: string): boolean {
     return restoreSession(sessionId);
+  }
+
+  /**
+   * What is waiting in the bin, with the current rules applied first.
+   *
+   * Swept here as well as when the rules change, so what is listed is what is kept rather
+   * than what was kept under whatever the retention used to be. It also settles the order
+   * of the two: shortening the retention and then reading the bin would otherwise be a
+   * race between the sweep and the read, and the reader would see rows that are on their
+   * way out.
+   */
+  binnedSessions(): BinnedSession[] {
+    sweepBin(this.binRetentionDays);
+    return binnedSessions();
   }
 
   /** Disconnect least recently used sessions until the cap is satisfied. */

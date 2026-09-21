@@ -259,6 +259,18 @@ export function SettingsWindow({
 
   const unsaved = (Object.keys(draft) as (keyof Settings)[]).some((key) => draft[key] !== settings[key]);
 
+  /**
+   * How many sessions in the bin the draft retention would delete.
+   *
+   * Worked out here rather than asked of the runtime, which would mean a round trip per
+   * keystroke on a number field. The same rule the sweep uses, counted from when each was
+   * binned, so the two agree about what is past it.
+   */
+  const losing =
+    binned?.filter(
+      (session) => Date.now() - Date.parse(session.binnedAt) >= draft.binRetentionDays * 24 * 60 * 60 * 1000,
+    ).length ?? 0;
+
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -296,10 +308,14 @@ export function SettingsWindow({
    * Unlike the catalogue this is not cached anywhere and costs only a directory listing, so
    * asking again is how the list is right after something is restored or deleted rather
    * than showing what was there when the window opened.
+   *
+   * Reading it is also what applies the retention, so a saved change to how long a session
+   * is kept takes effect on what is already there - and is seen taking effect, rather than
+   * leaving rows on screen that have already gone.
    */
   useEffect(() => {
     if (category === 'bin') onNeedBin?.();
-  }, [category, onNeedBin]);
+  }, [category, onNeedBin, settings.binRetentionDays]);
 
   const edit = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -590,10 +606,22 @@ export function SettingsWindow({
                   onChange={(value) => edit('binRetentionDays', value)}
                   hint={
                     draft.binRetentionDays === 0
-                      ? 'Deleting is immediate and cannot be undone. What is already here stays until it is dealt with.'
+                      ? 'Deleting is immediate and cannot be undone.'
                       : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}, counted from when it was deleted. The default is ${DEFAULT_BIN_RETENTION_DAYS}.`
                   }
                 />
+
+                {/* Saving applies the new rule to what is already here, so anything past it
+                    goes at that point. Said before it is saved rather than discovered after:
+                    the rows are listed directly below, and they are all there is left of
+                    those sessions. */}
+                {losing > 0 && (
+                  <p className="settings-warning">
+                    Saving will delete {losing === 1 ? 'the session' : `${losing} of the sessions`} below, which
+                    {losing === 1 ? ' has' : ' have'} been here longer than{' '}
+                    {draft.binRetentionDays === 0 ? 'the new setting keeps anything' : 'the new setting allows'}.
+                  </p>
+                )}
 
                 <h4 className="settings-subhead">Waiting to be deleted</h4>
 

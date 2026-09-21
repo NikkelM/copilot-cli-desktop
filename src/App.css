@@ -4335,8 +4335,7 @@ pre.fatal,
   cursor: pointer;
 }
 
-/* Nothing to keep and nothing to put back, so neither button has anything to do. */
-.confirm-actions button:disabled {
+/* Nothing to keep and nothing to put back, so neither button has anything to do. */.confirm-actions button:disabled {
   opacity: 0.4;
   cursor: default;
 }
@@ -5231,6 +5230,13 @@ pre.fatal,
 .bin-actions {
   display: flex;
   gap: 12px;
+}
+
+/* What saving is about to cost, where a note about the setting would otherwise be. */
+.settings-warning {
+  margin: -8px 0 14px;
+  color: var(--danger);
+  font-size: var(--font-sm);
 }
 
 /* The one that cannot be taken back wears the colour that says so, as it does everywhere. */

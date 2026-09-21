@@ -259,17 +259,30 @@ describe('sweeping the bin', () => {
   });
 
   /**
-   * Zero means deleting is immediate and nothing is ever put in a bin. What is already in
-   * one was put there under a different answer, and taking it away because the setting
-   * changed would delete it on the strength of a decision about future deletes.
+   * Zero keeps nothing, so a bin under that rule is an empty one. The setting says how long
+   * a deleted session is kept, and something kept longer than that is past it however long
+   * ago it was put there - so shortening it reaches what is already in the bin.
    */
-  it('leaves the bin alone when there is no retention', async () => {
+  it('empties the bin when nothing is to be kept', async () => {
     const { sweepBin, binnedSessions } = await load();
     put('old', at(Date.parse('2020-01-01T00:00:00.000Z')));
+    put('binned-just-now', new Date().toISOString());
 
-    expect(sweepBin(0)).toBe(0);
+    expect(sweepBin(0)).toBe(2);
 
-    expect(binnedSessions()).toHaveLength(1);
+    expect(binnedSessions()).toEqual([]);
+  });
+
+  it('applies a shortened retention to what is already there', async () => {
+    const { sweepBin, binnedSessions } = await load();
+    const now = Date.parse('2026-03-01T00:00:00.000Z');
+    put('a-fortnight-old', at(now - 14 * day));
+    put('two-days-old', at(now - 2 * day));
+
+    // Kept under the week it was binned with, past it under the three days now asked for.
+    expect(sweepBin(3, now)).toBe(1);
+
+    expect(binnedSessions().map((session: { sessionId: string }) => session.sessionId)).toEqual(['two-days-old']);
   });
 
   it('counts from when it was binned rather than when it was last used', async () => {
