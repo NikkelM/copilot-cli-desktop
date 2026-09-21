@@ -170,3 +170,30 @@ describe('the price block above the model list', () => {
     expect(block('.model-price.wide')).toContain('grid-row: span 3;');
   });
 });
+
+
+/**
+ * A button that cannot be pressed says so.
+ *
+ * Disabling one is enough to stop it working and does nothing to how it looks, so Save sat
+ * there fully lit with nothing to save for as long as it had been disabled.
+ */
+describe('a button with nothing to do', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('is drawn as one that cannot be pressed', () => {
+    const rule = block('.confirm-actions button:disabled');
+
+    expect(rule).toMatch(/opacity:\s*0?\.\d+/);
+    expect(rule).toContain('cursor: default;');
+  });
+
+  it('does not light up under the pointer', () => {
+    // A hover that still answered would undo the saying-so above.
+    expect(css).toContain('.confirm-cancel:hover:not(:disabled) {');
+  });
+});

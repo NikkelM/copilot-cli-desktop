@@ -4335,7 +4335,13 @@ pre.fatal,
   cursor: pointer;
 }
 
-.confirm-cancel:hover {
+/* Nothing to keep and nothing to put back, so neither button has anything to do. */
+.confirm-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.confirm-cancel:hover:not(:disabled) {
   border-color: var(--text-muted);
 }
 

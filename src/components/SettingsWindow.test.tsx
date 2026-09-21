@@ -39,7 +39,8 @@ const kept = () => screen.getByLabelText('Sessions kept in memory') as HTMLInput
 const idle = () => screen.getByLabelText('Release an idle session after') as HTMLInputElement;
 const asks = () => screen.getByLabelText('Ask before deleting a session') as HTMLInputElement;
 const commit = () => screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement;
-const leaveButton = () => screen.getByRole('button', { name: /^(Cancel|Close)$/ });
+const done = () => screen.getByRole('button', { name: 'Done' }) as HTMLButtonElement;
+const leaveButton = () => screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement;
 const tab = (name: string) => screen.getByRole('button', { name });
 
 describe('the settings window', () => {
@@ -186,23 +187,51 @@ describe('saving', () => {
     expect(commit().disabled).toBe(true);
   });
 
-  /** The word changes with what it does: there is nothing to cancel until there is. */
-  it('says Close when there is nothing to discard, and Cancel when there is', async () => {
+  /** Nothing to put back and nothing to keep, so neither has anything to do. */
+  it('greys out Cancel and Save until something has been changed', async () => {
     show({ maxLoaded: 3 });
-    expect(leaveButton().textContent).toBe('Close');
+    expect(leaveButton().disabled).toBe(true);
+    expect(commit().disabled).toBe(true);
 
     await userEvent.clear(kept());
     await userEvent.type(kept(), '9');
 
-    expect(leaveButton().textContent).toBe('Cancel');
+    expect(leaveButton().disabled).toBe(false);
+    expect(commit().disabled).toBe(false);
   });
 
-  it('closes on Close when nothing was changed', async () => {
-    const { onClose } = show();
+  // The way out when there is nothing to decide, and the only button that both keeps and goes.
+  it('closes on Done when nothing was changed', async () => {
+    const { onSave, onClose } = show();
 
-    await userEvent.click(leaveButton());
+    await userEvent.click(done());
 
+    expect(onSave).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('saves and closes on Done, without asking', async () => {
+    const { onSave, onClose } = show({ maxLoaded: 3 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '9');
+    await userEvent.click(done());
+
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ maxLoaded: 9 }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  // Keeping a change and carrying on looking is the whole reason it is its own button.
+  it('stays open on Save', async () => {
+    const { onSave, onClose } = show({ maxLoaded: 3 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '9');
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ maxLoaded: 9 }));
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('discards and closes on Cancel, without asking', async () => {

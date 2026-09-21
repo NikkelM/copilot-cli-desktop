@@ -543,13 +543,26 @@ export function SettingsWindow({
           </div>
 
           <div className="confirm-actions">
-            {/* Two buttons, each doing one thing. Saving used to close as well, which meant
-                there was no way to keep a change and carry on looking. */}
-            <button type="button" className="confirm-cancel" onClick={onClose}>
-              {unsaved ? 'Cancel' : 'Close'}
+            {/* Three buttons, each doing one thing, because keeping a change and carrying on
+                looking, keeping it and leaving, and leaving without it are three different
+                intentions and one Save that also closed could only serve one of them.
+
+                Cancel closes without saving, which puts the draft back by throwing it away
+                with the window - including the scale, which is put back as this unmounts. */}
+            <button type="button" className="confirm-cancel" onClick={onClose} disabled={!unsaved}>
+              Cancel
             </button>
-            <button type="button" onClick={() => onSave(draft)} disabled={!unsaved}>
+            <button type="button" className="confirm-cancel" onClick={() => onSave(draft)} disabled={!unsaved}>
               Save
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (unsaved) onSave(draft);
+                onClose();
+              }}
+            >
+              Done
             </button>
           </div>
         </div>
