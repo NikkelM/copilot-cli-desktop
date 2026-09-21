@@ -4686,3 +4686,77 @@ pre.fatal,
   border-color: var(--accent);
   outline: none;
 }
+/* The settings window (#100). Wider than a confirmation, since each row carries a note
+   saying what the number actually does. */
+.settings {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 22px;
+  width: min(34rem, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+}
+
+.settings-group {
+  margin-bottom: 20px;
+}
+
+.settings-group h3 {
+  margin: 0 0 4px;
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+
+.settings-note,
+.settings-hint {
+  color: var(--text-dim);
+  font-size: var(--font-sm);
+}
+
+.settings-note {
+  margin: 0 0 12px;
+}
+
+.settings-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  margin-bottom: 14px;
+}
+
+/* The note sits under both, so it explains the pair rather than the box alone. */
+.settings-row .settings-hint {
+  grid-column: 1 / -1;
+}
+
+.settings-label {
+  font-size: var(--font-md);
+}
+
+.settings-row input[type='number'] {
+  width: 5rem;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+}
+
+.settings-row input:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.settings-check {
+  grid-template-columns: auto 1fr;
+  cursor: pointer;
+}
+
+.settings-check input {
+  justify-self: start;
+}

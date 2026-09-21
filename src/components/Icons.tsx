@@ -78,3 +78,19 @@ export function ChevronIcon({ open }: { open: boolean }) {
     </svg>
   );
 }
+
+/** Settings. A gear with six teeth, drawn rather than rendered from a character. */
+export function GearIcon() {
+  return (
+    <svg {...shared}>
+      <circle cx="8" cy="8" r="2.15" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 1.6v1.8M8 12.6v1.8M14.4 8h-1.8M3.4 8H1.6M12.53 3.47 11.25 4.75M4.75 11.25l-1.28 1.28M12.53 12.53 11.25 11.25M4.75 4.75 3.47 3.47"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

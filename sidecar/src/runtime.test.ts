@@ -2372,3 +2372,106 @@ describe('SessionRuntime writing a title for a new session', () => {
     expect(session.rpc.name.setAuto).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * #100 asks what should happen to a setting that changes something already running. The
+ * answer is that it takes effect on what is running: a reader lowering the cap because
+ * their machine is struggling means now, not next time.
+ */
+describe('SessionRuntime being told what may stay in memory', () => {
+  const loadedCount = (sessions: Map<string, FakeSession>) =>
+    [...sessions.values()].filter((session) => !session.disconnected).length;
+
+  it('releases what is over a cap that has just been lowered', async () => {
+    const harness = makeRuntime();
+    for (const id of ['s1', 's2', 's3']) await sendAndFinish(harness, id);
+    expect(loadedCount(harness.sessions)).toBe(3);
+
+    await harness.runtime.setLimits({ maxLoadedSessions: 1, idleTimeoutMs: 0 });
+
+    expect(loadedCount(harness.sessions)).toBe(1);
+    // The most recently used is the one kept.
+    expect(harness.sessions.get('s3')!.disconnected).toBe(false);
+  });
+
+  // The cap is about memory, and interrupting work to save some is a trade nobody asked for.
+  it('never releases one that is mid-turn, whatever the cap says', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 's1');
+    await harness.runtime.send('s2', 'still working');
+
+    await harness.runtime.setLimits({ maxLoadedSessions: 1, idleTimeoutMs: 0 });
+
+    expect(harness.sessions.get('s2')!.disconnected).toBe(false);
+  });
+
+  it('keeps everything when the cap is lifted', async () => {
+    const harness = makeRuntime({ maxLoadedSessions: 1 });
+    for (const id of ['s1', 's2']) await sendAndFinish(harness, id);
+    expect(loadedCount(harness.sessions)).toBe(1);
+
+    await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0 });
+    for (const id of ['s3', 's4']) await sendAndFinish(harness, id);
+
+    expect(loadedCount(harness.sessions)).toBe(3);
+  });
+
+  it('reports the cap it was given', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.setLimits({ maxLoadedSessions: 4, idleTimeoutMs: 0 });
+
+    expect(harness.runtime.status().maxLoadedSessions).toBe(4);
+  });
+
+  /**
+   * Restarted rather than left alone: a countdown already running is counting to the old
+   * length, so a reader who shortened it would have to wait out the old one first.
+   */
+  it('restarts the countdowns against the new length', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = makeRuntime({ idleTimeoutMs: 60_000 });
+      await sendAndFinish(harness, 's1');
+      vi.advanceTimersByTime(55_000);
+
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 10_000 });
+
+      // The old countdown would have fired here; the new one has only run five seconds.
+      vi.advanceTimersByTime(6_000);
+      expect(harness.sessions.get('s1')!.disconnected).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(harness.sessions.get('s1')!.disconnected).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops releasing idle sessions when the countdown is turned off', async () => {
+    vi.useFakeTimers();
+    try {
+      const harness = makeRuntime({ idleTimeoutMs: 10_000 });
+      await sendAndFinish(harness, 's1');
+
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0 });
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(harness.sessions.get('s1')!.disconnected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ['a negative cap', { maxLoadedSessions: -2, idleTimeoutMs: 1_000 }, 0],
+    ['a fractional cap', { maxLoadedSessions: 2.7, idleTimeoutMs: 1_000 }, 2],
+  ])('makes sense of %s', async (_what, limits, expected) => {
+    const harness = makeRuntime();
+
+    await harness.runtime.setLimits(limits);
+
+    expect(harness.runtime.status().maxLoadedSessions).toBe(expected);
+  });
+});
+

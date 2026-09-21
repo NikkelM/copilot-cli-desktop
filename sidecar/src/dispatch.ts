@@ -92,6 +92,9 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     // renamed without waking anything.
     'sessions.rename': ({ sessionId, name }) => renameSession(sessionId, name),
 
+    'runtime.limits': ({ maxLoadedSessions, idleTimeoutMs }) =>
+      runtime.setLimits({ maxLoadedSessions, idleTimeoutMs }),
+
     'sessions.load': ({ sessionId }) => runtime.load(sessionId),
 
     'sessions.evict': ({ sessionId }) => runtime.evict(sessionId),

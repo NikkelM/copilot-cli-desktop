@@ -844,6 +844,18 @@ export interface SidecarRequests {
    * runtime, so a session nobody has opened can still be renamed.
    */
   'sessions.rename': { params: { sessionId: string; name: string }; result: void };
+  /**
+   * Change the two rules that decide what stays in memory.
+   *
+   * Applied to what is already running: lowering the cap releases sessions over it now, and
+   * shortening the idle timeout restarts the countdowns rather than letting them finish to
+   * the old length. A session in the middle of a turn is never released, whatever the cap
+   * says (#100).
+   *
+   * `maxLoadedSessions` of zero is no cap, which is the default: how many sessions are worth
+   * keeping is the reader's judgement. `idleTimeoutMs` of zero disables the timer.
+   */
+  'runtime.limits': { params: { maxLoadedSessions: number; idleTimeoutMs: number }; result: void };
   'sessions.load': { params: { sessionId: string }; result: void };  'sessions.evict': { params: { sessionId: string }; result: void };  /**
    * Remove a session and everything it wrote. There is no undo.
    *
@@ -1122,6 +1134,7 @@ export const SIDECAR_METHODS = [
   'sessions.shell',
   'sessions.cancelShell',
   'sessions.rename',
+  'runtime.limits',
   'sessions.load',
   'sessions.evict',
   'sessions.delete',

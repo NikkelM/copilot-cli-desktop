@@ -213,8 +213,8 @@ export class SessionRuntime {
   /** Session IDs currently resumed, ordered most-recently-used first. */
   private readonly order: string[] = [];
 
-  private readonly maxLoadedSessions: number;
-  private readonly idleTimeoutMs: number;
+  private maxLoadedSessions: number;
+  private idleTimeoutMs: number;
   /**
    * Sessions this run has already tried to title, whether or not it managed to.
    *
@@ -788,6 +788,30 @@ export class SessionRuntime {
       if (this.loaded.get(candidate)?.busy) continue; // Let the turn finish first.
       await this.evict(candidate);
     }
+  }
+
+  /**
+   * Change the two rules that decide what stays in memory.
+   *
+   * #100 asks what should happen to a setting that changes something already running, and
+   * the answer is that it takes effect on what is running. A reader lowering the cap because
+   * their machine is struggling means now, not next time - so sessions over the new cap are
+   * released immediately, and every idle countdown is restarted to the new length rather
+   * than left running to the old one.
+   *
+   * A busy session is still never released, which is `enforceCap`'s rule and not this one's
+   * to override: the cap is about memory, and interrupting work to save some is a trade
+   * nobody asked for.
+   */
+  async setLimits({ maxLoadedSessions, idleTimeoutMs }: { maxLoadedSessions: number; idleTimeoutMs: number }): Promise<void> {
+    this.maxLoadedSessions = Math.max(0, Math.floor(maxLoadedSessions));
+    this.idleTimeoutMs = Math.max(0, Math.floor(idleTimeoutMs));
+
+    // Restarted rather than left alone: a timer already counting down is counting to the
+    // old length, so a reader who shortened it would wait out the old one first.
+    for (const sessionId of this.loaded.keys()) this.armIdleTimer(sessionId);
+
+    await this.enforceCap();
   }
 
   /**

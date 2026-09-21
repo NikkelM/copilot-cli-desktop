@@ -71,6 +71,16 @@ async function request<M extends SidecarMethod>(
  * Costs a resume, which is the thing this app otherwise refuses to pay until it has to. Paid
  * deliberately here, by somebody who knows they are about to use it.
  */
+/**
+ * Tell the runtime what may stay in memory.
+ *
+ * Sent whenever it changes and once at startup: the runtime begins every run on its own
+ * defaults and has no memory of what was chosen last time.
+ */
+export function setRuntimeLimits(maxLoadedSessions: number, idleTimeoutMs: number): Promise<void> {
+  return request('runtime.limits', { maxLoadedSessions, idleTimeoutMs });
+}
+
 export function renameSession(sessionId: string, name: string): Promise<void> {
   return request('sessions.rename', { sessionId, name });
 }

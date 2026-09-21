@@ -4,7 +4,7 @@ import type { MouseEvent as ReactMouseEvent } from 'react';
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
 import { useRelative } from '../lib/useRelative';
-import { ChevronIcon } from './Icons';
+import { ChevronIcon, GearIcon } from './Icons';
 import { SessionMenu, type SessionAction } from './SessionMenu';
 import { SidebarToggle } from './SidebarToggle';
 import { Waiting } from './Waiting';
@@ -29,6 +29,8 @@ interface SidebarProps {
   onCreate: () => void;
   /** Open the local knowledge base, which belongs to no session. */
   onWiki: () => void;
+  /** Open the settings window. Absent leaves the control out. */
+  onSettings?: () => void;
   creating: boolean;
   /** How many sessions may be resident at once; zero or absent means no cap. */
   maxLoaded?: number;
@@ -170,6 +172,7 @@ export function Sidebar({
   onSelect,
   onCreate,
   onWiki,
+  onSettings,
   creating,
   maxLoaded,
   activity,
@@ -308,6 +311,13 @@ export function Sidebar({
         >
           Wiki
         </button>
+        {/* Beside the wiki for the same reason: settings belong to the app rather than to
+            any session. An icon, because the header is already three words wide. */}
+        {onSettings && (
+          <button type="button" className="icon-button" onClick={onSettings} title="Settings" aria-label="Settings">
+            <GearIcon />
+          </button>
+        )}
         <button
           type="button"
           className="new-session"
@@ -635,6 +645,7 @@ function Row({
     </button>
   );
 }
+
 
 
 

@@ -52,7 +52,8 @@ import { normalise, useTags } from './lib/useTags';
 import { TagPicker } from './components/TagPicker';
 import { RenamePrompt } from './components/RenamePrompt';
 import { HeaderTags } from './components/HeaderTags';
-import { useConfirmDelete } from './lib/useConfirmDelete';
+import { useSettings } from './lib/useSettings';
+import { SettingsWindow } from './components/SettingsWindow';
 import { usePanel } from './lib/usePanel';
 import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
@@ -857,7 +858,9 @@ export default function App() {
 
   /** The session waiting on an answer to "really delete this?". */
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
-  const confirmDelete = useConfirmDelete();
+  const { settings, change: changeSetting } = useSettings();
+  /** Whether the settings window is open. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   /**
    * Delete a session, and leave it if it was the one open.
@@ -928,9 +931,9 @@ export default function App() {
         // Not explained: these translations are about the Copilot runtime, and a path that
         // happens to contain "copilot" would be read as the CLI failing to start.
         openDirectory: (path) => void openPath(path).catch((e: unknown) => setError(messageOf(e))),
-        remove: (target) => (confirmDelete.confirms ? setDeleting(target) : void removeSession(target)),
+        remove: (target) => (settings.confirmDelete ? setDeleting(target) : void removeSession(target)),
       }),
-    [favourites, toggleFavourite, archived, toggleArchived, sessions, confirmDelete.confirms, removeSession],
+    [favourites, toggleFavourite, archived, toggleArchived, sessions, settings.confirmDelete, removeSession],
   );
 
   return (
@@ -941,6 +944,7 @@ export default function App() {
         onSelect={open}
         onCreate={() => void handleCreate()}
         onWiki={() => setShowWiki(true)}
+        onSettings={() => setSettingsOpen(true)}
         creating={creating}
         maxLoaded={sessions.maxLoaded}
         activity={activity}
@@ -1316,12 +1320,15 @@ export default function App() {
           confirmLabel="Delete session"
           remember="Do not ask again"
           onConfirm={(dontAskAgain) => {
-            if (dontAskAgain) confirmDelete.stopAsking();
+            if (dontAskAgain) changeSetting('confirmDelete', false);
             removeSession(deleting);
             setDeleting(null);
           }}
           onCancel={() => setDeleting(null)}
         />
+      )}
+      {settingsOpen && (
+        <SettingsWindow settings={settings} onChange={changeSetting} onClose={() => setSettingsOpen(false)} />
       )}
     </div>
   );
