@@ -94,7 +94,7 @@ export function AgentPicker({ current, agents, failed, onOpen, onChoose }: Agent
           </button>
 
           {group(agents ?? []).map(([source, found]) => (
-            <div className="agent-group" key={source}>
+            <div key={source}>
               <p className="agent-group-head">{source}</p>
               {found.map((agent) => (
                 <button

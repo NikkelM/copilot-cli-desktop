@@ -80,7 +80,7 @@ export function PlanPrompt({ pending, onResolve }: PlanPromptProps) {
       </div>
 
       {revising ? (
-        <div className="plan-revise">
+        <div>
           <textarea
             ref={feedbackRef}
             className="plan-feedback"

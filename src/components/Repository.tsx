@@ -416,7 +416,7 @@ export function Repository({
   };
 
   return (
-    <div className="changes repository">
+    <div className="changes">
       <div className="changes-head">
         <span className="changes-title">
           Source control

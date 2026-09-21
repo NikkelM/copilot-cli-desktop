@@ -1050,8 +1050,9 @@ export default function App() {
 
             {/* The row .main reserves for notices. Empty here, but present: the grid assigns
                 its rows by position, and a branch one child short puts the transcript where
-                the notices go and the footer where the transcript belongs. */}
-            <div className="notices" />
+                the notices go and the footer where the transcript belongs. Unnamed, since
+                nothing draws it - it is the space itself that matters. */}
+            <div />
 
             {/* Paged like any other transcript, by what a screenful costs to draw. Nothing
                 to fetch behind it - a watched task's events are all already held - so it
@@ -1118,7 +1119,7 @@ export default function App() {
 
             {/* Always rendered, even when empty: .main assigns rows by position, so a
                 child that comes and goes moves the transcript into another row. */}
-            <div className="notices">
+            <div>
               {error && <p className="error">{error}</p>}
             </div>
 

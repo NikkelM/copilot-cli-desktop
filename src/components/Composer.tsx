@@ -628,7 +628,6 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
         <div className="composer-actions">
           <button
             type="button"
-            className="attach"
             onClick={() => attacher.current?.()}
             title="Attach files"
             aria-label="Attach files"

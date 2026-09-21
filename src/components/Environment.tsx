@@ -150,7 +150,7 @@ export function Environment({
                 {plugins.map((plugin) => (
                   <li key={`${plugin.marketplace}/${plugin.name}`} className="environment-item">
                     <span className={plugin.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                    <span className="environment-name">{plugin.name}</span>
+                    <span>{plugin.name}</span>
                     <span className="environment-meta">{plugin.marketplace}</span>
                     {plugin.version && <span className="environment-meta">{plugin.version}</span>}
                     {!plugin.enabled && <span className="environment-off">off</span>}
@@ -176,7 +176,7 @@ export function Environment({
                   {mcpServers.map((server) => (
                     <li key={server.name} className="environment-item">
                       <span className={server.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                      <span className="environment-name">{server.name}</span>
+                      <span>{server.name}</span>
                       {server.type && <span className="environment-meta">{server.type}</span>}
                       {/* Where it came from is where it would have to be changed, and a
                           plugin's server cannot be edited where the reader's own can. */}
@@ -223,7 +223,7 @@ export function Environment({
                           className={skill.enabled && !switchedOff ? 'environment-dot on' : 'environment-dot off'}
                           aria-hidden
                         />
-                        <span className="environment-name" title={skill.path}>
+                        <span title={skill.path}>
                           {skill.commandName ? `/${skill.commandName}` : skill.name}
                         </span>
                         <span className="environment-meta environment-description" title={skill.description}>
@@ -281,7 +281,7 @@ export function Environment({
                 {extensions.map((extension) => (
                   <li key={extension.id} className="environment-item">
                     <span className={extension.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                    <span className="environment-name">{extension.name}</span>
+                    <span>{extension.name}</span>
                     <span className="environment-meta">{source(extension)}</span>
                     {!extension.enabled && <span className="environment-off">off</span>}
                   </li>

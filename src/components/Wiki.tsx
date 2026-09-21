@@ -108,7 +108,7 @@ function FolderRow({
   }
 
   return (
-    <li className="wiki-folder">
+    <li>
       <button type="button" className="wiki-folder-head" aria-expanded={open} onClick={() => setOpen((it) => !it)}>
         <ChevronIcon open={open} />
         <span className="wiki-folder-name">{folder.name}</span>
@@ -535,7 +535,7 @@ export function Wiki({
 
       {/* The row .main reserves for notices, kept even when there is nothing to say: the
           grid assigns its rows by position. */}
-      <div className="notices">{failed && <p className="error">{failed}</p>}</div>
+      <div>{failed && <p className="error">{failed}</p>}</div>
 
       {/* Nothing to browse, so the tree gives its space to an explanation instead: an
           empty tree beside an empty page is a feature that looks broken. */}
