@@ -30,6 +30,10 @@ export const WORKING_DIRECTORY = 'workingDirectory';
 /** Which model a new session starts on. Empty means whatever the runtime picks. */
 export const DEFAULT_MODEL = 'defaultModel';
 
+/** How hard it should think, and how much room it should have. Empty means the model's own. */
+export const DEFAULT_EFFORT = 'defaultEffort';
+export const DEFAULT_CONTEXT = 'defaultContext';
+
 /** Whether to bring the Copilot CLI up to date when the app starts. */
 export const UPDATE_ON_START = 'updateOnStart';
 
@@ -56,6 +60,10 @@ export interface Settings {
    * so a session on it is moved to a named model and back again (#197).
    */
   defaultModel: string;
+  /** How hard it thinks, or empty for whatever the model does by itself. */
+  defaultEffort: string;
+  /** How much room it has, or empty for the model's ordinary size. */
+  defaultContext: string;
   updateOnStart: boolean;
   /**
    * How large everything is drawn, as a multiple of the app's own size.
@@ -95,6 +103,8 @@ export function readSettings(): Settings {
     allowAll: read('settings', ALLOW_ALL) === 'true',
     workingDirectory: read('settings', WORKING_DIRECTORY) ?? '',
     defaultModel: read('settings', DEFAULT_MODEL) ?? '',
+    defaultEffort: read('settings', DEFAULT_EFFORT) ?? '',
+    defaultContext: read('settings', DEFAULT_CONTEXT) ?? '',
     updateOnStart: read('settings', UPDATE_ON_START) === 'true',
     // Its own reader: a scale is a fraction, and the one above floors what it is given.
     scale: readScale(),
@@ -172,11 +182,21 @@ export function sessionDefaults(settings: Settings): {
   workingDirectory?: string;
   allowAll?: boolean;
   model?: string;
+  reasoningEffort?: string;
+  contextTier?: string;
 } {
   return {
     ...(settings.workingDirectory ? { workingDirectory: settings.workingDirectory } : {}),
     ...(settings.allowAll ? { allowAll: true } : {}),
-    ...(settings.defaultModel ? { model: settings.defaultModel } : {}),
+    // The three travel together: an effort or a room size without a model to apply them to
+    // is nothing the runtime can act on.
+    ...(settings.defaultModel
+      ? {
+          model: settings.defaultModel,
+          ...(settings.defaultEffort ? { reasoningEffort: settings.defaultEffort } : {}),
+          ...(settings.defaultContext ? { contextTier: settings.defaultContext } : {}),
+        }
+      : {}),
   };
 }
 
@@ -188,6 +208,8 @@ const KEYS: Record<keyof Settings, string> = {
   allowAll: ALLOW_ALL,
   workingDirectory: WORKING_DIRECTORY,
   defaultModel: DEFAULT_MODEL,
+  defaultEffort: DEFAULT_EFFORT,
+  defaultContext: DEFAULT_CONTEXT,
   updateOnStart: UPDATE_ON_START,
   scale: SCALE_KEY,
   textScale: TEXT_SCALE_KEY,

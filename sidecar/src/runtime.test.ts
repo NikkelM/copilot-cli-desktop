@@ -2551,6 +2551,31 @@ describe('SessionRuntime starting a session as it was asked to', () => {
     expect(harness.client.createSession).toHaveBeenCalledWith(expect.objectContaining({ model: 'gpt-5.5' }));
   });
 
+  it('starts it thinking as hard, and with as much room, as it was told', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create(undefined, {
+      model: 'gpt-5.5',
+      reasoningEffort: 'high',
+      contextTier: 'long_context',
+    });
+
+    expect(harness.client.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'gpt-5.5', reasoningEffort: 'high', contextTier: 'long_context' }),
+    );
+  });
+
+  /** Applied to whatever the runtime chose instead, they would answer a question nobody asked. */
+  it('says nothing about either without a model to apply them to', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create(undefined, { reasoningEffort: 'high', contextTier: 'long_context' });
+
+    const config = harness.client.createSession.mock.calls[0]![0];
+    expect(config).not.toHaveProperty('reasoningEffort');
+    expect(config).not.toHaveProperty('contextTier');
+  });
+
   // Absent leaves the runtime's own choice, which is what an empty setting means.
   it('says nothing about the model when none was named', async () => {
     const harness = makeRuntime();

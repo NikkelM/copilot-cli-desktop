@@ -1340,6 +1340,8 @@ export default function App() {
           settings={settings}
           onSave={applySettings}
           onClose={() => setSettingsOpen(false)}
+          models={model.models}
+          onNeedModels={model.refresh}
           onPickDirectory={async (startingAt) => {
             // The same wake the composer's picker needs: Windows hides the pointer while
             // typing, and a native dialog taking focus with it hidden is hard to aim at.

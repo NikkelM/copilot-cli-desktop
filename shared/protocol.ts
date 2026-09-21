@@ -897,6 +897,14 @@ export interface SidecarRequests {
        * a field the runtime's own session config already takes (#200).
        */
       model?: string;
+      /**
+       * How hard it thinks and how much room it has, for the model named above.
+       *
+       * Only meaningful alongside one: applied to whatever the runtime chose instead, they
+       * would be answering a question nobody asked.
+       */
+      reasoningEffort?: ReasoningEffort;
+      contextTier?: ContextTier;
     };
     result: { sessionId: string };
   };

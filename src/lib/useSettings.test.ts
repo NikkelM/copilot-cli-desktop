@@ -30,6 +30,8 @@ const SAVED_SHAPE = {
   scale: 1,
   textScale: 1,
   defaultModel: '',
+  defaultEffort: '',
+  defaultContext: '',
 };
 
 beforeEach(() => {
@@ -86,6 +88,8 @@ describe('changing a setting', () => {
       scale: 1,
       textScale: 1,
       defaultModel: '',
+      defaultEffort: '',
+      defaultContext: '',
     });
   });
 
@@ -115,6 +119,8 @@ describe('changing a setting', () => {
       scale: 1,
       textScale: 1,
       defaultModel: '',
+      defaultEffort: '',
+      defaultContext: '',
     });
   });
 
@@ -406,6 +412,31 @@ describe('what a new session is given', () => {
     const { sessionDefaults } = await load();
 
     expect(sessionDefaults({ ...saved, defaultModel: 'gpt-5.5' })).toEqual({ model: 'gpt-5.5' });
+  });
+
+  it('carries the effort and the room size alongside it', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(
+      sessionDefaults({
+        ...saved,
+        defaultModel: 'gpt-5.5',
+        defaultEffort: 'high',
+        defaultContext: 'long_context',
+      }),
+    ).toEqual({ model: 'gpt-5.5', reasoningEffort: 'high', contextTier: 'long_context' });
+  });
+
+  /**
+   * An effort or a room size with no model to apply them to is nothing the runtime can
+   * act on: they would land on whatever it chose instead, which nobody asked for.
+   */
+  it('drops both when no model was chosen', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(
+      sessionDefaults({ ...saved, defaultModel: '', defaultEffort: 'high', defaultContext: 'long_context' }),
+    ).toEqual({});
   });
 
   it('carries all three together', async () => {

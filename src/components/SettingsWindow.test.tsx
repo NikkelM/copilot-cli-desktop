@@ -18,6 +18,8 @@ const SAVED: Settings = {
   scale: 1,
   textScale: 1,
   defaultModel: '',
+  defaultEffort: '',
+  defaultContext: '',
 };
 
 const show = (over: Partial<Settings> = {}) => {
@@ -443,30 +445,45 @@ describe('the defaults a new session starts with', () => {
   });
 
   /**
-   * Built from the catalogue the app already remembers. Listing models costs a server
-   * process, and opening a window to read a setting must not spend one (#200).
+   * The picker a session uses, rather than one of its own: how hard a model thinks and how
+   * much room it has are part of choosing one, and a second control would be a second set
+   * of rules to keep in step (#200).
    */
   describe('the model a session starts on', () => {
     const catalogue = [
-      { id: 'claude-opus-5', name: 'Claude Opus 5', reasoningEfforts: [], contexts: [], needsAgreement: false },
-      { id: 'gpt-5.5', name: 'GPT-5.5', reasoningEfforts: [], contexts: [], needsAgreement: false },
+      {
+        id: 'claude-opus-5',
+        name: 'Claude Opus 5',
+        reasoningEfforts: ['low', 'high'] as const,
+        contexts: [
+          { tier: 'default' as const, maxPromptTokens: 200_000 },
+          { tier: 'long_context' as const, maxPromptTokens: 936_000 },
+        ],
+        needsAgreement: false,
+      },
     ];
 
-    const withModels = (over: Partial<Settings> = {}, models = catalogue) => {
+    const withModels = (over: Partial<Settings> = {}, models: typeof catalogue | [] = catalogue) => {
       const onSave = vi.fn();
       render(
-        <SettingsWindow settings={{ ...SAVED, ...over }} onSave={onSave} onClose={vi.fn()} models={models} />,
+        <SettingsWindow
+          settings={{ ...SAVED, ...over }}
+          onSave={onSave}
+          onClose={vi.fn()}
+          models={models as never}
+          onNeedModels={vi.fn()}
+        />,
       );
       return { onSave };
     };
 
-    const field = () => screen.getByLabelText('Model') as HTMLSelectElement;
+    /** The picker's own trigger, which is the first button in the row. */
+    const trigger = () => screen.getByRole('button', { name: /Whatever the runtime picks|Claude Opus 5/ });
 
     it('leaves the choice to the runtime until one is named', async () => {
       withModels();
       await openSessions();
 
-      expect(field().value).toBe('');
       expect(screen.getByText('Whatever the runtime picks')).toBeTruthy();
     });
 
@@ -474,51 +491,117 @@ describe('the defaults a new session starts with', () => {
       withModels();
       await openSessions();
 
-      expect([...field().options].map((option) => option.textContent)).toEqual([
-        'Whatever the runtime picks',
-        'Claude Opus 5',
-        'GPT-5.5',
-      ]);
+      await userEvent.click(trigger());
+
+      expect(screen.getByRole('option', { name: /Claude Opus 5/ })).toBeTruthy();
     });
 
-    it('saves the one chosen', async () => {
+    // The whole reason for reusing the session's picker rather than a list of names.
+    it('carries how hard it thinks and how much room it has', async () => {
       const { onSave } = withModels();
       await openSessions();
 
-      await userEvent.selectOptions(field(), 'gpt-5.5');
+      await userEvent.click(trigger());
+      // Effort and room are set on the row, and the name is what commits the row.
+      await userEvent.click(screen.getByRole('button', { name: /thinking high/ }));
+      await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
       await userEvent.click(commit());
 
-      expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ defaultModel: 'gpt-5.5' }));
+      expect(onSave).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ defaultModel: 'claude-opus-5', defaultEffort: 'high' }),
+      );
     });
 
-    /** Or the box would quietly show a different model from the one that is saved. */
-    it('keeps showing one that is no longer in the catalogue', async () => {
-      withModels({ defaultModel: 'a-model-that-went-away' });
+    it('carries the room size the same way', async () => {
+      const { onSave } = withModels();
       await openSessions();
 
-      expect(field().value).toBe('a-model-that-went-away');
+      await userEvent.click(trigger());
+      await userEvent.click(screen.getByRole('button', { name: /936k/ }));
+      await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
+      await userEvent.click(commit());
+
+      expect(onSave).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ defaultModel: 'claude-opus-5', defaultContext: 'long_context' }),
+      );
     });
 
-    it('offers the runtime choice alone when nothing has been read yet', async () => {
-      withModels({}, []);
+    it('shows what was chosen when the window is opened again', async () => {
+      withModels({ defaultModel: 'claude-opus-5', defaultEffort: 'high' });
       await openSessions();
 
-      expect([...field().options]).toHaveLength(1);
-      expect(screen.getByText(/The list fills in once models have been read/)).toBeTruthy();
+      expect(screen.getByText('claude-opus-5')).toBeTruthy();
+      expect(screen.getByText('high')).toBeTruthy();
     });
 
-    // The reason to name one is not only preference, so the note says the other half.
-    it('says what naming one saves', async () => {
+    it('goes back to letting the runtime choose', async () => {
+      const { onSave } = withModels({ defaultModel: 'claude-opus-5', defaultEffort: 'high' });
+      await openSessions();
+
+      await userEvent.click(screen.getByText(/Let the runtime choose again/));
+      await userEvent.click(commit());
+
+      expect(onSave).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ defaultModel: '', defaultEffort: '', defaultContext: '' }),
+      );
+    });
+
+    it('offers no way back when there is nothing to go back from', async () => {
       withModels();
       await openSessions();
 
-      expect(screen.getByText(/auto cannot answer the question a title comes from/)).toBeTruthy();
+      expect(screen.queryByText(/Let the runtime choose again/)).toBeNull();
+    });
+
+    /**
+     * The list is fetched on reaching this category rather than on opening the window:
+     * reading it costs a server process, and somebody changing the text size has not asked
+     * for one (#200).
+     */
+    it('asks for the catalogue when there is none to show', async () => {
+      const onNeedModels = vi.fn();
+      render(
+        <SettingsWindow settings={SAVED} onSave={vi.fn()} onClose={vi.fn()} models={[]} onNeedModels={onNeedModels} />,
+      );
+      expect(onNeedModels).not.toHaveBeenCalled();
+
+      await openSessions();
+
+      expect(onNeedModels).toHaveBeenCalledOnce();
+    });
+
+    it('asks for nothing when it already has one', async () => {
+      const onNeedModels = vi.fn();
+      render(
+        <SettingsWindow
+          settings={SAVED}
+          onSave={vi.fn()}
+          onClose={vi.fn()}
+          models={catalogue as never}
+          onNeedModels={onNeedModels}
+        />,
+      );
+
+      await openSessions();
+
+      expect(onNeedModels).not.toHaveBeenCalled();
+    });
+
+    // Or a catalogue that cannot be read would be asked for again on every render.
+    it('asks once, however long the answer takes', async () => {
+      const onNeedModels = vi.fn();
+      render(
+        <SettingsWindow settings={SAVED} onSave={vi.fn()} onClose={vi.fn()} models={[]} onNeedModels={onNeedModels} />,
+      );
+
+      await openSessions();
+      await userEvent.click(tab('Appearance'));
+      await openSessions();
+
+      expect(onNeedModels).toHaveBeenCalledOnce();
     });
   });
-
-  // Empty is a real answer rather than a missing one, and it is the one that ships.
-  it('says what an empty directory means rather than leaving it blank', async () => {
-    show();
+  it('says what an empty directory means rather than leaving it blank', async () => {    show();
     await openSessions();
 
     expect((screen.getByLabelText('Working directory') as HTMLInputElement).placeholder).toBe(

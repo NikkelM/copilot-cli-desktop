@@ -28,6 +28,14 @@ interface ModelPickerProps {
   /** Refresh the catalogue. Costs a running server, so it waits for the picker to open. */
   onOpen: () => void;
   onChoose: (choice: ModelChoiceMade) => void;
+  /**
+   * What to say when nothing is chosen.
+   *
+   * A session always runs on something, so for one this means its log never said. Choosing
+   * a default for sessions not yet made is the other case, where nothing chosen is a real
+   * answer rather than a gap (#200).
+   */
+  emptyLabel?: string;
 }
 
 /**
@@ -64,7 +72,15 @@ function spentOn(usage: SessionContextUsage): string {
  * All three read as one setting, so the closed control shows all three and the menu offers
  * all three: changing the effort should not mean finding the model again.
  */
-export function ModelPicker({ current, models, usage, failed, onOpen, onChoose }: ModelPickerProps) {
+export function ModelPicker({
+  current,
+  models,
+  usage,
+  failed,
+  onOpen,
+  onChoose,
+  emptyLabel = 'No model recorded',
+}: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   /** The row under the pointer, so its price can be read without committing to it. */
   const [hovered, setHovered] = useState<string | null>(null);
@@ -121,7 +137,7 @@ export function ModelPicker({ current, models, usage, failed, onOpen, onChoose }
         {current === undefined ? (
           <span className="model-id waiting" aria-label="Reading which model this session uses" />
         ) : (
-          <span className="model-id">{current?.model ?? 'No model recorded'}</span>
+          <span className="model-id">{current?.model ?? emptyLabel}</span>
         )}
         {effort && <span className="model-tag">{effort}</span>}
         {/* How much room is left beats how much there is, so the meter replaces the size

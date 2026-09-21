@@ -363,7 +363,7 @@ export class SessionRuntime {
    */
   async create(
     workingDirectory?: string,
-    defaults?: { allowAll?: boolean; model?: string },
+    defaults?: { allowAll?: boolean; model?: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier },
   ): Promise<{ sessionId: string }> {
     const client = await this.ensureClient();
     const pluginDirectories = await this.pluginDirectories(client);
@@ -373,10 +373,18 @@ export class SessionRuntime {
     let id = '';
     const session = await client.createSession({
       workingDirectory: workingDirectory ?? homedir(),
-      // Given at creation rather than set afterwards, unlike the permission mode: this one
-      // is a field on the config the runtime already takes, so there is nothing to undo if
-      // it is not wanted. Absent leaves the runtime's own choice, which is `auto`.
-      ...(defaults?.model ? { model: defaults.model } : {}),
+      // Given at creation rather than set afterwards, unlike the permission mode: these are
+      // fields on the config the runtime already takes, so there is nothing to undo if they
+      // are not wanted. Absent leaves the runtime's own choice, which is `auto`.
+      ...(defaults?.model
+        ? {
+            model: defaults.model,
+            // Only alongside a model: an effort or a room size on its own would be applied
+            // to whatever the runtime chose, which is not what was asked for.
+            ...(defaults.reasoningEffort ? { reasoningEffort: defaults.reasoningEffort as never } : {}),
+            ...(defaults.contextTier ? { contextTier: defaults.contextTier } : {}),
+          }
+        : {}),
       onPermissionRequest: (request) => this.decidePermission(id, request),
       onUserInputRequest: (request) => this.askUserInput(id, request),
       onElicitationRequest: (context) => this.askElicitation(id, context),
