@@ -77,6 +77,16 @@ async function request<M extends SidecarMethod>(
  * Sent whenever it changes and once at startup: the runtime begins every run on its own
  * defaults and has no memory of what was chosen last time.
  */
+/**
+ * Bring the Copilot CLI up to date.
+ *
+ * The CLI updates itself on startup by default and this app never gets that: the SDK spawns
+ * it with `--no-auto-update` every time. Asking is the only way to have a current one.
+ */
+export function updateCli(): Promise<{ ran: boolean; said?: string; failed?: string }> {
+  return request('runtime.update', {});
+}
+
 export function setRuntimeLimits(maxLoadedSessions: number, idleTimeoutMs: number): Promise<void> {
   return request('runtime.limits', { maxLoadedSessions, idleTimeoutMs });
 }
@@ -454,8 +464,11 @@ export function getDiff(sessionId: string, path: string, since?: string): Promis
 }
 
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */
-export function createSession(workingDirectory?: string): Promise<{ sessionId: string }> {
-  return request('sessions.create', { workingDirectory });
+export function createSession(
+  workingDirectory?: string,
+  allowAll?: boolean,
+): Promise<{ sessionId: string }> {
+  return request('sessions.create', { workingDirectory, allowAll });
 }
 
 /** Resumes the session if it is cold, then sends. This is the only call that costs memory. */

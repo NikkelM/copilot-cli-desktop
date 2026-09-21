@@ -4994,3 +4994,25 @@ pre.fatal,
   gap: 8px;
   cursor: pointer;
 }
+
+/* A path or anything else written out, beside the labels that name it. */
+.settings-text {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-md);
+}
+
+.settings-text:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* A field that needs the width takes the row, with its label above it. */
+.settings-row:has(> .settings-text) {
+  grid-template-columns: 1fr;
+}

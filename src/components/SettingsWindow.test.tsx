@@ -8,7 +8,14 @@ import type { Settings } from '../lib/useSettings';
 
 afterEach(cleanup);
 
-const SAVED: Settings = { maxLoaded: 0, idleMinutes: 10, confirmDelete: true };
+const SAVED: Settings = {
+  maxLoaded: 0,
+  idleMinutes: 10,
+  confirmDelete: true,
+  allowAll: false,
+  workingDirectory: '',
+  updateOnStart: false,
+};
 
 const show = (over: Partial<Settings> = {}) => {
   const onSave = vi.fn();
@@ -89,7 +96,7 @@ describe('saving', () => {
     await userEvent.type(idle(), '25');
     await userEvent.click(commit());
 
-    expect(onSave).toHaveBeenCalledExactlyOnceWith({ maxLoaded: 3, idleMinutes: 25, confirmDelete: true });
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ ...SAVED, maxLoaded: 3, idleMinutes: 25 });
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -245,6 +252,94 @@ describe('leaving with something unsaved', () => {
     await userEvent.click(tab('Memory'));
 
     expect(asked()).toBeTruthy();
+  });
+});
+
+/**
+ * What a session starts with. None of these could be given to the CLI as arguments: the
+ * shared server takes `--allow-all` and the sessions it creates still come back asking,
+ * because the flag configures the process and the mode belongs to the session (#199).
+ */
+describe('the defaults a new session starts with', () => {
+  const openSessions = () => userEvent.click(tab('New sessions'));
+
+  it('offers running tools without asking, off to begin with', async () => {
+    show();
+    await openSessions();
+
+    const box = screen.getByLabelText('Run tools without asking') as HTMLInputElement;
+    expect(box.checked).toBe(false);
+  });
+
+  it('saves it with everything else', async () => {
+    const { onSave } = show();
+    await openSessions();
+
+    await userEvent.click(screen.getByLabelText('Run tools without asking'));
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ allowAll: true }));
+  });
+
+  // The names are the CLI's own, and they are the same flag, so saying so saves looking.
+  it('says what it is the same as', async () => {
+    show({ allowAll: true });
+    await openSessions();
+
+    expect(screen.getByText(/--allow-all and --yolo, which are the same flag/)).toBeTruthy();
+  });
+
+  it('takes a directory to start sessions in', async () => {
+    const { onSave } = show();
+    await openSessions();
+
+    await userEvent.type(screen.getByLabelText('Working directory'), 'F:\\work');
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workingDirectory: 'F:\\work' }));
+  });
+
+  // Empty is a real answer rather than a missing one, and it is the one that ships.
+  it('says what an empty directory means rather than leaving it blank', async () => {
+    show();
+    await openSessions();
+
+    expect((screen.getByLabelText('Working directory') as HTMLInputElement).placeholder).toBe(
+      'Your home directory',
+    );
+  });
+});
+
+describe('keeping the CLI up to date', () => {
+  const openCli = () => userEvent.click(tab('Copilot CLI'));
+
+  /**
+   * Off to begin with, because it is the app's habit that changed rather than the CLI's:
+   * the SDK spawns the CLI with `--no-auto-update` every time, so it never updates itself
+   * here however it is configured elsewhere.
+   */
+  it('is off until it is asked for', async () => {
+    show();
+    await openCli();
+
+    expect((screen.getByLabelText('Update the CLI when the app starts') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('saves it', async () => {
+    const { onSave } = show();
+    await openCli();
+
+    await userEvent.click(screen.getByLabelText('Update the CLI when the app starts'));
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ updateOnStart: true }));
+  });
+
+  it('says why it exists, since the CLI is supposed to do this itself', async () => {
+    show({ updateOnStart: false });
+    await openCli();
+
+    expect(screen.getByText(/never when this app launches it/)).toBeTruthy();
   });
 });
 

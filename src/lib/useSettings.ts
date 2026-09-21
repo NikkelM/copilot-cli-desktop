@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { read, save } from './store';
-import { setRuntimeLimits } from './sidecar';
+import { setRuntimeLimits, updateCli } from './sidecar';
 
 /**
  * The choices this app makes that somebody might reasonably make differently.
@@ -22,6 +22,12 @@ export const MAX_LOADED = 'maxLoadedSessions';
 export const IDLE_MINUTES = 'idleMinutes';
 /** Whether deleting a session asks first. */
 export const CONFIRM_DELETE = 'confirmDelete';
+/** Whether a session this app starts asks before running tools. */
+export const ALLOW_ALL = 'allowAll';
+/** Where a session starts when none was chosen. Empty means the home directory. */
+export const WORKING_DIRECTORY = 'workingDirectory';
+/** Whether to bring the Copilot CLI up to date when the app starts. */
+export const UPDATE_ON_START = 'updateOnStart';
 
 export interface Settings {
   /** Zero means no cap, which is what the runtime starts with. */
@@ -29,6 +35,16 @@ export interface Settings {
   /** Zero means never, which is a real choice on a machine with memory to spare. */
   idleMinutes: number;
   confirmDelete: boolean;
+  /**
+   * Whether new sessions run tools without asking.
+   *
+   * Applied per session after it is made, because that is the only thing that works:
+   * `--allow-all` given to the shared CLI leaves every session it creates asking (#199).
+   */
+  allowAll: boolean;
+  /** Empty means the home directory, which is what the CLI does with no argument. */
+  workingDirectory: string;
+  updateOnStart: boolean;
 }
 
 /** The ten minutes the runtime uses when nobody has said otherwise. */
@@ -52,6 +68,11 @@ export function readSettings(): Settings {
     // Absent means ask. Only the exact stored false turns it off, so a key holding anything
     // unexpected leaves the question in place rather than silently skipping it.
     confirmDelete: read('settings', CONFIRM_DELETE) !== 'false',
+    // And the same the other way: only the exact stored true gives a new session blanket
+    // permission, so nothing unexpected can hand one out.
+    allowAll: read('settings', ALLOW_ALL) === 'true',
+    workingDirectory: read('settings', WORKING_DIRECTORY) ?? '',
+    updateOnStart: read('settings', UPDATE_ON_START) === 'true',
   };
 }
 
@@ -75,6 +96,21 @@ export function useSettings() {
     void setRuntimeLimits(maxLoaded, idleMinutes * 60_000).catch(() => undefined);
   }, [maxLoaded, idleMinutes]);
 
+  /**
+   * Bring the CLI up to date once, if that was asked for.
+   *
+   * On the setting rather than on every launch, and once rather than on every change:
+   * turning it on is a statement about startups, not a request to update now, but an app
+   * that is already open when it is turned on would otherwise wait until next time to do
+   * anything at all - which reads as the setting not working.
+   */
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!settings.updateOnStart || asked.current) return;
+    asked.current = true;
+    void updateCli().catch(() => undefined);
+  }, [settings.updateOnStart]);
+
   const apply = useCallback((changes: Partial<Settings>) => {
     setSettings((current) => {
       const changed = (Object.keys(changes) as (keyof Settings)[]).filter(
@@ -97,4 +133,7 @@ const KEYS: Record<keyof Settings, string> = {
   maxLoaded: MAX_LOADED,
   idleMinutes: IDLE_MINUTES,
   confirmDelete: CONFIRM_DELETE,
+  allowAll: ALLOW_ALL,
+  workingDirectory: WORKING_DIRECTORY,
+  updateOnStart: UPDATE_ON_START,
 };

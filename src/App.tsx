@@ -215,8 +215,9 @@ export default function App() {
     setCreating(true);
     try {
       // No folder asked for: not every session is about a project, and wanting to ask
-      // something quickly should not begin with choosing a directory.
-      const { sessionId } = await createSession();
+      // something quickly should not begin with choosing a directory. What was set as the
+      // default is used, and empty means the home directory as it always did.
+      const { sessionId } = await createSession(settings.workingDirectory || undefined, settings.allowAll);
       // Selected only once the list holds it, or the pane has nothing to show and the
       // button looks as though it did nothing.
       await sessions.refresh();

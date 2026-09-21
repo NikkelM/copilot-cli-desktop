@@ -93,6 +93,9 @@ function makeSession(id: string) {
       },
       // Titling a new session asks its model a question of the app's own and sets the
       // answer as a name nobody chose (#197).
+      permissions: {
+        setMode: vi.fn(async (_params: { mode: string }) => undefined),
+      },
       name: {
         setAuto: vi.fn(async (_params: { summary: string }) => ({ applied: true })),
         set: vi.fn(async (_params: { name: string }) => undefined),
@@ -2475,3 +2478,64 @@ describe('SessionRuntime being told what may stay in memory', () => {
   });
 });
 
+
+/**
+ * The permission mode belongs to the session, not to the process. Giving the shared CLI
+ * `--allow-all` or `--yolo` leaves every session it creates asking - tested against a real
+ * runtime, and they come back `manual` either way (#199).
+ */
+describe('SessionRuntime starting a session as it was asked to', () => {
+  const madeSession = (sessions: Map<string, FakeSession>) => sessions.get('made')!;
+
+  it('leaves a new session asking, which is what the CLI does', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create();
+
+    expect(madeSession(harness.sessions).rpc.permissions.setMode).not.toHaveBeenCalled();
+  });
+
+  it('puts it in allow-all when that was asked for', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create(undefined, { allowAll: true });
+
+    expect(madeSession(harness.sessions).rpc.permissions.setMode).toHaveBeenCalledExactlyOnceWith({
+      mode: 'allow-all',
+    });
+  });
+
+  it('leaves it asking when that was asked for, rather than saying so twice', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create(undefined, { allowAll: false });
+
+    expect(madeSession(harness.sessions).rpc.permissions.setMode).not.toHaveBeenCalled();
+  });
+
+  // A session that asks when it was meant not to is an annoyance; the reverse is not.
+  it('still makes the session when the mode cannot be set', async () => {
+    const harness = makeRuntime();
+    harness.client.createSession.mockImplementationOnce(async () => {
+      const session = { ...makeSession('made'), sessionId: 'made' };
+      session.rpc.permissions.setMode.mockRejectedValue(new Error('no such mode'));
+      harness.sessions.set('made', session);
+      return session;
+    });
+
+    const { sessionId } = await harness.runtime.create(undefined, { allowAll: true });
+
+    expect(sessionId).toBe('made');
+    expect(harness.runtime.isActive('made')).toBe(true);
+  });
+
+  it('starts it where it was told to', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.create('F:\\work');
+
+    expect(harness.client.createSession).toHaveBeenCalledWith(
+      expect.objectContaining({ workingDirectory: 'F:\\work' }),
+    );
+  });
+});

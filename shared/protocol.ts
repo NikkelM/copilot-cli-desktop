@@ -856,6 +856,17 @@ export interface SidecarRequests {
    * keeping is the reader's judgement. `idleTimeoutMs` of zero disables the timer.
    */
   'runtime.limits': { params: { maxLoadedSessions: number; idleTimeoutMs: number }; result: void };
+  /**
+   * Bring the Copilot CLI up to date, if the reader has asked for that.
+   *
+   * The CLI updates itself on startup by default and this app never gets that: the SDK
+   * spawns it with `--no-auto-update` every time, which is not ours to change. So asking
+   * is the only way to have a current one (#199).
+   *
+   * Answers what happened rather than throwing. Nothing depends on the result, and an
+   * update that could not run is not a reason to interrupt anybody.
+   */
+  'runtime.update': { params: Record<string, never>; result: { ran: boolean; said?: string; failed?: string } };
   'sessions.load': { params: { sessionId: string }; result: void };  'sessions.evict': { params: { sessionId: string }; result: void };  /**
    * Remove a session and everything it wrote. There is no undo.
    *
@@ -868,7 +879,20 @@ export interface SidecarRequests {
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'sessions.resolvePlan': { params: ResolvePlanParams; result: void };
-  'sessions.create': { params: { workingDirectory?: string }; result: { sessionId: string } };
+  'sessions.create': {
+    params: {
+      workingDirectory?: string;
+      /**
+       * The permission mode to put the new session in, if not the one it starts in.
+       *
+       * Set after creation rather than passed to it: the runtime owns this, and giving the
+       * CLI `--allow-all` when the shared server is spawned does nothing for the sessions
+       * it goes on to create - tested, and they come back `manual` either way (#199).
+       */
+      allowAll?: boolean;
+    };
+    result: { sessionId: string };
+  };
   /**
    * What a session changed, read from its rewind snapshots.
    *
@@ -1135,6 +1159,7 @@ export const SIDECAR_METHODS = [
   'sessions.cancelShell',
   'sessions.rename',
   'runtime.limits',
+  'runtime.update',
   'sessions.load',
   'sessions.evict',
   'sessions.delete',

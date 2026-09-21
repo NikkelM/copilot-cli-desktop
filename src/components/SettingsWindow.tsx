@@ -108,7 +108,9 @@ function TickField({
  */
 const CATEGORIES = [
   { id: 'memory', label: 'Memory', holds: ['maxLoaded', 'idleMinutes'] },
+  { id: 'sessions', label: 'New sessions', holds: ['allowAll', 'workingDirectory'] },
   { id: 'deleting', label: 'Deleting', holds: ['confirmDelete'] },
+  { id: 'cli', label: 'Copilot CLI', holds: ['updateOnStart'] },
 ] as const satisfies readonly { id: string; label: string; holds: readonly (keyof Settings)[] }[];
 
 type CategoryId = (typeof CATEGORIES)[number]['id'];
@@ -252,6 +254,55 @@ export function SettingsWindow({
                   }
                 />
               </>
+            )}
+
+            {shown.id === 'sessions' && (
+              <>
+                <p className="settings-note">
+                  What a session starts with when it is made from the New button.
+                </p>
+
+                <TickField
+                  label="Run tools without asking"
+                  checked={draft.allowAll}
+                  onChange={(checked) => edit('allowAll', checked)}
+                  hint={
+                    draft.allowAll
+                      ? 'The same as the CLI --allow-all and --yolo, which are the same flag. Set on the session once it is made, and it can still be changed per session afterwards.'
+                      : 'Each tool asks before it runs, which is what the CLI does by default.'
+                  }
+                />
+
+                <label className="settings-row">
+                  <span className="settings-label">Working directory</span>
+                  <input
+                    type="text"
+                    className="settings-text"
+                    aria-label="Working directory"
+                    placeholder="Your home directory"
+                    spellCheck={false}
+                    value={draft.workingDirectory}
+                    onChange={(event) => edit('workingDirectory', event.target.value)}
+                  />
+                  <span className="settings-hint">
+                    Where a new session starts. Left empty it is your home directory, which is what the CLI
+                    does when it is run with no directory.
+                  </span>
+                </label>
+              </>
+            )}
+
+            {shown.id === 'cli' && (
+              <TickField
+                label="Update the CLI when the app starts"
+                checked={draft.updateOnStart}
+                onChange={(checked) => edit('updateOnStart', checked)}
+                hint={
+                  draft.updateOnStart
+                    ? 'Runs copilot update as the app starts. It carries on without waiting, so a slow download does not hold the app up.'
+                    : 'The CLI updates itself on startup, but never when this app launches it, so it stays on the version it has.'
+                }
+              />
             )}
 
             {shown.id === 'deleting' && (

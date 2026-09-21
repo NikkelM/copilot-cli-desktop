@@ -10,6 +10,7 @@ import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
 import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
 import { lastAgent, lastModel, readTranscript } from './eventLog.js';
+import { updateCli } from './updateCli.js';
 import {
   commitStaged,
   diffOf,
@@ -92,6 +93,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     // renamed without waking anything.
     'sessions.rename': ({ sessionId, name }) => renameSession(sessionId, name),
 
+    'runtime.update': () => updateCli(),
+
     'runtime.limits': ({ maxLoadedSessions, idleTimeoutMs }) =>
       runtime.setLimits({ maxLoadedSessions, idleTimeoutMs }),
 
@@ -108,7 +111,7 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'sessions.resolvePlan': ({ requestId, approved, selectedAction, feedback }) =>
       runtime.resolvePlan(requestId, approved, selectedAction, feedback),
 
-    'sessions.create': ({ workingDirectory }) => runtime.create(workingDirectory),
+    'sessions.create': ({ workingDirectory, allowAll }) => runtime.create(workingDirectory, { allowAll }),
 
     'attachments.stash': (params) => ({ path: stashPaste(params) }),
 

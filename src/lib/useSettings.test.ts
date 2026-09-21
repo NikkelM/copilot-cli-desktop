@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { read, save } from './store';
 
+const { updateCli } = vi.hoisted(() => ({ updateCli: vi.fn(async () => ({ ran: true })) }));
 const { setRuntimeLimits } = vi.hoisted(() => ({
   setRuntimeLimits: vi.fn(async (_maxLoadedSessions: number, _idleTimeoutMs: number) => undefined),
 }));
 vi.mock('./sidecar', () => ({
+  updateCli: () => updateCli(),
   setRuntimeLimits: (maxLoadedSessions: number, idleTimeoutMs: number) =>
     setRuntimeLimits(maxLoadedSessions, idleTimeoutMs),
 }));
@@ -20,6 +22,7 @@ async function load() {
 beforeEach(() => {
   localStorage.clear();
   setRuntimeLimits.mockReset().mockResolvedValue(undefined);
+  updateCli.mockReset().mockResolvedValue({ ran: true });
 });
 
 describe('what the app does when nobody has said otherwise', () => {
@@ -60,7 +63,14 @@ describe('changing a setting', () => {
     const { useSettings } = await load();
     const { settings } = renderHook(() => useSettings()).result.current;
 
-    expect(settings).toEqual({ maxLoaded: 4, idleMinutes: 25, confirmDelete: false });
+    expect(settings).toEqual({
+      maxLoaded: 4,
+      idleMinutes: 25,
+      confirmDelete: false,
+      allowAll: false,
+      workingDirectory: '',
+      updateOnStart: false,
+    });
   });
 
   it('changes nothing when the value is what it already was', async () => {
@@ -79,7 +89,14 @@ describe('changing a setting', () => {
 
     act(() => result.current.apply({ maxLoaded: 3 }));
 
-    expect(result.current.settings).toEqual({ maxLoaded: 3, idleMinutes: 10, confirmDelete: true });
+    expect(result.current.settings).toEqual({
+      maxLoaded: 3,
+      idleMinutes: 10,
+      confirmDelete: true,
+      allowAll: false,
+      workingDirectory: '',
+      updateOnStart: false,
+    });
   });
 
   it('writes only the ones that actually changed', async () => {
@@ -173,6 +190,128 @@ describe('telling the runtime what may stay in memory', () => {
 
     await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalled());
     expect(result.current.settings.maxLoaded).toBe(0);
+  });
+});
+
+/**
+ * The CLI updates itself on startup by default, and never when this app launches it: the
+ * SDK spawns it with `--no-auto-update` every time. So asking for one is the only way to
+ * have a current CLI, and it is off until somebody says otherwise (#199).
+ */
+describe('updating the CLI', () => {
+  it('asks for none until it is turned on', async () => {
+    const { useSettings } = await load();
+
+    renderHook(() => useSettings());
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(updateCli).not.toHaveBeenCalled();
+  });
+
+  it('asks for one at startup when it is already on', async () => {
+    const { UPDATE_ON_START } = await load();
+    save('settings', UPDATE_ON_START, 'true');
+
+    const { useSettings } = await load();
+    renderHook(() => useSettings());
+
+    await waitFor(() => expect(updateCli).toHaveBeenCalledOnce());
+  });
+
+  /**
+   * Turning it on is a statement about startups rather than a request to update now, but
+   * an app already open would otherwise do nothing at all until next time, which reads as
+   * the setting not working.
+   */
+  it('asks once when it is turned on while the app is open', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ updateOnStart: true }));
+
+    await waitFor(() => expect(updateCli).toHaveBeenCalledOnce());
+  });
+
+  it('does not ask again when it is turned off and on', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ updateOnStart: true }));
+    await waitFor(() => expect(updateCli).toHaveBeenCalledOnce());
+
+    act(() => result.current.apply({ updateOnStart: false }));
+    act(() => result.current.apply({ updateOnStart: true }));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(updateCli).toHaveBeenCalledOnce();
+  });
+
+  it('carries on when the update cannot be asked for', async () => {
+    updateCli.mockRejectedValue(new Error('no sidecar'));
+    const { useSettings, UPDATE_ON_START } = await load();
+    save('settings', UPDATE_ON_START, 'true');
+
+    const { result } = renderHook(() => useSettings());
+
+    await waitFor(() => expect(updateCli).toHaveBeenCalled());
+    expect(result.current.settings.updateOnStart).toBe(true);
+  });
+});
+
+describe('a stored value written by something else', () => {
+  it.each([['not a number'], ['-3'], ['']])('falls back to the default for %s', async (stored) => {
+    const { MAX_LOADED, IDLE_MINUTES } = await load();
+    save('settings', MAX_LOADED, stored);
+    save('settings', IDLE_MINUTES, stored);
+
+    const { useSettings } = await load();
+    const { settings } = renderHook(() => useSettings()).result.current;
+
+    expect(settings.maxLoaded).toBe(0);
+    expect(settings.idleMinutes).toBe(10);
+  });
+
+  /** Anything but the exact false leaves the question in place rather than skipping it. */
+  it('still asks before deleting for anything that is not exactly false', async () => {
+    const { CONFIRM_DELETE } = await load();
+    save('settings', CONFIRM_DELETE, 'no');
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.confirmDelete).toBe(true);
+  });
+});
+
+describe('what a new session starts with', () => {
+  it('asks before running tools until told otherwise', async () => {
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.allowAll).toBe(false);
+  });
+
+  /** Only the exact stored true hands out blanket permission. */
+  it.each([['yes'], ['1'], [''], ['TRUE']])('still asks for a stored %s', async (stored) => {
+    const { ALLOW_ALL } = await load();
+    save('settings', ALLOW_ALL, stored);
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.allowAll).toBe(false);
+  });
+
+  it('starts in the home directory until a directory is given', async () => {
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.workingDirectory).toBe('');
+  });
+
+  it('remembers a directory that was given', async () => {
+    const { useSettings, WORKING_DIRECTORY } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ workingDirectory: 'F:\\work' }));
+
+    expect(read('settings', WORKING_DIRECTORY)).toBe('F:\\work');
   });
 });
 

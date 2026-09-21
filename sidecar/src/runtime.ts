@@ -361,7 +361,7 @@ export class SessionRuntime {
    * asking rather than in anticipation. The session is left loaded because someone who
    * has just made one is about to write in it.
    */
-  async create(workingDirectory?: string): Promise<{ sessionId: string }> {
+  async create(workingDirectory?: string, defaults?: { allowAll?: boolean }): Promise<{ sessionId: string }> {
     const client = await this.ensureClient();
     const pluginDirectories = await this.pluginDirectories(client);
 
@@ -398,6 +398,22 @@ export class SessionRuntime {
 
     id = session.sessionId;
     this.adopt(id, session);
+
+    /**
+     * Put it in the permission mode that was asked for, if it is not the one it starts in.
+     *
+     * Set here rather than given to the CLI when the shared server is spawned. That was
+     * tried: `--allow-all` and `--yolo` on the server leave every session it creates in
+     * `manual`, because the flags configure the process and the mode belongs to the
+     * session. This is the call the runtime's own `/allow-all` makes (#199).
+     *
+     * Failure leaves the session asking, which is the safe direction: a session that asks
+     * when it was meant not to is an annoyance, and the reverse is not.
+     */
+    if (defaults?.allowAll) {
+      await session.rpc.permissions.setMode({ mode: 'allow-all' }).catch(() => undefined);
+    }
+
     await this.enforceCap();
     return { sessionId: id };
   }
