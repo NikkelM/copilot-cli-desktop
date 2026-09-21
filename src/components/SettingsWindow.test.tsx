@@ -162,6 +162,59 @@ describe('leaving without saving', () => {
 });
 
 describe('what a number may be', () => {
+  const more = (label: string) => screen.getByLabelText(`More ${label.toLowerCase()}`);
+  const fewer = (label: string) => screen.getByLabelText(`Fewer ${label.toLowerCase()}`);
+
+  /**
+   * The steppers are this app's own. The native ones came out as a pale strip at the edge
+   * of a dark field, so they are hidden and drawn here instead.
+   */
+  it('counts up and down from the steppers', async () => {
+    show({ maxLoaded: 3 });
+
+    await userEvent.click(more('Sessions kept in memory'));
+    expect(kept().value).toBe('4');
+
+    await userEvent.click(fewer('Sessions kept in memory'));
+    await userEvent.click(fewer('Sessions kept in memory'));
+    expect(kept().value).toBe('2');
+  });
+
+  it('names each stepper after what it changes, since there are two pairs', () => {
+    show();
+
+    expect(more('Sessions kept in memory')).toBeTruthy();
+    expect(more('Release an idle session after')).toBeTruthy();
+  });
+
+  it('steps the field it belongs to and leaves the other alone', async () => {
+    show({ maxLoaded: 3, idleMinutes: 10 });
+
+    await userEvent.click(more('Release an idle session after'));
+
+    expect(idle().value).toBe('11');
+    expect(kept().value).toBe('3');
+  });
+
+  it('stops at zero rather than going below it', async () => {
+    show({ maxLoaded: 0 });
+
+    expect((fewer('Sessions kept in memory') as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.click(fewer('Sessions kept in memory'));
+
+    expect(kept().value).toBe('0');
+  });
+
+  it('needs saving like anything else typed', async () => {
+    const { onSave } = show({ maxLoaded: 3 });
+
+    await userEvent.click(more('Sessions kept in memory'));
+    expect(onSave).not.toHaveBeenCalled();
+
+    await userEvent.click(commit());
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ maxLoaded: 4 }));
+  });
+
   // Both are counts of things, and a negative one would mean nothing to the runtime.
   it.each([
     ['Sessions kept in memory', kept],

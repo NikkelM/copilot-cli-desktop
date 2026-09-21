@@ -1,7 +1,67 @@
 import { useEffect, useState } from 'react';
 
+import { ChevronIcon } from './Icons';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES } from '../lib/useSettings';
+
+/**
+ * A whole number, with its own steppers.
+ *
+ * The native ones are not drawn by this app and did not follow it: they came out as a pale
+ * strip at the edge of a dark field, and `color-scheme: dark` does not reach them here. So
+ * they are hidden and replaced, which is what the icons in this app already do rather than
+ * relying on a glyph rendering the same everywhere.
+ *
+ * Typing still works, and so do the arrow keys, which a number field answers on its own.
+ */
+function NumberField({
+  label,
+  value,
+  onChange,
+  min = 0,
+  hint,
+}: {
+  /** Names the field and both of its steppers, so each says what it changes. */
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  min?: number;
+  hint: string;
+}) {
+  // No floor here: the control that would go below the minimum is disabled at it, so a
+  // second guard would be a line nothing can reach. What is typed is floored on its way in.
+  const step = (by: number) => onChange(value + by);
+
+  return (
+    <label className="settings-row">
+      <span className="settings-label">{label}</span>
+      <span className="number-field">
+        <input
+          type="number"
+          min={min}
+          step={1}
+          aria-label={label}
+          value={value}
+          onChange={(event) => onChange(Math.max(min, Math.floor(Number(event.target.value) || 0)))}
+        />
+        <span className="number-steppers">
+          <button type="button" aria-label={`More ${label.toLowerCase()}`} onClick={() => step(1)}>
+            <ChevronIcon open={false} />
+          </button>
+          <button
+            type="button"
+            aria-label={`Fewer ${label.toLowerCase()}`}
+            onClick={() => step(-1)}
+            disabled={value <= min}
+          >
+            <ChevronIcon open={false} />
+          </button>
+        </span>
+      </span>
+      <span className="settings-hint">{hint}</span>
+    </label>
+  );
+}
 
 /**
  * A place to change the choices this app would otherwise make for you (#100).
@@ -63,39 +123,27 @@ export function SettingsWindow({
             A session costs nothing until it is opened. These decide how much is kept once it has been.
           </p>
 
-          <label className="settings-row">
-            <span className="settings-label">Sessions kept in memory</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              aria-label="Sessions kept in memory"
-              value={draft.maxLoaded}
-              onChange={(event) => edit('maxLoaded', Math.max(0, Math.floor(Number(event.target.value) || 0)))}
-            />
-            <span className="settings-hint">
-              {draft.maxLoaded === 0
+          <NumberField
+            label="Sessions kept in memory"
+            value={draft.maxLoaded}
+            onChange={(value) => edit('maxLoaded', value)}
+            hint={
+              draft.maxLoaded === 0
                 ? 'No limit. The least recently used is released only when it has been idle.'
-                : `Past ${draft.maxLoaded}, the least recently used is released. One mid-turn is never released.`}
-            </span>
-          </label>
+                : `Past ${draft.maxLoaded}, the least recently used is released. One mid-turn is never released.`
+            }
+          />
 
-          <label className="settings-row">
-            <span className="settings-label">Release an idle session after</span>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              aria-label="Release an idle session after"
-              value={draft.idleMinutes}
-              onChange={(event) => edit('idleMinutes', Math.max(0, Math.floor(Number(event.target.value) || 0)))}
-            />
-            <span className="settings-hint">
-              {draft.idleMinutes === 0
+          <NumberField
+            label="Release an idle session after"
+            value={draft.idleMinutes}
+            onChange={(value) => edit('idleMinutes', value)}
+            hint={
+              draft.idleMinutes === 0
                 ? 'Never. Sessions stay in memory until the app closes or the limit above releases them.'
-                : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`}
-            </span>
-          </label>
+                : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`
+            }
+          />
         </section>
 
         <section className="settings-group">

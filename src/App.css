@@ -4760,20 +4760,123 @@ pre.fatal,
   font-size: var(--font-md);
 }
 
-.settings-row input[type='number'] {
-  width: 5rem;
-  padding: 4px 8px;
+/* A number and its own steppers, drawn as one control. The native steppers came out as a
+   pale strip at the edge of a dark field: they are not drawn by this app and do not follow
+   it, and color-scheme: dark does not reach them here. */
+.number-field {
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--bg);
+}
+
+/* The ring goes on the group rather than the box inside it, or it would draw around half
+   of a control that reads as one. */
+.number-field:focus-within {
+  border-color: var(--accent);
+}
+
+.number-field input {
+  width: 3.5rem;
+  padding: 4px 8px;
+  border: 0;
+  background: none;
   color: var(--text);
   font: inherit;
   text-align: right;
+  /* Hides the native steppers: the first for Firefox, the second for this one. */
+  appearance: textfield;
 }
 
-.settings-row input:focus-visible {
-  border-color: var(--accent);
+.number-field input::-webkit-inner-spin-button,
+.number-field input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.number-field input:focus-visible {
   outline: none;
+}
+
+.number-steppers {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+
+.number-steppers button {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  width: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.number-steppers button + button {
+  border-top: 1px solid var(--border);
+}
+
+.number-steppers button:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--text);
+}
+
+.number-steppers button:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* One chevron drawn twice, turned to point the way each one goes. */
+.number-steppers button .caret {
+  width: 0.7em;
+  height: 0.7em;
+  transform: rotate(-90deg);
+}
+
+.number-steppers button + button .caret {
+  transform: rotate(90deg);
+}
+
+/* The tick box, drawn rather than left to the browser, for the same reason as the steppers
+   above: the native one arrives in its own blue and does not follow the rest of this. */
+.settings-check input[type='checkbox'] {
+  appearance: none;
+  width: 1em;
+  height: 1em;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.settings-check input[type='checkbox']:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* The tick: two sides of a box, turned to lean the way a tick leans. Drawn in the box
+   rather than as a character, which would be a different shape on every machine. */
+.settings-check input[type='checkbox']:checked::after {
+  display: block;
+  width: 0.3em;
+  height: 0.55em;
+  margin: -0.06em 0 0 0.28em;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  content: '';
+  transform: rotate(40deg);
+}
+
+.settings-check input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .settings-check {
