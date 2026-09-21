@@ -414,7 +414,7 @@ export function SettingsWindow({
                   hint={
                     draft.scale === 1
                       ? 'Everything: the panes, the lanes and the controls as well as the letters. Ctrl and + or - does the same, as does Ctrl and the wheel.'
-                      : `% of the app's own size. Ctrl and + or - does the same.`
+                      : `${Math.round(draft.scale * 100)}% of the app's own size. Ctrl and + or - does the same.`
                   }
                 />
 
@@ -425,7 +425,7 @@ export function SettingsWindow({
                   hint={
                     draft.textScale === 1
                       ? 'The letters alone, if they read small at a scale that otherwise suits.'
-                      : `% of the size the app scale would give them.`
+                      : `${Math.round(draft.textScale * 100)}% of the size the app scale would give them.`
                   }
                 />
 

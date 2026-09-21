@@ -570,6 +570,17 @@ describe('the app scale', () => {
 
     expect(readout().value).toBe('100%');
   });
+
+  /**
+   * The note carries the number as well as the readout. It went missing once, leaving a
+   * sentence that began with a bare per cent sign, and nothing failed.
+   */
+  it('says the size in the note as well as in the box', async () => {
+    show({ scale: 1.25 });
+    await openAppearance();
+
+    expect(screen.getByText(/^125% of the app's own size/)).toBeTruthy();
+  });
 });
 
 /**
@@ -647,6 +658,24 @@ describe('the text size, apart from the app scale', () => {
 
     expect(appScale().value).toBe('100%');
     expect(size().value).toBe('100%');
+  });
+
+  it('says the size in the note as well as in the box', async () => {
+    show({ textScale: 1.25 });
+    await openAppearance();
+
+    expect(screen.getByText(/^125% of the size the app scale would give them/)).toBeTruthy();
+  });
+
+  // The note describes what is being chosen, not what is saved, or it would explain a size
+  // that is not the one on screen.
+  it('follows what is being chosen rather than what is saved', async () => {
+    show({ textScale: 1 });
+    await openAppearance();
+
+    await userEvent.click(screen.getByLabelText('Increase text size'));
+
+    expect(screen.getByText(/^113% of the size the app scale would give them/)).toBeTruthy();
   });
 });
 
