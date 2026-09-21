@@ -858,7 +858,7 @@ export default function App() {
 
   /** The session waiting on an answer to "really delete this?". */
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
-  const { settings, change: changeSetting } = useSettings();
+  const { settings, apply: applySettings } = useSettings();
   /** Whether the settings window is open. */
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -1320,7 +1320,7 @@ export default function App() {
           confirmLabel="Delete session"
           remember="Do not ask again"
           onConfirm={(dontAskAgain) => {
-            if (dontAskAgain) changeSetting('confirmDelete', false);
+            if (dontAskAgain) applySettings({ confirmDelete: false });
             removeSession(deleting);
             setDeleting(null);
           }}
@@ -1328,7 +1328,7 @@ export default function App() {
         />
       )}
       {settingsOpen && (
-        <SettingsWindow settings={settings} onChange={changeSetting} onClose={() => setSettingsOpen(false)} />
+        <SettingsWindow settings={settings} onSave={applySettings} onClose={() => setSettingsOpen(false)} />
       )}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES } from '../lib/useSettings';
@@ -14,25 +14,37 @@ import { DEFAULT_IDLE_MINUTES } from '../lib/useSettings';
  * turned the confirmation off with no way back except editing a file by hand, which is a
  * poor way to treat the one action in the app that destroys something.
  *
- * Changes apply as they are made rather than on an OK button: there is nothing here that is
- * only half meaningful, and a window that asks to be confirmed invites being cancelled.
+ * Nothing takes effect until it is saved. Half-typed numbers are why: a field being cleared
+ * to type 25 into passes through empty, and applying as it was typed would have released
+ * every session in memory on the way past. Leaving without saving changes nothing, which is
+ * what makes it safe to open this and look.
  */
 export function SettingsWindow({
   settings,
-  onChange,
+  onSave,
   onClose,
 }: {
+  /** What is saved now, which is where the draft starts and what leaving goes back to. */
   settings: Settings;
-  onChange: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
+  onSave: (settings: Settings) => void;
   onClose: () => void;
 }) {
+  const [draft, setDraft] = useState<Settings>(settings);
+
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      // Escape is leaving without saving, which is what Cancel does: a reader who wanted
+      // these kept would have said so, and the alternative is a dialog about a dialog.
       if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [onClose]);
+
+  const edit = <K extends keyof Settings>(key: K, value: Settings[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
+
+  const unsaved = (Object.keys(draft) as (keyof Settings)[]).some((key) => draft[key] !== settings[key]);
 
   return (
     <div className="confirm-backdrop" onMouseDown={onClose}>
@@ -58,13 +70,13 @@ export function SettingsWindow({
               min={0}
               step={1}
               aria-label="Sessions kept in memory"
-              value={settings.maxLoaded}
-              onChange={(event) => onChange('maxLoaded', Math.max(0, Math.floor(Number(event.target.value) || 0)))}
+              value={draft.maxLoaded}
+              onChange={(event) => edit('maxLoaded', Math.max(0, Math.floor(Number(event.target.value) || 0)))}
             />
             <span className="settings-hint">
-              {settings.maxLoaded === 0
+              {draft.maxLoaded === 0
                 ? 'No limit. The least recently used is released only when it has been idle.'
-                : `Past ${settings.maxLoaded}, the least recently used is released. One mid-turn is never released.`}
+                : `Past ${draft.maxLoaded}, the least recently used is released. One mid-turn is never released.`}
             </span>
           </label>
 
@@ -75,13 +87,13 @@ export function SettingsWindow({
               min={0}
               step={1}
               aria-label="Release an idle session after"
-              value={settings.idleMinutes}
-              onChange={(event) => onChange('idleMinutes', Math.max(0, Math.floor(Number(event.target.value) || 0)))}
+              value={draft.idleMinutes}
+              onChange={(event) => edit('idleMinutes', Math.max(0, Math.floor(Number(event.target.value) || 0)))}
             />
             <span className="settings-hint">
-              {settings.idleMinutes === 0
+              {draft.idleMinutes === 0
                 ? 'Never. Sessions stay in memory until the app closes or the limit above releases them.'
-                : `${settings.idleMinutes} ${settings.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`}
+                : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`}
             </span>
           </label>
         </section>
@@ -93,8 +105,8 @@ export function SettingsWindow({
             <input
               type="checkbox"
               aria-label="Ask before deleting a session"
-              checked={settings.confirmDelete}
-              onChange={(event) => onChange('confirmDelete', event.target.checked)}
+              checked={draft.confirmDelete}
+              onChange={(event) => edit('confirmDelete', event.target.checked)}
             />
             <span className="settings-label">Ask before deleting a session</span>
             <span className="settings-hint">Deleting removes the transcript and everything the session wrote.</span>
@@ -102,8 +114,19 @@ export function SettingsWindow({
         </section>
 
         <div className="confirm-actions">
-          <button type="button" onClick={onClose}>
-            Done
+          <button type="button" className="confirm-cancel" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onSave(draft);
+              onClose();
+            }}
+            // Nothing changed is not nothing to do: the window still has to close, so this
+            // says Done rather than offering a Save that would save nothing.
+          >
+            {unsaved ? 'Save' : 'Done'}
           </button>
         </div>
       </div>

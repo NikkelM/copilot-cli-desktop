@@ -45,7 +45,7 @@ describe('changing a setting', () => {
     const { useSettings, MAX_LOADED } = await load();
     const { result } = renderHook(() => useSettings());
 
-    act(() => result.current.change('maxLoaded', 3));
+    act(() => result.current.apply({ maxLoaded: 3 }));
 
     expect(result.current.settings.maxLoaded).toBe(3);
     expect(read('settings', MAX_LOADED)).toBe('3');
@@ -68,9 +68,29 @@ describe('changing a setting', () => {
     const { result } = renderHook(() => useSettings());
     const before = result.current.settings;
 
-    act(() => result.current.change('maxLoaded', 0));
+    act(() => result.current.apply({ maxLoaded: 0 }));
 
     expect(result.current.settings).toBe(before);
+  });
+
+  it('keeps the ones it was not given', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ maxLoaded: 3 }));
+
+    expect(result.current.settings).toEqual({ maxLoaded: 3, idleMinutes: 10, confirmDelete: true });
+  });
+
+  it('writes only the ones that actually changed', async () => {
+    const { useSettings, MAX_LOADED, IDLE_MINUTES } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ maxLoaded: 3, idleMinutes: 10 }));
+
+    expect(read('settings', MAX_LOADED)).toBe('3');
+    // Unchanged, so never written: a stored value is a decision, and absent is the default.
+    expect(read('settings', IDLE_MINUTES)).toBeNull();
   });
 
   it('turns the delete confirmation back on, which nothing else could', async () => {
@@ -79,7 +99,7 @@ describe('changing a setting', () => {
     const { result } = renderHook(() => useSettings());
     expect(result.current.settings.confirmDelete).toBe(false);
 
-    act(() => result.current.change('confirmDelete', true));
+    act(() => result.current.apply({ confirmDelete: true }));
 
     expect(result.current.settings.confirmDelete).toBe(true);
     expect(read('settings', CONFIRM_DELETE)).toBe('true');
@@ -104,9 +124,24 @@ describe('telling the runtime what may stay in memory', () => {
     const { result } = renderHook(() => useSettings());
     await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalled());
 
-    act(() => result.current.change('maxLoaded', 2));
+    act(() => result.current.apply({ maxLoaded: 2 }));
 
     await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 10 * 60_000));
+  });
+
+  /**
+   * Saving a window full of settings is one decision, not one per field, and this is what
+   * keeps the runtime from being told twice when both of its rules change together.
+   */
+  it('is told once when both its rules change together', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledOnce());
+
+    act(() => result.current.apply({ maxLoaded: 2, idleMinutes: 25, confirmDelete: false }));
+
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 25 * 60_000));
+    expect(setRuntimeLimits).toHaveBeenCalledTimes(2);
   });
 
   // Minutes are what a reader thinks in; milliseconds are what the runtime counts in.
@@ -114,7 +149,7 @@ describe('telling the runtime what may stay in memory', () => {
     const { useSettings } = await load();
     const { result } = renderHook(() => useSettings());
 
-    act(() => result.current.change('idleMinutes', 25));
+    act(() => result.current.apply({ idleMinutes: 25 }));
 
     await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 25 * 60_000));
   });
@@ -124,7 +159,7 @@ describe('telling the runtime what may stay in memory', () => {
     const { result } = renderHook(() => useSettings());
     await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledOnce());
 
-    act(() => result.current.change('confirmDelete', false));
+    act(() => result.current.apply({ confirmDelete: false }));
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(setRuntimeLimits).toHaveBeenCalledOnce();

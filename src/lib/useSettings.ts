@@ -56,7 +56,11 @@ export function readSettings(): Settings {
 }
 
 /**
- * The settings, and a way to change one.
+ * The settings, and a way to change some of them.
+ *
+ * `apply` takes as many as are being changed at once, because that is what saving a window
+ * full of them is: a single decision, not one per field. It is also what keeps the runtime
+ * from being told twice when two of its rules change together.
  *
  * The runtime is told about the memory rules whenever they change and once at startup, since
  * it begins every run on its own defaults and has no memory of what was chosen last time.
@@ -71,16 +75,21 @@ export function useSettings() {
     void setRuntimeLimits(maxLoaded, idleMinutes * 60_000).catch(() => undefined);
   }, [maxLoaded, idleMinutes]);
 
-  const change = useCallback(<K extends keyof Settings>(key: K, value: Settings[K]) => {
+  const apply = useCallback((changes: Partial<Settings>) => {
     setSettings((current) => {
-      if (current[key] === value) return current;
+      const changed = (Object.keys(changes) as (keyof Settings)[]).filter(
+        (key) => changes[key] !== undefined && changes[key] !== current[key],
+      );
+      // Nothing to do, and returning the same object keeps whatever depends on it still.
+      if (changed.length === 0) return current;
 
-      save('settings', KEYS[key], typeof value === 'boolean' ? String(value) : String(value));
-      return { ...current, [key]: value };
+      const next = { ...current, ...changes };
+      for (const key of changed) save('settings', KEYS[key], String(next[key]));
+      return next;
     });
   }, []);
 
-  return { settings, change };
+  return { settings, apply };
 }
 
 /** Which stored key each setting is kept under. */

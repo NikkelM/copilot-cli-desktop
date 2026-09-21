@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -8,18 +8,19 @@ import type { Settings } from '../lib/useSettings';
 
 afterEach(cleanup);
 
-const DEFAULTS: Settings = { maxLoaded: 0, idleMinutes: 10, confirmDelete: true };
+const SAVED: Settings = { maxLoaded: 0, idleMinutes: 10, confirmDelete: true };
 
 const show = (over: Partial<Settings> = {}) => {
-  const onChange = vi.fn();
+  const onSave = vi.fn();
   const onClose = vi.fn();
-  render(<SettingsWindow settings={{ ...DEFAULTS, ...over }} onChange={onChange} onClose={onClose} />);
-  return { onChange, onClose };
+  render(<SettingsWindow settings={{ ...SAVED, ...over }} onSave={onSave} onClose={onClose} />);
+  return { onSave, onClose };
 };
 
 const kept = () => screen.getByLabelText('Sessions kept in memory') as HTMLInputElement;
 const idle = () => screen.getByLabelText('Release an idle session after') as HTMLInputElement;
 const asks = () => screen.getByLabelText('Ask before deleting a session') as HTMLInputElement;
+const commit = () => screen.getByRole('button', { name: /Save|Done/ });
 
 describe('the settings window', () => {
   it('shows what each setting is now', () => {
@@ -30,71 +31,167 @@ describe('the settings window', () => {
     expect(asks().checked).toBe(false);
   });
 
-  it('changes how many sessions are kept', async () => {
-    const { onChange } = show({ maxLoaded: 0 });
+  it('shows what has been typed before it is saved', async () => {
+    show({ maxLoaded: 0 });
 
+    await userEvent.clear(kept());
     await userEvent.type(kept(), '4');
 
-    expect(onChange).toHaveBeenCalledWith('maxLoaded', 4);
+    expect(kept().value).toBe('4');
+  });
+});
+
+/**
+ * Nothing takes effect until it is saved. Half-typed numbers are why: a field being cleared
+ * to type 25 into passes through empty, and applying as it is typed would release every
+ * session in memory on the way past.
+ */
+describe('saving', () => {
+  it('changes nothing while a number is being typed', async () => {
+    const { onSave } = show({ maxLoaded: 0 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '25');
+
+    expect(onSave).not.toHaveBeenCalled();
   });
 
-  it('changes how long an idle one is kept', async () => {
-    const { onChange } = show({ idleMinutes: 1 });
-
-    await userEvent.type(idle(), '5');
-
-    expect(onChange).toHaveBeenCalledWith('idleMinutes', 15);
-  });
-
-  /**
-   * The reason this window exists at all. Ticking "do not ask again" on a delete turned the
-   * confirmation off with no way back except editing a file by hand, on the one action in
-   * the app that destroys something.
-   */
-  it('turns the delete confirmation back on', async () => {
-    const { onChange } = show({ confirmDelete: false });
+  it('changes nothing while a box is being ticked', async () => {
+    const { onSave } = show();
 
     await userEvent.click(asks());
 
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('confirmDelete', true);
+    expect(onSave).not.toHaveBeenCalled();
   });
 
-  it('turns it off as well, since a one-way door in either direction is one', async () => {
-    const { onChange } = show({ confirmDelete: true });
+  it('applies everything at once when saved', async () => {
+    const { onSave, onClose } = show({ maxLoaded: 0, idleMinutes: 10, confirmDelete: true });
 
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '3');
+    await userEvent.clear(idle());
+    await userEvent.type(idle(), '25');
     await userEvent.click(asks());
+    await userEvent.click(commit());
 
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('confirmDelete', false);
+    expect(onSave).toHaveBeenCalledExactlyOnceWith({ maxLoaded: 3, idleMinutes: 25, confirmDelete: false });
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('offers to save only once something has been changed', async () => {
+    show({ maxLoaded: 0 });
+    expect(screen.getByText('Done')).toBeTruthy();
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '2');
+
+    expect(screen.getByText('Save')).toBeTruthy();
+    expect(screen.queryByText('Done')).toBeNull();
+  });
+
+  it('goes back to Done when a change is typed back out again', async () => {
+    show({ maxLoaded: 3 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '4');
+    expect(screen.getByText('Save')).toBeTruthy();
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '3');
+
+    expect(screen.getByText('Done')).toBeTruthy();
+  });
+
+  // Nothing changed is not nothing to do: the window still has to close.
+  it('closes on Done when nothing was changed', async () => {
+    const { onClose } = show();
+
+    await userEvent.click(screen.getByText('Done'));
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+});
+
+describe('leaving without saving', () => {
+  it('keeps what was saved, whatever was typed', async () => {
+    const { onSave, onClose } = show({ maxLoaded: 3 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '9');
+    await userEvent.click(screen.getByText('Cancel'));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('forgets what was typed, so opening it again starts from what is saved', async () => {
+    const { onClose } = show({ maxLoaded: 3 });
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '9');
+    await userEvent.click(screen.getByText('Cancel'));
+    expect(onClose).toHaveBeenCalledOnce();
+
+    // Closing unmounts the window, so opening it again is a fresh one.
+    cleanup();
+    show({ maxLoaded: 3 });
+
+    expect(kept().value).toBe('3');
+  });
+
+  it.each([
+    ['Escape', () => fireEvent.keyDown(window, { key: 'Escape' })],
+    ['a click outside', () => fireEvent.mouseDown(document.querySelector('.confirm-backdrop') as HTMLElement)],
+  ])('discards on %s, as Cancel does', async (_what, leave) => {
+    const { onSave, onClose } = show({ maxLoaded: 3 });
+
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '9');
+    leave();
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it('stays open when the pointer goes down on the window itself', () => {
+    const { onClose } = show();
+
+    fireEvent.mouseDown(screen.getByRole('dialog'));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('what a number may be', () => {
   // Both are counts of things, and a negative one would mean nothing to the runtime.
   it.each([
     ['Sessions kept in memory', kept],
     ['Release an idle session after', idle],
-  ])('refuses a negative %s', async (_label, field) => {
-    const { onChange } = show();
+  ])('refuses a negative %s', (_label, field) => {
+    show();
 
     fireEvent.change(field(), { target: { value: '-5' } });
 
-    expect(onChange).toHaveBeenCalledWith(expect.any(String), 0);
+    expect(field().value).toBe('0');
   });
 
   it('rounds a fraction down, since half a session is not a session', () => {
-    const { onChange } = show();
+    show();
 
     fireEvent.change(kept(), { target: { value: '2.7' } });
 
-    expect(onChange).toHaveBeenCalledWith('maxLoaded', 2);
+    expect(kept().value).toBe('2');
   });
 
   it('reads an emptied box as none rather than as nothing', () => {
-    const { onChange } = show({ maxLoaded: 3 });
+    show({ maxLoaded: 3 });
 
     fireEvent.change(kept(), { target: { value: '' } });
 
-    expect(onChange).toHaveBeenCalledWith('maxLoaded', 0);
+    expect(kept().value).toBe('0');
   });
+});
 
+describe('saying what a setting means', () => {
   // Zero is a real answer for both, and means opposite things, so it has to say which.
   it('says what zero means for each', () => {
     show({ maxLoaded: 0, idleMinutes: 0 });
@@ -110,31 +207,14 @@ describe('the settings window', () => {
     expect(screen.getByText(/1 minute\. The default is 10\./)).toBeTruthy();
   });
 
-  describe('closing it', () => {
-    beforeEach(() => cleanup());
+  // The note describes the draft, or it would explain a setting that is not on screen.
+  it('follows what has been typed rather than what is saved', async () => {
+    show({ maxLoaded: 0 });
 
-    it('closes on Done', async () => {
-      const { onClose } = show();
-      await userEvent.click(screen.getByText('Done'));
-      expect(onClose).toHaveBeenCalledOnce();
-    });
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '2');
 
-    it('closes on Escape', () => {
-      const { onClose } = show();
-      fireEvent.keyDown(window, { key: 'Escape' });
-      expect(onClose).toHaveBeenCalledOnce();
-    });
-
-    it('closes on a click outside', () => {
-      const { onClose } = show();
-      fireEvent.mouseDown(document.querySelector('.confirm-backdrop') as HTMLElement);
-      expect(onClose).toHaveBeenCalledOnce();
-    });
-
-    it('stays open when the pointer goes down on the window itself', () => {
-      const { onClose } = show();
-      fireEvent.mouseDown(screen.getByRole('dialog'));
-      expect(onClose).not.toHaveBeenCalled();
-    });
+    expect(screen.getByText(/Past 2, the least recently used is released/)).toBeTruthy();
+    expect(screen.queryByText(/No limit/)).toBeNull();
   });
 });
