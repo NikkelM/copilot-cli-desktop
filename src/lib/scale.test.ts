@@ -68,22 +68,22 @@ describe('putting it into effect', () => {
   });
 
   /**
-   * Two units rather than one. The app scale moves the panes, the lanes and the controls as
-   * well as the letters; the text scale moves the letters alone, on top of it (#139).
+   * Two units rather than one. The app scale moves the panes, the lanes and the controls
+   * as well as the letters; the text scale moves only the conversation, and is a
+   * multiplier because where it applies is decided in the stylesheet (#139).
    */
-  it('sets the letters from the two together', () => {
+  it('sets the text scale as a multiplier rather than a size', () => {
     const root = document.createElement('div');
 
     applyScale(1.5, 1.25, root);
 
     expect(root.style.getPropertyValue('--font-base')).toBe(`${BASE_PX * 1.5}px`);
-    expect(root.style.getPropertyValue('--font-text')).toBe(`${BASE_PX * 1.5 * 1.25}px`);
+    expect(root.style.getPropertyValue('--text-scale')).toBe('1.25');
   });
 
-  it('leaves the letters where the app scale put them when nothing else was asked', () => {
+  it('leaves the conversation at the app scale when nothing else was asked', () => {
     applyScale(1.5);
 
-    const root = document.documentElement.style;
-    expect(root.getPropertyValue('--font-text')).toBe(root.getPropertyValue('--font-base'));
+    expect(document.documentElement.style.getPropertyValue('--text-scale')).toBe('1');
   });
 });

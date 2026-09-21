@@ -60,8 +60,9 @@ export function readTextScale(): number {
  * the app is already a ratio of one of these, so nothing else has to be told.
  *
  * Two units rather than one. The app scale moves everything, including the panes, the lanes
- * and the controls; the text scale moves only the letters, on top of it. Somebody who finds
- * the text small is usually asking for the second rather than the first.
+ * and the controls; the text scale moves only the conversation, which is where the reading
+ * happens. The second is a multiplier rather than a size, because where it applies is
+ * decided in the stylesheet rather than here.
  */
 export function applyScale(
   scale: number,
@@ -69,5 +70,7 @@ export function applyScale(
   root: HTMLElement = document.documentElement,
 ): void {
   root.style.setProperty('--font-base', `${BASE_PX * scale}px`);
-  root.style.setProperty('--font-text', `${BASE_PX * scale * textScale}px`);
+  // A multiplier rather than a size: it is applied where the conversation is drawn and
+  // nowhere else, so what it multiplies is decided there.
+  root.style.setProperty('--text-scale', String(textScale));
 }

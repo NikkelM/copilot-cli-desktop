@@ -39,26 +39,23 @@
      beat anything inherited. */
   --sidebar-column: calc(160px + var(--font-base) * 8.75);
   /**
-   * What the letters are sized from, as opposed to what the app is sized from.
+   * How much larger the conversation is drawn than the rest of the app.
    *
-   * The two are separate so text can be made bigger without the panes, the lanes and the
-   * controls growing with it - which is what happens when there is only one number, and is
-   * not what somebody who finds the text small is asking for (#139).
-   *
-   * Set from JavaScript as the base times the text scale, so it is the base until somebody
-   * says otherwise.
+   * A multiplier rather than a size, and set from JavaScript. It reaches only the
+   * transcript: what somebody means by wanting bigger text is the part they read for
+   * minutes at a time, not the labels on the settings window (#139).
    */
-  --font-text: var(--font-base);
+  --text-scale: 1;
 
-  --font-xs: calc(var(--font-text) * 0.715);
-  --font-sm: calc(var(--font-text) * 0.785);
-  --font-md: calc(var(--font-text) * 0.858);
-  --font-lg: calc(var(--font-text) * 0.93);
-  --font-xl: var(--font-text);
-  --font-2xl: calc(var(--font-text) * 1.072);
-  --font-3xl: calc(var(--font-text) * 1.215);
-  --font-4xl: calc(var(--font-text) * 1.286);
-  --font-5xl: calc(var(--font-text) * 1.43);
+  --font-xs: calc(var(--font-base) * 0.715);
+  --font-sm: calc(var(--font-base) * 0.785);
+  --font-md: calc(var(--font-base) * 0.858);
+  --font-lg: calc(var(--font-base) * 0.93);
+  --font-xl: var(--font-base);
+  --font-2xl: calc(var(--font-base) * 1.072);
+  --font-3xl: calc(var(--font-base) * 1.215);
+  --font-4xl: calc(var(--font-base) * 1.286);
+  --font-5xl: calc(var(--font-base) * 1.43);
 
   /*
    * A disclosure control, sized as a control rather than as a piece of text.
@@ -1245,6 +1242,27 @@ body {
 }
 
 .transcript {
+  /**
+   * The conversation, drawn at its own size.
+   *
+   * Every size is restated rather than the unit they share being redefined, because a
+   * custom property is substituted where it is declared: `--font-md` on the root resolves
+   * against the root's values, and a descendant redefining what it was built from does not
+   * reach back and change it. So the sizes themselves are what has to be said again.
+   *
+   * Only here. The labels on a settings window are read for a second at a time and nobody
+   * asking for bigger text means them (#139).
+   */
+  --font-xs: calc(var(--font-base) * 0.715 * var(--text-scale));
+  --font-sm: calc(var(--font-base) * 0.785 * var(--text-scale));
+  --font-md: calc(var(--font-base) * 0.858 * var(--text-scale));
+  --font-lg: calc(var(--font-base) * 0.93 * var(--text-scale));
+  --font-xl: calc(var(--font-base) * var(--text-scale));
+  --font-2xl: calc(var(--font-base) * 1.072 * var(--text-scale));
+  --font-3xl: calc(var(--font-base) * 1.215 * var(--text-scale));
+  --font-4xl: calc(var(--font-base) * 1.286 * var(--text-scale));
+  --font-5xl: calc(var(--font-base) * 1.43 * var(--text-scale));
+
   margin: 0;
   padding: 0 4px 0 0;
   /* A grid item will not shrink below its content without this, which would push the

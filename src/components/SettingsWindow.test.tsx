@@ -593,11 +593,11 @@ describe('the text size, apart from the app scale', () => {
   const size = () => screen.getByLabelText('Text size') as HTMLInputElement;
   const appScale = () => screen.getByLabelText('App scale') as HTMLInputElement;
   const base = () => document.documentElement.style.getPropertyValue('--font-base');
-  const text = () => document.documentElement.style.getPropertyValue('--font-text');
+  const text = () => document.documentElement.style.getPropertyValue('--text-scale');
 
   afterEach(() => {
     document.documentElement.style.removeProperty('--font-base');
-    document.documentElement.style.removeProperty('--font-text');
+    document.documentElement.style.removeProperty('--text-scale');
   });
 
   it('is its own control', async () => {
@@ -614,17 +614,18 @@ describe('the text size, apart from the app scale', () => {
 
     await userEvent.click(screen.getByLabelText('Increase text size'));
 
-    // The app is still drawn at its own size; only what is sized from the letters moved.
+    // The app is still drawn at its own size; only the conversation is asked to grow.
     expect(base()).toBe('16px');
-    expect(text()).toBe('18px');
+    expect(text()).toBe('1.125');
   });
 
   it('sits on top of the app scale rather than replacing it', async () => {
     show({ scale: 1.5, textScale: 1.25 });
     await openAppearance();
 
+    // The multiplier is the same whatever the app scale, and is applied where it lands.
     expect(base()).toBe('24px');
-    expect(text()).toBe('30px');
+    expect(text()).toBe('1.25');
   });
 
   it('is saved as its own setting', async () => {
@@ -643,11 +644,11 @@ describe('the text size, apart from the app scale', () => {
     );
     await openAppearance();
     await userEvent.click(screen.getByLabelText('Increase text size'));
-    expect(text()).toBe('18px');
+    expect(text()).toBe('1.125');
 
     unmount();
 
-    expect(text()).toBe('16px');
+    expect(text()).toBe('1');
   });
 
   it('is taken back to the app own sizes along with the app scale', async () => {
