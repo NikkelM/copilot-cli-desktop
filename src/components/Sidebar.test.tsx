@@ -820,23 +820,24 @@ describe('the app own controls in the sidebar header', () => {
       (button) => button.textContent || button.getAttribute('aria-label'),
     );
 
-  it('puts settings, the wiki and new together, in that order', () => {
+  it('puts settings on the left, and the wiki and new on the right', () => {
     shown({ onSettings: () => {} });
 
     expect(named()).toEqual(['Hide the sidebar', 'Settings', 'Wiki', 'New']);
   });
 
   /**
-   * One group rather than an auto margin on the last button: with the margin, a control
-   * added beside the last one landed alone in the middle of the header.
+   * The order alone does not say which side each is on, since both sides read left to
+   * right. What separates them is the group, which is what carries the auto margin.
    */
-  it('holds them in one group, so they stay beside each other', () => {
+  it('keeps settings out of the group that is pushed right', () => {
     shown({ onSettings: () => {} });
 
     const group = document.querySelector('.sidebar-actions') as HTMLElement;
     const inGroup = [...group.querySelectorAll('button')].map((b) => b.textContent || b.getAttribute('aria-label'));
 
-    expect(inGroup).toEqual(['Settings', 'Wiki', 'New']);
+    expect(inGroup).toEqual(['Wiki', 'New']);
+    expect(group.contains(screen.getByLabelText('Settings'))).toBe(false);
   });
 
   it('opens the settings window when it is pressed', async () => {

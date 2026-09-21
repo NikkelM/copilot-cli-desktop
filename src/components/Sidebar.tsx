@@ -300,16 +300,18 @@ export function Sidebar({
     <nav className="sidebar">
       <header className="sidebar-header">
         {onToggle && <SidebarToggle hidden={false} onToggle={onToggle} />}
+        {/* On the left with the fold control: both are about the app rather than about any
+            session, and neither is something you reach for often enough to want it under
+            the hand that is starting sessions. */}
+        {onSettings && (
+          <button type="button" className="icon-button" onClick={onSettings} title="Settings" aria-label="Settings">
+            <GearIcon />
+          </button>
+        )}
         <Waiting count={waiting.length} onJump={jump} />
-        {/* Kept together and pushed right as a group, so the count on the left has the
-            room it needs and these three stay next to each other however many there are.
-            Settings first, because it is the one that is least often wanted. */}
+        {/* Kept together and pushed right as a group, so the count on the left has the room
+            it needs and these two stay next to each other however many there are. */}
         <div className="sidebar-actions">
-          {onSettings && (
-            <button type="button" className="icon-button" onClick={onSettings} title="Settings" aria-label="Settings">
-              <GearIcon />
-            </button>
-          )}
           {/* The wiki is a destination rather than something about a session, so it is
               reached from the app's own chrome rather than from a session's header. */}
           <button

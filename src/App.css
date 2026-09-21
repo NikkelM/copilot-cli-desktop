@@ -4713,7 +4713,7 @@ pre.fatal,
 /* The settings window (#100). Wider than a confirmation, since each row carries a note
    saying what the number actually does. */
 .settings {
-  background: var(--panel);
+  background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 20px 22px;
