@@ -61,6 +61,16 @@ describe('ModelPicker', () => {
       expect(control.textContent).toContain('936k');
     });
 
+    // A row of facts on its own gives no sign that pressing it does anything.
+    it('turns the chevron with the menu', async () => {
+      const { container } = picker({ current: { model: 'auto' } });
+      const caret = () => container.querySelector('.caret')?.getAttribute('data-open');
+
+      expect(caret()).toBe('false');
+      await userEvent.click(screen.getAllByRole('button')[0]!);
+      expect(caret()).toBe('true');
+    });
+
     // Standard context is what almost every session uses, so saying so adds nothing.
     it('says nothing about context when it is the standard one', () => {
       picker({ current: { model: 'auto', contextTier: 'default' } });

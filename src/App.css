@@ -549,6 +549,20 @@ body {
   position: relative;
 }
 
+/*
+ * A menu drawn on the body rather than beside the control it belongs to, so that nothing
+ * the control sits in can clip it. Placed in script, since only script knows where the
+ * control ended up.
+ *
+ * Above the topmost window rather than above the page, because a menu opened from inside a
+ * dialog belongs over that dialog - the model list opened behind the settings window
+ * otherwise, which is the whole reason a layer is named here at all.
+ */
+.floating {
+  position: fixed;
+  z-index: 300;
+}
+
 .model-current {
   display: flex;
   align-items: center;
@@ -597,14 +611,9 @@ body {
   color: #d29922;
 }
 
-/* Anchored to the control and above the transcript, which scrolls underneath it. */
+/* Everything but where it sits, which the code that draws it decides. */
 .model-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 20;
   width: min(calc(var(--font-base) * 21.25), 80vw);
-  max-height: 60vh;
   overflow-y: auto;
   padding: 4px;
   border: 1px solid var(--border);
@@ -4881,6 +4890,32 @@ pre.fatal,
 
 .settings-label {
   font-size: var(--font-md);
+}
+
+/*
+ * The same picker, drawn as the dropdown it is rather than as the label it is in a header.
+ *
+ * In a settings row it is a choice to be made, beside boxes that are typed into, so it
+ * takes their shape and their reading font: a model id set in monospace beside them read as
+ * a piece of output rather than as something to press.
+ */
+.settings-row .model-current {
+  min-width: calc(var(--font-base) * 11);
+  padding: 4px 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--font-md);
+}
+
+/* At the far end, where a dropdown keeps it, rather than crowding whatever it names. */
+.settings-row .model-current .caret {
+  margin-left: auto;
+}
+
+.settings-row .model-current:focus-visible,
+.settings-row .model-current:hover {
+  border-color: var(--accent);
 }
 
 /* A number and its own steppers, drawn as one control. The native steppers came out as a

@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import { startingEffort } from '../lib/models';
 import { credits, tokens } from '../lib/units';
+import { FloatingMenu } from './FloatingMenu';
+import { ChevronIcon } from './Icons';
 import type {
   ContextTier,
   ModelChoice,
@@ -85,23 +87,7 @@ export function ModelPicker({
   /** The row under the pointer, so its price can be read without committing to it. */
   const [hovered, setHovered] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    // Clicking elsewhere, or pressing Escape, is how a menu is dismissed everywhere else.
-    const away = (event: MouseEvent) => {
-      if (!box.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const escape = (event: KeyboardEvent) => event.key === 'Escape' && setOpen(false);
-
-    document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('mousedown', away);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [open]);
+  const close = useCallback(() => setOpen(false), []);
 
   function toggle() {
     if (open) {
@@ -154,10 +140,18 @@ export function ModelPicker({
           /* Only once the catalogue is known, since the size is not in the session's log. */
           room && <span className="model-tag">{tokens(room.maxPromptTokens)}</span>
         )}
+        {/* Says the control opens something, which a row of facts otherwise does not. */}
+        <ChevronIcon open={open} />
       </button>
 
       {open && (
-        <div className="model-menu" role="listbox" onMouseLeave={() => setHovered(null)}>
+        <FloatingMenu
+          anchor={box}
+          onDismiss={close}
+          className="model-menu"
+          role="listbox"
+          onMouseLeave={() => setHovered(null)}
+        >
           {failed && <p className="error">{failed}</p>}
           {!models && !failed && <p className="model-loading">Starting the runtime to ask what is available.</p>}
 
@@ -169,11 +163,11 @@ export function ModelPicker({
               model={model}
               current={current}
               onChoose={onChoose}
-              onDone={() => setOpen(false)}
+              onDone={close}
               onLookAt={() => setHovered(model.id)}
             />
           ))}
-        </div>
+        </FloatingMenu>
       )}
     </div>
   );

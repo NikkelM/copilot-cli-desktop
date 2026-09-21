@@ -91,3 +91,44 @@ describe('how far the text scale reaches', () => {
   });
 });
 
+
+
+/**
+ * A menu opened inside a window belongs over that window.
+ *
+ * Nothing about this fails: both are drawn, one on top of the other, and which one wins is
+ * a number in a file neither of them mentions. The model list opened behind the settings
+ * window that way, and it can only be read here, since jsdom computes no stylesheet.
+ */
+describe('what a floating menu sits over', () => {
+  const layer = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    const found = /z-index:\s*(\d+)/.exec(css.slice(at, css.indexOf('\n}', at)));
+    expect(found, `${selector} should name a layer`).not.toBeNull();
+    return Number(found![1]);
+  };
+
+  it('is above every window it can be opened from', () => {
+    // Each rule that claims a layer of its own, so a new one cannot quietly go over the top.
+    const claimed = [...css.matchAll(/^(\.[\w-]+)[^{]*\{[^}]*?z-index:\s*(\d+)/gms)]
+      .map((match) => [match[1]!, Number(match[2])] as const)
+      .filter(([selector]) => selector !== '.floating');
+
+    const highest = Math.max(...claimed.map(([, value]) => value));
+    expect(claimed.length, 'nothing to compare against').toBeGreaterThan(5);
+    expect(layer('.floating'), 'a menu should be over everything it can be opened from').toBeGreaterThan(
+      highest,
+    );
+  });
+
+  /**
+   * The placing measures with getBoundingClientRect, which answers in viewport coordinates.
+   * Only a fixed box reads a top and a right the same way: an absolute one is placed against
+   * the page, so the menu would drift as soon as anything scrolled.
+   */
+  it('is placed against the viewport, which is what the placing measures', () => {
+    const at = css.indexOf('.floating {');
+    expect(css.slice(at, css.indexOf('\n}', at))).toContain('position: fixed;');
+  });
+});
