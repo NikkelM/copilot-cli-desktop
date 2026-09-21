@@ -79,18 +79,24 @@ export function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
-/** Settings. A gear with six teeth, drawn rather than rendered from a character. */
+/**
+ * Settings. A cogwheel: eight teeth around a hollow rim, which is the shape everyone
+ * already reads as settings.
+ *
+ * The outline is generated rather than drawn by hand - alternating arcs at the tooth tips
+ * and the roots between them - so the teeth are evenly spaced instead of nearly so.
+ */
 export function GearIcon() {
   return (
     <svg {...shared}>
-      <circle cx="8" cy="8" r="2.15" fill="none" stroke="currentColor" strokeWidth="1.4" />
       <path
-        d="M8 1.6v1.8M8 12.6v1.8M14.4 8h-1.8M3.4 8H1.6M12.53 3.47 11.25 4.75M4.75 11.25l-1.28 1.28M12.53 12.53 11.25 11.25M4.75 4.75 3.47 3.47"
+        d="M6.88 1.6A6.5 6.5 0 0 1 9.12 1.6L9.14 3.24A4.9 4.9 0 0 1 10.56 3.82L11.74 2.68A6.5 6.5 0 0 1 13.32 4.26L12.18 5.44A4.9 4.9 0 0 1 12.76 6.86L14.4 6.88A6.5 6.5 0 0 1 14.4 9.12L12.76 9.14A4.9 4.9 0 0 1 12.18 10.56L13.32 11.74A6.5 6.5 0 0 1 11.74 13.32L10.56 12.18A4.9 4.9 0 0 1 9.14 12.76L9.12 14.4A6.5 6.5 0 0 1 6.88 14.4L6.86 12.76A4.9 4.9 0 0 1 5.44 12.18L4.26 13.32A6.5 6.5 0 0 1 2.68 11.74L3.82 10.56A4.9 4.9 0 0 1 3.24 9.14L1.6 9.12A6.5 6.5 0 0 1 1.6 6.88L3.24 6.86A4.9 4.9 0 0 1 3.82 5.44L2.68 4.26A6.5 6.5 0 0 1 4.26 2.68L5.44 3.82A4.9 4.9 0 0 1 6.86 3.24Z"
         fill="none"
         stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
+        strokeWidth="1.25"
+        strokeLinejoin="round"
       />
+      <circle cx="8" cy="8" r="2.15" fill="none" stroke="currentColor" strokeWidth="1.25" />
     </svg>
   );
 }

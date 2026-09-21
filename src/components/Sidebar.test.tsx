@@ -797,6 +797,65 @@ describe('folding the sidebar away from its own header', () => {
   });
 });
 
+describe('the app own controls in the sidebar header', () => {
+  const sessions = [session({ sessionId: 'a', title: 'Alpha' })];
+
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        onToggle={() => {}}
+        {...over}
+      />,
+    );
+
+  const named = () =>
+    [...(document.querySelector('.sidebar-header') as HTMLElement).querySelectorAll('button')].map(
+      (button) => button.textContent || button.getAttribute('aria-label'),
+    );
+
+  it('puts settings, the wiki and new together, in that order', () => {
+    shown({ onSettings: () => {} });
+
+    expect(named()).toEqual(['Hide the sidebar', 'Settings', 'Wiki', 'New']);
+  });
+
+  /**
+   * One group rather than an auto margin on the last button: with the margin, a control
+   * added beside the last one landed alone in the middle of the header.
+   */
+  it('holds them in one group, so they stay beside each other', () => {
+    shown({ onSettings: () => {} });
+
+    const group = document.querySelector('.sidebar-actions') as HTMLElement;
+    const inGroup = [...group.querySelectorAll('button')].map((b) => b.textContent || b.getAttribute('aria-label'));
+
+    expect(inGroup).toEqual(['Settings', 'Wiki', 'New']);
+  });
+
+  it('opens the settings window when it is pressed', async () => {
+    const onSettings = vi.fn();
+    shown({ onSettings });
+
+    await userEvent.click(screen.getByLabelText('Settings'));
+
+    expect(onSettings).toHaveBeenCalledOnce();
+  });
+
+  it('leaves the control out when there is nothing to open', () => {
+    shown();
+
+    expect(screen.queryByLabelText('Settings')).toBeNull();
+    expect(named()).toEqual(['Hide the sidebar', 'Wiki', 'New']);
+  });
+});
+
 /**
  * A session stopped on a question is not lifted out of the list: it sits where its loadedness
  * puts it, which is among what is in memory, since an agent stopped on a question is resident

@@ -301,32 +301,35 @@ export function Sidebar({
       <header className="sidebar-header">
         {onToggle && <SidebarToggle hidden={false} onToggle={onToggle} />}
         <Waiting count={waiting.length} onJump={jump} />
-        {/* The wiki is a destination rather than something about a session, so it is
-            reached from the app's own chrome rather than from a session's header. */}
-        <button
-          type="button"
-          className="new-session"
-          onClick={onWiki}
-          title="Browse your local knowledge base"
-        >
-          Wiki
-        </button>
-        {/* Beside the wiki for the same reason: settings belong to the app rather than to
-            any session. An icon, because the header is already three words wide. */}
-        {onSettings && (
-          <button type="button" className="icon-button" onClick={onSettings} title="Settings" aria-label="Settings">
-            <GearIcon />
+        {/* Kept together and pushed right as a group, so the count on the left has the
+            room it needs and these three stay next to each other however many there are.
+            Settings first, because it is the one that is least often wanted. */}
+        <div className="sidebar-actions">
+          {onSettings && (
+            <button type="button" className="icon-button" onClick={onSettings} title="Settings" aria-label="Settings">
+              <GearIcon />
+            </button>
+          )}
+          {/* The wiki is a destination rather than something about a session, so it is
+              reached from the app's own chrome rather than from a session's header. */}
+          <button
+            type="button"
+            className="new-session"
+            onClick={onWiki}
+            title="Browse your local knowledge base"
+          >
+            Wiki
           </button>
-        )}
-        <button
-          type="button"
-          className="new-session"
-          onClick={onCreate}
-          disabled={creating}
-          title="Start a new session"
-        >
-          {creating ? 'Starting…' : 'New'}
-        </button>
+          <button
+            type="button"
+            className="new-session"
+            onClick={onCreate}
+            disabled={creating}
+            title="Start a new session"
+          >
+            {creating ? 'Starting…' : 'New'}
+          </button>
+        </div>
       </header>
 
       <div className="search">
