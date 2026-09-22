@@ -1,10 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-/** Every component file, which is everywhere a class name is written in this app. */
-function sources(dir = new URL('.', import.meta.url).pathname.replace(/^\//, '')): string[] {
+/**
+ * Every component file, which is everywhere a class name is written in this app.
+ *
+ * The directory comes from `fileURLToPath` rather than from the URL's own pathname, which
+ * is not a path on either platform: it keeps a leading slash before a Windows drive letter,
+ * and stripping that by hand turns an absolute Linux path into a relative one. That is
+ * exactly what happened - green here and ENOENT on the build machine.
+ */
+function sources(dir = fileURLToPath(new URL('.', import.meta.url))): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
