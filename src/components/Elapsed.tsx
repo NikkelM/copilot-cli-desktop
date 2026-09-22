@@ -27,11 +27,14 @@ const WORTH_WARNING_MS = 60_000;
 /**
  * How long is left before a request lapses.
  *
- * A blocked agent is the one wait that ends badly if nobody notices it: after five minutes
- * the request answers itself as "user not available" and the turn carries on without
+ * A blocked agent is the one wait that ends badly if nobody notices it: once the wait runs
+ * out the request answers itself as "user not available" and the turn carries on without
  * whatever was being asked for. Silent until the last minute, then insistent (#70).
+ *
+ * Silent altogether when nothing will lapse, which is what a reader who turned the wait off
+ * asked for: there is no deadline to warn about.
  */
-export function Expiry({ at }: { at?: string }) {
+export function Expiry({ at }: { at?: string | null }) {
   const ms = useRemaining(at);
   if (ms === null || ms > WORTH_WARNING_MS) return null;
 

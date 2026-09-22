@@ -40,6 +40,14 @@ export interface BinnedSession {
 /** How long a deleted session is kept when nobody has said otherwise. */
 export const DEFAULT_BIN_RETENTION_DAYS = 7;
 
+/**
+ * How long a question to the reader waits when nobody has said otherwise.
+ *
+ * Five minutes is a guess about how long somebody is away from the machine, and it is the
+ * wrong guess in both directions - so it is only where the setting starts (#201).
+ */
+export const DEFAULT_PERMISSION_TIMEOUT_MS = 5 * 60_000;
+
 /** Lifecycle of a session inside the sidecar runtime. Only `active` holds meaningful memory. */export type SessionRuntimeState =
   | 'cold' // never loaded in this app run; history is read straight from disk
   | 'loading' // resumeSession() in flight
@@ -300,10 +308,13 @@ export interface PendingPermission {
    * When this lapses on its own, so the prompt can say how long is left (#70).
    *
    * A blocked agent is the one wait that ends badly if nobody notices it: the request is
-   * answered as "user not available" after five minutes and the turn carries on without
-   * whatever was being asked for.
+   * answered as "user not available" once the wait runs out and the turn carries on
+   * without whatever was being asked for.
+   *
+   * Null when the reader has asked for no wait at all, since there is then nothing to
+   * count down to and the question stands until it is answered (#201).
    */
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 /** How the user answered a question from the agent. */
@@ -335,7 +346,7 @@ export interface PendingElicitation {
   mode: 'form' | 'url' | null;
   url: string | null;
   /** When this lapses on its own, as a permission does. Giving up counts as declining. */
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 export interface ResolveElicitationParams {
@@ -370,7 +381,7 @@ export interface PendingPlanApproval {
   /** The agent's own suggestion, which the UI labels and puts first. */
   recommendedAction: PlanAction;
   /** When this lapses on its own. Giving up leaves the plan unapproved. */
-  expiresAt: string;
+  expiresAt: string | null;
 }
 
 export interface ResolvePlanParams {
@@ -882,7 +893,12 @@ export interface SidecarRequests {
    * past its retention can have moved. Zero deletes immediately and keeps no bin.
    */
   'runtime.limits': {
-    params: { maxLoadedSessions: number; idleTimeoutMs: number; binRetentionDays?: number };
+    params: {
+      maxLoadedSessions: number;
+      idleTimeoutMs: number;
+      binRetentionDays?: number;
+      permissionTimeoutMs?: number;
+    };
     result: void;
   };
   /**

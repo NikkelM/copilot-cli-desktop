@@ -14,6 +14,7 @@ const SAVED: Settings = {
   idleMinutes: 10,
   confirmDelete: true,
   binRetentionDays: 7,
+  permissionMinutes: 5,
   allowAll: false,
   workingDirectory: '',
   updateOnStart: false,
@@ -82,7 +83,7 @@ describe('the settings window', () => {
     show();
 
     const names = [...document.querySelectorAll('.settings-subhead')].map((node) => node.textContent);
-    expect(names).toEqual(['Memory', 'Deleting']);
+    expect(names).toEqual(['Memory', 'Waiting for you', 'Deleting']);
   });
 
   it('shows what each setting is now', async () => {
@@ -236,8 +237,7 @@ describe('saving', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it('discards and closes on Cancel, without asking', async () => {
-    const { onSave, onClose } = show({ maxLoaded: 3 });
+  it('discards and closes on Cancel, without asking', async () => {    const { onSave, onClose } = show({ maxLoaded: 3 });
 
     await userEvent.clear(kept());
     await userEvent.type(kept(), '9');
@@ -1281,5 +1281,48 @@ describe('the recycle bin', () => {
     show({ binRetentionDays: 0 });
 
     expect(screen.getByText(/There is no undo/)).toBeTruthy();
+  });
+});
+
+/**
+ * How long the agent waits for an answer before it answers for you. One number for all
+ * four kinds of question, because they are one thing from here (#201).
+ */
+describe('waiting for an answer', () => {
+  const waits = () => screen.getByLabelText('Answer a question for me after') as HTMLInputElement;
+
+  it('starts at the five minutes the runtime uses', () => {
+    show();
+
+    expect(waits().value).toBe('5');
+  });
+
+  it('says what happens when it runs out', () => {
+    show({ permissionMinutes: 2 });
+
+    expect(screen.getByText(/2 minutes, after which the turn carries on without/)).toBeTruthy();
+  });
+
+  it('reads one minute as a minute', () => {
+    show({ permissionMinutes: 1 });
+
+    expect(screen.getByText(/^1 minute,/)).toBeTruthy();
+  });
+
+  // Zero is a real answer rather than a broken one, so it says what it means.
+  it('says that no wait means it never gives up', () => {
+    show({ permissionMinutes: 0 });
+
+    expect(screen.getByText(/Never\. A question stands until it is answered/)).toBeTruthy();
+  });
+
+  it('carries the change out', async () => {
+    const { onSave } = show({ permissionMinutes: 5 });
+
+    await userEvent.clear(waits());
+    await userEvent.type(waits(), '15');
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ permissionMinutes: 15 }));
   });
 });

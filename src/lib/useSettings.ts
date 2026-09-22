@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { read, save } from './store';
 import { setRuntimeLimits, updateCli } from './sidecar';
-import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
+import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol';
 import { SCALE_KEY, TEXT_SCALE_KEY, applyScale, readScale, readTextScale } from './scale';
 
 /**
@@ -24,6 +24,8 @@ export const MAX_LOADED = 'maxLoadedSessions';
 export const IDLE_MINUTES = 'idleMinutes';
 /** Whether deleting a session asks first. */
 export const CONFIRM_DELETE = 'confirmDelete';
+/** Minutes a question to the reader waits before answering itself. Zero never gives up. */
+export const PERMISSION_MINUTES = 'permissionMinutes';
 /** How many days a deleted session waits in the bin. Zero deletes it outright. */
 export const BIN_RETENTION_DAYS = 'binRetentionDays';
 /** Whether a session this app starts asks before running tools. */
@@ -45,6 +47,17 @@ export interface Settings {
   maxLoaded: number;
   /** Zero means never, which is a real choice on a machine with memory to spare. */
   idleMinutes: number;
+  /**
+   * How long the agent waits for an answer before it answers for you.
+   *
+   * One number for all four kinds of question - a permission, a question, a prompt for
+   * input, a plan - because they are one thing from here: how long it waits. Each lapses
+   * to the "no" of its own kind.
+   *
+   * Zero never gives up, which is what somebody who would rather come back to a question
+   * than to a decision made on their behalf is asking for (#201).
+   */
+  permissionMinutes: number;
   confirmDelete: boolean;
   /**
    * How many days a deleted session waits in the recycle bin before it is really deleted.
@@ -91,6 +104,9 @@ export interface Settings {
 /** The ten minutes the runtime uses when nobody has said otherwise. */
 export const DEFAULT_IDLE_MINUTES = 10;
 
+/** The five minutes a question waits when nobody has said otherwise, as the runtime has it. */
+export const DEFAULT_PERMISSION_MINUTES = DEFAULT_PERMISSION_TIMEOUT_MS / 60_000;
+
 /** A stored number, or the default when it is absent or was written by something else. */
 function number(key: string, fallback: number): number {
   const saved = read('settings', key);
@@ -106,6 +122,7 @@ export function readSettings(): Settings {
   return {
     maxLoaded: number(MAX_LOADED, 0),
     idleMinutes: number(IDLE_MINUTES, DEFAULT_IDLE_MINUTES),
+    permissionMinutes: number(PERMISSION_MINUTES, DEFAULT_PERMISSION_MINUTES),
     // Absent means ask. Only the exact stored false turns it off, so a key holding anything
     // unexpected leaves the question in place rather than silently skipping it.
     confirmDelete: read('settings', CONFIRM_DELETE) !== 'false',
@@ -141,12 +158,14 @@ export function useSettings() {
   // is drawn at the default and then jumps.
   useEffect(() => applyScale(settings.scale, settings.textScale), [settings.scale, settings.textScale]);
 
-  const { maxLoaded, idleMinutes, binRetentionDays } = settings;
+  const { maxLoaded, idleMinutes, binRetentionDays, permissionMinutes } = settings;
   useEffect(() => {
     // Failure here is not worth interrupting anyone: the runtime keeps the rules it had,
     // which are the defaults, and the app is still usable.
-    void setRuntimeLimits(maxLoaded, idleMinutes * 60_000, binRetentionDays).catch(() => undefined);
-  }, [maxLoaded, idleMinutes, binRetentionDays]);
+    void setRuntimeLimits(maxLoaded, idleMinutes * 60_000, binRetentionDays, permissionMinutes * 60_000).catch(
+      () => undefined,
+    );
+  }, [maxLoaded, idleMinutes, binRetentionDays, permissionMinutes]);
 
   /**
    * Bring the CLI up to date once, if that was asked for.
@@ -216,6 +235,7 @@ export function sessionDefaults(settings: Settings): {
 const KEYS: Record<keyof Settings, string> = {
   maxLoaded: MAX_LOADED,
   idleMinutes: IDLE_MINUTES,
+  permissionMinutes: PERMISSION_MINUTES,
   confirmDelete: CONFIRM_DELETE,
   binRetentionDays: BIN_RETENTION_DAYS,
   allowAll: ALLOW_ALL,

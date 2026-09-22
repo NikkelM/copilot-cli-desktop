@@ -649,8 +649,7 @@ describe('SessionRuntime', () => {
       expect(bin.sweepBin).toHaveBeenLastCalledWith(3);
     });
 
-    it('puts a binned session back when asked', async () => {
-      const { runtime } = makeRuntime();
+    it('puts a binned session back when asked', async () => {      const { runtime } = makeRuntime();
 
       expect(runtime.restoreSession('doomed')).toBe(true);
 
@@ -777,8 +776,7 @@ describe('permissions', () => {
    * Giving up on the user unblocks the agent, but the prompt is still on screen: without
    * being told, the UI goes on offering buttons whose answer has nowhere left to go.
    */
-  it('tells the UI when it gives up waiting for an answer', async () => {
-    const onPermissionResolved = vi.fn();
+  it('tells the UI when it gives up waiting for an answer', async () => {    const onPermissionResolved = vi.fn();
     const { runtime, permissionHandlers } = makeRuntime({
       onPermissionRequest: vi.fn(),
       onPermissionResolved,
@@ -2720,5 +2718,73 @@ describe('SessionRuntime starting a session as it was asked to', () => {
     await harness.runtime.create(undefined, { model: '' });
 
     expect(harness.client.createSession.mock.calls[0]![0]).not.toHaveProperty('model');
+  });
+});
+
+/**
+ * How long a question to the reader waits before it answers itself. One number for all four
+ * kinds, and read afresh for each new question so a change of setting reaches the next one
+ * asked rather than the next sidecar (#201).
+ */
+describe('how long a question waits', () => {
+  const askAbout = async (runtime: SessionRuntime, handlers: Map<string, (r: unknown) => unknown>) => {
+    await runtime.send('a', 'x');
+    return handlers.get('a')!({ kind: 'shell' });
+  };
+
+  it('gives up after the wait it was told to use', async () => {
+    const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest: vi.fn(), permissionTimeoutMs: 5 });
+
+    await expect(askAbout(runtime, permissionHandlers)).resolves.toEqual({ kind: 'user-not-available' });
+  });
+
+  it('says when a question lapses, so the prompt can count down to it', async () => {
+    const onPermissionRequest = vi.fn();
+    const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest, permissionTimeoutMs: 60_000 });
+
+    void askAbout(runtime, permissionHandlers);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onPermissionRequest).toHaveBeenCalledWith('a', expect.any(String), expect.anything(), expect.any(String));
+  });
+
+  describe('with no wait at all', () => {
+    it('leaves the question standing rather than answering it', async () => {
+      const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest: vi.fn(), permissionTimeoutMs: 0 });
+      let settled = false;
+
+      void askAbout(runtime, permissionHandlers).then(() => (settled = true));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(settled).toBe(false);
+    });
+
+    /** There is no deadline, so a countdown would be counting to nothing. */
+    it('offers the prompt no deadline to show', async () => {
+      const onPermissionRequest = vi.fn();
+      const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest, permissionTimeoutMs: 0 });
+
+      void askAbout(runtime, permissionHandlers);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(onPermissionRequest).toHaveBeenCalledWith('a', expect.any(String), expect.anything(), null);
+    });
+  });
+
+  // Told as a rule like the memory limits, and reaching a question asked after it is set.
+  it('takes a new wait for the next question asked', async () => {
+    const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest: vi.fn(), permissionTimeoutMs: 60_000 });
+    await runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, permissionTimeoutMs: 5 });
+
+    await expect(askAbout(runtime, permissionHandlers)).resolves.toEqual({ kind: 'user-not-available' });
+  });
+
+  /** Rules that say nothing about it should not quietly turn the wait off. */
+  it('keeps the wait it had when it is not given one', async () => {
+    const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest: vi.fn(), permissionTimeoutMs: 5 });
+    await runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0 });
+
+    // Still gives up, so the five milliseconds survived rules that said nothing about it.
+    await expect(askAbout(runtime, permissionHandlers)).resolves.toEqual({ kind: 'user-not-available' });
   });
 });

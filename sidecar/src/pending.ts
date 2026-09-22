@@ -7,14 +7,19 @@
  * in one place rather than being reimplemented per request type.
  */
 export class PendingRequests<T> {
-  private readonly entries = new Map<string, { sessionId: string; resolve: (value: T) => void; timer: NodeJS.Timeout }>();
+  private readonly entries = new Map<string, { sessionId: string; resolve: (value: T) => void; timer?: NodeJS.Timeout }>();
   private nextId = 1;
 
   /**
    * @param prefix distinguishes ids between registries
-   * @param timeoutMs how long to wait before giving up on the user
+   * @param timeoutMs how long to wait before giving up on the user, asked each time
    * @param onTimeout the value to settle with when nobody answers
    * @param onSettled told whenever a request stops waiting, however it stopped
+   *
+   * The wait is asked for rather than given, because it is a setting: a reader who
+   * lengthens it while something is already waiting has said what they want to happen to
+   * the next question, and a registry holding the old number would answer the one after
+   * that as well.
    *
    * `onSettled` lives here rather than at each call site because one path settles from
    * inside this class - giving up on the user - and a caller cannot announce what it did
@@ -23,7 +28,7 @@ export class PendingRequests<T> {
    */
   constructor(
     private readonly prefix: string,
-    private readonly timeoutMs: number,
+    private readonly timeoutMs: () => number,
     private readonly onTimeout: () => T,
     private readonly onSettled?: (sessionId: string, requestId: string) => void,
   ) {}
@@ -33,15 +38,19 @@ export class PendingRequests<T> {
    *
    * `expiresAt` comes back because a blocked agent is the one wait that ends badly if it
    * is not noticed, and only this class knows when it lapses. Reported rather than kept:
-   * the timer is authoritative, this is what to tell the reader about it.
+   * the timer is authoritative, this is what to tell the reader about it. Null when the
+   * wait is off, since there is then nothing to count down to.
    */
-  add(sessionId: string): { requestId: string; expiresAt: string; answered: Promise<T> } {
+  add(sessionId: string): { requestId: string; expiresAt: string | null; answered: Promise<T> } {
     const requestId = `${this.prefix}-${this.nextId++}`;
-    const expiresAt = new Date(Date.now() + this.timeoutMs).toISOString();
+    const waitFor = this.timeoutMs();
+    const expiresAt = waitFor > 0 ? new Date(Date.now() + waitFor).toISOString() : null;
 
     const answered = new Promise<T>((resolve) => {
-      const timer = setTimeout(() => this.settle(requestId, this.onTimeout()), this.timeoutMs);
-      timer.unref(); // Never keep the process alive purely to expire a prompt.
+      // No timer at all rather than a very long one: waiting for ever is a real answer for
+      // somebody who would rather come back to a question than to a decision made for them.
+      const timer = waitFor > 0 ? setTimeout(() => this.settle(requestId, this.onTimeout()), waitFor) : undefined;
+      timer?.unref(); // Never keep the process alive purely to expire a prompt.
       this.entries.set(requestId, { sessionId, resolve, timer });
     });
 

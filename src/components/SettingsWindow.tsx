@@ -6,7 +6,7 @@ import { LARGEST, SMALLEST, STEP, applyScale, clampScale } from '../lib/scale';
 import type { BinnedSession, ModelChoice } from '../../shared/protocol';
 import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
-import { DEFAULT_IDLE_MINUTES } from '../lib/useSettings';
+import { DEFAULT_IDLE_MINUTES, DEFAULT_PERMISSION_MINUTES } from '../lib/useSettings';
 import { formatRelative } from '../lib/time';
 import { bytes } from '../lib/units';
 
@@ -413,6 +413,19 @@ export function SettingsWindow({
                     draft.idleMinutes === 0
                       ? 'Never. Sessions stay in memory until the app closes or the limit above releases them.'
                       : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`
+                  }
+                />
+
+                <h4 className="settings-subhead">Waiting for you</h4>
+
+                <NumberField
+                  label="Answer a question for me after"
+                  value={draft.permissionMinutes}
+                  onChange={(value) => edit('permissionMinutes', value)}
+                  hint={
+                    draft.permissionMinutes === 0
+                      ? 'Never. A question stands until it is answered, and the turn waits however long that takes.'
+                      : `${draft.permissionMinutes} ${draft.permissionMinutes === 1 ? 'minute' : 'minutes'}, after which the turn carries on without whatever was asked for. The default is ${DEFAULT_PERMISSION_MINUTES}.`
                   }
                 />
 

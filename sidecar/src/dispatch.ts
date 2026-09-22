@@ -96,8 +96,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'runtime.update': () => updateCli(),
 
-    'runtime.limits': ({ maxLoadedSessions, idleTimeoutMs, binRetentionDays }) =>
-      runtime.setLimits({ maxLoadedSessions, idleTimeoutMs, binRetentionDays }),
+    'runtime.limits': ({ maxLoadedSessions, idleTimeoutMs, binRetentionDays, permissionTimeoutMs }) =>
+      runtime.setLimits({ maxLoadedSessions, idleTimeoutMs, binRetentionDays, permissionTimeoutMs }),
 
     'sessions.load': ({ sessionId }) => runtime.load(sessionId),
 

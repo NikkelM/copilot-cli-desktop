@@ -7,13 +7,22 @@ import { read, save } from './store';
 const { updateCli } = vi.hoisted(() => ({ updateCli: vi.fn(async () => ({ ran: true })) }));
 const { setRuntimeLimits } = vi.hoisted(() => ({
   setRuntimeLimits: vi.fn(
-    async (_maxLoadedSessions: number, _idleTimeoutMs: number, _binRetentionDays?: number) => undefined,
+    async (
+      _maxLoadedSessions: number,
+      _idleTimeoutMs: number,
+      _binRetentionDays?: number,
+      _permissionTimeoutMs?: number,
+    ) => undefined,
   ),
 }));
 vi.mock('./sidecar', () => ({
   updateCli: () => updateCli(),
-  setRuntimeLimits: (maxLoadedSessions: number, idleTimeoutMs: number, binRetentionDays?: number) =>
-    setRuntimeLimits(maxLoadedSessions, idleTimeoutMs, binRetentionDays),
+  setRuntimeLimits: (
+    maxLoadedSessions: number,
+    idleTimeoutMs: number,
+    binRetentionDays?: number,
+    permissionTimeoutMs?: number,
+  ) => setRuntimeLimits(maxLoadedSessions, idleTimeoutMs, binRetentionDays, permissionTimeoutMs),
 }));
 
 async function load() {
@@ -27,6 +36,7 @@ const SAVED_SHAPE = {
   idleMinutes: 10,
   confirmDelete: true,
   binRetentionDays: 7,
+  permissionMinutes: 5,
   allowAll: false,
   workingDirectory: '',
   updateOnStart: false,
@@ -86,6 +96,7 @@ describe('changing a setting', () => {
       idleMinutes: 25,
       confirmDelete: false,
   binRetentionDays: 7,
+  permissionMinutes: 5,
       allowAll: false,
       workingDirectory: '',
       updateOnStart: false,
@@ -118,6 +129,7 @@ describe('changing a setting', () => {
       idleMinutes: 10,
       confirmDelete: true,
   binRetentionDays: 7,
+  permissionMinutes: 5,
       allowAll: false,
       workingDirectory: '',
       updateOnStart: false,
@@ -163,7 +175,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     renderHook(() => useSettings());
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7, 5 * 60_000));
   });
 
   it('says so again when a limit changes', async () => {
@@ -173,7 +185,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ maxLoaded: 2 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 10 * 60_000, 7));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 10 * 60_000, 7, 5 * 60_000));
   });
 
   /**
@@ -187,7 +199,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ maxLoaded: 2, idleMinutes: 25, confirmDelete: false }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 25 * 60_000, 7));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 25 * 60_000, 7, 5 * 60_000));
     expect(setRuntimeLimits).toHaveBeenCalledTimes(2);
   });
 
@@ -198,7 +210,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ idleMinutes: 25 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 25 * 60_000, 7));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 25 * 60_000, 7, 5 * 60_000));
   });
 
   it('says nothing again for a setting that is not the runtime business', async () => {
@@ -232,7 +244,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     renderHook(() => useSettings());
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7, 5 * 60_000));
   });
 
   it('says so again when the retention changes', async () => {
@@ -242,7 +254,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ binRetentionDays: 30 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 30));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 30, 5 * 60_000));
   });
 });
 
@@ -544,3 +556,56 @@ describe('a stored value written by something else', () => {
   });
 });
 
+
+/**
+ * How long the agent waits for an answer before it answers for you. Carried with the memory
+ * rules because it is the same kind of thing: a rule the app keeps and the runtime enforces.
+ */
+describe('how long a question waits', () => {
+  it('is five minutes when nobody has said otherwise', async () => {
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.permissionMinutes).toBe(5);
+  });
+
+  it('tells the runtime, in the milliseconds it counts in', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalled());
+
+    act(() => result.current.apply({ permissionMinutes: 15 }));
+
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 7, 15 * 60_000));
+  });
+
+  it('remembers what was chosen', async () => {
+    const { useSettings, PERMISSION_MINUTES } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ permissionMinutes: 15 }));
+
+    expect(read('settings', PERMISSION_MINUTES)).toBe('15');
+  });
+
+  // Zero is a real answer - never give up - rather than an absent one.
+  it('keeps a zero rather than falling back to the default', async () => {
+    const { useSettings } = await load();
+    const first = renderHook(() => useSettings());
+    act(() => first.result.current.apply({ permissionMinutes: 0 }));
+    first.unmount();
+
+    const { useSettings: again } = await load();
+
+    expect(renderHook(() => again()).result.current.settings.permissionMinutes).toBe(0);
+  });
+
+  it('passes a zero on as a zero rather than as nothing', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalled());
+
+    act(() => result.current.apply({ permissionMinutes: 0 }));
+
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 7, 0));
+  });
+});

@@ -31,7 +31,7 @@ import type {
   SessionMode,
   SlashCommand,
 } from '../../shared/protocol.js';
-import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol.js';
+import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol.js';
 import type { BinnedSession } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -160,7 +160,7 @@ export interface RuntimeOptions {
     sessionId: string,
     requestId: string,
     request: PermissionRequest,
-    expiresAt: string,
+    expiresAt: string | null,
   ) => void;
   /** Tells the UI a pending request is no longer awaiting an answer. */
   onPermissionResolved?: (sessionId: string, requestId: string) => void;
@@ -169,7 +169,7 @@ export interface RuntimeOptions {
     sessionId: string,
     requestId: string,
     context: AskContext,
-    expiresAt: string,
+    expiresAt: string | null,
   ) => void;
   /** Tells the UI a question is no longer awaiting an answer. */
   onElicitationResolved?: (requestId: string) => void;
@@ -178,7 +178,7 @@ export interface RuntimeOptions {
     sessionId: string,
     requestId: string,
     plan: { summary: string; planContent: string; actions: PlanAction[]; recommendedAction: PlanAction },
-    expiresAt: string,
+    expiresAt: string | null,
   ) => void;
   /** Tells the UI a plan is no longer awaiting a decision. */
   onPlanResolved?: (requestId: string) => void;
@@ -227,6 +227,17 @@ export class SessionRuntime {
    */
   private binRetentionDays = DEFAULT_BIN_RETENTION_DAYS;
   /**
+   * How long a question to the reader waits before it answers itself.
+   *
+   * One number for all four kinds - permissions, questions, prompts for input and plans -
+   * because they are one thing to a reader: how long the agent waits for them. Each still
+   * lapses to its own answer, which is the "no" of its kind.
+   *
+   * Zero never gives up, which is the honest name for wanting to answer whenever you get
+   * back rather than come home to a decision made on your behalf.
+   */
+  private permissionTimeoutMs: number;
+  /**
    * Sessions this run has already tried to title, whether or not it managed to.
    *
    * A session that could not be titled after its first turn will be no easier after its
@@ -242,21 +253,21 @@ export class SessionRuntime {
     sessionId: string,
     requestId: string,
     request: PermissionRequest,
-    expiresAt: string,
+    expiresAt: string | null,
   ) => void;
   private readonly onPermissionResolved?: (sessionId: string, requestId: string) => void;
   private readonly onElicitationRequest?: (
     sessionId: string,
     requestId: string,
     context: AskContext,
-    expiresAt: string,
+    expiresAt: string | null,
   ) => void;
   private readonly onElicitationResolved?: (requestId: string) => void;
   private readonly onPlanRequest?: (
     sessionId: string,
     requestId: string,
     plan: { summary: string; planContent: string; actions: PlanAction[]; recommendedAction: PlanAction },
-    expiresAt: string,
+    expiresAt: string | null,
   ) => void;
   private readonly onPlanResolved?: (requestId: string) => void;
   private readonly createClient: () => Promise<CopilotClient>;
@@ -273,6 +284,7 @@ export class SessionRuntime {
   constructor(options: RuntimeOptions = {}) {
     this.maxLoadedSessions = options.maxLoadedSessions ?? 0;
     this.idleTimeoutMs = options.idleTimeoutMs ?? 10 * 60_000;
+    this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULT_PERMISSION_TIMEOUT_MS;
     this.onEvent = options.onEvent;
     this.onLoadedChange = options.onLoadedChange;
     this.onChangesRecorded = options.onChangesRecorded;
@@ -284,10 +296,12 @@ export class SessionRuntime {
     this.onPlanResolved = options.onPlanResolved;
     this.createClient = options.createClient ?? defaultClientFactory;
 
-    const timeout = options.permissionTimeoutMs ?? 5 * 60_000;
     const permissionResolved = (sessionId: string, requestId: string) =>
       this.onPermissionResolved?.(sessionId, requestId);
     const questionResolved = (_sessionId: string, requestId: string) => this.onElicitationResolved?.(requestId);
+    // Read per request rather than captured, so a change of setting reaches the next
+    // question rather than only the next sidecar.
+    const timeout = () => this.permissionTimeoutMs;
 
     this.permissions = new PendingRequests<PermissionRequestResult>(
       'perm',
@@ -880,14 +894,20 @@ export class SessionRuntime {
     maxLoadedSessions,
     idleTimeoutMs,
     binRetentionDays,
+    permissionTimeoutMs,
   }: {
     maxLoadedSessions: number;
     idleTimeoutMs: number;
     binRetentionDays?: number;
+    permissionTimeoutMs?: number;
   }): Promise<void> {
     this.maxLoadedSessions = Math.max(0, Math.floor(maxLoadedSessions));
     this.idleTimeoutMs = Math.max(0, Math.floor(idleTimeoutMs));
     if (binRetentionDays !== undefined) this.binRetentionDays = Math.max(0, Math.floor(binRetentionDays));
+    // Read afresh for each new question, so this reaches the next one asked. What is
+    // already waiting keeps the deadline it was given: the prompt on screen says when it
+    // lapses, and moving that under the reader would make the countdown a lie.
+    if (permissionTimeoutMs !== undefined) this.permissionTimeoutMs = Math.max(0, Math.floor(permissionTimeoutMs));
 
     // Here rather than on a timer of its own: the app says what the retention is as it
     // starts and whenever it changes, which is exactly when the answer to what is past it
