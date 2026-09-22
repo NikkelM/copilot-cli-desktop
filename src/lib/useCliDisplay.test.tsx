@@ -29,17 +29,19 @@ describe('what the transcript draws', () => {
 
     expect(result.current.display).toEqual({
       showReasoning: true,
+      taskbarPresence: true,
       showTimestamps: true,
       showToolDurations: true,
     });
   });
 
   it('answers to what the CLI is set to', async () => {
-    cliSettingValues.mockResolvedValue({ showReasoning: false, showToolDurations: false });
+    cliSettingValues.mockResolvedValue({ showReasoning: false, showToolDurations: false, taskbarPresence: false });
     const { result } = renderHook(() => useCliDisplay());
 
     await waitFor(() => expect(result.current.display.showReasoning).toBe(false));
     expect(result.current.display.showToolDurations).toBe(false);
+    expect(result.current.display.taskbarPresence).toBe(false);
     // Not set, so it keeps what the app drew rather than following the others off.
     expect(result.current.display.showTimestamps).toBe(true);
   });

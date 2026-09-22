@@ -55,3 +55,33 @@ describe('the taskbar button while a session works', () => {
     expect(() => renderHook(() => useTaskbar(true))).not.toThrow();
   });
 });
+
+/**
+ * The CLI paints the same taskbar button and has a switch for it, so a reader who turned
+ * it off there meant both rather than only the one they turned it off in (#205).
+ */
+describe('when the CLI says not to paint the taskbar', () => {
+  it('paints nothing even while a session works', () => {
+    renderHook(() => useTaskbar(true, false));
+
+    expect(setProgressBar).toHaveBeenCalledWith({ status: 'none' });
+  });
+
+  it('paints when the CLI does not say otherwise', () => {
+    renderHook(() => useTaskbar(true));
+
+    expect(setProgressBar).toHaveBeenCalledWith({ status: 'normal', progress: 100 });
+  });
+
+  // The switch moving is as much a reason to repaint as the work starting or stopping.
+  it('stops painting the moment it is turned off', () => {
+    const { rerender } = renderHook(({ wanted }) => useTaskbar(true, wanted), {
+      initialProps: { wanted: true },
+    });
+    setProgressBar.mockClear();
+
+    rerender({ wanted: false });
+
+    expect(setProgressBar).toHaveBeenCalledWith({ status: 'none' });
+  });
+});

@@ -26,7 +26,7 @@ function show(events: TranscriptEvent[]) {
       hasOlder={true}
       loadingOlder={false}
       onLoadOlder={() => {}}
-      display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
+      display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
     />,
   );
 }
@@ -96,7 +96,7 @@ describe('Transcript', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-      display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
+      display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
       />,
     );
 
@@ -145,7 +145,7 @@ describe('following a reply as it is written', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-      display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
+      display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
       />
     );
 
@@ -606,7 +606,7 @@ describe('showing or hiding the model thinking', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-        display={{ showReasoning: reasoning, showTimestamps: true, showToolDurations: true }}
+        display={{ showReasoning: reasoning, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
       />,
     );
 
@@ -711,7 +711,7 @@ describe('giving back history once the reader is following again', () => {
       onLoadOlder: () => {},
       extraPages: true,
       onDropOlder,
-      display: { showReasoning: true, showTimestamps: true, showToolDurations: true },
+      display: { showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true },
       ...over,
     };
 
@@ -853,7 +853,7 @@ describe('Transcript showing a subagent', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-        display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
+        display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
       />,
     );
 
@@ -894,7 +894,7 @@ describe('a page too short to scroll', () => {
         hasOlder
         loadingOlder={false}
         onLoadOlder={onLoadOlder}
-        display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
+        display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
       />,
     );
     const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
@@ -910,7 +910,7 @@ describe('a page too short to scroll', () => {
 
     heights.scroll = 40;
     act(() => view.rerender(
-      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }} />,
+      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }} />,
     ));
 
     expect(onLoadOlder).toHaveBeenCalled();
@@ -923,7 +923,7 @@ describe('a page too short to scroll', () => {
 
     heights.scroll = 2000;
     act(() => view.rerender(
-      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }} />,
+      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }} />,
     ));
 
     expect(onLoadOlder).not.toHaveBeenCalled();
@@ -938,7 +938,7 @@ describe('a page too short to scroll', () => {
 
     for (let round = 0; round < 12; round++) {
       act(() => view.rerender(
-        <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }} />,
+        <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }} />,
       ));
     }
 
@@ -974,7 +974,7 @@ describe('coming back to a workable window while the reader follows along', () =
       hasOlder: false,
       loadingOlder: false,
       extraPages: false,
-      display: { showReasoning: true, showTimestamps: true, showToolDurations: true },
+      display: { showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true },
       ...over,
     };
 
@@ -1121,7 +1121,7 @@ describe("what the CLI's settings say to draw", () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-        display={{ showReasoning: true, showTimestamps: true, showToolDurations: true, ...over }}
+        display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true, ...over }}
       />,
     );
 

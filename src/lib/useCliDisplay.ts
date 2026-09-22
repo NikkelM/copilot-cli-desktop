@@ -20,6 +20,8 @@ import { read, save } from './store';
  */
 export interface CliDisplay {
   showReasoning: boolean;
+  /** Whether the taskbar button says a session is working, which this app paints as the CLI does. */
+  taskbarPresence: boolean;
   showTimestamps: boolean;
   showToolDurations: boolean;
 }
@@ -34,7 +36,12 @@ export const OLD_REASONING = 'reasoning';
  * anywhere this can read - so the answer is what this app already did, and turning one off
  * is a decision somebody has to make rather than one made for them by a missing key.
  */
-export const ASSUMED_DISPLAY: CliDisplay = { showReasoning: true, showTimestamps: true, showToolDurations: true };
+export const ASSUMED_DISPLAY: CliDisplay = {
+  showReasoning: true,
+  taskbarPresence: true,
+  showTimestamps: true,
+  showToolDurations: true,
+};
 
 /** Only the exact stored false turns one off, so nothing unexpected can hide anything. */
 function shows(values: Record<string, unknown>, key: keyof CliDisplay): boolean {
@@ -63,6 +70,7 @@ export function useCliDisplay() {
         // finds their setting rather than an app that forgot it.
         setDisplay({
           showReasoning: shows(values, 'showReasoning'),
+          taskbarPresence: shows(values, 'taskbarPresence'),
           showTimestamps: shows(values, 'showTimestamps'),
           showToolDurations: shows(values, 'showToolDurations'),
         });

@@ -18,16 +18,19 @@ import { getCurrentWindow, ProgressBarStatus } from '@tauri-apps/api/window';
  * opposite. Waiting on a decision is deliberately not included - it is more urgent than
  * progress, not a kind of it, and wants an alert rather than a bar (#85).
  */
-export function useTaskbar(working: boolean): void {
+export function useTaskbar(working: boolean, wanted = true): void {
   useEffect(() => {
+    // The CLI has a switch for this and paints the same button, so a reader who turned it
+    // off there meant both rather than only the one they happened to turn it off in.
+    const paint = working && wanted;
     // Failure here is cosmetic - a platform without a taskbar, or a window already gone -
     // and an error banner over it would be worse than the missing bar.
     void getCurrentWindow()
       .setProgressBar(
-        working
+        paint
           ? { status: ProgressBarStatus.Normal, progress: 100 }
           : { status: ProgressBarStatus.None },
       )
       .catch(() => undefined);
-  }, [working]);
+  }, [working, wanted]);
 }

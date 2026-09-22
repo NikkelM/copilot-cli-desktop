@@ -859,7 +859,7 @@ export default function App() {
     [sessions.working, prompts.blocking, queue.queues, sessions.loading],
   );
 
-  useTaskbar(sessions.working.size > 0);
+  useTaskbar(sessions.working.size > 0, display.taskbarPresence);
 
   /** Sessions stopped on a question, for the fold control to mark while the sidebar is away. */
   const waitingCount = useMemo(
