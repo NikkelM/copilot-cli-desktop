@@ -922,9 +922,9 @@ export function SettingsWindow({
                         aria-label={`${prefix}, ${matching.length} settings`}
                         onClick={() => toggleGroup(prefix)}
                       >
-                        <ChevronIcon open={open} />
-                        <span className="cli-group-name">{prefix}</span>
+                        {prefix}
                         <span className="cli-group-count">{matching.length}</span>
+                        <ChevronIcon open={open} />
                       </button>
 
                       {open &&

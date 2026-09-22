@@ -5267,11 +5267,12 @@ pre.fatal,
  * One of the CLI's own settings. Named by its path, because that is the name it has in the
  * CLI's file and in its /settings dialog - inventing a friendlier one here would leave two
  * names for one thing.
+ *
+ * Set in the same face and size as every other setting's name. In monospace it read as a
+ * thing to be typed rather than as the name of a setting, which is all it is.
  */
 .cli-path {
   overflow-wrap: anywhere;
-  font-family: ui-monospace, monospace;
-  font-size: var(--font-sm);
 }
 
 /* on, off, and the third that neither of those can say: whatever the CLI does by itself. */
@@ -5295,7 +5296,7 @@ pre.fatal,
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 4px 6px;
+  padding: 4px 0;
   border: none;
   border-radius: 6px;
   background: none;
@@ -5306,12 +5307,18 @@ pre.fatal,
   cursor: pointer;
 }
 
-.cli-group-head:hover {
-  background: var(--bg-raised);
+/*
+ * At the right-hand end, where every row in this category keeps its control.
+ *
+ * In front of the name it pushed the heading in past every setting around it, and there is
+ * nowhere to hang it: this list scrolls, so anything left of its edge is clipped.
+ */
+.cli-group-head .caret {
+  margin-left: auto;
 }
 
-.cli-group-name {
-  font-family: ui-monospace, monospace;
+.cli-group-head:hover {
+  background: var(--bg-raised);
 }
 
 /* How many are inside, so a closed group says what opening it is worth. */
