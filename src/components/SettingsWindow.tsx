@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
 import { ModelPicker } from './ModelPicker';
@@ -9,6 +9,7 @@ import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES, DEFAULT_PERMISSION_MINUTES } from '../lib/useSettings';
 import { formatRelative } from '../lib/time';
+import { anyMatch, matches, type Searchable } from '../lib/settingsSearch';
 import { bytes } from '../lib/units';
 
 /**
@@ -271,6 +272,43 @@ const CATEGORIES = [
 
 type CategoryId = (typeof CATEGORIES)[number]['id'];
 
+/**
+ * What each category holds, for finding a setting without knowing where it lives.
+ *
+ * Written here rather than worked out from what is drawn, because the sidebar has to know
+ * whether a category holds a match before anybody opens it. The labels are the ones the
+ * fields carry, and a test walks every category to say so - a name changed in one place
+ * and not the other would otherwise leave a setting unfindable, or a category listed as
+ * holding something it does not (#204).
+ *
+ * Keywords are what somebody would search for that the label does not say. The hints under
+ * each field are deliberately not searched: they change with what the setting is set to,
+ * and a search that found a setting only while it was off would be worse than one that
+ * never found it.
+ */
+const INDEX: Record<CategoryId, Searchable[]> = {
+  management: [
+    { label: 'Sessions kept in memory', keywords: 'limit cap resident loaded ram' },
+    { label: 'Release an idle session after', keywords: 'timeout minutes evict unload memory' },
+    { label: 'Answer a question for me after', keywords: 'permission timeout wait give up prompt' },
+    { label: 'Ask before deleting a session', keywords: 'confirm delete warn' },
+  ],
+  sessions: [
+    { label: 'Run tools without asking', keywords: 'allow all yolo permission approve' },
+    { label: 'Model', keywords: 'effort reasoning context window default' },
+    { label: 'Working directory', keywords: 'folder path cwd start' },
+  ],
+  appearance: [
+    { label: 'App scale', keywords: 'size zoom bigger smaller' },
+    { label: 'Text size', keywords: 'font scale reading transcript' },
+  ],
+  cli: [{ label: 'Update the CLI when the app starts', keywords: 'upgrade version auto' }],
+  bin: [
+    { label: 'Keep a deleted session for', keywords: 'retention days recycle bin restore' },
+    { label: 'Waiting to be deleted', keywords: 'recycle bin restore purge deleted sessions' },
+  ],
+};
+
 /** What a reader was trying to do when they were stopped by unsaved changes. */
 type Pending = { go: 'close' } | { go: 'category'; to: CategoryId };
 
@@ -368,6 +406,37 @@ export function SettingsWindow({
   const [draft, setDraft] = useState<Settings>(settings);
   const [category, setCategory] = useState<CategoryId>(CATEGORIES[0].id);
   const [pending, setPending] = useState<Pending | null>(null);
+  const [query, setQuery] = useState('');
+
+  /**
+   * What each category holds, with the CLI's own settings folded into theirs.
+   *
+   * Theirs are data already, so they carry their own description and their own options -
+   * which is how searching `prerelease` finds the update channel without knowing its name.
+   */
+  const searchable: Record<CategoryId, Searchable[]> = useMemo(
+    () => ({
+      ...INDEX,
+      cli: [
+        ...INDEX.cli,
+        ...(cli?.settings ?? []).map((setting) => ({
+          label: setting.path,
+          keywords: setting.description,
+          options: setting.options,
+        })),
+      ],
+    }),
+    [cli],
+  );
+
+  /** Only the categories holding something worth opening them for. */
+  const listed = CATEGORIES.filter((entry) => anyMatch(query, searchable[entry.id]));
+
+  /** Whether a setting in the category being looked at answers what was typed. */
+  const shows = (label: string) => {
+    const entry = searchable[category].find((known) => known.label === label);
+    return matches(query, entry ?? { label });
+  };
 
   const unsaved = (Object.keys(draft) as (keyof Settings)[]).some((key) => draft[key] !== settings[key]);
 
@@ -496,7 +565,20 @@ export function SettingsWindow({
       >
         <nav className="settings-nav" aria-label="Settings categories">
           <h2 className="settings-title">Settings</h2>
-          {CATEGORIES.map((entry) => (
+
+          {/* Filters the list below it and what is drawn beside it, by the same rule: a
+              category listed as holding a match and opened to nothing would be worse than
+              one that was never listed. */}
+          <input
+            type="search"
+            className="settings-search"
+            aria-label="Search settings"
+            placeholder="Search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+
+          {listed.map((entry) => (
             <button
               key={entry.id}
               type="button"
@@ -507,6 +589,8 @@ export function SettingsWindow({
               {entry.label}
             </button>
           ))}
+
+          {listed.length === 0 && <p className="settings-note">Nothing matches.</p>}
         </nav>
 
         <div className="settings-main">
@@ -525,53 +609,61 @@ export function SettingsWindow({
                   A session costs nothing until it is opened. These decide how much is kept once it has been.
                 </p>
 
-                <NumberField
-                  label="Sessions kept in memory"
-                  value={draft.maxLoaded}
-                  onChange={(value) => edit('maxLoaded', value)}
-                  hint={
-                    draft.maxLoaded === 0
-                      ? 'No limit. The least recently used is released only when it has been idle.'
-                      : `Past ${draft.maxLoaded}, the least recently used is released. One mid-turn is never released.`
-                  }
-                />
+                {shows('Sessions kept in memory') && (
+                  <NumberField
+                    label="Sessions kept in memory"
+                    value={draft.maxLoaded}
+                    onChange={(value) => edit('maxLoaded', value)}
+                    hint={
+                      draft.maxLoaded === 0
+                        ? 'No limit. The least recently used is released only when it has been idle.'
+                        : `Past ${draft.maxLoaded}, the least recently used is released. One mid-turn is never released.`
+                    }
+                  />
+                )}
 
-                <NumberField
-                  label="Release an idle session after"
-                  value={draft.idleMinutes}
-                  onChange={(value) => edit('idleMinutes', value)}
-                  hint={
-                    draft.idleMinutes === 0
-                      ? 'Never. Sessions stay in memory until the app closes or the limit above releases them.'
-                      : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`
-                  }
-                />
+                {shows('Release an idle session after') && (
+                  <NumberField
+                    label="Release an idle session after"
+                    value={draft.idleMinutes}
+                    onChange={(value) => edit('idleMinutes', value)}
+                    hint={
+                      draft.idleMinutes === 0
+                        ? 'Never. Sessions stay in memory until the app closes or the limit above releases them.'
+                        : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`
+                    }
+                  />
+                )}
 
                 <h4 className="settings-subhead">Waiting for you</h4>
 
-                <NumberField
-                  label="Answer a question for me after"
-                  value={draft.permissionMinutes}
-                  onChange={(value) => edit('permissionMinutes', value)}
-                  hint={
-                    draft.permissionMinutes === 0
-                      ? 'Never. A question stands until it is answered, and the turn waits however long that takes.'
-                      : `${draft.permissionMinutes} ${draft.permissionMinutes === 1 ? 'minute' : 'minutes'}, after which the turn carries on without whatever was asked for. The default is ${DEFAULT_PERMISSION_MINUTES}.`
-                  }
-                />
+                {shows('Answer a question for me after') && (
+                  <NumberField
+                    label="Answer a question for me after"
+                    value={draft.permissionMinutes}
+                    onChange={(value) => edit('permissionMinutes', value)}
+                    hint={
+                      draft.permissionMinutes === 0
+                        ? 'Never. A question stands until it is answered, and the turn waits however long that takes.'
+                        : `${draft.permissionMinutes} ${draft.permissionMinutes === 1 ? 'minute' : 'minutes'}, after which the turn carries on without whatever was asked for. The default is ${DEFAULT_PERMISSION_MINUTES}.`
+                    }
+                  />
+                )}
 
                 <h4 className="settings-subhead">Deleting</h4>
 
-                <TickField
-                  label="Ask before deleting a session"
-                  checked={draft.confirmDelete}
-                  onChange={(checked) => edit('confirmDelete', checked)}
-                  hint={
-                    draft.binRetentionDays > 0
-                      ? 'Deleting takes the transcript and everything the session wrote out of the list. The recycle bin keeps it for a while.'
-                      : 'Deleting removes the transcript and everything the session wrote. There is no undo.'
-                  }
-                />
+                {shows('Ask before deleting a session') && (
+                  <TickField
+                    label="Ask before deleting a session"
+                    checked={draft.confirmDelete}
+                    onChange={(checked) => edit('confirmDelete', checked)}
+                    hint={
+                      draft.binRetentionDays > 0
+                        ? 'Deleting takes the transcript and everything the session wrote out of the list. The recycle bin keeps it for a while.'
+                        : 'Deleting removes the transcript and everything the session wrote. There is no undo.'
+                    }
+                  />
+                )}
               </>
             )}
 
@@ -581,16 +673,18 @@ export function SettingsWindow({
                   What a session starts with when it is made from the New button.
                 </p>
 
-                <TickField
-                  label="Run tools without asking"
-                  checked={draft.allowAll}
-                  onChange={(checked) => edit('allowAll', checked)}
-                  hint={
-                    draft.allowAll
-                      ? 'The same as the CLI --allow-all and --yolo, which are the same flag. Set on the session once it is made, and it can still be changed per session afterwards.'
-                      : 'Each tool asks before it runs, which is what the CLI does by default.'
-                  }
-                />
+                {shows('Run tools without asking') && (
+                  <TickField
+                    label="Run tools without asking"
+                    checked={draft.allowAll}
+                    onChange={(checked) => edit('allowAll', checked)}
+                    hint={
+                      draft.allowAll
+                        ? 'The same as the CLI --allow-all and --yolo, which are the same flag. Set on the session once it is made, and it can still be changed per session afterwards.'
+                        : 'Each tool asks before it runs, which is what the CLI does by default.'
+                    }
+                  />
+                )}
 
                 <div className="settings-row">
                   <span className="settings-label">Model</span>
@@ -691,27 +785,31 @@ export function SettingsWindow({
                   size moves only the letters, on top of it.
                 </p>
 
-                <ScaleField
-                  label="App scale"
-                  value={draft.scale}
-                  onChange={(value) => edit('scale', value)}
-                  hint={
-                    draft.scale === 1
-                      ? 'Everything: the panes, the lanes and the controls as well as the letters. Ctrl and + or - does the same, as does Ctrl and the wheel.'
-                      : `${Math.round(draft.scale * 100)}% of the app's own size. Ctrl and + or - does the same.`
-                  }
-                />
+                {shows('App scale') && (
+                  <ScaleField
+                    label="App scale"
+                    value={draft.scale}
+                    onChange={(value) => edit('scale', value)}
+                    hint={
+                      draft.scale === 1
+                        ? 'Everything: the panes, the lanes and the controls as well as the letters. Ctrl and + or - does the same, as does Ctrl and the wheel.'
+                        : `${Math.round(draft.scale * 100)}% of the app's own size. Ctrl and + or - does the same.`
+                    }
+                  />
+                )}
 
-                <ScaleField
-                  label="Text size"
-                  value={draft.textScale}
-                  onChange={(value) => edit('textScale', value)}
-                  hint={
-                    draft.textScale === 1
-                      ? 'The letters alone, if they read small at a scale that otherwise suits.'
-                      : `${Math.round(draft.textScale * 100)}% of the size the app scale would give them.`
-                  }
-                />
+                {shows('Text size') && (
+                  <ScaleField
+                    label="Text size"
+                    value={draft.textScale}
+                    onChange={(value) => edit('textScale', value)}
+                    hint={
+                      draft.textScale === 1
+                        ? 'The letters alone, if they read small at a scale that otherwise suits.'
+                        : `${Math.round(draft.textScale * 100)}% of the size the app scale would give them.`
+                    }
+                  />
+                )}
 
                 {(draft.scale !== 1 || draft.textScale !== 1) && (
                   <button
@@ -726,16 +824,18 @@ export function SettingsWindow({
             )}
             {shown.id === 'cli' && (
               <>
-                <TickField
-                  label="Update the CLI when the app starts"
-                  checked={draft.updateOnStart}
-                  onChange={(checked) => edit('updateOnStart', checked)}
-                  hint={
-                    draft.updateOnStart
-                      ? 'Runs copilot update as the app starts. It carries on without waiting, so a slow download does not hold the app up.'
-                      : 'The CLI updates itself on startup, but never when this app launches it, so it stays on the version it has.'
-                  }
-                />
+                {shows('Update the CLI when the app starts') && (
+                  <TickField
+                    label="Update the CLI when the app starts"
+                    checked={draft.updateOnStart}
+                    onChange={(checked) => edit('updateOnStart', checked)}
+                    hint={
+                      draft.updateOnStart
+                        ? 'Runs copilot update as the app starts. It carries on without waiting, so a slow download does not hold the app up.'
+                        : 'The CLI updates itself on startup, but never when this app launches it, so it stays on the version it has.'
+                    }
+                  />
+                )}
 
                 <h4 className="settings-subhead">The CLI's own settings</h4>
                 {/* Written straight to the CLI's file rather than kept here, so a setting
@@ -754,14 +854,16 @@ export function SettingsWindow({
                   </p>
                 )}
 
-                {cli?.settings.map((setting) => (
-                  <CliField
-                    key={setting.path}
-                    setting={setting}
-                    value={cli.values[setting.path]}
-                    onChange={(value) => onWriteCli?.({ [setting.path]: value })}
-                  />
-                ))}
+                {cli?.settings.map((setting) =>
+                  shows(setting.path) ? (
+                    <CliField
+                      key={setting.path}
+                      setting={setting}
+                      value={cli.values[setting.path]}
+                      onChange={(value) => onWriteCli?.({ [setting.path]: value })}
+                    />
+                  ) : null,
+                )}
               </>
             )}
 
@@ -772,16 +874,18 @@ export function SettingsWindow({
                   exactly where it was, with its title and its place in the list.
                 </p>
 
-                <NumberField
-                  label="Keep a deleted session for"
-                  value={draft.binRetentionDays}
-                  onChange={(value) => edit('binRetentionDays', value)}
-                  hint={
-                    draft.binRetentionDays === 0
-                      ? 'Deleting is immediate and cannot be undone.'
-                      : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}, counted from when it was deleted. The default is ${DEFAULT_BIN_RETENTION_DAYS}.`
-                  }
-                />
+                {shows('Keep a deleted session for') && (
+                  <NumberField
+                    label="Keep a deleted session for"
+                    value={draft.binRetentionDays}
+                    onChange={(value) => edit('binRetentionDays', value)}
+                    hint={
+                      draft.binRetentionDays === 0
+                        ? 'Deleting is immediate and cannot be undone.'
+                        : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}, counted from when it was deleted. The default is ${DEFAULT_BIN_RETENTION_DAYS}.`
+                    }
+                  />
+                )}
 
                 {/* Saving applies the new rule to what is already here, so anything past it
                     goes at that point. Said before it is saved rather than discovered after:

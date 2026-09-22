@@ -1427,6 +1427,53 @@ describe("the CLI's own settings", () => {
     });
   });
 
+  /** They are data already, so they carry their own words and their own options. */
+  describe('searching them', () => {
+    const search = async (text: string) => {
+      await userEvent.clear(screen.getByLabelText('Search settings'));
+      await userEvent.type(screen.getByLabelText('Search settings'), text);
+    };
+
+    it('shows only the ones that match', async () => {
+      withCli();
+      await openCli();
+
+      await search('autoUpdate');
+
+      expect(screen.getByText('autoUpdate')).toBeTruthy();
+      expect(screen.queryByText('logLevel')).toBeNull();
+    });
+
+    // The CLI's own wording is often where the useful word is, rather than in its name.
+    it('finds one by what the CLI says about it', async () => {
+      withCli();
+      await openCli();
+
+      await search('verbosity');
+
+      expect(screen.getByText('logLevel')).toBeTruthy();
+      expect(screen.queryByText('autoUpdate')).toBeNull();
+    });
+
+    it('finds one by what it can be set to', async () => {
+      withCli();
+      await openCli();
+
+      await search('none');
+
+      expect(screen.getByText('logLevel')).toBeTruthy();
+    });
+
+    it('lists the category for one of them, not only for what is written here', async () => {
+      withCli();
+
+      await search('verbosity');
+
+      const listed = [...document.querySelectorAll('.settings-tab')].map((node) => node.textContent);
+      expect(listed).toEqual(['Copilot CLI']);
+    });
+  });
+
   describe('changing one', () => {
     it('writes a tick box', async () => {
       const { onWriteCli } = withCli();
@@ -1505,5 +1552,128 @@ describe("the CLI's own settings", () => {
       expect(onWriteCli).toHaveBeenCalled();
       expect(commit().disabled).toBe(true);
     });
+  });
+});
+
+/**
+ * Finding a setting without knowing which category it is in. The sidebar and the settings
+ * inside a category are filtered by the same rule, since they have to agree (#204).
+ */
+describe('searching the settings', () => {
+  const search = () => screen.getByLabelText('Search settings') as HTMLInputElement;
+  const type = async (text: string) => userEvent.type(search(), text);
+  const categories = () =>
+    [...document.querySelectorAll('.settings-tab')].map((node) => node.textContent);
+
+  it('offers a search field', () => {
+    show();
+
+    expect(search()).toBeTruthy();
+  });
+
+  it('lists every category before anything is typed', () => {
+    show();
+
+    expect(categories()).toEqual(['Session management', 'New sessions', 'Appearance', 'Copilot CLI', 'Recycle bin']);
+  });
+
+  it('lists only the categories holding a match', async () => {
+    show();
+
+    await type('scale');
+
+    expect(categories()).toEqual(['Appearance']);
+  });
+
+  /** Not shown empty and not disabled: a category with nothing in it is not listed at all. */
+  it('leaves a category out rather than showing it empty', async () => {
+    show();
+
+    await type('retention');
+
+    expect(categories()).toEqual(['Recycle bin']);
+  });
+
+  it('shows only the settings that match, within the category being looked at', async () => {
+    show();
+
+    await type('idle');
+
+    expect(screen.getByLabelText('Release an idle session after')).toBeTruthy();
+    expect(screen.queryByLabelText('Sessions kept in memory')).toBeNull();
+  });
+
+  it('finds one by what it is about rather than by its name', async () => {
+    show();
+
+    // Nothing in the label says "cap", and it is what somebody would look for.
+    await type('cap');
+
+    expect(screen.getByLabelText('Sessions kept in memory')).toBeTruthy();
+  });
+
+  it('says so when nothing matches anywhere', async () => {
+    show();
+
+    await type('nothinglikethis');
+
+    expect(categories()).toEqual([]);
+    expect(screen.getByText('Nothing matches.')).toBeTruthy();
+  });
+
+  it('puts everything back when the search is cleared', async () => {
+    show();
+    await type('scale');
+
+    await userEvent.clear(search());
+
+    expect(categories()).toHaveLength(5);
+    expect(screen.getByLabelText('Sessions kept in memory')).toBeTruthy();
+  });
+
+  /** Searching changes no setting, so it is not something to be stopped and asked about. */
+  it('does not ask about unsaved changes', async () => {
+    show({ maxLoaded: 3 });
+    await userEvent.clear(kept());
+    await userEvent.type(kept(), '9');
+
+    await type('scale');
+
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+});
+
+/**
+ * The sidebar has to know whether a category holds a match before anybody opens it, so what
+ * each one holds is written down as well as drawn. A label changed in one place and not the
+ * other would leave a setting unfindable, or a category listed as holding something it does
+ * not - neither of which fails on its own (#204).
+ */
+describe('what the search is told a category holds', () => {
+  const labelled = () =>
+    [...document.querySelectorAll('.settings-row')]
+      .map((row) => row.querySelector('.settings-label')?.textContent?.trim())
+      .filter((label): label is string => Boolean(label));
+
+  it.each([
+    ['Session management', 'management'],
+    ['New sessions', 'sessions'],
+    ['Appearance', 'appearance'],
+    ['Recycle bin', 'bin'],
+  ])('knows about every setting drawn in %s', async (name) => {
+    show();
+    await userEvent.click(tab(name));
+    const drawn = labelled();
+    expect(drawn.length, `${name} should draw something`).toBeGreaterThan(0);
+
+    for (const label of drawn) {
+      await userEvent.clear(screen.getByLabelText('Search settings'));
+      await userEvent.type(screen.getByLabelText('Search settings'), label);
+
+      // The sidebar is the half that can only answer from what it was told, so it is the
+      // half that catches a setting drawn but never written down.
+      const listed = [...document.querySelectorAll('.settings-tab')].map((node) => node.textContent);
+      expect(listed, `searching "${label}" should list ${name}`).toContain(name);
+    }
   });
 });

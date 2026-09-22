@@ -4837,6 +4837,23 @@ pre.fatal,
   background: var(--bg);
 }
 
+/* Above the categories it filters, since what is typed decides which of them are listed. */
+.settings-search {
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-md);
+}
+
+.settings-search:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .settings-title {
   margin: 0 0 12px 10px;
   font-size: var(--font-xl);
