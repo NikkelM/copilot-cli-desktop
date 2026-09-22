@@ -426,3 +426,37 @@ describe('a category that does not fit', () => {
     expect(body).toContain('scrollbar-gutter: stable;');
   });
 });
+
+/**
+ * A group of nested CLI settings is one box, and opening it must not move the heading.
+ *
+ * The same trap the delete row fell into: a border on the row itself makes it a pixel
+ * taller than the rows around it, so the heading shifted every time it was opened. The line
+ * belongs to what was opened rather than to what opened it.
+ */
+describe('a group of nested CLI settings', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('is drawn as one box around the heading and what it holds', () => {
+    expect(block('.cli-group')).toMatch(/border:\s*1px solid var\(--border\)/);
+  });
+
+  it('draws the line under the heading on what the heading opened', () => {
+    expect(block('.cli-group-body')).toMatch(/border-top:\s*1px solid var\(--border\)/);
+  });
+
+  it('does not put that line on the heading, which would move it on opening', () => {
+    expect(block('.cli-group-head'), 'a border here changes the height between shut and open').not.toContain(
+      'border-bottom',
+    );
+  });
+
+  /** Or the hover fill would round away from the line it runs into. */
+  it('squares the heading where it meets what it opened', () => {
+    expect(block(".cli-group-head[aria-expanded='true']")).toContain('border-radius: 8px 8px 0 0;');
+  });
+});

@@ -922,21 +922,24 @@ export function SettingsWindow({
                         aria-label={`${prefix}, ${matching.length} settings`}
                         onClick={() => toggleGroup(prefix)}
                       >
+                        <ChevronIcon open={open} />
                         {prefix}
                         <span className="cli-group-count">{matching.length}</span>
-                        <ChevronIcon open={open} />
                       </button>
 
-                      {open &&
-                        matching.map((setting) => (
-                          <CliField
-                            key={setting.path}
-                            setting={setting}
-                            name={leafName(setting.path, prefix)}
-                            value={cli?.values[setting.path]}
-                            onChange={(value) => onWriteCli?.({ [setting.path]: value })}
-                          />
-                        ))}
+                      {open && (
+                        <div className="cli-group-body">
+                          {matching.map((setting) => (
+                            <CliField
+                              key={setting.path}
+                              setting={setting}
+                              name={leafName(setting.path, prefix)}
+                              value={cli?.values[setting.path]}
+                              onChange={(value) => onWriteCli?.({ [setting.path]: value })}
+                            />
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}

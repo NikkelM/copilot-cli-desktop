@@ -5286,9 +5286,15 @@ pre.fatal,
  *
  * The schema is flat and dotted, so the sandbox alone is fifteen rows of nearly the same
  * name. Gathered, the category reads as a list of subjects instead.
+ *
+ * Bordered as one box, which is what says where a group starts and stops. Without it the
+ * heading was one more line in a column of lines, and what was inside it had only its indent
+ * to say it belonged to anything.
  */
 .cli-group {
   margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .cli-group-head {
@@ -5296,9 +5302,9 @@ pre.fatal,
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 4px 0;
+  padding: 8px 12px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   background: none;
   color: var(--text);
   font: inherit;
@@ -5307,14 +5313,9 @@ pre.fatal,
   cursor: pointer;
 }
 
-/*
- * At the right-hand end, where every row in this category keeps its control.
- *
- * In front of the name it pushed the heading in past every setting around it, and there is
- * nowhere to hang it: this list scrolls, so anything left of its edge is clipped.
- */
-.cli-group-head .caret {
-  margin-left: auto;
+/* Square where it meets what it opened, so the fill runs into the line rather than off it. */
+.cli-group-head[aria-expanded='true'] {
+  border-radius: 8px 8px 0 0;
 }
 
 .cli-group-head:hover {
@@ -5330,13 +5331,20 @@ pre.fatal,
   font-size: var(--font-xs);
 }
 
-/* Indented under the heading, which is what says they belong to it. */
-.cli-group .settings-row {
-  margin: 10px 0 0 22px;
+/*
+ * What the group holds, inside its box.
+ *
+ * The line is drawn here rather than under the heading, so opening a group does not make its
+ * heading a pixel taller than it was while shut.
+ */
+.cli-group-body {
+  padding: 12px;
+  border-top: 1px solid var(--border);
 }
 
-.cli-group .settings-row:last-child {
-  margin-bottom: 4px;
+/* The box's own padding is the space below the last one. */
+.cli-group-body .settings-row:last-child {
+  margin-bottom: 0;
 }
 
 .cli-value {
