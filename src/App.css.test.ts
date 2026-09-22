@@ -405,4 +405,16 @@ describe('a category that does not fit', () => {
     // Without this the flex item does the same thing one level further in.
     expect(body).toContain('min-height: 0;');
   });
+
+  /**
+   * Every control sits at the right-hand end of its row, which is where the scrollbar is.
+   * Reserved whether or not one is showing, so moving between a category that scrolls and
+   * one that does not leaves the controls where they were.
+   */
+  it('keeps the controls clear of the scrollbar', () => {
+    const body = block('.settings-body');
+
+    expect(body).toMatch(/padding-right:\s*\d+px/);
+    expect(body).toContain('scrollbar-gutter: stable;');
+  });
 });

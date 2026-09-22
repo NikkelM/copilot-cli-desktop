@@ -4894,6 +4894,12 @@ pre.fatal,
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+  /* Clear of the scrollbar rather than under it: the controls sit at the right-hand end of
+     each row, which is exactly where the scrollbar is. Held whether or not one is showing,
+     so moving between a category that scrolls and one that does not leaves them where they
+     were rather than shifting the whole column sideways. */
+  padding-right: 12px;
+  scrollbar-gutter: stable;
 }
 
 /* Away from the last setting, so the actions do not read as part of it. */
