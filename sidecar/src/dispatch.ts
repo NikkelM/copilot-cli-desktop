@@ -114,6 +114,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'cliSettings.list': () => ({ settings: cliSettingsSchema(), values: readCliSettings() }),
 
+    'cliSettings.values': () => readCliSettings(),
+
     // Null on the wire rather than undefined, since JSON has no undefined to send: a key
     // the reader cleared arrives as null and is taken out of the CLI's file.
     'cliSettings.write': ({ changes }) =>

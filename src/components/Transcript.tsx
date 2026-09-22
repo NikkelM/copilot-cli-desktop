@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
@@ -6,6 +6,7 @@ import { useBudgetedEntries } from '../lib/useBudgetedEntries';
 import { fileBadge } from '../lib/fileBadge';
 import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
+import { ASSUMED_DISPLAY, type CliDisplay } from '../lib/useCliDisplay';
 import { CopyButton } from './CopyButton';
 import { Diff } from './Diff';
 import { Elapsed } from './Elapsed';
@@ -88,6 +89,14 @@ function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
 }
 
 /**
+ * What the CLI's settings say this transcript should draw.
+ *
+ * A context rather than a prop, because the rows that answer to it are several levels down
+ * and everything in between would be carrying an answer to a question it does not ask.
+ */
+const Shows = createContext<CliDisplay>(ASSUMED_DISPLAY);
+
+/**
  * When a message was said.
  *
  * A clock, not "5m ago": the transcript is already in order, so a reader looking at a line
@@ -109,6 +118,7 @@ function firstLine(text: string | null): string | null {
 
 /** A single tool call, collapsed to one line until expanded. */
 function ToolRow({ entry }: { entry: ToolEntry }) {
+  const shows = useContext(Shows);
   // Collapsed like every other row, including a delegated task: its work is watched from
   // the sidebar entry, which is somewhere that survives the row scrolling away.
   const [open, setOpen] = useState(false);
@@ -216,7 +226,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         {/* How long it has been going, which is what makes a slow command feel like
             progress rather than a hang. Kept once it finishes: knowing a command took two
             minutes is worth as much afterwards. */}
-        <Elapsed since={entry.startedAt} until={entry.endedAt} />
+        {shows.showToolDurations && <Elapsed since={entry.startedAt} until={entry.endedAt} />}
       </button>
       {open &&
         (entry.children?.length ? (
@@ -286,7 +296,7 @@ interface TranscriptProps {
    * leaving the view empty - which is what a subagent's transcript looked like (#178).
    */
   ofAgent?: string;
-  reasoning: boolean;
+  display: CliDisplay;
 }
 
 export function Transcript({
@@ -300,7 +310,7 @@ export function Transcript({
   extraPages = false,
   onDropOlder,
   ofAgent,
-  reasoning,
+  display,
 }: TranscriptProps) {
   // Rebuilt only when the events are, rather than on every render: a streamed reply
   // re-renders this component once per chunk, and the walk costs more the more history is
@@ -309,8 +319,8 @@ export function Transcript({
   // Dropped rather than hidden with CSS: thinking is usually longer than the answer it
   // produced, and the point of turning it off is to stop paying to lay it out.
   const entries = useMemo(
-    () => (reasoning ? all : all.filter((entry) => entry.kind !== 'reasoning')),
-    [all, reasoning],
+    () => (display.showReasoning ? all : all.filter((entry) => entry.kind !== 'reasoning')),
+    [all, display.showReasoning],
   );
   /**
    * What is actually drawn, budgeted by how much text it comes to.
@@ -439,14 +449,16 @@ export function Transcript({
   }
 
   return (
-    <ol className="transcript" ref={listRef} onScroll={onScroll}>
-      <li className="history-edge">
-        {loadingOlder ? 'Loading earlier messages…' : more ? 'Scroll up for earlier messages' : 'Start of session'}
-      </li>
-      {shown.map((entry) => (
-        <EntryRow key={entry.key} entry={entry} />
-      ))}
-    </ol>
+    <Shows.Provider value={display}>
+      <ol className="transcript" ref={listRef} onScroll={onScroll}>
+        <li className="history-edge">
+          {loadingOlder ? 'Loading earlier messages…' : more ? 'Scroll up for earlier messages' : 'Start of session'}
+        </li>
+        {shown.map((entry) => (
+          <EntryRow key={entry.key} entry={entry} />
+        ))}
+      </ol>
+    </Shows.Provider>
   );
 }
 
@@ -474,6 +486,8 @@ const EntryRow = memo(
 );
 
 function EntryBody({ entry }: { entry: Entry }) {
+  const shows = useContext(Shows);
+
   if (entry.kind === 'tool') return <ToolRow entry={entry} />;
   if (entry.kind === 'reasoning') return <ReasoningRow entry={entry} />;
   // Not markdown: the app wrote this line, and it belongs to the transcript rather than
@@ -486,7 +500,7 @@ function EntryBody({ entry }: { entry: Entry }) {
         {/* The whole reply, since selecting a long one by hand is not really possible. */}
         {entry.variant === 'assistant' && <CopyButton text={entry.body} what="reply" />}
         {/* Coarse on the face of it, exact on hover: "2h ago" covers an hour of moments. */}
-        {entry.at && <Said at={entry.at} />}
+        {entry.at && shows.showTimestamps && <Said at={entry.at} />}
       </div>
       {entry.preformatted ? (
         <pre className="plain">{entry.body}</pre>

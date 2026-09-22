@@ -963,6 +963,15 @@ export interface SidecarRequests {
    */
   'cliSettings.list': { params: Record<string, never>; result: { settings: CliSetting[]; values: Record<string, unknown> } };
   /**
+   * What the CLI is set to, without what it knows about.
+   *
+   * Its own half of the pair above, because the two cost wildly different amounts: the
+   * values are a small JSON file, while the schema means reading a 90MB binary. The app
+   * wants the values as it starts - some of them decide what the transcript draws - and
+   * wants the schema only when somebody opens the settings window.
+   */
+  'cliSettings.values': { params: Record<string, never>; result: Record<string, unknown> };
+  /**
    * Change some of the CLI's settings, leaving the rest of its file alone.
    *
    * Merged rather than replaced: the file holds things this app never shows, and writing
@@ -1279,6 +1288,7 @@ export const SIDECAR_METHODS = [
   'bin.restore',
   'bin.purge',
   'cliSettings.list',
+  'cliSettings.values',
   'cliSettings.write',
   'sessions.resolvePermission',
   'sessions.resolveElicitation',

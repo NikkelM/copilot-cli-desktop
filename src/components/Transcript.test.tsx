@@ -26,7 +26,7 @@ function show(events: TranscriptEvent[]) {
       hasOlder={true}
       loadingOlder={false}
       onLoadOlder={() => {}}
-      reasoning
+      display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
     />,
   );
 }
@@ -96,7 +96,7 @@ describe('Transcript', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-      reasoning
+      display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
       />,
     );
 
@@ -145,7 +145,7 @@ describe('following a reply as it is written', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-      reasoning
+      display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
       />
     );
 
@@ -606,7 +606,7 @@ describe('showing or hiding the model thinking', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-        reasoning={reasoning}
+        display={{ showReasoning: reasoning, showTimestamps: true, showToolDurations: true }}
       />,
     );
 
@@ -711,7 +711,7 @@ describe('giving back history once the reader is following again', () => {
       onLoadOlder: () => {},
       extraPages: true,
       onDropOlder,
-      reasoning: true,
+      display: { showReasoning: true, showTimestamps: true, showToolDurations: true },
       ...over,
     };
 
@@ -853,7 +853,7 @@ describe('Transcript showing a subagent', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-        reasoning
+        display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
       />,
     );
 
@@ -894,7 +894,7 @@ describe('a page too short to scroll', () => {
         hasOlder
         loadingOlder={false}
         onLoadOlder={onLoadOlder}
-        reasoning
+        display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }}
       />,
     );
     const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
@@ -910,7 +910,7 @@ describe('a page too short to scroll', () => {
 
     heights.scroll = 40;
     act(() => view.rerender(
-      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} reasoning />,
+      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }} />,
     ));
 
     expect(onLoadOlder).toHaveBeenCalled();
@@ -923,7 +923,7 @@ describe('a page too short to scroll', () => {
 
     heights.scroll = 2000;
     act(() => view.rerender(
-      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} reasoning />,
+      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }} />,
     ));
 
     expect(onLoadOlder).not.toHaveBeenCalled();
@@ -938,7 +938,7 @@ describe('a page too short to scroll', () => {
 
     for (let round = 0; round < 12; round++) {
       act(() => view.rerender(
-        <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} reasoning />,
+        <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, showTimestamps: true, showToolDurations: true }} />,
       ));
     }
 
@@ -974,7 +974,7 @@ describe('coming back to a workable window while the reader follows along', () =
       hasOlder: false,
       loadingOlder: false,
       extraPages: false,
-      reasoning: true,
+      display: { showReasoning: true, showTimestamps: true, showToolDurations: true },
       ...over,
     };
 
@@ -1096,3 +1096,69 @@ describe('coming back to a workable window while the reader follows along', () =
   });
 });
 
+
+/**
+ * Three of the CLI's settings describe a transcript rather than a terminal, and this app
+ * draws all three. They are read from the CLI's own file, so turning one off here turns it
+ * off in the terminal too (#202).
+ */
+describe("what the CLI's settings say to draw", () => {
+  const drawn = (over: Partial<{ showReasoning: boolean; showTimestamps: boolean; showToolDurations: boolean }>) =>
+    render(
+      <Transcript
+        events={[
+          { ...event('user.message', { content: 'hello' }, 'e0'), timestamp: '2026-01-02T03:04:05.000Z' },
+          event('assistant.reasoning', { reasoningId: 'r1', content: 'weighing two approaches' }, 'e1'),
+          // Three seconds apart, since a duration under two is not worth saying and would
+          // be left out whatever the setting says.
+          ...shell('e2', 'ls', 't1').map((e, at) => ({
+            ...e,
+            timestamp: at === 0 ? '2026-01-02T03:04:06.000Z' : '2026-01-02T03:04:09.000Z',
+          })),
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={{ showReasoning: true, showTimestamps: true, showToolDurations: true, ...over }}
+      />,
+    );
+
+  it('leaves the thinking out when the CLI says not to show it', () => {
+    const { container } = drawn({ showReasoning: false });
+
+    expect(container.querySelector('.reasoning')).toBeNull();
+  });
+
+  it('shows it when the CLI says to', () => {
+    const { container } = drawn({});
+
+    expect(container.querySelector('.reasoning')).toBeTruthy();
+  });
+
+  it('leaves the clock off a message when the CLI says not to show it', () => {
+    const { container } = drawn({ showTimestamps: false });
+
+    expect(container.querySelector('.message-meta time')).toBeNull();
+  });
+
+  it('shows the clock when the CLI says to', () => {
+    const { container } = drawn({});
+
+    expect(container.querySelector('.message-meta time')).toBeTruthy();
+  });
+
+  it('leaves off how long a tool took when the CLI says not to show it', () => {
+    const { container } = drawn({ showToolDurations: false });
+
+    expect(container.querySelector('.elapsed')).toBeNull();
+  });
+
+  /** Each answers its own question: turning one off must not take the others with it. */
+  it('keeps the others when one is turned off', () => {
+    const { container } = drawn({ showReasoning: false });
+
+    expect(container.querySelector('.message-meta time')).toBeTruthy();
+  });
+});

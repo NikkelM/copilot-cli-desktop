@@ -45,7 +45,6 @@ import {
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, TAG, USAGE, WIKI, wantsDirectory, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
-import { read as readSetting, save } from './lib/store';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
 import { normalise, useTags } from './lib/useTags';
@@ -55,6 +54,7 @@ import { HeaderTags } from './components/HeaderTags';
 import { sessionDefaults, useSettings } from './lib/useSettings';
 import { useRecycleBin } from './lib/useRecycleBin';
 import { useCliSettings } from './lib/useCliSettings';
+import { useCliDisplay } from './lib/useCliDisplay';
 import { SettingsWindow } from './components/SettingsWindow';
 import { usePanel } from './lib/usePanel';
 import { Confirm } from './components/Confirm';
@@ -96,7 +96,6 @@ import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
 /** Where showing the model's thinking is remembered, so ctrl+t survives a restart. */
-const REASONING = 'reasoning';
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -109,7 +108,7 @@ export default function App() {
    */
   const [showWiki, setShowWiki] = useState(false);
   /** Whether the model's thinking is shown. Off is a preference, not a session's state. */
-  const [reasoning, setReasoning] = useState(() => readSetting('settings', REASONING) !== 'false');
+  const { display, set: setDisplay } = useCliDisplay();
   /**
    * Unsent text and the one prompt each session may have set aside, which are two states
    * of the same writing and so have one owner.
@@ -455,10 +454,7 @@ export default function App() {
         }
 
         if (shortcut === 'reasoning') {
-          setReasoning((showing) => {
-            save('settings', REASONING, String(!showing));
-            return !showing;
-          });
+          setDisplay('showReasoning', !display.showReasoning);
           return;
         }
 
@@ -1064,7 +1060,7 @@ export default function App() {
               sessionId={subagents.open.agentId}
               cwd={selected?.cwd ?? null}
               ofAgent={subagents.open.agentId}
-              reasoning={reasoning}
+              display={display}
             />
 
             <div className="footer">
@@ -1135,7 +1131,7 @@ export default function App() {
               onLoadOlder={transcript.loadOlder}
               extraPages={transcript.extraPages}
               onDropOlder={transcript.dropOlder}
-              reasoning={reasoning}
+              display={display}
             />
 
             <div className="footer">

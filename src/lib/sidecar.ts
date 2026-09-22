@@ -144,6 +144,11 @@ export function purgeBinned(sessionId: string): Promise<void> {
   return request('bin.purge', { sessionId });
 }
 
+/** What the CLI is set to, without reading the 90MB binary that says what it knows about. */
+export function cliSettingValues(): Promise<Record<string, unknown>> {
+  return request('cliSettings.values', {});
+}
+
 /** The CLI's own settings: what it knows about, and what the reader has set. */
 export function cliSettings(): Promise<{ settings: CliSetting[]; values: Record<string, unknown> }> {
   return request('cliSettings.list', {});
