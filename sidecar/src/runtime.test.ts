@@ -30,6 +30,17 @@ vi.mock('./sessionIndex.js', async (importOriginal) => ({
 }));
 
 /**
+ * Whether the agent is told to add a co-author trailer, stubbed so a test can answer for
+ * the CLI's settings file without writing one. Its own module proves how the file is read;
+ * what the runtime decides is whether a session is told the answer at all.
+ */
+const { coauthorEnabled } = vi.hoisted(() => ({ coauthorEnabled: vi.fn(() => true) }));
+vi.mock('./cliSettings.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  coauthorEnabled,
+}));
+
+/**
  * The bin, stubbed so a test can say whether there was anything to move without a fixture
  * directory. What it does with one is its own module's to prove; what the runtime decides
  * is whether to reach for it at all.
@@ -46,6 +57,7 @@ const bin = vi.hoisted(() => ({
 vi.mock('./recycleBin.js', () => bin);
 
 beforeEach(() => {
+  coauthorEnabled.mockReset().mockReturnValue(true);
   bin.binSession.mockReset().mockReturnValue(false);
   bin.binnedSessions.mockReset().mockReturnValue([]);
   bin.restoreSession.mockReset().mockReturnValue(true);
@@ -1790,6 +1802,56 @@ describe('MCP OAuth tokens', () => {
       's1',
       expect.objectContaining({ mcpOAuthTokenStorage: 'persistent' }),
     );
+  });
+});
+
+/**
+ * The CLI's `includeCoAuthoredBy`, which reads like a git setting and is not one: the
+ * runtime turns it into an instruction in the system prompt telling the model to write the
+ * trailer itself.
+ *
+ * The CLI only sets it from its own two front ends, so a session made through the SDK was
+ * told nothing and fell back to the runtime's own answer - which meant a reader who had
+ * turned the trailer off still got one here (#205).
+ */
+describe('the commit trailer', () => {
+  it('tells a new session what the reader asked for', async () => {
+    coauthorEnabled.mockReturnValue(false);
+    const { runtime, client } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+
+    expect(client.createSession).toHaveBeenCalledWith(expect.objectContaining({ coauthorEnabled: false }));
+  });
+
+  it('leaves it on where the reader has not said otherwise', async () => {
+    coauthorEnabled.mockReturnValue(true);
+    const { runtime, client } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+
+    expect(client.createSession).toHaveBeenCalledWith(expect.objectContaining({ coauthorEnabled: true }));
+  });
+
+  // Or a session would sign its commits differently depending on whether it had been
+  // evicted since, which this app does constantly under its session cap.
+  it('tells a resumed session the same thing', async () => {
+    coauthorEnabled.mockReturnValue(false);
+    const { runtime, client } = makeRuntime();
+
+    await runtime.send('s1', 'x');
+
+    expect(client.resumeSession).toHaveBeenCalledWith('s1', expect.objectContaining({ coauthorEnabled: false }));
+  });
+
+  /** Read per session, as the CLI reads it, so a change lands without restarting anything. */
+  it('asks again for each session rather than once for the server', async () => {
+    const { runtime } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+    await runtime.create('C:\\repo');
+
+    expect(coauthorEnabled).toHaveBeenCalledTimes(2);
   });
 });
 

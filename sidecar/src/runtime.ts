@@ -44,6 +44,7 @@ import { PendingRequests } from './pending.js';
 import { disabledSkills, setSkillDisabled } from './skills.js';
 import { nameState, listSessions } from './sessionIndex.js';
 import { binSession, binnedSessions, restoreSession, sweepBin } from './recycleBin.js';
+import { coauthorEnabled } from './cliSettings.js';
 import { TITLE_QUESTION, isPlaceholder, titleIn } from './sessionTitle.js';
 
 /**
@@ -433,6 +434,9 @@ export class SessionRuntime {
       // the CLI already writes to, so this shares those logins rather than opening a second
       // place to hold them (#162).
       mcpOAuthTokenStorage: 'persistent',
+      // Read now rather than when the server started, which is when the CLI reads it too:
+      // a session made after the setting changed gets the answer the reader last gave.
+      coauthorEnabled: coauthorEnabled(),
       streaming: true,
     });
 
@@ -551,6 +555,9 @@ export class SessionRuntime {
       // As on creation (#161): a resumed session has to see the same agents, skills and
       // instructions the CLI would give it, or it quietly behaves like a different one.
       enableConfigDiscovery: true,
+      // And the same answer about the commit trailer, or a session would sign its commits
+      // differently depending on whether this app had evicted it since (#205).
+      coauthorEnabled: coauthorEnabled(),
       // As on creation (#163): without these a resumed session is missing most of its skills.
       pluginDirectories,
       // The runtime's own per-session disable does not survive a resume, and this app

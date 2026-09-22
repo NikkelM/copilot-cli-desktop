@@ -323,3 +323,38 @@ describe('writing', () => {
     expect(readFileSync(join(home, 'settings.json'), 'utf8')).toBe('{\n  "autoUpdate": true\n}\n');
   });
 });
+
+/**
+ * The CLI's `includeCoAuthoredBy`, read for the sessions this app makes. It reads like a git
+ * setting and is not one: the runtime turns it into an instruction in the system prompt
+ * telling the model to write the trailer itself (#205).
+ */
+describe('the commit trailer', () => {
+  it('is off when the reader has turned it off', async () => {
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ includeCoAuthoredBy: false }), 'utf8');
+    const { coauthorEnabled } = await load();
+
+    expect(coauthorEnabled()).toBe(false);
+  });
+
+  it('is on when the reader has asked for it', async () => {
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ includeCoAuthoredBy: true }), 'utf8');
+    const { coauthorEnabled } = await load();
+
+    expect(coauthorEnabled()).toBe(true);
+  });
+
+  /** The CLI's own default, and its own expression for it: only having said no turns it off. */
+  it('is on where nothing has been said', async () => {
+    const { coauthorEnabled } = await load();
+
+    expect(coauthorEnabled()).toBe(true);
+  });
+
+  it('is on for a value that is not exactly false', async () => {
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ includeCoAuthoredBy: 'no' }), 'utf8');
+    const { coauthorEnabled } = await load();
+
+    expect(coauthorEnabled()).toBe(true);
+  });
+});

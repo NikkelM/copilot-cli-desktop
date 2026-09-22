@@ -219,6 +219,25 @@ export function readCliSettings(): Record<string, unknown> {
 }
 
 /**
+ * Whether the agent is told to sign what it commits as a co-author.
+ *
+ * The CLI's `includeCoAuthoredBy`, which reads like a git setting and is not one: the
+ * runtime turns it into a `<git_commit_trailer>` block in the system prompt, telling the
+ * model to add the trailer itself. Nothing rewrites a commit after the fact.
+ *
+ * It only reaches a session that is told, and the CLI tells the ones its own two front ends
+ * start - prompt mode and the terminal. A session made through the SDK is told nothing and
+ * falls back to the runtime's own answer, so a reader who had turned the trailer off still
+ * got one here (#205).
+ *
+ * `!== false` rather than `=== true`, which is the CLI's own expression: the setting
+ * defaults to on, so only having said no turns it off.
+ */
+export function coauthorEnabled(): boolean {
+  return readCliSettings().includeCoAuthoredBy !== false;
+}
+
+/**
  * Change some of the CLI's settings, leaving the rest of its file alone.
  *
  * Merged rather than replaced, and refused outright when what is there cannot be read: the
