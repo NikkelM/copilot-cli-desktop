@@ -5280,6 +5280,58 @@ pre.fatal,
   gap: 4px;
 }
 
+/*
+ * The settings nested under one name, drawn under it.
+ *
+ * The schema is flat and dotted, so the sandbox alone is fifteen rows of nearly the same
+ * name. Gathered, the category reads as a list of subjects instead.
+ */
+.cli-group {
+  margin-bottom: 14px;
+}
+
+.cli-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-lg);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cli-group-head:hover {
+  background: var(--bg-raised);
+}
+
+.cli-group-name {
+  font-family: ui-monospace, monospace;
+}
+
+/* How many are inside, so a closed group says what opening it is worth. */
+.cli-group-count {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+/* Indented under the heading, which is what says they belong to it. */
+.cli-group .settings-row {
+  margin: 10px 0 0 22px;
+}
+
+.cli-group .settings-row:last-child {
+  margin-bottom: 4px;
+}
+
 .cli-value {
   width: calc(var(--font-base) * 11);
 }

@@ -1464,6 +1464,162 @@ describe("the CLI's own settings", () => {
   });
 
   /** They are data already, so they carry their own words and their own options. */
+  /**
+   * The schema is flat and dotted - `sandbox.enabled`, `sandbox.auth.git`, and thirteen more
+   * on a real CLI - which drew as a wall of rows of nearly the same name. Gathered under what
+   * they are nested in, the category reads as a list of subjects.
+   */
+  describe('the settings nested under one name', () => {
+    const nested: CliSetting[] = [
+      { path: 'autoUpdate', kind: 'boolean', description: 'Automatically download updated CLI versions.' },
+      { path: 'sandbox.enabled', kind: 'boolean', description: 'Run tools in a sandbox.' },
+      { path: 'sandbox.auth.git', kind: 'boolean', description: 'Let the sandbox reach git credentials.' },
+      { path: 'ide.autoConnect', kind: 'boolean', description: 'Connect to a running editor.' },
+      { path: 'ide.openDiffOnEdit', kind: 'boolean', description: 'Open a diff when a file is edited.' },
+      { path: 'customAgents.defaultLocalOnly', kind: 'boolean', description: 'Keep custom agents local.' },
+    ];
+
+    const withNested = (values: Record<string, unknown> = {}) => withCli({ settings: nested, values });
+    const group = (prefix: string) => screen.getByRole('button', { name: new RegExp(`^${prefix},`) });
+
+    it('draws a heading rather than every setting under it', async () => {
+      withNested();
+      await openCli();
+
+      expect(group('sandbox')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'sandbox.enabled on' })).toBeNull();
+    });
+
+    it('says how many are waiting inside it', async () => {
+      withNested();
+      await openCli();
+
+      expect(group('sandbox').textContent).toContain('2');
+    });
+
+    it('shows them once it is opened', async () => {
+      withNested();
+      await openCli();
+
+      await userEvent.click(group('sandbox'));
+
+      expect(screen.getByRole('button', { name: 'sandbox.enabled on' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'sandbox.auth.git on' })).toBeTruthy();
+    });
+
+    it('puts them away again', async () => {
+      withNested();
+      await openCli();
+
+      await userEvent.click(group('sandbox'));
+      await userEvent.click(group('sandbox'));
+
+      expect(screen.queryByRole('button', { name: 'sandbox.enabled on' })).toBeNull();
+    });
+
+    /** The heading already says it, and repeating it spends the width that tells rows apart. */
+    it('drops the heading name from what is inside', async () => {
+      withNested();
+      await openCli();
+
+      await userEvent.click(group('sandbox'));
+
+      expect(screen.getByText('enabled')).toBeTruthy();
+      expect(screen.getByText('auth.git')).toBeTruthy();
+    });
+
+    it('writes the whole path the CLI knows it by', async () => {
+      const { onWriteCli } = withNested();
+      await openCli();
+
+      await userEvent.click(group('sandbox'));
+      await press('sandbox.auth.git', 'on');
+
+      expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ 'sandbox.auth.git': true });
+    });
+
+    it('shows the value the CLI already has for one inside', async () => {
+      withNested({ 'sandbox.enabled': true });
+      await openCli();
+
+      await userEvent.click(group('sandbox'));
+
+      expect(screen.getByRole('button', { name: 'sandbox.enabled on' }).getAttribute('aria-pressed')).toBe('true');
+    });
+
+    /** A group holding one row is a row you have to open to see one row. */
+    it('leaves a lone nested setting as a row of its own', async () => {
+      withNested();
+      await openCli();
+
+      expect(screen.getByText('customAgents.defaultLocalOnly')).toBeTruthy();
+    });
+
+    it('opens each group on its own', async () => {
+      withNested();
+      await openCli();
+
+      await userEvent.click(group('ide'));
+
+      expect(screen.getByRole('button', { name: 'ide.autoConnect on' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'sandbox.enabled on' })).toBeNull();
+    });
+
+    describe('searching inside them', () => {
+      const search = async (text: string) => userEvent.type(screen.getByLabelText('Search settings'), text);
+
+      /** The reader has said what they want, and a closed heading asks them twice. */
+      it('opens a group it has left standing', async () => {
+        withNested();
+        await openCli();
+
+        await search('auth');
+
+        expect(screen.getByRole('button', { name: 'sandbox.auth.git on' })).toBeTruthy();
+      });
+
+      it('leaves out the ones inside that do not match', async () => {
+        withNested();
+        await openCli();
+
+        await search('auth');
+
+        expect(screen.queryByRole('button', { name: 'sandbox.enabled on' })).toBeNull();
+      });
+
+      it('counts what is left rather than what there was', async () => {
+        withNested();
+        await openCli();
+
+        await search('auth');
+
+        expect(group('sandbox').textContent).toContain('1');
+      });
+
+      // A heading over nothing says a subject is there when none of it is.
+      it('takes the heading away when nothing under it matches', async () => {
+        withNested();
+        await openCli();
+
+        await search('autoConnect');
+
+        expect(screen.queryByRole('button', { name: /^sandbox,/ })).toBeNull();
+        expect(screen.getByRole('button', { name: /^ide,/ })).toBeTruthy();
+      });
+
+      /** Typing the name of the group is how a reader asks for all of it. */
+      it('finds everything under a name by that name', async () => {
+        withNested();
+        await openCli();
+
+        await search('sandbox');
+
+        expect(screen.getByRole('button', { name: 'sandbox.enabled on' })).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'sandbox.auth.git on' })).toBeTruthy();
+      });
+    });
+  });
+
   describe('searching them', () => {
     const search = async (text: string) => {
       await userEvent.clear(screen.getByLabelText('Search settings'));

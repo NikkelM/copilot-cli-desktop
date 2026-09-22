@@ -10,6 +10,7 @@ import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES, DEFAULT_PERMISSION_MINUTES } from '../lib/useSettings';
 import { formatRelative } from '../lib/time';
 import { anyMatch, matches, type Searchable } from '../lib/settingsSearch';
+import { groupCliSettings, leafName } from '../lib/cliGroups';
 import { bytes } from '../lib/units';
 
 /**
@@ -121,10 +122,13 @@ function TickField({
  */
 function CliField({
   setting,
+  name,
   value,
   onChange,
 }: {
   setting: CliSetting;
+  /** What to call it here, which inside a group is the part the heading does not say. */
+  name: string;
   value: unknown;
   onChange: (value: unknown) => void;
 }) {
@@ -144,11 +148,11 @@ function CliField({
     <div className="settings-row">
       {grouped ? (
         <span className="settings-label cli-path" id={labelId}>
-          {setting.path}
+          {name}
         </span>
       ) : (
         <label className="settings-label cli-path" htmlFor={`cli-${setting.path}`}>
-          {setting.path}
+          {name}
         </label>
       )}
 
@@ -422,6 +426,11 @@ export function SettingsWindow({
   const [category, setCategory] = useState<CategoryId>(CATEGORIES[0].id);
   const [pending, setPending] = useState<Pending | null>(null);
   const [query, setQuery] = useState('');
+  /**
+   * Which nested groups of CLI settings are open. Closed to begin with, which is the point
+   * of gathering them: the category opens as a list of subjects rather than a wall of rows.
+   */
+  const [opened, setOpened] = useState<string[]>([]);
 
   /**
    * What each category holds, with the CLI's own settings folded into theirs.
@@ -452,6 +461,22 @@ export function SettingsWindow({
     const entry = searchable[category].find((known) => known.label === label);
     return matches(query, entry ?? { label });
   };
+
+  /** The CLI's settings with the nested ones gathered under what they are nested in. */
+  const cliEntries = useMemo(() => groupCliSettings(cli?.settings ?? []), [cli]);
+
+  /**
+   * Whether a group is showing what is inside it.
+   *
+   * A search opens every group it left standing. The reader has already said what they are
+   * looking for, and answering with a closed heading they have to open is asking twice.
+   */
+  const isOpen = (prefix: string) => query.trim() !== '' || opened.includes(prefix);
+
+  const toggleGroup = (prefix: string) =>
+    setOpened((current) =>
+      current.includes(prefix) ? current.filter((name) => name !== prefix) : [...current, prefix],
+    );
 
   const unsaved = (Object.keys(draft) as (keyof Settings)[]).some((key) => draft[key] !== settings[key]);
 
@@ -869,16 +894,52 @@ export function SettingsWindow({
                   </p>
                 )}
 
-                {cli?.settings.map((setting) =>
-                  shows(setting.path) ? (
-                    <CliField
-                      key={setting.path}
-                      setting={setting}
-                      value={cli.values[setting.path]}
-                      onChange={(value) => onWriteCli?.({ [setting.path]: value })}
-                    />
-                  ) : null,
-                )}
+                {cliEntries.map((entry) => {
+                  if (entry.kind === 'one') {
+                    return shows(entry.setting.path) ? (
+                      <CliField
+                        key={entry.setting.path}
+                        setting={entry.setting}
+                        name={entry.setting.path}
+                        value={cli?.values[entry.setting.path]}
+                        onChange={(value) => onWriteCli?.({ [entry.setting.path]: value })}
+                      />
+                    ) : null;
+                  }
+
+                  const { prefix, settings: inside } = entry.group;
+                  const matching = inside.filter((setting) => shows(setting.path));
+                  // A group whose every setting was filtered out is a heading over nothing.
+                  if (matching.length === 0) return null;
+
+                  const open = isOpen(prefix);
+                  return (
+                    <div className="cli-group" key={prefix}>
+                      <button
+                        type="button"
+                        className="cli-group-head"
+                        aria-expanded={open}
+                        aria-label={`${prefix}, ${matching.length} settings`}
+                        onClick={() => toggleGroup(prefix)}
+                      >
+                        <ChevronIcon open={open} />
+                        <span className="cli-group-name">{prefix}</span>
+                        <span className="cli-group-count">{matching.length}</span>
+                      </button>
+
+                      {open &&
+                        matching.map((setting) => (
+                          <CliField
+                            key={setting.path}
+                            setting={setting}
+                            name={leafName(setting.path, prefix)}
+                            value={cli?.values[setting.path]}
+                            onChange={(value) => onWriteCli?.({ [setting.path]: value })}
+                          />
+                        ))}
+                    </div>
+                  );
+                })}
               </>
             )}
 
