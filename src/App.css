@@ -745,12 +745,12 @@ body {
 }
 
 .model-option {
-  padding: 1px 6px;
+  padding: 3px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: none;
   color: var(--text-muted);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
