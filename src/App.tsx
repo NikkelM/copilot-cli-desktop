@@ -54,6 +54,7 @@ import { RenamePrompt } from './components/RenamePrompt';
 import { HeaderTags } from './components/HeaderTags';
 import { sessionDefaults, useSettings } from './lib/useSettings';
 import { useRecycleBin } from './lib/useRecycleBin';
+import { useCliSettings } from './lib/useCliSettings';
 import { SettingsWindow } from './components/SettingsWindow';
 import { usePanel } from './lib/usePanel';
 import { Confirm } from './components/Confirm';
@@ -177,6 +178,7 @@ export default function App() {
   // A restored session is back on disk but not in the list, which is built from what is
   // there: nothing notices a directory reappearing until it is looked at again.
   const bin = useRecycleBin(sessions.refresh, setError);
+  const cliSettings = useCliSettings(setError);
   const mode = useMode(selectedId, setError);
   const contextUsage = useContextUsage(selectedId);
   const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
@@ -1351,6 +1353,9 @@ export default function App() {
           onNeedBin={bin.refresh}
           onRestore={bin.restore}
           onPurge={bin.purge}
+          cli={cliSettings.cli}
+          onNeedCli={cliSettings.refresh}
+          onWriteCli={cliSettings.write}
           onPickDirectory={async (startingAt) => {
             // The same wake the composer's picker needs: Windows hides the pointer while
             // typing, and a native dialog taking focus with it hidden is hard to aim at.

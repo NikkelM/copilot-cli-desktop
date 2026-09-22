@@ -40,13 +40,27 @@ export interface BinnedSession {
 /** How long a deleted session is kept when nobody has said otherwise. */
 export const DEFAULT_BIN_RETENTION_DAYS = 7;
 
-/**
- * How long a question to the reader waits when nobody has said otherwise.
- *
- * Five minutes is a guess about how long somebody is away from the machine, and it is the
- * wrong guess in both directions - so it is only where the setting starts (#201).
- */
+/** How long a question to the reader waits when nobody has said otherwise. */
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 5 * 60_000;
+
+/** The kinds of CLI setting this app draws a control for. The schema has others it cannot. */
+export type CliSettingKind = 'boolean' | 'enum' | 'number' | 'string';
+
+/**
+ * One of the Copilot CLI's own settings, as the CLI describes it.
+ *
+ * Read from the runtime the reader actually has rather than written down here, so a setting
+ * the CLI adds appears without this app being rebuilt (#202).
+ */
+export interface CliSetting {
+  /** Dotted, as the CLI's file holds it: `autoUpdate`, `sandbox.enabled`. */
+  path: string;
+  kind: CliSettingKind;
+  /** The CLI's own words, which are written for a reader rather than for a schema. */
+  description: string;
+  /** What an enum may be. Absent for every other kind. */
+  options?: string[];
+}
 
 /** Lifecycle of a session inside the sidecar runtime. Only `active` holds meaningful memory. */export type SessionRuntimeState =
   | 'cold' // never loaded in this app run; history is read straight from disk
@@ -937,6 +951,28 @@ export interface SidecarRequests {
   'bin.restore': { params: { sessionId: string }; result: { restored: boolean } };
   /** Delete a binned session for good, without waiting for its retention to run out. */
   'bin.purge': { params: { sessionId: string }; result: void };
+  /**
+   * The CLI's own settings: what it knows about, and what it is set to.
+   *
+   * Both together, because they are read together and neither is useful alone - a schema
+   * with no values draws empty controls, and values with no schema are strings nobody can
+   * say the shape of.
+   *
+   * `values` holds only what the reader has actually chosen. A setting missing from it is
+   * one the CLI is deciding for itself, which is not the same as one set to false.
+   */
+  'cliSettings.list': { params: Record<string, never>; result: { settings: CliSetting[]; values: Record<string, unknown> } };
+  /**
+   * Change some of the CLI's settings, leaving the rest of its file alone.
+   *
+   * Merged rather than replaced: the file holds things this app never shows, and writing
+   * only what this window knows about would throw those away. Null removes a key, which is
+   * how a setting goes back to whatever the CLI would have done by itself.
+   *
+   * Takes effect without restarting anything. The CLI reads its settings when a session is
+   * created rather than when its server starts, so the next session gets them.
+   */
+  'cliSettings.write': { params: { changes: Record<string, unknown> }; result: void };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'sessions.resolvePlan': { params: ResolvePlanParams; result: void };
@@ -1242,6 +1278,8 @@ export const SIDECAR_METHODS = [
   'bin.list',
   'bin.restore',
   'bin.purge',
+  'cliSettings.list',
+  'cliSettings.write',
   'sessions.resolvePermission',
   'sessions.resolveElicitation',
   'sessions.resolvePlan',

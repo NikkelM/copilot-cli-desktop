@@ -5232,8 +5232,28 @@ pre.fatal,
   gap: 12px;
 }
 
-/* What saving is about to cost, where a note about the setting would otherwise be. */
-.settings-warning {
+/*
+ * One of the CLI's own settings. Named by its path, because that is the name it has in the
+ * CLI's file and in its /settings dialog - inventing a friendlier one here would leave two
+ * names for one thing.
+ */
+.cli-path {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+}
+
+/* on, off, and the third that neither of those can say: whatever the CLI does by itself. */
+.cli-choice {
+  display: flex;
+  gap: 4px;
+}
+
+.cli-value {
+  width: calc(var(--font-base) * 11);
+}
+
+/* What saving is about to cost, where a note about the setting would otherwise be. */.settings-warning {
   margin: -8px 0 14px;
   color: var(--danger);
   font-size: var(--font-sm);

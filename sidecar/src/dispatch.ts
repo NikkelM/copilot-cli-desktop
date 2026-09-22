@@ -24,6 +24,7 @@ import {
   unstagePaths,
 } from './git.js';
 import { previewImage } from './images.js';
+import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
@@ -110,6 +111,15 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'bin.restore': ({ sessionId }) => ({ restored: runtime.restoreSession(sessionId) }),
 
     'bin.purge': ({ sessionId }) => purgeSession(sessionId),
+
+    'cliSettings.list': () => ({ settings: cliSettingsSchema(), values: readCliSettings() }),
+
+    // Null on the wire rather than undefined, since JSON has no undefined to send: a key
+    // the reader cleared arrives as null and is taken out of the CLI's file.
+    'cliSettings.write': ({ changes }) =>
+      writeCliSettings(
+        Object.fromEntries(Object.entries(changes).map(([path, value]) => [path, value ?? undefined])),
+      ),
 
     'sessions.resolvePermission': ({ requestId, choice }) => runtime.resolvePermission(requestId, choice),
 

@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import type {
   AgentSummary,
   BinnedSession,
+  CliSetting,
   CommandOutcome,
   ContextTier,
   ElicitationAction,
@@ -141,6 +142,16 @@ export async function restoreBinned(sessionId: string): Promise<boolean> {
 /** Delete a binned session for good, rather than waiting out its retention. */
 export function purgeBinned(sessionId: string): Promise<void> {
   return request('bin.purge', { sessionId });
+}
+
+/** The CLI's own settings: what it knows about, and what the reader has set. */
+export function cliSettings(): Promise<{ settings: CliSetting[]; values: Record<string, unknown> }> {
+  return request('cliSettings.list', {});
+}
+
+/** Change some of the CLI's settings. Null takes a key out, going back to the CLI's default. */
+export function writeCliSettings(changes: Record<string, unknown>): Promise<void> {
+  return request('cliSettings.write', { changes });
 }
 
 /** The runtime is asked what it knows. Costs nothing: the sidecar reads a constant. */

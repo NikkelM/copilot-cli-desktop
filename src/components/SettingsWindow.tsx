@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
 import { ModelPicker } from './ModelPicker';
 import { LARGEST, SMALLEST, STEP, applyScale, clampScale } from '../lib/scale';
-import type { BinnedSession, ModelChoice } from '../../shared/protocol';
+import type { BinnedSession, CliSetting, ModelChoice } from '../../shared/protocol';
+import type { CliSettingsState } from '../lib/useCliSettings';
 import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES, DEFAULT_PERMISSION_MINUTES } from '../lib/useSettings';
@@ -102,6 +103,98 @@ function TickField({
         <span className="settings-label">{label}</span>
       </label>
       <span className="settings-hint">{hint}</span>
+    </div>
+  );
+}
+
+/**
+ * One of the CLI's own settings, drawn from what the CLI says about it.
+ *
+ * Applied as it is changed rather than on Save, unlike everything else in this window. It
+ * belongs to another program's file, and a draft of somebody else's settings held here
+ * until Save is a second copy of them that can disagree with the real one.
+ *
+ * Unset is its own state, kept apart from false and from the empty string: the CLI falls
+ * back to its own default, which is not written down anywhere this can read. So a tick box
+ * gets three states rather than two, and every control offers a way back to unset.
+ */
+function CliField({
+  setting,
+  value,
+  onChange,
+}: {
+  setting: CliSetting;
+  value: unknown;
+  onChange: (value: unknown) => void;
+}) {
+  const unset = value === undefined;
+
+  return (
+    <div className="settings-row">
+      <label className="settings-label cli-path" htmlFor={`cli-${setting.path}`}>
+        {setting.path}
+      </label>
+
+      {setting.kind === 'boolean' && (
+        <span className="cli-choice">
+          {/* Three buttons rather than a tick box, since a tick box cannot say "unset" and
+              this app cannot say what the CLI would do instead. */}
+          {(['on', 'off', 'default'] as const).map((choice) => {
+            const chosen = choice === 'default' ? unset : value === (choice === 'on');
+            return (
+              <button
+                key={choice}
+                type="button"
+                id={choice === 'on' ? `cli-${setting.path}` : undefined}
+                className={chosen ? 'model-option chosen' : 'model-option'}
+                aria-pressed={chosen}
+                aria-label={`${setting.path} ${choice}`}
+                onClick={() => onChange(choice === 'default' ? null : choice === 'on')}
+              >
+                {choice}
+              </button>
+            );
+          })}
+        </span>
+      )}
+
+      {setting.kind === 'enum' && (
+        <select
+          id={`cli-${setting.path}`}
+          className="settings-select"
+          value={unset ? '' : String(value)}
+          onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
+        >
+          <option value="">Whatever the CLI does</option>
+          {setting.options?.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {(setting.kind === 'string' || setting.kind === 'number') && (
+        <input
+          id={`cli-${setting.path}`}
+          className="settings-text cli-value"
+          type={setting.kind === 'number' ? 'number' : 'text'}
+          value={unset ? '' : String(value)}
+          placeholder="Whatever the CLI does"
+          onChange={(event) => {
+            const text = event.target.value;
+            if (text === '') onChange(null);
+            // A number that is not one yet - mid-typing, or a lone minus - is not worth
+            // writing to another program's file, so it waits for one that is.
+            else if (setting.kind === 'number') {
+              const parsed = Number(text);
+              if (Number.isFinite(parsed)) onChange(parsed);
+            } else onChange(text);
+          }}
+        />
+      )}
+
+      <span className="settings-hint">{setting.description}</span>
     </div>
   );
 }
@@ -214,6 +307,9 @@ export function SettingsWindow({
   onNeedBin,
   onRestore,
   onPurge,
+  cli,
+  onNeedCli,
+  onWriteCli,
 }: {
   /** What is saved now, which is where the draft starts and what discarding goes back to. */
   settings: Settings;
@@ -252,6 +348,22 @@ export function SettingsWindow({
   onNeedBin?: () => void;
   onRestore?: (sessionId: string) => void;
   onPurge?: (sessionId: string) => void;
+  /**
+   * The CLI's own settings, or null while they are being read.
+   *
+   * An empty list is a real answer rather than a failure: it is what a CLI this app cannot
+   * read gives, and the window says so rather than showing an empty category.
+   */
+  cli?: CliSettingsState | null;
+  /** Ask for them. Called on reaching the category, since reading costs a 90MB file. */
+  onNeedCli?: () => void;
+  /**
+   * Write some of them, straight away rather than on Save.
+   *
+   * They belong to another program's file, and holding a draft of somebody else's settings
+   * until Save is a second copy of them that can disagree with the real one.
+   */
+  onWriteCli?: (changes: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
   const [category, setCategory] = useState<CategoryId>(CATEGORIES[0].id);
@@ -316,6 +428,20 @@ export function SettingsWindow({
   useEffect(() => {
     if (category === 'bin') onNeedBin?.();
   }, [category, onNeedBin, settings.binRetentionDays]);
+
+  /**
+   * Read the CLI's own settings on reaching them, if there are none.
+   *
+   * Once, like the model catalogue rather than like the bin: the schema comes out of a 90MB
+   * binary, and nothing this window does changes what the CLI knows about.
+   */
+  const askedForCli = useRef(false);
+  useEffect(() => {
+    if (category !== 'cli' || askedForCli.current || cli) return;
+
+    askedForCli.current = true;
+    onNeedCli?.();
+  }, [category, cli, onNeedCli]);
 
   const edit = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -594,16 +720,44 @@ export function SettingsWindow({
               </>
             )}
             {shown.id === 'cli' && (
-              <TickField
-                label="Update the CLI when the app starts"
-                checked={draft.updateOnStart}
-                onChange={(checked) => edit('updateOnStart', checked)}
-                hint={
-                  draft.updateOnStart
-                    ? 'Runs copilot update as the app starts. It carries on without waiting, so a slow download does not hold the app up.'
-                    : 'The CLI updates itself on startup, but never when this app launches it, so it stays on the version it has.'
-                }
-              />
+              <>
+                <TickField
+                  label="Update the CLI when the app starts"
+                  checked={draft.updateOnStart}
+                  onChange={(checked) => edit('updateOnStart', checked)}
+                  hint={
+                    draft.updateOnStart
+                      ? 'Runs copilot update as the app starts. It carries on without waiting, so a slow download does not hold the app up.'
+                      : 'The CLI updates itself on startup, but never when this app launches it, so it stays on the version it has.'
+                  }
+                />
+
+                <h4 className="settings-subhead">The CLI's own settings</h4>
+                {/* Written straight to the CLI's file rather than kept here, so a setting
+                    means the same thing in both places. They apply without restarting
+                    anything: the CLI reads them when a session is made (#202). */}
+                <p className="settings-note">
+                  Kept by the CLI itself, in its own settings file, and shared with it. A change here
+                  reaches the next session either program starts.
+                </p>
+
+                {cli === null && <p className="settings-note">Reading what the CLI knows about.</p>}
+                {cli?.settings.length === 0 && (
+                  <p className="settings-note">
+                    This CLI could not be read, so there is nothing to show. Its settings are still
+                    changeable from the CLI itself.
+                  </p>
+                )}
+
+                {cli?.settings.map((setting) => (
+                  <CliField
+                    key={setting.path}
+                    setting={setting}
+                    value={cli.values[setting.path]}
+                    onChange={(value) => onWriteCli?.({ [setting.path]: value })}
+                  />
+                ))}
+              </>
             )}
 
             {shown.id === 'bin' && (

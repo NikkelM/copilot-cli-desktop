@@ -5,7 +5,8 @@ import userEvent from '@testing-library/user-event';
 
 import { SettingsWindow } from './SettingsWindow';
 import type { Settings } from '../lib/useSettings';
-import type { BinnedSession } from '../../shared/protocol';
+import type { BinnedSession, CliSetting } from '../../shared/protocol';
+import type { CliSettingsState } from '../lib/useCliSettings';
 
 afterEach(cleanup);
 
@@ -1324,5 +1325,185 @@ describe('waiting for an answer', () => {
     await userEvent.click(commit());
 
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ permissionMinutes: 15 }));
+  });
+});
+
+/**
+ * The CLI's own settings, drawn from what the CLI says about them rather than written out
+ * here, so a setting an update adds appears without this app being rebuilt (#202).
+ */
+describe("the CLI's own settings", () => {
+  const schema: CliSetting[] = [
+    { path: 'autoUpdate', kind: 'boolean', description: 'Automatically download updated CLI versions.' },
+    { path: 'logLevel', kind: 'enum', description: 'Log verbosity.', options: ['all', 'none'] },
+    { path: 'model', kind: 'string', description: 'AI model to use.' },
+    { path: 'sandbox.timeout', kind: 'number', description: 'How long a sandbox waits.' },
+  ];
+
+  const withCli = (cli: CliSettingsState | null = { settings: schema, values: {} }) => {
+    const onNeedCli = vi.fn();
+    const onWriteCli = vi.fn();
+    render(
+      <SettingsWindow
+        settings={SAVED}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        cli={cli}
+        onNeedCli={onNeedCli}
+        onWriteCli={onWriteCli}
+      />,
+    );
+    return { onNeedCli, onWriteCli };
+  };
+
+  const openCli = () => userEvent.click(tab('Copilot CLI'));
+  const press = (path: string, choice: string) =>
+    userEvent.click(screen.getByRole('button', { name: `${path} ${choice}` }));
+
+  // Reading them means reading a 90MB binary, which nobody changing the text size asked for.
+  it('reads them on reaching the category rather than on opening the window', async () => {
+    const { onNeedCli } = withCli(null);
+    expect(onNeedCli).not.toHaveBeenCalled();
+
+    await openCli();
+
+    expect(onNeedCli).toHaveBeenCalledOnce();
+  });
+
+  it('asks once rather than on every look', async () => {
+    const { onNeedCli } = withCli({ settings: schema, values: {} });
+
+    await openCli();
+    await userEvent.click(tab('Appearance'));
+    await openCli();
+
+    expect(onNeedCli).not.toHaveBeenCalled();
+  });
+
+  it('names each one as the CLI names it, with what the CLI says about it', async () => {
+    withCli();
+    await openCli();
+
+    expect(screen.getByText('autoUpdate')).toBeTruthy();
+    expect(screen.getByText('Automatically download updated CLI versions.')).toBeTruthy();
+  });
+
+  it('says it is reading before it knows', async () => {
+    withCli(null);
+    await openCli();
+
+    expect(screen.getByText('Reading what the CLI knows about.')).toBeTruthy();
+  });
+
+  /** A CLI laid out differently gives nothing, and saying so beats an empty category. */
+  it('says so when the CLI could not be read', async () => {
+    withCli({ settings: [], values: {} });
+    await openCli();
+
+    expect(screen.getByText(/This CLI could not be read/)).toBeTruthy();
+  });
+
+  describe('a setting nobody has chosen', () => {
+    it('shows a tick box as neither on nor off', async () => {
+      withCli();
+      await openCli();
+
+      expect(screen.getByRole('button', { name: 'autoUpdate default' }).getAttribute('aria-pressed')).toBe('true');
+      expect(screen.getByRole('button', { name: 'autoUpdate on' }).getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('leaves a picker on what the CLI would do', async () => {
+      withCli();
+      await openCli();
+
+      expect((screen.getByLabelText('logLevel') as HTMLSelectElement).value).toBe('');
+    });
+
+    it('leaves a field empty rather than filling in a value nobody set', async () => {
+      withCli();
+      await openCli();
+
+      expect((screen.getByLabelText('model') as HTMLInputElement).value).toBe('');
+    });
+  });
+
+  describe('changing one', () => {
+    it('writes a tick box', async () => {
+      const { onWriteCli } = withCli();
+      await openCli();
+
+      await press('autoUpdate', 'on');
+
+      expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ autoUpdate: true });
+    });
+
+    it('writes it off as off rather than as unset', async () => {
+      const { onWriteCli } = withCli({ settings: schema, values: { autoUpdate: true } });
+      await openCli();
+
+      await press('autoUpdate', 'off');
+
+      expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ autoUpdate: false });
+    });
+
+    /** There is no value meaning "whatever you would have done", so going back is removal. */
+    it('takes it out again to go back to what the CLI does', async () => {
+      const { onWriteCli } = withCli({ settings: schema, values: { autoUpdate: true } });
+      await openCli();
+
+      await press('autoUpdate', 'default');
+
+      expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ autoUpdate: null });
+    });
+
+    it('writes a picker', async () => {
+      const { onWriteCli } = withCli();
+      await openCli();
+
+      await userEvent.selectOptions(screen.getByLabelText('logLevel'), 'all');
+
+      expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ logLevel: 'all' });
+    });
+
+    it('takes a picker back to what the CLI does', async () => {
+      const { onWriteCli } = withCli({ settings: schema, values: { logLevel: 'all' } });
+      await openCli();
+
+      await userEvent.selectOptions(screen.getByLabelText('logLevel'), '');
+
+      expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ logLevel: null });
+    });
+
+    it('writes a number as a number rather than as its digits', async () => {
+      const { onWriteCli } = withCli();
+      await openCli();
+
+      await userEvent.type(screen.getByLabelText('sandbox.timeout'), '5');
+
+      expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ 'sandbox.timeout': 5 });
+    });
+
+    it('empties a field back to what the CLI does', async () => {
+      const { onWriteCli } = withCli({ settings: schema, values: { model: 'gpt-5.5' } });
+      await openCli();
+
+      await userEvent.clear(screen.getByLabelText('model'));
+
+      expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ model: null });
+    });
+
+    /**
+     * They belong to another program's file, so a draft of them held here until Save is a
+     * second copy that can disagree with the real one.
+     */
+    it('writes without waiting for Save', async () => {
+      const { onWriteCli } = withCli();
+      await openCli();
+
+      await press('autoUpdate', 'on');
+
+      expect(onWriteCli).toHaveBeenCalled();
+      expect(commit().disabled).toBe(true);
+    });
   });
 });
