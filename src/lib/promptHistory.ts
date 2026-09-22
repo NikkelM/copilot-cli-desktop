@@ -11,8 +11,12 @@ import type { TranscriptEvent } from '../../shared/protocol';
  * The transcript is paged, so this covers the prompts that have been loaded rather than
  * every prompt ever. That is the right span: history is for what was just said, and loading
  * a session's entire past to fill it would undo the reason the transcript is paged at all.
+ *
+ * `limit` is how many of the newest to keep, which is the CLI's `commandHistoryMaxSize`
+ * (#205). Counted from the newest end, since the entry somebody is stepping back towards is
+ * the one they just sent rather than the one they sent first.
  */
-export function promptHistory(events: readonly TranscriptEvent[]): string[] {
+export function promptHistory(events: readonly TranscriptEvent[], limit = Number.POSITIVE_INFINITY): string[] {
   const prompts: string[] = [];
 
   for (const event of events) {
@@ -30,5 +34,7 @@ export function promptHistory(events: readonly TranscriptEvent[]): string[] {
     prompts.push(prompt);
   }
 
-  return prompts.reverse();
+  // Counted off the end rather than sliced from the front, so a limit of none keeps none
+  // instead of keeping everything, which is what a negative slice index would have done.
+  return prompts.slice(Math.max(0, prompts.length - limit)).reverse();
 }

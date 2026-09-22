@@ -108,7 +108,7 @@ export default function App() {
    */
   const [showWiki, setShowWiki] = useState(false);
   /** Whether the model's thinking is shown. Off is a preference, not a session's state. */
-  const { display, set: setDisplay } = useCliDisplay();
+  const { display, set: setDisplay, take: takeDisplay } = useCliDisplay();
   /**
    * Unsent text and the one prompt each session may have set aside, which are two states
    * of the same writing and so have one owner.
@@ -843,7 +843,10 @@ export default function App() {
 
   // Derived rather than kept: the transcript already knows what was sent, and a second
   // record of it could only ever disagree with the first.
-  const history = useMemo(() => promptHistory(transcript.events), [transcript.events]);
+  const history = useMemo(
+    () => promptHistory(transcript.events, display.commandHistoryMaxSize),
+    [transcript.events, display.commandHistoryMaxSize],
+  );
 
   // What each session is doing, for the sidebar. Joined here because the three sources sit
   // apart - the runtime reports turns, the prompts hold unanswered questions, the queue is
@@ -1351,7 +1354,11 @@ export default function App() {
           onPurge={bin.purge}
           cli={cliSettings.cli}
           onNeedCli={cliSettings.refresh}
-          onWriteCli={cliSettings.write}
+          onWriteCli={(changes) => {
+            cliSettings.write(changes);
+            // The same file, so what this app draws from it has to move with it.
+            takeDisplay(changes);
+          }}
           onPickDirectory={async (startingAt) => {
             // The same wake the composer's picker needs: Windows hides the pointer while
             // typing, and a native dialog taking focus with it hidden is hard to aim at.

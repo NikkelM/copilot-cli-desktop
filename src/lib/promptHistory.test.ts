@@ -36,3 +36,37 @@ describe('promptHistory', () => {
     expect(promptHistory([said(undefined), said({ parts: [] }), said('ok')])).toEqual(['ok']);
   });
 });
+
+/**
+ * The CLI's `commandHistoryMaxSize`, which says how many prompts can be stepped back
+ * through. Counted from the newest end: the entry somebody is reaching for is the one they
+ * just sent, not the one they sent first (#205).
+ */
+describe('how many it keeps', () => {
+  it('keeps every prompt when it is not told a number', () => {
+    // Longer than any plausible default, so this catches a bound that crept in rather than
+    // passing because the list happened to be short.
+    const many = Array.from({ length: 200 }, (_, at) => said(`p${at}`));
+
+    expect(promptHistory(many)).toHaveLength(200);
+  });
+
+  it('keeps the newest, and drops what fell off the back', () => {
+    expect(promptHistory([said('a'), said('b'), said('c')], 2)).toEqual(['c', 'b']);
+  });
+
+  it('keeps nothing when it is allowed nothing', () => {
+    expect(promptHistory([said('a'), said('b')], 0)).toEqual([]);
+  });
+
+  // Room for three with two to fill it: counting back from the end without a floor would
+  // take the last one only.
+  it('is not troubled by room for more than there are', () => {
+    expect(promptHistory([said('a'), said('b')], 3)).toEqual(['b', 'a']);
+  });
+
+  /** Folded first, so the limit counts entries somebody can reach rather than messages. */
+  it('counts what is left after repeats are folded together', () => {
+    expect(promptHistory([said('a'), said('b'), said('b'), said('c')], 2)).toEqual(['c', 'b']);
+  });
+});

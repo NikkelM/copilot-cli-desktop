@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import type { TranscriptEvent } from '../../shared/protocol';
+import { ASSUMED_DISPLAY } from '../lib/useCliDisplay';
 import { Transcript } from './Transcript';
 
 const event = (type: string, data: Record<string, unknown>, id: string): TranscriptEvent => ({ type, data, id });
@@ -26,7 +27,7 @@ function show(events: TranscriptEvent[]) {
       hasOlder={true}
       loadingOlder={false}
       onLoadOlder={() => {}}
-      display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
+      display={ASSUMED_DISPLAY}
     />,
   );
 }
@@ -96,7 +97,7 @@ describe('Transcript', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-      display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
+      display={ASSUMED_DISPLAY}
       />,
     );
 
@@ -145,7 +146,7 @@ describe('following a reply as it is written', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-      display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
+      display={ASSUMED_DISPLAY}
       />
     );
 
@@ -606,7 +607,7 @@ describe('showing or hiding the model thinking', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-        display={{ showReasoning: reasoning, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
+        display={{ ...ASSUMED_DISPLAY, showReasoning: reasoning }}
       />,
     );
 
@@ -711,7 +712,7 @@ describe('giving back history once the reader is following again', () => {
       onLoadOlder: () => {},
       extraPages: true,
       onDropOlder,
-      display: { showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true },
+      display: ASSUMED_DISPLAY,
       ...over,
     };
 
@@ -853,7 +854,7 @@ describe('Transcript showing a subagent', () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-        display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
+        display={ASSUMED_DISPLAY}
       />,
     );
 
@@ -894,7 +895,7 @@ describe('a page too short to scroll', () => {
         hasOlder
         loadingOlder={false}
         onLoadOlder={onLoadOlder}
-        display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }}
+        display={ASSUMED_DISPLAY}
       />,
     );
     const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
@@ -910,7 +911,7 @@ describe('a page too short to scroll', () => {
 
     heights.scroll = 40;
     act(() => view.rerender(
-      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }} />,
+      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={ASSUMED_DISPLAY} />,
     ));
 
     expect(onLoadOlder).toHaveBeenCalled();
@@ -923,7 +924,7 @@ describe('a page too short to scroll', () => {
 
     heights.scroll = 2000;
     act(() => view.rerender(
-      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }} />,
+      <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={ASSUMED_DISPLAY} />,
     ));
 
     expect(onLoadOlder).not.toHaveBeenCalled();
@@ -938,7 +939,7 @@ describe('a page too short to scroll', () => {
 
     for (let round = 0; round < 12; round++) {
       act(() => view.rerender(
-        <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true }} />,
+        <Transcript events={short} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={ASSUMED_DISPLAY} />,
       ));
     }
 
@@ -974,7 +975,7 @@ describe('coming back to a workable window while the reader follows along', () =
       hasOlder: false,
       loadingOlder: false,
       extraPages: false,
-      display: { showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true },
+      display: ASSUMED_DISPLAY,
       ...over,
     };
 
@@ -1121,7 +1122,7 @@ describe("what the CLI's settings say to draw", () => {
         hasOlder={false}
         loadingOlder={false}
         onLoadOlder={() => {}}
-        display={{ showReasoning: true, taskbarPresence: true, showTimestamps: true, showToolDurations: true, ...over }}
+        display={{ ...ASSUMED_DISPLAY, ...over }}
       />,
     );
 

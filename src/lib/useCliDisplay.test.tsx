@@ -2,7 +2,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useCliDisplay, OLD_REASONING } from './useCliDisplay';
+import { useCliDisplay, OLD_REASONING, ASSUMED_DISPLAY } from './useCliDisplay';
 import { read, resetStores, save } from './store';
 
 const { cliSettingValues, writeCliSettings } = vi.hoisted(() => ({
@@ -32,6 +32,7 @@ describe('what the transcript draws', () => {
       taskbarPresence: true,
       showTimestamps: true,
       showToolDurations: true,
+      commandHistoryMaxSize: 50,
     });
   });
 
@@ -44,6 +45,59 @@ describe('what the transcript draws', () => {
     expect(result.current.display.taskbarPresence).toBe(false);
     // Not set, so it keeps what the app drew rather than following the others off.
     expect(result.current.display.showTimestamps).toBe(true);
+  });
+
+  /**
+   * The bounds are the CLI's own, quoted in its schema: "1-1000. Defaults to 50." Held to
+   * here as well, because this reads a file somebody can type anything into.
+   */
+  describe('how far back the prompts go', () => {
+    it('takes the number the CLI was given', async () => {
+      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: 8 });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(result.current.display.commandHistoryMaxSize).toBe(8));
+    });
+
+    it('will not go below one, which would leave nothing to recall', async () => {
+      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: 0 });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
+      expect(result.current.display.commandHistoryMaxSize).toBe(1);
+    });
+
+    it('will not go above the thousand the CLI stops at', async () => {
+      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: 99_999 });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(result.current.display.commandHistoryMaxSize).toBe(1000));
+    });
+
+    it('falls back to fifty for a value that is not a number', async () => {
+      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: '20' });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
+      expect(result.current.display.commandHistoryMaxSize).toBe(50);
+    });
+
+    // A number that is not one would clamp to itself and leave the history unreachable
+    // without saying so.
+    it('falls back to fifty for a number that is no number at all', async () => {
+      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: Number.NaN });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
+      expect(result.current.display.commandHistoryMaxSize).toBe(50);
+    });
+
+    it('rounds a fraction down rather than keeping part of a prompt', async () => {
+      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: 7.9 });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(result.current.display.commandHistoryMaxSize).toBe(7));
+    });
   });
 
   /** Only the exact stored false turns one off, so nothing unexpected can hide anything. */
@@ -100,6 +154,66 @@ describe('turning one off', () => {
 
     await waitFor(() => expect(writeCliSettings).toHaveBeenCalled());
     expect(result.current.display.showReasoning).toBe(false);
+  });
+});
+
+/**
+ * The settings window writes the CLI's file directly, and that write has to reach what this
+ * app is already drawing rather than waiting for the next start.
+ */
+describe('a change made in the settings window', () => {
+  it('reaches what the transcript is drawing', async () => {
+    const { result } = renderHook(() => useCliDisplay());
+
+    act(() => result.current.take({ showTimestamps: false }));
+
+    expect(result.current.display.showTimestamps).toBe(false);
+  });
+
+  it('takes a number as well as a switch', () => {
+    const { result } = renderHook(() => useCliDisplay());
+
+    act(() => result.current.take({ commandHistoryMaxSize: 9 }));
+
+    expect(result.current.display.commandHistoryMaxSize).toBe(9);
+  });
+
+  /** Unset means the CLI falls back to its own default, and so does this. */
+  it('goes back to what the app draws when the setting is cleared', async () => {
+    cliSettingValues.mockResolvedValue({ showReasoning: false, commandHistoryMaxSize: 9 });
+    const { result } = renderHook(() => useCliDisplay());
+    await waitFor(() => expect(result.current.display.showReasoning).toBe(false));
+
+    act(() => result.current.take({ showReasoning: undefined, commandHistoryMaxSize: undefined }));
+
+    expect(result.current.display.showReasoning).toBe(true);
+    expect(result.current.display.commandHistoryMaxSize).toBe(50);
+  });
+
+  it('leaves the settings it was not told about alone', () => {
+    const { result } = renderHook(() => useCliDisplay());
+
+    act(() => result.current.take({ showReasoning: false }));
+
+    expect(result.current.display.showTimestamps).toBe(true);
+  });
+
+  // The window writes whatever the CLI category holds, most of which is nothing to do here.
+  it("ignores the rest of the CLI's file", () => {
+    const { result } = renderHook(() => useCliDisplay());
+
+    act(() => result.current.take({ memory: false, theme: 'dim' }));
+
+    expect(result.current.display).toEqual(ASSUMED_DISPLAY);
+  });
+
+  // It is the window's write, already on its way to the file; a second one could only race it.
+  it('does not write the file a second time', () => {
+    const { result } = renderHook(() => useCliDisplay());
+
+    act(() => result.current.take({ showReasoning: false }));
+
+    expect(writeCliSettings).not.toHaveBeenCalled();
   });
 });
 

@@ -57,9 +57,6 @@ const TERMINAL_ONLY = new Set([
   'transcriptView',
   'updateTerminalTitle',
   'terminalProgress',
-  // Its own history lives in this app, in this app's own store, so the CLI's size for it
-  // would be a number that changes nothing here.
-  'commandHistoryMaxSize',
   // Both say "new interactive sessions" in the schema, and both were measured doing nothing
   // to a session this app made: allow-all left it on manual, which is #199 all over again.
   'defaultMode',

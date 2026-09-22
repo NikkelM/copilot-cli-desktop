@@ -24,6 +24,29 @@ export interface CliDisplay {
   taskbarPresence: boolean;
   showTimestamps: boolean;
   showToolDurations: boolean;
+  /** How many of the newest prompts can be stepped back through. */
+  commandHistoryMaxSize: number;
+}
+
+/** The ones that are a switch, which are the ones this app offers to flip. */
+type Toggle = {
+  [K in keyof CliDisplay]: CliDisplay[K] extends boolean ? K : never;
+}[keyof CliDisplay];
+
+/**
+ * What the CLI says about its own history size, and how far it will be believed.
+ *
+ * The bounds are the CLI's, quoted in the schema: "1-1000. Defaults to 50." Held to here
+ * as well, because this reads a file somebody can type anything into, and a zero would
+ * leave the reader unable to recall the prompt they just sent with no way to see why.
+ */
+export const HISTORY_DEFAULT = 50;
+const HISTORY_MIN = 1;
+const HISTORY_MAX = 1000;
+
+function historySize(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return HISTORY_DEFAULT;
+  return Math.min(HISTORY_MAX, Math.max(HISTORY_MIN, Math.floor(value)));
 }
 
 /** The key this app used to keep its own answer about thinking under. */
@@ -41,10 +64,11 @@ export const ASSUMED_DISPLAY: CliDisplay = {
   taskbarPresence: true,
   showTimestamps: true,
   showToolDurations: true,
+  commandHistoryMaxSize: HISTORY_DEFAULT,
 };
 
 /** Only the exact stored false turns one off, so nothing unexpected can hide anything. */
-function shows(values: Record<string, unknown>, key: keyof CliDisplay): boolean {
+function shows(values: Record<string, unknown>, key: Toggle): boolean {
   return values[key] !== false;
 }
 
@@ -73,6 +97,7 @@ export function useCliDisplay() {
           taskbarPresence: shows(values, 'taskbarPresence'),
           showTimestamps: shows(values, 'showTimestamps'),
           showToolDurations: shows(values, 'showToolDurations'),
+          commandHistoryMaxSize: historySize(values.commandHistoryMaxSize),
         });
       })
       // What this app already drew, which is the safe answer: a transcript missing its
@@ -81,12 +106,33 @@ export function useCliDisplay() {
   }, []);
 
   /** Turn one on or off, in the CLI's file, where both programs will find it. */
-  const set = useCallback((key: keyof CliDisplay, value: boolean) => {
+  const set = useCallback((key: Toggle, value: boolean) => {
     setDisplay((current) => ({ ...current, [key]: value }));
     // Kept under the old key as well, for a reader who goes back to a build that reads it.
     if (key === 'showReasoning') save('settings', OLD_REASONING, String(value));
     void writeCliSettings({ [key]: value }).catch(() => undefined);
   }, []);
 
-  return { display, set };
+  /**
+   * Fold in a change made somewhere else in this app.
+   *
+   * The settings window writes the CLI's file directly, since these are the CLI's settings
+   * and holding a draft of another program's file would only invite the two to disagree.
+   * That write does not come back through here, so without this a reader who turned
+   * timestamps off in that window would see nothing change until the app was next started.
+   *
+   * Only the settings this app draws from are taken; the rest of that file is the CLI's.
+   */
+  const take = useCallback((changes: Record<string, unknown>) => {
+    setDisplay((current) => {
+      const next = { ...current };
+      for (const key of Object.keys(changes)) {
+        if (key === 'commandHistoryMaxSize') next.commandHistoryMaxSize = historySize(changes[key]);
+        else if (key in ASSUMED_DISPLAY) next[key as Toggle] = shows(changes, key as Toggle);
+      }
+      return next;
+    });
+  }, []);
+
+  return { display, set, take };
 }
