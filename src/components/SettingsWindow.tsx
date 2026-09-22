@@ -272,24 +272,31 @@ function ScaleField({
 }
 
 /**
- * The groups the settings are divided into.
+ * The groups the settings are divided into, in the order the sidebar lists them.
  *
- * Which settings belong to each is not recorded here, because nothing needs it: what stops
- * a category being left is whether the draft differs from what is saved at all, and a
- * setting in another category cannot have been changed without going there first - which
- * is the thing being stopped (#100).
+ * Alphabetical, so a reader looking for a category looks it up rather than learning where
+ * it was put. What each holds is not recorded here, because nothing needs it: what stops a
+ * category being left is whether the draft differs from what is saved at all, and a setting
+ * in another category cannot have been changed without going there first - which is the
+ * thing being stopped (#100).
  */
 const CATEGORIES = [
-  { id: 'management', label: 'Session management' },
-  { id: 'sessions', label: 'New sessions' },
   { id: 'appearance', label: 'Appearance' },
   { id: 'cli', label: 'Copilot CLI' },
-  // Last, because it is the only one that is about what is there rather than about what
-  // this app should do, and because it is looked at when something has gone wrong.
-  { id: 'bin', label: 'Recycle bin' },
+  { id: 'sessions', label: 'New sessions' },
+  { id: 'management', label: 'Session management' },
 ] as const satisfies readonly { id: string; label: string }[];
 
 type CategoryId = (typeof CATEGORIES)[number]['id'];
+
+/**
+ * Where the window opens.
+ *
+ * Named rather than taken from the top of the list, which is in alphabetical order and so
+ * says nothing about where anybody would want to start. Tying the two together would mean
+ * a category added one day quietly became the first thing everybody sees.
+ */
+const OPENS_ON: CategoryId = 'management';
 
 /**
  * What each category holds, for finding a setting without knowing where it lives.
@@ -311,6 +318,8 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Release an idle session after', keywords: 'timeout minutes evict unload memory' },
     { label: 'Answer a question for me after', keywords: 'permission timeout wait give up prompt' },
     { label: 'Ask before deleting a session', keywords: 'confirm delete warn' },
+    { label: 'Keep a deleted session for', keywords: 'retention days recycle bin restore' },
+    { label: 'Waiting to be deleted', keywords: 'recycle bin restore purge deleted sessions' },
   ],
   sessions: [
     { label: 'Run tools without asking', keywords: 'allow all yolo permission approve' },
@@ -322,10 +331,6 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Text size', keywords: 'font scale reading transcript' },
   ],
   cli: [{ label: 'Update the CLI when the app starts', keywords: 'upgrade version auto' }],
-  bin: [
-    { label: 'Keep a deleted session for', keywords: 'retention days recycle bin restore' },
-    { label: 'Waiting to be deleted', keywords: 'recycle bin restore purge deleted sessions' },
-  ],
 };
 
 /** What a reader was trying to do when they were stopped by unsaved changes. */
@@ -401,7 +406,7 @@ export function SettingsWindow({
    * that reached for the sidecar itself could not be.
    */
   binned?: BinnedSession[] | null;
-  /** Ask what is in the bin. Called on reaching the category rather than on opening. */
+  /** Ask what is in the bin. Called on reaching the category it is a section of. */
   onNeedBin?: () => void;
   onRestore?: (sessionId: string) => void;
   onPurge?: (sessionId: string) => void;
@@ -423,7 +428,7 @@ export function SettingsWindow({
   onWriteCli?: (changes: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
-  const [category, setCategory] = useState<CategoryId>(CATEGORIES[0].id);
+  const [category, setCategory] = useState<CategoryId>(OPENS_ON);
   const [pending, setPending] = useState<Pending | null>(null);
   const [query, setQuery] = useState('');
   /**
@@ -535,7 +540,7 @@ export function SettingsWindow({
    * leaving rows on screen that have already gone.
    */
   useEffect(() => {
-    if (category === 'bin') onNeedBin?.();
+    if (category === 'management') onNeedBin?.();
   }, [category, onNeedBin, settings.binRetentionDays]);
 
   /**
@@ -703,6 +708,72 @@ export function SettingsWindow({
                         : 'Deleting removes the transcript and everything the session wrote. There is no undo.'
                     }
                   />
+                )}
+
+                <h4 className="settings-subhead">Recycle bin</h4>
+
+                <p className="settings-note">
+                  Deleted sessions wait here before they are really deleted. Restoring one puts it back
+                  exactly where it was, with its title and its place in the list.
+                </p>
+
+                {shows('Keep a deleted session for') && (
+                  <NumberField
+                    label="Keep a deleted session for"
+                    value={draft.binRetentionDays}
+                    onChange={(value) => edit('binRetentionDays', value)}
+                    hint={
+                      draft.binRetentionDays === 0
+                        ? 'Deleting is immediate and cannot be undone.'
+                        : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}, counted from when it was deleted. The default is ${DEFAULT_BIN_RETENTION_DAYS}.`
+                    }
+                  />
+                )}
+
+                {/* Saving applies the new rule to what is already here, so anything past it
+                    goes at that point. Said before it is saved rather than discovered after:
+                    the rows are listed directly below, and they are all there is left of
+                    those sessions. */}
+                {losing > 0 && (
+                  <p className="settings-warning">
+                    Saving will delete {losing === 1 ? 'the session' : `${losing} of the sessions`} below, which
+                    {losing === 1 ? ' has' : ' have'} been here longer than{' '}
+                    {draft.binRetentionDays === 0 ? 'the new setting keeps anything' : 'the new setting allows'}.
+                  </p>
+                )}
+
+                {shows('Waiting to be deleted') && (
+                  <>
+                    {binned === null && <p className="settings-note">Reading the bin.</p>}
+                    {binned?.length === 0 && <p className="settings-note">Nothing has been deleted.</p>}
+
+                    {binned?.map((session) => (
+                      <div className="settings-row bin-row" key={session.sessionId}>
+                        <span className="bin-what">
+                          <span className="bin-title">{session.title ?? 'Untitled session'}</span>
+                          <span className="settings-hint">
+                            Deleted {formatRelative(session.binnedAt)} · {bytes(session.bytes)}
+                          </span>
+                        </span>
+                        <span className="bin-actions">
+                          <button
+                            type="button"
+                            className="settings-reset"
+                            onClick={() => onRestore?.(session.sessionId)}
+                          >
+                            Restore
+                          </button>
+                          <button
+                            type="button"
+                            className="settings-reset destructive"
+                            onClick={() => onPurge?.(session.sessionId)}
+                          >
+                            Delete now
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                  </>
                 )}
               </>
             )}
@@ -946,67 +1017,6 @@ export function SettingsWindow({
               </>
             )}
 
-            {shown.id === 'bin' && (
-              <>
-                <p className="settings-note">
-                  Deleted sessions wait here before they are really deleted. Restoring one puts it back
-                  exactly where it was, with its title and its place in the list.
-                </p>
-
-                {shows('Keep a deleted session for') && (
-                  <NumberField
-                    label="Keep a deleted session for"
-                    value={draft.binRetentionDays}
-                    onChange={(value) => edit('binRetentionDays', value)}
-                    hint={
-                      draft.binRetentionDays === 0
-                        ? 'Deleting is immediate and cannot be undone.'
-                        : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}, counted from when it was deleted. The default is ${DEFAULT_BIN_RETENTION_DAYS}.`
-                    }
-                  />
-                )}
-
-                {/* Saving applies the new rule to what is already here, so anything past it
-                    goes at that point. Said before it is saved rather than discovered after:
-                    the rows are listed directly below, and they are all there is left of
-                    those sessions. */}
-                {losing > 0 && (
-                  <p className="settings-warning">
-                    Saving will delete {losing === 1 ? 'the session' : `${losing} of the sessions`} below, which
-                    {losing === 1 ? ' has' : ' have'} been here longer than{' '}
-                    {draft.binRetentionDays === 0 ? 'the new setting keeps anything' : 'the new setting allows'}.
-                  </p>
-                )}
-
-                <h4 className="settings-subhead">Waiting to be deleted</h4>
-
-                {binned === null && <p className="settings-note">Reading the bin.</p>}
-                {binned?.length === 0 && <p className="settings-note">Nothing has been deleted.</p>}
-
-                {binned?.map((session) => (
-                  <div className="settings-row bin-row" key={session.sessionId}>
-                    <span className="bin-what">
-                      <span className="bin-title">{session.title ?? 'Untitled session'}</span>
-                      <span className="settings-hint">
-                        Deleted {formatRelative(session.binnedAt)} · {bytes(session.bytes)}
-                      </span>
-                    </span>
-                    <span className="bin-actions">
-                      <button type="button" className="settings-reset" onClick={() => onRestore?.(session.sessionId)}>
-                        Restore
-                      </button>
-                      <button
-                        type="button"
-                        className="settings-reset destructive"
-                        onClick={() => onPurge?.(session.sessionId)}
-                      >
-                        Delete now
-                      </button>
-                    </span>
-                  </div>
-                ))}
-              </>
-            )}
           </div>
 
           <div className="confirm-actions">
@@ -1015,8 +1025,10 @@ export function SettingsWindow({
                 intentions and one Save that also closed could only serve one of them.
 
                 Cancel closes without saving, which puts the draft back by throwing it away
-                with the window - including the scale, which is put back as this unmounts. */}
-            <button type="button" className="confirm-cancel" onClick={onClose} disabled={!unsaved}>
+                with the window - including the scale, which is put back as this unmounts.
+                It is offered with nothing to undo, because closing is the other half of what
+                it does and a reader reaching for the way out should find one. */}
+            <button type="button" className="confirm-cancel" onClick={onClose}>
               Cancel
             </button>
             <button type="button" className="confirm-cancel" onClick={() => onSave(draft)} disabled={!unsaved}>

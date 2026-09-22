@@ -4901,9 +4901,10 @@ pre.fatal,
   margin-bottom: 12px;
 }
 
+/* Above the section headings under it, so the three read as a hierarchy rather than a list. */
 .settings-head h3 {
   margin: 0;
-  font-size: var(--font-lg);
+  font-size: var(--font-3xl);
 }
 
 /* Scrolls on its own, so the category name and the actions stay where they were. */
@@ -5177,16 +5178,26 @@ pre.fatal,
   width: 100%;
 }
 
-/* Names a group of settings inside a category, for a category that holds more than one
-   idea. The first has no space above it: the category name is already there. */
+/*
+ * The heading over a section of a category.
+ *
+ * Several sizes above the names under it, with a line above and weight behind it. At one
+ * step up it was within a pixel of a setting's own name and read as one more setting rather
+ * than as the start of a group of them.
+ */
 .settings-subhead {
-  margin: 20px 0 4px;
-  font-size: var(--font-md);
-  font-weight: 600;
+  margin: 28px 0 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  font-size: var(--font-2xl);
+  font-weight: 700;
 }
 
+/* Nothing above it to be divided from. */
 .settings-body > .settings-subhead:first-child {
   margin-top: 0;
+  padding-top: 0;
+  border-top: none;
 }
 
 /* A path and the control that picks one, side by side as a single field. */

@@ -84,7 +84,7 @@ describe('the settings window', () => {
     show();
 
     const names = [...document.querySelectorAll('.settings-subhead')].map((node) => node.textContent);
-    expect(names).toEqual(['Memory', 'Waiting for you', 'Deleting']);
+    expect(names).toEqual(['Memory', 'Waiting for you', 'Deleting', 'Recycle bin']);
   });
 
   it('shows what each setting is now', async () => {
@@ -192,15 +192,19 @@ describe('saving', () => {
   });
 
   /** Nothing to put back and nothing to keep, so neither has anything to do. */
-  it('greys out Cancel and Save until something has been changed', async () => {
+  it('leaves Cancel available with nothing to undo, since it is also the way out', async () => {
     show({ maxLoaded: 3 });
-    expect(leaveButton().disabled).toBe(true);
+
+    expect(leaveButton().disabled).toBe(false);
+  });
+
+  it('greys out Save until something has been changed', async () => {
+    show({ maxLoaded: 3 });
     expect(commit().disabled).toBe(true);
 
     await userEvent.clear(kept());
     await userEvent.type(kept(), '9');
 
-    expect(leaveButton().disabled).toBe(false);
     expect(commit().disabled).toBe(false);
   });
 
@@ -1095,22 +1099,23 @@ describe('the recycle bin', () => {
     return { onSave, onNeedBin, onRestore, onPurge };
   };
 
-  const openBin = () => userEvent.click(tab('Recycle bin'));
+  // Where the bin lives now, and where the window opens, so this is where it already is.
+  const openBin = () => userEvent.click(tab('Session management'));
 
-  it('is the last category, since it is about what is there rather than what to do', () => {
+  /** A section of session management now, rather than a category of its own. */
+  it('is a section of session management rather than a category', () => {
     show();
 
     const names = screen.getAllByRole('button').map((button) => button.textContent);
-    expect(names.filter((name) => name === 'Recycle bin')).toHaveLength(1);
-    expect(names.indexOf('Recycle bin')).toBeGreaterThan(names.indexOf('Copilot CLI'));
+    expect(names).not.toContain('Recycle bin');
+    expect([...document.querySelectorAll('.settings-subhead')].map((node) => node.textContent)).toContain(
+      'Recycle bin',
+    );
   });
 
-  // Reading it costs a directory listing, which nobody changing the text size asked for.
-  it('reads the bin on reaching it rather than on opening the window', async () => {
+  // Reading it costs a directory listing, which it pays for by being where the window opens.
+  it('reads the bin when the category holding it is shown', async () => {
     const { onNeedBin } = withBin();
-    expect(onNeedBin).not.toHaveBeenCalled();
-
-    await openBin();
 
     expect(onNeedBin).toHaveBeenCalled();
   });
@@ -1766,7 +1771,24 @@ describe('searching the settings', () => {
   it('lists every category before anything is typed', () => {
     show();
 
-    expect(categories()).toEqual(['Session management', 'New sessions', 'Appearance', 'Copilot CLI', 'Recycle bin']);
+    expect(categories()).toEqual(['Appearance', 'Copilot CLI', 'New sessions', 'Session management']);
+  });
+
+  /**
+   * In alphabetical order, so a category is looked up rather than remembered. Checked as a
+   * rule rather than against a list, so one added later has to go in the right place.
+   */
+  it('lists them in alphabetical order', () => {
+    show();
+
+    expect(categories()).toEqual([...categories()].sort((a, b) => (a ?? '').localeCompare(b ?? '')));
+  });
+
+  /** Named rather than taken from the top of a list whose order says nothing about it. */
+  it('opens on session management rather than on whatever sorts first', () => {
+    show();
+
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Session management');
   });
 
   it('lists only the categories holding a match', async () => {
@@ -1783,7 +1805,7 @@ describe('searching the settings', () => {
 
     await type('retention');
 
-    expect(categories()).toEqual(['Recycle bin']);
+    expect(categories()).toEqual(['Session management']);
   });
 
   it('shows only the settings that match, within the category being looked at', async () => {
@@ -1819,7 +1841,7 @@ describe('searching the settings', () => {
 
     await userEvent.clear(search());
 
-    expect(categories()).toHaveLength(5);
+    expect(categories()).toHaveLength(4);
     expect(screen.getByLabelText('Sessions kept in memory')).toBeTruthy();
   });
 
@@ -1851,7 +1873,6 @@ describe('what the search is told a category holds', () => {
     ['Session management', 'management'],
     ['New sessions', 'sessions'],
     ['Appearance', 'appearance'],
-    ['Recycle bin', 'bin'],
   ])('knows about every setting drawn in %s', async (name) => {
     show();
     await userEvent.click(tab(name));

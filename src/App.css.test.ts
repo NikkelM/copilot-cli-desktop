@@ -460,3 +460,42 @@ describe('a group of nested CLI settings', () => {
     expect(block(".cli-group-head[aria-expanded='true']")).toContain('border-radius: 8px 8px 0 0;');
   });
 });
+/**
+ * A section heading has to read as the start of a group rather than as one more setting.
+ *
+ * Twice now it has been set one step above the names under it, which on this scale is about
+ * a pixel and invisible. Guarded as a hierarchy rather than as exact sizes, so the three can
+ * all move together without this having an opinion about where they land.
+ */
+describe('the settings headings', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  const SCALE = ['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl'];
+  const step = (selector: string) => {
+    const rule = block(selector);
+    const at = SCALE.findIndex((name) => rule.includes(`font-size: var(--font-${name})`));
+    expect(at, `${selector} should take a size from the scale`).toBeGreaterThan(-1);
+    return at;
+  };
+
+  it('sets a section heading well clear of the names under it', () => {
+    expect(
+      step('.settings-subhead') - step('.settings-label'),
+      'one step apart is about a pixel, which is why this was raised twice',
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('keeps the category name above the sections inside it', () => {
+    expect(step('.settings-head h3')).toBeGreaterThan(step('.settings-subhead'));
+  });
+
+  /** The line is what says a section started, so it belongs to every one after the first. */
+  it('divides each section from the one before it', () => {
+    expect(block('.settings-subhead')).toMatch(/border-top:\s*1px solid var\(--border\)/);
+    expect(block('.settings-body > .settings-subhead:first-child')).toContain('border-top: none;');
+  });
+});
