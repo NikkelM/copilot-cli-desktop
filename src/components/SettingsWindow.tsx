@@ -129,15 +129,31 @@ function CliField({
   onChange: (value: unknown) => void;
 }) {
   const unset = value === undefined;
+  /**
+   * Whether the control is three buttons rather than one thing to point a label at.
+   *
+   * A label names its control and activates it, and the browser lights the control up when
+   * the label is hovered. Pointed at the first of three that is a lie: the name of the
+   * setting is not the name of "on", and the whole row left of the buttons became a way to
+   * turn the setting on by accident.
+   */
+  const grouped = setting.kind === 'boolean';
+  const labelId = `cli-label-${setting.path}`;
 
   return (
     <div className="settings-row">
-      <label className="settings-label cli-path" htmlFor={`cli-${setting.path}`}>
-        {setting.path}
-      </label>
+      {grouped ? (
+        <span className="settings-label cli-path" id={labelId}>
+          {setting.path}
+        </span>
+      ) : (
+        <label className="settings-label cli-path" htmlFor={`cli-${setting.path}`}>
+          {setting.path}
+        </label>
+      )}
 
       {setting.kind === 'boolean' && (
-        <span className="cli-choice">
+        <span className="cli-choice" role="group" aria-labelledby={labelId}>
           {/* Three buttons rather than a tick box, since a tick box cannot say "unset" and
               this app cannot say what the CLI would do instead. */}
           {(['on', 'off', 'default'] as const).map((choice) => {
@@ -146,7 +162,6 @@ function CliField({
               <button
                 key={choice}
                 type="button"
-                id={choice === 'on' ? `cli-${setting.path}` : undefined}
                 className={chosen ? 'model-option chosen' : 'model-option'}
                 aria-pressed={chosen}
                 aria-label={`${setting.path} ${choice}`}

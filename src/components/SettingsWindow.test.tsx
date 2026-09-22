@@ -1403,6 +1403,42 @@ describe("the CLI's own settings", () => {
     expect(screen.getByText(/This CLI could not be read/)).toBeTruthy();
   });
 
+  /**
+   * Three buttons are a group, and the setting's name is the group's name rather than the
+   * name of the first button in it.
+   *
+   * Pointed at one of them, a label does two things a reader did not ask for: clicking the
+   * name presses that button, and the browser lights it up whenever the name is hovered -
+   * which turned the whole row left of the buttons into a way to switch a setting on.
+   */
+  describe('the name beside a three-way setting', () => {
+    it('does not press one of the three when it is clicked', async () => {
+      const { onWriteCli } = withCli();
+      await openCli();
+
+      await userEvent.click(screen.getByText('autoUpdate'));
+
+      expect(onWriteCli).not.toHaveBeenCalled();
+    });
+
+    it('names the group rather than one button in it', async () => {
+      withCli();
+      await openCli();
+
+      expect(screen.getByRole('group', { name: 'autoUpdate' })).toBeTruthy();
+      // What makes a browser light a control up when its label is hovered.
+      expect(screen.getByText('autoUpdate').getAttribute('for')).toBeNull();
+    });
+
+    /** Still a label where there is one control, which is where a label belongs. */
+    it('still reaches the one control a setting with one has', async () => {
+      withCli();
+      await openCli();
+
+      expect(screen.getByLabelText('logLevel')).toBeTruthy();
+    });
+  });
+
   describe('a setting nobody has chosen', () => {
     it('shows a tick box as neither on nor off', async () => {
       withCli();
