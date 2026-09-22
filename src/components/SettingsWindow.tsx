@@ -781,7 +781,20 @@ export function SettingsWindow({
             {shown.id === 'sessions' && (
               <>
                 <p className="settings-note">
-                  What a session starts with when it is made from the New button.
+                  What a session starts with when it is made from the New button. These are this app's
+                  own. Plenty of what a new session answers to belongs to the CLI instead, and those
+                  are in{' '}
+                  <button
+                    type="button"
+                    className="settings-link"
+                    // Its own name, since the sidebar already has a button reading exactly
+                    // this. The visible words are inside it, so the two still agree.
+                    aria-label="Go to Copilot CLI settings"
+                    onClick={() => leave({ go: 'category', to: 'cli' })}
+                  >
+                    Copilot CLI
+                  </button>
+                  .
                 </p>
 
                 {shows('Run tools without asking') && (

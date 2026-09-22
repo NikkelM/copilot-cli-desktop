@@ -1625,6 +1625,42 @@ describe("the CLI's own settings", () => {
     });
   });
 
+  /**
+   * The category holds this app's own answers, and plenty of what a new session answers to
+   * is the CLI's instead. Said where somebody would otherwise conclude this was all of it.
+   */
+  describe('what else decides how a session starts', () => {
+    const goToSessions = () => userEvent.click(tab('New sessions'));
+
+    it('says the CLI has its own settings for the same sessions', async () => {
+      show();
+      await goToSessions();
+
+      expect(screen.getByText(/belongs to the CLI instead/)).toBeTruthy();
+    });
+
+    it('takes the reader there', async () => {
+      show();
+      await goToSessions();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Go to Copilot CLI settings' }));
+
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Copilot CLI');
+    });
+
+    /** Leaving a category is what asks, and this is one more way of leaving one. */
+    it('asks about unsaved changes on the way, like every other way out', async () => {
+      show();
+      await goToSessions();
+      await userEvent.click(screen.getByLabelText('Run tools without asking'));
+
+      await userEvent.click(screen.getByRole('button', { name: 'Go to Copilot CLI settings' }));
+
+      expect(screen.getByRole('alertdialog', { name: 'Unsaved changes' })).toBeTruthy();
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('New sessions');
+    });
+  });
+
   describe('searching them', () => {
     const search = async (text: string) => {
       await userEvent.clear(screen.getByLabelText('Search settings'));
