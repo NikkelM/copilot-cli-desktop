@@ -4814,8 +4814,12 @@ pre.fatal,
   position: relative;
   display: grid;
   grid-template-columns: auto 1fr;
-  width: min(46rem, calc(100vw - 48px));
-  height: min(28rem, calc(100vh - 80px));
+  /* Most of the window rather than a fixed box in the middle of it: several categories are
+     long lists now, and a panel a third the width of the app made a reader scroll through
+     settings that would have fitted. Held back from the edges so it still reads as a window
+     over the app, and capped so it does not sprawl on a very large screen. */
+  width: min(72rem, calc(100vw - 96px));
+  height: min(52rem, calc(100vh - 96px));
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -4865,6 +4869,10 @@ pre.fatal,
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* A grid item will not shrink below its content without this, so a long category pushed
+     the window open from the inside and the part that scrolls never had a height to fill.
+     It showed up only once a category had more in it than the window could hold. */
+  min-height: 0;
   padding: 16px 20px 16px;
 }
 

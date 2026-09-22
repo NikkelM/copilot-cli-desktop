@@ -1360,12 +1360,12 @@ describe("the CLI's own settings", () => {
   const press = (path: string, choice: string) =>
     userEvent.click(screen.getByRole('button', { name: `${path} ${choice}` }));
 
-  // Reading them means reading a 90MB binary, which nobody changing the text size asked for.
-  it('reads them on reaching the category rather than on opening the window', async () => {
+  /**
+   * As the window opens rather than on reaching the category: the category is long enough to
+   * scroll, and arriving a moment after it is looked at drew it short and then grew it.
+   */
+  it('reads them as the window opens', () => {
     const { onNeedCli } = withCli(null);
-    expect(onNeedCli).not.toHaveBeenCalled();
-
-    await openCli();
 
     expect(onNeedCli).toHaveBeenCalledOnce();
   });

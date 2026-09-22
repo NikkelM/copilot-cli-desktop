@@ -430,18 +430,23 @@ export function SettingsWindow({
   }, [category, onNeedBin, settings.binRetentionDays]);
 
   /**
-   * Read the CLI's own settings on reaching them, if there are none.
+   * Read the CLI's own settings once, as the window opens.
    *
-   * Once, like the model catalogue rather than like the bin: the schema comes out of a 90MB
-   * binary, and nothing this window does changes what the CLI knows about.
+   * On opening rather than on reaching the category, even though nobody changing the text
+   * size needs them: the category is long enough to scroll, and arriving a moment after it
+   * is looked at meant it was drawn short and then grew under the reader.
+   *
+   * The cost is a 90MB read in the sidecar, which is 60ms somewhere that is not this
+   * window, against a category that visibly assembles itself. Once, since nothing this
+   * window does changes what the CLI knows about.
    */
   const askedForCli = useRef(false);
   useEffect(() => {
-    if (category !== 'cli' || askedForCli.current || cli) return;
+    if (askedForCli.current || cli) return;
 
     askedForCli.current = true;
     onNeedCli?.();
-  }, [category, cli, onNeedCli]);
+  }, [cli, onNeedCli]);
 
   const edit = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));

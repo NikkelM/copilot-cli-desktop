@@ -377,3 +377,32 @@ describe('class names', () => {
     expect(styled.size).toBeGreaterThan(100);
   });
 });
+
+
+/**
+ * A settings category longer than the window can scroll.
+ *
+ * A grid item will not shrink below its content without being told to, so the column
+ * holding the categories grew past the window it sits in and the part meant to scroll never
+ * had a height to fill. Nothing failed: with little in a category it looked right, and it
+ * only showed once one held more than would fit (#202).
+ */
+describe('a category that does not fit', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('lets the column shrink to the window it sits in', () => {
+    expect(block('.settings-main'), 'a grid item will not shrink below its content').toContain('min-height: 0;');
+  });
+
+  it('scrolls the settings rather than the window around them', () => {
+    const body = block('.settings-body');
+
+    expect(body).toContain('overflow-y: auto;');
+    // Without this the flex item does the same thing one level further in.
+    expect(body).toContain('min-height: 0;');
+  });
+});
