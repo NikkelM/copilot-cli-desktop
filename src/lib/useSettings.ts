@@ -79,6 +79,14 @@ export interface Settings {
   /**
    * Which model a new session starts on, or empty for whatever the runtime picks.
    *
+   * Kept in the CLI's own settings file rather than this app's, so a model chosen here is
+   * the model the terminal CLI starts on too. It works from there: the CLI reads it when a
+   * session is created, and a session this app made on a server already running picked up
+   * a model written while it ran (#202).
+   *
+   * The effort and the context below could not follow it. Both were set in the CLI's file
+   * and the session recorded neither, so they stay here and are passed at creation.
+   *
    * Empty is the default and means `auto`, which is the runtime's own answer. Naming one
    * also spares the titling a detour: `auto` cannot answer the question a title comes from,
    * so a session on it is moved to a named model and back again (#197).

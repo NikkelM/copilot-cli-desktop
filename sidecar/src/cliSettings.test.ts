@@ -185,11 +185,29 @@ describe('what it refuses', () => {
     makeRuntime('1.0.87', [
       setting('defaultMode', 'enum', { options: ['plan'] }),
       setting('defaultPermissionMode', 'enum', { options: ['allow-all'] }),
-      setting('model', 'string'),
+      setting('memory', 'boolean'),
     ]);
     const { cliSettingsSchema } = await load();
 
-    expect(cliSettingsSchema().map((s) => s.path)).toEqual(['model']);
+    expect(cliSettingsSchema().map((s) => s.path)).toEqual(['memory']);
+  });
+
+  /**
+   * A better control for them lives in another category. Two of the three are also refused
+   * because they do nothing here: both were set in the CLI's file and the session recorded
+   * "reasoningEffort":null,"contextTier":null, so they reach the sessions the CLI starts
+   * rather than these.
+   */
+  it('leaves out the ones this window draws better elsewhere', async () => {
+    makeRuntime('1.0.87', [
+      setting('model', 'string'),
+      setting('effortLevel', 'string'),
+      setting('contextTier', 'enum', { options: ['default'] }),
+      setting('planModel', 'string'),
+    ]);
+    const { cliSettingsSchema } = await load();
+
+    expect(cliSettingsSchema().map((s) => s.path)).toEqual(['planModel']);
   });
 
   /** New settings appear by themselves, which is the whole point of refusing by name. */

@@ -69,6 +69,21 @@ const TERMINAL_ONLY = new Set([
 /** Whole groups of the CLI's terminal chrome, refused by their prefix rather than one by one. */
 const TERMINAL_GROUPS = ['footer.', 'sidebar.', 'tabs.', 'statusLine.', 'voice.'];
 
+/**
+ * Settings this window has a better control for, in the category they belong to.
+ *
+ * Not refused because they do nothing - `model` demonstrably works from the CLI's file -
+ * but because a model id typed into a text box is a worse way to choose one than the picker
+ * that knows what the models are, what they cost and what they can be asked for.
+ *
+ * The other two are here for the opposite reason, and it is worth writing down: setting
+ * `effortLevel` and `contextTier` in the CLI's file leaves a session this app makes with
+ * neither. Measured - both were set, and the session's own log recorded
+ * `"reasoningEffort":null,"contextTier":null` - so they are the CLI's own, reaching the
+ * sessions it starts rather than these, and this app keeps its own pair (#200, #202).
+ */
+const SHOWN_ELSEWHERE = new Set(['model', 'effortLevel', 'contextTier']);
+
 /** Where the CLI keeps what the reader chose. The CLI's file, not this app's. */
 export function cliSettingsFile(): string {
   return join(copilotHome, 'settings.json');
@@ -173,6 +188,7 @@ export function cliSettingsSchema(): CliSetting[] {
     if (!path || !kind || found.has(path)) continue;
     if (!EDITABLE.includes(kind)) continue;
     if (TERMINAL_ONLY.has(path) || TERMINAL_GROUPS.some((group) => path.startsWith(group))) continue;
+    if (SHOWN_ELSEWHERE.has(path)) continue;
 
     found.set(path, {
       path,
