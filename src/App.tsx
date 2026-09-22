@@ -42,6 +42,7 @@ import {
   loadSession,
   renameSession,
   deleteSession,
+  writeCliSettings,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, TAG, USAGE, WIKI, wantsDirectory, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
@@ -1171,8 +1172,14 @@ export default function App() {
                   onStage={(path, staged) => void repository.stage(path, staged)}
                   onCommit={(message, amend) => void repository.commit(message, amend)}
                   committing={repository.committing}
-                  onSync={(direction) => void repository.sync(direction)}
+                  onSync={(direction, strategy) => void repository.sync(direction, strategy)}
                   syncing={repository.syncing}
+                  diverged={repository.diverged}
+                  onDismissDiverged={repository.dismissDiverged}
+                  // Written where the CLI keeps it, so the terminal stops asking too.
+                  onRememberStrategy={(strategy) => {
+                    void writeCliSettings({ mergeStrategy: strategy }).catch(() => undefined);
+                  }}
                   branches={repository.branches}
                   onBranches={() => void repository.readBranches()}
                   onSwitch={(name, create) => void repository.switchTo(name, create)}

@@ -63,8 +63,7 @@ describe('what the transcript draws', () => {
       cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: 0 });
       const { result } = renderHook(() => useCliDisplay());
 
-      await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
-      expect(result.current.display.commandHistoryMaxSize).toBe(1);
+      await waitFor(() => expect(result.current.display.commandHistoryMaxSize).toBe(1));
     });
 
     it('will not go above the thousand the CLI stops at', async () => {
@@ -74,21 +73,25 @@ describe('what the transcript draws', () => {
       await waitFor(() => expect(result.current.display.commandHistoryMaxSize).toBe(1000));
     });
 
+    /**
+     * Waits on a setting that does change, since the one under test falls back to what the
+     * app already had - so there is no telling a read that landed from one still on its way.
+     */
     it('falls back to fifty for a value that is not a number', async () => {
-      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: '20' });
+      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: '20', showReasoning: false });
       const { result } = renderHook(() => useCliDisplay());
 
-      await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
+      await waitFor(() => expect(result.current.display.showReasoning).toBe(false));
       expect(result.current.display.commandHistoryMaxSize).toBe(50);
     });
 
     // A number that is not one would clamp to itself and leave the history unreachable
     // without saying so.
     it('falls back to fifty for a number that is no number at all', async () => {
-      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: Number.NaN });
+      cliSettingValues.mockResolvedValue({ commandHistoryMaxSize: Number.NaN, showReasoning: false });
       const { result } = renderHook(() => useCliDisplay());
 
-      await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
+      await waitFor(() => expect(result.current.display.showReasoning).toBe(false));
       expect(result.current.display.commandHistoryMaxSize).toBe(50);
     });
 
@@ -102,10 +105,12 @@ describe('what the transcript draws', () => {
 
   /** Only the exact stored false turns one off, so nothing unexpected can hide anything. */
   it('keeps drawing for a value that is not exactly false', async () => {
-    cliSettingValues.mockResolvedValue({ showReasoning: 'no', showTimestamps: 0 });
+    // The third is the one that does change, so this waits on the read rather than on the
+    // call that started it - the other two fall back to what the app already drew.
+    cliSettingValues.mockResolvedValue({ showReasoning: 'no', showTimestamps: 0, taskbarPresence: false });
     const { result } = renderHook(() => useCliDisplay());
 
-    await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.display.taskbarPresence).toBe(false));
     expect(result.current.display.showReasoning).toBe(true);
     expect(result.current.display.showTimestamps).toBe(true);
   });
@@ -233,18 +238,20 @@ describe('the answer this app used to keep', () => {
   /** Set there, it is the more recent of the two, and carrying the old one over undoes it. */
   it('gives way to what the CLI already says', async () => {
     save('settings', OLD_REASONING, 'false');
-    cliSettingValues.mockResolvedValue({ showReasoning: true });
+    // The second is the one that changes, so this waits on the read rather than on the call.
+    cliSettingValues.mockResolvedValue({ showReasoning: true, taskbarPresence: false });
     const { result } = renderHook(() => useCliDisplay());
 
-    await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.display.taskbarPresence).toBe(false));
     expect(result.current.display.showReasoning).toBe(true);
     expect(writeCliSettings).not.toHaveBeenCalled();
   });
 
   it('is not invented when this app never held one either', async () => {
-    renderHook(() => useCliDisplay());
+    cliSettingValues.mockResolvedValue({ taskbarPresence: false });
+    const { result } = renderHook(() => useCliDisplay());
 
-    await waitFor(() => expect(cliSettingValues).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.display.taskbarPresence).toBe(false));
     expect(writeCliSettings).not.toHaveBeenCalled();
   });
 

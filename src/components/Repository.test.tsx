@@ -22,6 +22,9 @@ const shown = (status: RepoStatus | null, over: Partial<Parameters<typeof Reposi
       committing={false}
       onSync={() => {}}
       syncing={null}
+      diverged={false}
+      onDismissDiverged={() => {}}
+      onRememberStrategy={() => {}}
       branches={[]}
       onBranches={() => {}}
       onSwitch={() => {}}
@@ -349,6 +352,9 @@ describe('an open row when the tree is read again', () => {
         committing={false}
         onSync={() => {}}
         syncing={null}
+        diverged={false}
+        onDismissDiverged={() => {}}
+        onRememberStrategy={() => {}}
         branches={[]}
         onBranches={() => {}}
         onSwitch={() => {}}
@@ -381,6 +387,9 @@ describe('an open row when the tree is read again', () => {
       committing={false}
       onSync={() => {}}
       syncing={null}
+      diverged={false}
+      onDismissDiverged={() => {}}
+      onRememberStrategy={() => {}}
       branches={[]}
       onBranches={() => {}}
       onSwitch={() => {}}
@@ -415,6 +424,9 @@ describe('an open row when the tree is read again', () => {
         committing={false}
         onSync={() => {}}
         syncing={null}
+        diverged={false}
+        onDismissDiverged={() => {}}
+        onRememberStrategy={() => {}}
         branches={[]}
         onBranches={() => {}}
         onSwitch={() => {}}
@@ -958,3 +970,77 @@ describe('choosing a branch', () => {
   });
 });
 
+
+/**
+ * A pull that found the branches had both moved on. There is no fast-forward from there and
+ * no right answer, so the reader is asked - which is what the CLI does too, since its
+ * `mergeStrategy` has no default either (#205).
+ */
+describe('choosing how to pull', () => {
+  const asking = (over: Partial<Parameters<typeof Repository>[0]> = {}) =>
+    shown(clean, { diverged: true, ...over });
+
+  it('says nothing while the pull went through', () => {
+    shown(clean);
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('asks once the pull has nowhere to fast-forward to', () => {
+    asking();
+
+    expect(screen.getByRole('dialog', { name: /how to pull/i })).toBeTruthy();
+  });
+
+  it('pulls again the way it was told', async () => {
+    const onSync = vi.fn();
+    asking({ onSync });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Rebase' }));
+
+    expect(onSync).toHaveBeenCalledWith('pull', 'rebase');
+  });
+
+  it('can be told the other way', async () => {
+    const onSync = vi.fn();
+    asking({ onSync });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Merge' }));
+
+    expect(onSync).toHaveBeenCalledWith('pull', 'merge');
+  });
+
+  // Asked and answered, without being asked to remember: this pull only.
+  it('does not write the answer down unless asked to', async () => {
+    const onRememberStrategy = vi.fn();
+    asking({ onRememberStrategy });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Merge' }));
+
+    expect(onRememberStrategy).not.toHaveBeenCalled();
+  });
+
+  it('writes the answer down when asked to stop asking', async () => {
+    const onRememberStrategy = vi.fn();
+    const onSync = vi.fn();
+    asking({ onRememberStrategy, onSync });
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /stop asking/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Rebase' }));
+
+    expect(onRememberStrategy).toHaveBeenCalledWith('rebase');
+    // Remembering is not answering: this pull still has to happen.
+    expect(onSync).toHaveBeenCalledWith('pull', 'rebase');
+  });
+
+  it('puts the question away without pulling when it is cancelled', async () => {
+    const onDismissDiverged = vi.fn();
+    const onSync = vi.fn();
+    asking({ onDismissDiverged, onSync });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onDismissDiverged).toHaveBeenCalled();
+    expect(onSync).not.toHaveBeenCalled();
+  });
+});

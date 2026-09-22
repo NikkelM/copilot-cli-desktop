@@ -14,6 +14,7 @@ import type {
   GetTranscriptResult,
   ListSessionsResult,
   McpServerSummary,
+  MergeStrategy,
   ModelChoice,
   RepoStatus,
   PendingElicitation,
@@ -440,11 +441,17 @@ export async function gitStage(cwd: string, paths: string[], staged: boolean): P
 /**
  * Send the current branch to its remote, or bring the remote's work down onto it.
  *
- * Fast-forward only in both directions, and there is no force anywhere behind this.
+ * There is no force anywhere behind this. A pull is fast-forward only until somebody says
+ * how two branches that have both moved on should be reconciled, and answers `diverged`
+ * rather than choosing for them (#205).
  */
-export async function gitSync(cwd: string, direction: 'push' | 'pull'): Promise<RepoStatus | null> {
-  const { status } = await request('git.sync', { cwd, direction });
-  return status;
+export async function gitSync(
+  cwd: string,
+  direction: 'push' | 'pull',
+  strategy?: MergeStrategy,
+): Promise<{ status: RepoStatus | null; diverged: boolean }> {
+  const { status, diverged } = await request('git.sync', { cwd, direction, ...(strategy ? { strategy } : {}) });
+  return { status, diverged: diverged === true };
 }
 
 /** The local branches, and which one is checked out. */

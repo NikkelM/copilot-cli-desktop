@@ -19,7 +19,20 @@ import {
   unstagePaths,
 } from './git.js';
 import { canAmend } from '../../shared/protocol.js';
-import type { RepoStatus } from '../../shared/protocol.js';
+import type { MergeStrategy, RepoStatus } from '../../shared/protocol.js';
+
+/**
+ * What the CLI's settings say about reconciling two branches, stubbed so these tests do not
+ * read the settings of whoever is running them. Which files that answer comes from is its
+ * own module's to prove; what a pull does with the answer is proved here.
+ */
+const { mergeStrategyFor } = vi.hoisted(() => ({
+  mergeStrategyFor: vi.fn((): MergeStrategy | null => null),
+}));
+vi.mock('./cliSettings.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  mergeStrategyFor,
+}));
 
 /**
  * Every test here spawns git, several times over.
@@ -786,7 +799,19 @@ describe('pushing and pulling', () => {
 
     execFileSync('git', ['clone', '-q', remote, elsewhere]);
     settle(elsewhere);
+    mergeStrategyFor.mockReset().mockReturnValue(null);
   });
+
+  /** Both branches move on, one commit each, so there is no fast-forward from here. */
+  const diverge = () => {
+    writeFileSync(join(elsewhere, 'other.txt'), 'x\n');
+    at(elsewhere, 'add', '-A');
+    at(elsewhere, 'commit', '-qm', 'theirs');
+    at(elsewhere, 'push', '-q');
+    writeFileSync(join(here, 'mine.txt'), 'y\n');
+    at(here, 'add', '-A');
+    at(here, 'commit', '-qm', 'mine');
+  };
 
   it('sends a commit to the remote', async () => {
     writeFileSync(join(here, 'f.txt'), 'two\n');
@@ -870,32 +895,76 @@ describe('pushing and pulling', () => {
     await expect(pullBranch(here)).rejects.toThrow(/tracks nothing/i);
   });
 
-  it('refuses to merge two branches that have both moved', async () => {
-    writeFileSync(join(elsewhere, 'other.txt'), 'x\n');
-    at(elsewhere, 'add', '-A');
-    at(elsewhere, 'commit', '-qm', 'theirs');
-    at(elsewhere, 'push', '-q');
-    writeFileSync(join(here, 'mine.txt'), 'y\n');
-    at(here, 'add', '-A');
-    at(here, 'commit', '-qm', 'mine');
+  /**
+   * A question rather than a failure. Nobody has said how to reconcile two branches that
+   * have both moved on, and the CLI has no default for it either - it asks (#205).
+   */
+  it('asks rather than refusing when nobody has said how to reconcile them', async () => {
+    diverge();
 
-    await expect(pullBranch(here)).rejects.toThrow();
+    await expect(pullBranch(here)).resolves.toEqual({ diverged: true });
   });
 
-  it('leaves the reader on their own commit when it refuses to pull', async () => {
-    writeFileSync(join(elsewhere, 'other.txt'), 'x\n');
-    at(elsewhere, 'add', '-A');
-    at(elsewhere, 'commit', '-qm', 'theirs');
-    at(elsewhere, 'push', '-q');
-    writeFileSync(join(here, 'mine.txt'), 'y\n');
-    at(here, 'add', '-A');
-    at(here, 'commit', '-qm', 'mine');
+  it('leaves the reader on their own commit when it stops to ask', async () => {
+    diverge();
     const before = at(here, 'rev-parse', 'HEAD');
 
-    await expect(pullBranch(here)).rejects.toThrow();
+    await pullBranch(here);
 
     expect(at(here, 'rev-parse', 'HEAD')).toBe(before);
     expect(at(here, 'log', '--oneline', '-1')).toContain('mine');
+  });
+
+  it('rebases when the settings say to', async () => {
+    mergeStrategyFor.mockReturnValue('rebase');
+    diverge();
+
+    await expect(pullBranch(here)).resolves.toEqual({ diverged: false });
+
+    // Replayed on top of theirs, so the history is a line rather than a fork.
+    expect(at(here, 'rev-list', '--count', '--merges', 'HEAD').trim()).toBe('0');
+    expect(at(here, 'log', '--oneline', '-1')).toContain('mine');
+    expect(existsSync(join(here, 'other.txt'))).toBe(true);
+  });
+
+  it('merges when the settings say to', async () => {
+    mergeStrategyFor.mockReturnValue('merge');
+    diverge();
+
+    await expect(pullBranch(here)).resolves.toEqual({ diverged: false });
+
+    expect(at(here, 'rev-list', '--count', '--merges', 'HEAD').trim()).toBe('1');
+    expect(existsSync(join(here, 'other.txt'))).toBe(true);
+  });
+
+  /** A repository that rebases by default must not decide what the reader just chose. */
+  it('merges even where the repository is set up to rebase', async () => {
+    at(here, 'config', 'pull.rebase', 'true');
+    mergeStrategyFor.mockReturnValue('merge');
+    diverge();
+
+    await pullBranch(here);
+
+    expect(at(here, 'rev-list', '--count', '--merges', 'HEAD').trim()).toBe('1');
+  });
+
+  it('takes an answer given now over the one in the settings', async () => {
+    mergeStrategyFor.mockReturnValue('merge');
+    diverge();
+
+    await pullBranch(here, 'rebase');
+
+    expect(at(here, 'rev-list', '--count', '--merges', 'HEAD').trim()).toBe('0');
+  });
+
+  /** Told how, and still refused, the reader has a failure to read rather than a choice. */
+  it('reports a refusal rather than asking once it has been told how', async () => {
+    mergeStrategyFor.mockReturnValue('merge');
+    diverge();
+    // An untracked file of their commit's name, which the merge would have to overwrite.
+    writeFileSync(join(here, 'other.txt'), 'in the way\n');
+
+    await expect(pullBranch(here)).rejects.toThrow();
   });
 
   it('says a folder outside a repository is not one', async () => {

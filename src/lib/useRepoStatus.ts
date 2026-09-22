@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { gitBranches, gitCommit, gitDiff, gitStage, gitStatus, gitSwitch, gitSync } from './sidecar';
 import { messageOf } from './errors';
-import type { FileDiff, RepoStatus } from '../../shared/protocol';
+import type { FileDiff, MergeStrategy, RepoStatus } from '../../shared/protocol';
 
 /**
  * A file can be in both lists at once with different contents in each, so a diff is held
@@ -34,6 +34,12 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
   const [committing, setCommitting] = useState(false);
   /** Which way the repository is being synced, so neither can be asked for twice. */
   const [syncing, setSyncing] = useState<'push' | 'pull' | null>(null);
+  /**
+   * Whether a pull stopped because the branches have both moved on and nobody has said how
+   * to reconcile them. A question for the reader rather than a failure, so it is kept apart
+   * from one: a failure is read and dismissed, and this one is answered.
+   */
+  const [diverged, setDiverged] = useState(false);
   /** The local branches, read only when the picker is opened. */
   const [branches, setBranches] = useState<{ name: string; current: boolean }[]>([]);
   /** Whether a checkout is in flight, so two cannot race each other. */
@@ -177,21 +183,28 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
    * Diffs survive a sync: neither direction moves anything between the index and the working
    * tree, so a diff the reader had open still describes the same change afterwards.
    */
-  const sync = useCallback(async (direction: 'push' | 'pull') => {
+  const sync = useCallback(async (direction: 'push' | 'pull', strategy?: MergeStrategy) => {
     const directory = showing.current;
     if (!directory) return;
 
     setSyncing(direction);
     setFailed(null);
+    setDiverged(false);
     try {
-      const found = await gitSync(directory, direction);
-      if (showing.current === directory) setStatus(found);
+      const found = await gitSync(directory, direction, strategy);
+      if (showing.current !== directory) return;
+
+      setStatus(found.status);
+      setDiverged(found.diverged);
     } catch (error: unknown) {
       if (showing.current === directory) setFailed(messageOf(error));
     } finally {
       setSyncing(null);
     }
   }, []);
+
+  /** Put the question away unanswered, which leaves the branch where the pull found it. */
+  const dismissDiverged = useCallback(() => setDiverged(false), []);
 
   /**
    * The local branches, read only when the reader asks to see them.
@@ -250,6 +263,8 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     commit,
     syncing,
     sync,
+    diverged,
+    dismissDiverged,
     branches,
     readBranches,
     switching,

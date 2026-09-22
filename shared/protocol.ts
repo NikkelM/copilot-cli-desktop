@@ -1067,13 +1067,16 @@ export interface SidecarRequests {
   /**
    * Send the current branch to its remote, or bring the remote's work down onto it.
    *
-   * There is no force, and no option that could become one. A pull is fast-forward only, so
-   * it either moves the branch along or refuses and says so - a button called "pull" must
-   * not quietly write a merge commit or start a rebase nothing here can finish.
+   * There is no force, and no option that could become one.
+   *
+   * How a pull reconciles two branches that have both moved on is the CLI's `mergeStrategy`,
+   * read from the repository's settings before the reader's own (#205). Unset, the pull is
+   * fast-forward only and answers `diverged` rather than choosing for somebody - which is
+   * what the CLI does too, asking rather than assuming, since it has no default either.
    */
   'git.sync': {
-    params: { cwd: string; direction: 'push' | 'pull' };
-    result: { status: RepoStatus | null };
+    params: { cwd: string; direction: 'push' | 'pull'; strategy?: MergeStrategy };
+    result: { status: RepoStatus | null; diverged?: boolean };
   };
   /** The local branches, and which one is checked out. */
   'git.branches': { params: { cwd: string }; result: { branches: { name: string; current: boolean }[] } };
@@ -1503,6 +1506,15 @@ export interface RepoFile {
   /** Where a rename or copy came from, which is half of what the row means. */
   from?: string;
 }
+
+/**
+ * How a pull reconciles two branches that have both moved on.
+ *
+ * The CLI's `mergeStrategy`, which has no default: unset, the CLI asks rather than assuming,
+ * and so does this. Its own use for it is `/pr`, choosing which prompt to give the agent for
+ * resolving conflicts with a base branch - the same question a pull asks (#205).
+ */
+export type MergeStrategy = 'rebase' | 'merge';
 
 /**
  * The state of a working tree, as a source control panel shows it.

@@ -358,3 +358,77 @@ describe('the commit trailer', () => {
     expect(coauthorEnabled()).toBe(true);
   });
 });
+/**
+ * How a pull reconciles two branches that have both moved on. Read the way the CLI reads
+ * it: a repository may answer for itself, and its answer wins over the reader's own (#205).
+ */
+describe('how to reconcile two branches', () => {
+  let repo: string;
+
+  const repoSetting = (file: string, value: unknown) => {
+    mkdirSync(join(repo, '.github', 'copilot'), { recursive: true });
+    writeFileSync(join(repo, '.github', 'copilot', file), JSON.stringify({ mergeStrategy: value }), 'utf8');
+  };
+
+  const userSetting = (value: unknown) =>
+    writeFileSync(join(home, 'settings.json'), JSON.stringify({ mergeStrategy: value }), 'utf8');
+
+  beforeEach(() => {
+    repo = join(root, 'repo');
+    mkdirSync(repo, { recursive: true });
+  });
+
+  /** No default at all: the CLI shows a picker saying "No mergeStrategy configured". */
+  it('says nothing where nobody has said anything', async () => {
+    const { mergeStrategyFor } = await load();
+
+    expect(mergeStrategyFor(repo)).toBeNull();
+  });
+
+  it('takes what the reader set', async () => {
+    userSetting('rebase');
+    const { mergeStrategyFor } = await load();
+
+    expect(mergeStrategyFor(repo)).toBe('rebase');
+  });
+
+  it('lets the repository answer for itself', async () => {
+    userSetting('rebase');
+    repoSetting('settings.json', 'merge');
+    const { mergeStrategyFor } = await load();
+
+    expect(mergeStrategyFor(repo)).toBe('merge');
+  });
+
+  /** The git-ignored one beside it is a person's answer for their own checkout. */
+  it('lets the answer beside it win over the one it ships', async () => {
+    repoSetting('settings.json', 'merge');
+    repoSetting('settings.local.json', 'rebase');
+    const { mergeStrategyFor } = await load();
+
+    expect(mergeStrategyFor(repo)).toBe('rebase');
+  });
+
+  it('falls back past a repository that says nothing', async () => {
+    userSetting('merge');
+    repoSetting('settings.json', null);
+    const { mergeStrategyFor } = await load();
+
+    expect(mergeStrategyFor(repo)).toBe('merge');
+  });
+
+  it('ignores a value that is neither', async () => {
+    userSetting('squash');
+    const { mergeStrategyFor } = await load();
+
+    expect(mergeStrategyFor(repo)).toBeNull();
+  });
+
+  /** A directory in no repository still has the reader's own answer to fall back on. */
+  it('still reads the reader own setting outside a repository', async () => {
+    userSetting('rebase');
+    const { mergeStrategyFor } = await load();
+
+    expect(mergeStrategyFor(null)).toBe('rebase');
+  });
+});

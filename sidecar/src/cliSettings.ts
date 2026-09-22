@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { copilotHome } from './paths.js';
-import type { CliSetting, CliSettingKind } from '../../shared/protocol.js';
+import type { CliSetting, CliSettingKind, MergeStrategy } from '../../shared/protocol.js';
 
 /**
  * The Copilot CLI's own settings, which this app writes directly.
@@ -206,8 +206,13 @@ export function cliSettingsSchema(): CliSetting[] {
  * an unset setting is reported as unset rather than as a value nobody chose.
  */
 export function readCliSettings(): Record<string, unknown> {
+  return readJsonObject(cliSettingsFile());
+}
+
+/** One settings file's contents, or nothing at all for one that is missing or unreadable. */
+function readJsonObject(file: string): Record<string, unknown> {
   try {
-    const parsed: unknown = JSON.parse(readFileSync(cliSettingsFile(), 'utf8'));
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
     return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
       ? (parsed as Record<string, unknown>)
       : {};
@@ -235,6 +240,40 @@ export function readCliSettings(): Record<string, unknown> {
  */
 export function coauthorEnabled(): boolean {
   return readCliSettings().includeCoAuthoredBy !== false;
+}
+
+/**
+ * How a pull should reconcile two branches that have both moved on, for one repository.
+ *
+ * The CLI's `mergeStrategy`, read the way the CLI reads it: a repository may answer for
+ * itself, and its answer wins over the reader's own. `settings.local.json` is the
+ * git-ignored one beside it, which is a person's answer for their own checkout, so it wins
+ * over the answer the repository ships.
+ *
+ * Null is a real answer and the common one. The setting has no default - the CLI shows a
+ * picker saying "No mergeStrategy configured" rather than choosing - so reporting one
+ * nobody set would be inventing the reader's answer for them.
+ *
+ * The CLI gates a repository's settings on whether the folder is trusted, and this has no
+ * trust store to ask. What is read here is a choice between two things the reader has
+ * already asked for by pressing Pull, so the most a repository can do with it is pick
+ * rebase where they would have picked merge.
+ */
+export function mergeStrategyFor(gitRoot: string | null): MergeStrategy | null {
+  const files = gitRoot
+    ? [
+        join(gitRoot, '.github', 'copilot', 'settings.local.json'),
+        join(gitRoot, '.github', 'copilot', 'settings.json'),
+        cliSettingsFile(),
+      ]
+    : [cliSettingsFile()];
+
+  for (const file of files) {
+    const found = readJsonObject(file).mergeStrategy;
+    if (found === 'rebase' || found === 'merge') return found;
+  }
+
+  return null;
 }
 
 /**

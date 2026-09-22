@@ -232,10 +232,16 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
       return { status: await statusOf(cwd) };
     },
 
-    'git.sync': async ({ cwd, direction }) => {
-      if (direction === 'push') await pushBranch(cwd);
-      else await pullBranch(cwd);
-      return { status: await statusOf(cwd) };
+    'git.sync': async ({ cwd, direction, strategy }) => {
+      if (direction === 'push') {
+        await pushBranch(cwd);
+        return { status: await statusOf(cwd) };
+      }
+
+      const { diverged } = await pullBranch(cwd, strategy);
+      // The tree is read either way: a pull that stopped to ask changed nothing, and the
+      // panel showing what git says beats it showing what this assumed would happen.
+      return { status: await statusOf(cwd), diverged };
     },
 
     'git.branches': async ({ cwd }) => ({ branches: await listBranches(cwd) }),

@@ -3,7 +3,13 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useRepoStatus } from './useRepoStatus';
-import type { RepoStatus } from '../../shared/protocol';
+import type { MergeStrategy, RepoStatus } from '../../shared/protocol';
+
+/** What a sync answers: the tree afterwards, and whether the pull stopped to ask. */
+interface Synced {
+  status: RepoStatus | null;
+  diverged: boolean;
+}
 
 const { gitStatus, gitDiff, gitStage, gitCommit, gitSync, gitBranches, gitSwitch } = vi.hoisted(() => ({
   gitStatus: vi.fn(),
@@ -20,7 +26,7 @@ vi.mock('./sidecar', () => ({
   gitDiff: (cwd: string, path: string, staged: boolean) => gitDiff(cwd, path, staged),
   gitStage: (cwd: string, path: string, staged: boolean) => gitStage(cwd, path, staged),
   gitCommit: (cwd: string, message: string, amend: boolean) => gitCommit(cwd, message, amend),
-  gitSync: (cwd: string, direction: 'push' | 'pull') => gitSync(cwd, direction),
+  gitSync: (cwd: string, direction: 'push' | 'pull', strategy?: MergeStrategy) => gitSync(cwd, direction, strategy),
   gitBranches: (cwd: string) => gitBranches(cwd),
   gitSwitch: (cwd: string, name: string, create: boolean) => gitSwitch(cwd, name, create),
 }));
@@ -32,7 +38,7 @@ beforeEach(() => {
   gitDiff.mockReset().mockResolvedValue({ patch: 'a patch', stale: false });
   gitStage.mockReset().mockResolvedValue(clean);
   gitCommit.mockReset().mockResolvedValue(clean);
-  gitSync.mockReset().mockResolvedValue(clean);
+  gitSync.mockReset().mockResolvedValue({ status: clean, diverged: false });
   gitBranches.mockReset().mockResolvedValue([{ name: 'main', current: true }]);
   gitSwitch.mockReset().mockResolvedValue(clean);
 });
@@ -440,13 +446,13 @@ describe('staging many paths at once', () => {
 
 describe('syncing with the remote', () => {
   it('takes the tree git reports afterwards', async () => {
-    gitSync.mockResolvedValue({ ...clean, upstream: 'origin/main', ahead: 0 });
+    gitSync.mockResolvedValue({ status: { ...clean, upstream: 'origin/main', ahead: 0 }, diverged: false });
     const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
     await waitFor(() => expect(result.current.status).toEqual(clean));
 
     await act(async () => void (await result.current.sync('push')));
 
-    expect(gitSync).toHaveBeenCalledWith('C:\\repo', 'push');
+    expect(gitSync).toHaveBeenCalledWith('C:\\repo', 'push', undefined);
     expect(result.current.status?.upstream).toBe('origin/main');
   });
 
@@ -463,15 +469,15 @@ describe('syncing with the remote', () => {
   });
 
   it('says which way it is going while it goes', async () => {
-    let release: (value: RepoStatus) => void = () => {};
-    gitSync.mockReturnValue(new Promise<RepoStatus>((resolve) => (release = resolve)));
+    let release: (value: Synced) => void = () => {};
+    gitSync.mockReturnValue(new Promise<Synced>((resolve) => (release = resolve)));
     const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
     await waitFor(() => expect(result.current.status).toEqual(clean));
 
     act(() => void result.current.sync('pull'));
     await waitFor(() => expect(result.current.syncing).toBe('pull'));
 
-    await act(async () => release(clean));
+    await act(async () => release({ status: clean, diverged: false }));
     expect(result.current.syncing).toBeNull();
   });
 
@@ -485,8 +491,7 @@ describe('syncing with the remote', () => {
     expect(result.current.failed).toMatch(/Pull first/);
   });
 
-  it('stops syncing once it has finished failing', async () => {
-    gitSync.mockRejectedValue(new Error('nope'));
+  it('stops syncing once it has finished failing', async () => {    gitSync.mockRejectedValue(new Error('nope'));
     const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
     await waitFor(() => expect(result.current.status).toEqual(clean));
 
@@ -590,5 +595,74 @@ describe('branches', () => {
     await act(async () => void (await result.current.switchTo('feature', false)));
 
     expect(gitSwitch).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A pull that found the branches had both moved on, and nobody had said how to reconcile
+ * them. A question for the reader rather than a failure, so it is kept apart from one: a
+ * failure is read and dismissed, and this one is answered (#205).
+ */
+describe('a pull with nowhere to fast-forward to', () => {
+  it('asks rather than reporting a failure', async () => {
+    gitSync.mockResolvedValue({ status: clean, diverged: true });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.sync('pull')));
+
+    expect(result.current.diverged).toBe(true);
+    expect(result.current.failed).toBeNull();
+  });
+
+  it('is not asking when the pull went through', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    await act(async () => void (await result.current.sync('pull')));
+
+    expect(result.current.diverged).toBe(false);
+  });
+
+  it('carries the answer to the pull that asked', async () => {
+    gitSync.mockResolvedValue({ status: clean, diverged: true });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+    await act(async () => void (await result.current.sync('pull')));
+
+    gitSync.mockResolvedValue({ status: clean, diverged: false });
+    await act(async () => void (await result.current.sync('pull', 'rebase')));
+
+    expect(gitSync).toHaveBeenLastCalledWith('C:\\repo', 'pull', 'rebase');
+    expect(result.current.diverged).toBe(false);
+  });
+
+  /** Or the dialog would still be up behind the second attempt, over a pull already running. */
+  it('stops asking while the answer is being carried out', async () => {
+    gitSync.mockResolvedValue({ status: clean, diverged: true });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+    await act(async () => void (await result.current.sync('pull')));
+
+    let release: (value: Synced) => void = () => {};
+    gitSync.mockReturnValue(new Promise<Synced>((resolve) => (release = resolve)));
+    act(() => void result.current.sync('pull', 'merge'));
+    await waitFor(() => expect(result.current.syncing).toBe('pull'));
+
+    expect(result.current.diverged).toBe(false);
+    await act(async () => release({ status: clean, diverged: false }));
+  });
+
+  it('puts the question away when it is dismissed', async () => {
+    gitSync.mockResolvedValue({ status: clean, diverged: true });
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+    await act(async () => void (await result.current.sync('pull')));
+
+    act(() => result.current.dismissDiverged());
+
+    expect(result.current.diverged).toBe(false);
+    // Dismissing answers nothing, so nothing was pulled.
+    expect(gitSync).toHaveBeenCalledTimes(1);
   });
 });

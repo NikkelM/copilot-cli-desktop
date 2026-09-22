@@ -10,7 +10,8 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import { canAmend, type FileDiff, type RepoFile, type RepoStatus, type TreeState } from '../../shared/protocol.js';
+import { canAmend, type FileDiff, type MergeStrategy, type RepoFile, type RepoStatus, type TreeState } from '../../shared/protocol.js';
+import { mergeStrategyFor } from './cliSettings.js';
 
 const run = promisify(execFile);
 
@@ -184,21 +185,57 @@ export async function pushBranch(cwd: string): Promise<void> {
 /**
  * Bring the remote's work down onto the current branch.
  *
- * `--ff-only`, so this either moves the branch forward or refuses. The alternative is that a
- * button labelled "pull" silently writes a merge commit, or starts a rebase the panel has no
- * way to finish, and leaves the reader in a state they did not ask for and cannot see. When
- * the branches have genuinely diverged that is a decision, and it belongs to the reader.
+ * Fast-forward only unless somebody has said how to reconcile two branches that have both
+ * moved on. That is the CLI's `mergeStrategy`, read from this repository's settings before
+ * the reader's own, and `strategy` is an answer given just now for this pull alone (#205).
+ *
+ * Nothing is assumed when nothing has been said. A button labelled "pull" that silently
+ * wrote a merge commit, or started a rebase this panel has no way to finish, would leave
+ * the reader somewhere they did not ask to be and cannot see. So the pull is tried
+ * fast-forward only and reports back that the branches have diverged, which is a question
+ * for the reader rather than a failure - the CLI has no default for this either, and asks.
  */
-export async function pullBranch(cwd: string): Promise<void> {
+export async function pullBranch(cwd: string, strategy?: MergeStrategy): Promise<{ diverged: boolean }> {
   const status = await statusOf(cwd);
   if (!status) throw new Error('This folder is not in a git repository.');
   if (status.detached) throw new Error('HEAD is detached, so there is no branch to pull into.');
   if (!status.upstream) throw new Error('This branch tracks nothing, so there is nothing to pull.');
 
+  const chosen = strategy ?? mergeStrategyFor(await repoRoot(cwd));
+  // `--no-rebase` rather than a bare pull, since a repository's own `pull.rebase` would
+  // otherwise decide what the reader just said they wanted the other way.
+  const how = chosen === 'rebase' ? '--rebase' : chosen === 'merge' ? '--no-rebase' : '--ff-only';
+
   try {
-    await git(cwd, ['pull', '--ff-only'], { network: true, timeoutMs: NETWORK_TIMEOUT });
+    await git(cwd, ['pull', how], { network: true, timeoutMs: NETWORK_TIMEOUT });
   } catch (error: unknown) {
+    // Only the fast-forward-only pull can refuse for this reason, and it is only reached
+    // when nobody has said how - so this is the question, rather than a failure to report.
+    if (how === '--ff-only' && hasDiverged(error)) return { diverged: true };
     throw new Error(explainGit(error));
+  }
+
+  return { diverged: false };
+}
+
+/** Whether git refused because the branches have both moved on, rather than for some other reason. */
+function hasDiverged(error: unknown): boolean {
+  const text = String((error as { stderr?: string })?.stderr ?? error ?? '');
+  return /Diverging branches can't be fast-forwarded|not possible to fast-forward|have diverged/i.test(text);
+}
+
+/**
+ * Where the repository containing a directory begins, which is where its settings live.
+ *
+ * Null rather than an error for a directory in no repository: the caller has already
+ * refused that case with a sentence of its own, and settings for a repository that is not
+ * there are simply settings nobody set.
+ */
+async function repoRoot(cwd: string): Promise<string | null> {
+  try {
+    return (await git(cwd, ['rev-parse', '--show-toplevel'])).trim() || null;
+  } catch {
+    return null;
   }
 }
 

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import { canAmend, type FileDiff, type RepoFile, type RepoStatus } from '../../shared/protocol';
+import { canAmend, type FileDiff, type MergeStrategy, type RepoFile, type RepoStatus } from '../../shared/protocol';
 import { fileBadge } from '../lib/fileBadge';
 import { parsePatch } from '../lib/patch';
 import { diffKey } from '../lib/useRepoStatus';
 import { Diff } from './Diff';
 import { ChevronIcon } from './Icons';
+import { MergeChoice } from './MergeChoice';
 
 interface RepositoryProps {
   status: RepoStatus | null;
@@ -24,8 +25,17 @@ interface RepositoryProps {
   onCommit: (message: string, amend: boolean) => void;
   committing: boolean;
   /** Send the branch to its remote, or bring the remote's work down. */
-  onSync: (direction: 'push' | 'pull') => void;
+  onSync: (direction: 'push' | 'pull', strategy?: MergeStrategy) => void;
   syncing: 'push' | 'pull' | null;
+  /**
+   * Whether a pull stopped because the branches have both moved on and nobody has said how
+   * to reconcile them. A question rather than a failure, and asked as one.
+   */
+  diverged: boolean;
+  /** Put the question away unanswered, which leaves the branch where the pull found it. */
+  onDismissDiverged: () => void;
+  /** Stop asking, by writing the answer where the CLI keeps it. */
+  onRememberStrategy: (strategy: MergeStrategy) => void;
   /** The local branches, and reading them when the picker opens. */
   branches: { name: string; current: boolean }[];
   onBranches: () => void;
@@ -382,6 +392,9 @@ export function Repository({
   committing,
   onSync,
   syncing,
+  diverged,
+  onDismissDiverged,
+  onRememberStrategy,
   branches,
   onBranches,
   onSwitch,
@@ -417,6 +430,17 @@ export function Repository({
 
   return (
     <div className="changes">
+      {/* A question rather than a failure, and asked where nothing else can be pressed:
+          the pull it belongs to has already stopped, and the branch is where it found it. */}
+      {diverged && (
+        <MergeChoice
+          onCancel={onDismissDiverged}
+          onChoose={(strategy, remember) => {
+            if (remember) onRememberStrategy(strategy);
+            onSync('pull', strategy);
+          }}
+        />
+      )}
       <div className="changes-head">
         <span className="changes-title">
           Source control
