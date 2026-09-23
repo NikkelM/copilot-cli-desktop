@@ -714,11 +714,11 @@ describe('keeping the CLI up to date', () => {
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ updateOnStart: true }));
   });
 
-  it('says why it exists, since the CLI is supposed to do this itself', async () => {
+  it('names the command it runs, which the label does not', async () => {
     show({ updateOnStart: false });
     await openCli();
 
-    expect(screen.getByText(/not updated at startup/)).toBeTruthy();
+    expect(screen.getByText(/Runs copilot update/)).toBeTruthy();
   });
 });
 
@@ -812,11 +812,11 @@ describe('the app scale', () => {
    * The note carries the number as well as the readout. It went missing once, leaving a
    * sentence that began with a bare per cent sign, and nothing failed.
    */
-  it('says the size in the note as well as in the box', async () => {
+  it('shows the size in the box', async () => {
     show({ scale: 1.25 });
     await openAppearance();
 
-    expect(screen.getByText(/^125% of the app's own size/)).toBeTruthy();
+    expect((screen.getByLabelText('App scale') as HTMLInputElement).value).toBe('125%');
   });
 });
 
@@ -898,11 +898,11 @@ describe('the text size, apart from the app scale', () => {
     expect(size().value).toBe('100%');
   });
 
-  it('says the size in the note as well as in the box', async () => {
+  it('shows the size in the box', async () => {
     show({ textScale: 1.25 });
     await openAppearance();
 
-    expect(screen.getByText(/^125% of the size the app scale would give them/)).toBeTruthy();
+    expect((screen.getByLabelText('Text size') as HTMLInputElement).value).toBe('125%');
   });
 
   // The note describes what is being chosen, not what is saved, or it would explain a size
@@ -913,7 +913,7 @@ describe('the text size, apart from the app scale', () => {
 
     await userEvent.click(screen.getByLabelText('Increase text size'));
 
-    expect(screen.getByText(/^113% of the size the app scale would give them/)).toBeTruthy();
+    expect((screen.getByLabelText('Text size') as HTMLInputElement).value).toBe('113%');
   });
 });
 
@@ -1043,11 +1043,11 @@ describe('saying what a setting means', () => {
     expect(screen.getByText(/^Never\./)).toBeTruthy();
   });
 
-  it('says what a number means rather than leaving it bare', () => {
+  it('says which session is released, which the number does not', () => {
     show({ maxLoaded: 3, idleMinutes: 1 });
 
-    expect(screen.getByText(/Past 3, the least recently used is released/)).toBeTruthy();
-    expect(screen.getByText(/1 minute. Default 10./)).toBeTruthy();
+    expect(screen.getByText(/least recently used is released first/)).toBeTruthy();
+    expect(screen.getByText('Minutes. Default 10.')).toBeTruthy();
   });
 
   // The note describes the draft, or it would explain a setting that is not on screen.
@@ -1057,7 +1057,7 @@ describe('saying what a setting means', () => {
     await userEvent.clear(kept());
     await userEvent.type(kept(), '2');
 
-    expect(screen.getByText(/Past 2, the least recently used is released/)).toBeTruthy();
+    expect(screen.getByText(/least recently used is released first/)).toBeTruthy();
     expect(screen.queryByText(/No limit/)).toBeNull();
   });
 });
@@ -1306,20 +1306,20 @@ describe('waiting for an answer', () => {
   it('says what happens when it runs out', () => {
     show({ permissionMinutes: 2 });
 
-    expect(screen.getByText(/2 minutes, then the turn carries on without it/)).toBeTruthy();
+    expect(screen.getByText(/then the turn carries on without it/)).toBeTruthy();
   });
 
-  it('reads one minute as a minute', () => {
+  it('says the default, which is the one number the box cannot show', () => {
     show({ permissionMinutes: 1 });
 
-    expect(screen.getByText(/^1 minute,/)).toBeTruthy();
+    expect(screen.getByText(/Default 5\./)).toBeTruthy();
   });
 
   // Zero is a real answer rather than a broken one, so it says what it means.
   it('says that no wait means it never gives up', () => {
     show({ permissionMinutes: 0 });
 
-    expect(screen.getByText(/Never\. Requests wait until you answer/)).toBeTruthy();
+    expect(screen.getByText('Never.')).toBeTruthy();
   });
 
   it('carries the change out', async () => {

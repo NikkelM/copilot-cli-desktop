@@ -669,12 +669,12 @@ export function SettingsWindow({
                     label="Sessions kept in memory"
                     value={draft.maxLoaded}
                     onChange={(value) => edit('maxLoaded', value)}
-                    // Only what the current value means, which the label cannot say. Zero
-                    // reads as "none" without it, when it means the opposite.
+                    // Zero reads as "none" without this, when it means the opposite. Past
+                    // zero the only thing worth saying is which one goes, and which never does.
                     hint={
                       draft.maxLoaded === 0
                         ? 'No limit.'
-                        : `Past ${draft.maxLoaded}, the least recently used is released. One mid-turn is never released.`
+                        : 'The least recently used is released first. One mid-turn is never released.'
                     }
                   />
                 )}
@@ -684,11 +684,8 @@ export function SettingsWindow({
                     label="Release an idle session after"
                     value={draft.idleMinutes}
                     onChange={(value) => edit('idleMinutes', value)}
-                    hint={
-                      draft.idleMinutes === 0
-                        ? 'Never.'
-                        : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. Default ${DEFAULT_IDLE_MINUTES}.`
-                    }
+                    // Not the value: the box beside it is already showing that.
+                    hint={draft.idleMinutes === 0 ? 'Never.' : `Minutes. Default ${DEFAULT_IDLE_MINUTES}.`}
                   />
                 )}
 
@@ -701,8 +698,8 @@ export function SettingsWindow({
                     onChange={(value) => edit('permissionMinutes', value)}
                     hint={
                       draft.permissionMinutes === 0
-                        ? 'Never. Requests wait until you answer.'
-                        : `${draft.permissionMinutes} ${draft.permissionMinutes === 1 ? 'minute' : 'minutes'}, then the turn carries on without it. Default ${DEFAULT_PERMISSION_MINUTES}.`
+                        ? 'Never.'
+                        : `Minutes, then the turn carries on without it. Default ${DEFAULT_PERMISSION_MINUTES}.`
                     }
                   />
                 )}
@@ -714,6 +711,8 @@ export function SettingsWindow({
                     label="Ask before deleting a session"
                     checked={draft.confirmDelete}
                     onChange={(checked) => edit('confirmDelete', checked)}
+                    // Where a deleted session goes, which is the retention setting's doing
+                    // rather than this one's, and not something either label says.
                     hint={
                       draft.binRetentionDays > 0
                         ? 'Deleted sessions go to the recycle bin.'
@@ -732,7 +731,7 @@ export function SettingsWindow({
                     hint={
                       draft.binRetentionDays === 0
                         ? 'Deleted sessions are removed immediately.'
-                        : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}. Default ${DEFAULT_BIN_RETENTION_DAYS}.`
+                        : `Days. Default ${DEFAULT_BIN_RETENTION_DAYS}.`
                     }
                   />
                 )}
@@ -813,11 +812,9 @@ export function SettingsWindow({
                     label="Run tools without asking"
                     checked={draft.allowAll}
                     onChange={(checked) => edit('allowAll', checked)}
-                    hint={
-                      draft.allowAll
-                        ? 'Uses the CLI --allow-all flag. Can be changed per session.'
-                        : 'Each tool asks before it runs.'
-                    }
+                    // The same either way: the tick already says which it is, and what is
+                    // worth knowing is the flag it maps to and that a session can override it.
+                    hint="Uses the CLI --allow-all flag. Can be changed per session."
                   />
                 )}
 
@@ -853,9 +850,7 @@ export function SettingsWindow({
                     emptyLabel="Auto"
                   />
                   <span className="settings-hint">
-                    {draft.defaultModel
-                      ? 'Used for new sessions. Can be changed per session.'
-                      : 'New sessions use auto.'}
+                    Used for new sessions. Can be changed per session.
                   </span>
                   {draft.defaultModel && (
                     <button
@@ -913,20 +908,14 @@ export function SettingsWindow({
 
             {shown.id === 'appearance' && (
               <>
-                <p className="settings-note">
-                  App scale resizes the whole window. Text size resizes text only.
-                </p>
-
                 {shows('App scale') && (
                   <ScaleField
                     label="App scale"
                     value={draft.scale}
                     onChange={(value) => edit('scale', value)}
-                    hint={
-                      draft.scale === 1
-                        ? 'Scales the whole window. Same as Ctrl+ / Ctrl- and Ctrl+wheel.'
-                        : `${Math.round(draft.scale * 100)}% of the app's own size. Ctrl and + or - does the same.`
-                    }
+                    // The keyboard and the wheel do this too, which the control cannot show.
+                    // Nothing about what it scales: the label says that.
+                    hint="Ctrl+ / Ctrl- and Ctrl+wheel do the same."
                   />
                 )}
 
@@ -935,11 +924,9 @@ export function SettingsWindow({
                     label="Text size"
                     value={draft.textScale}
                     onChange={(value) => edit('textScale', value)}
-                    hint={
-                      draft.textScale === 1
-                        ? 'Scales text only.'
-                        : `${Math.round(draft.textScale * 100)}% of the size the app scale would give them.`
-                    }
+                    // On top of the app scale, which is the one thing here the reader cannot
+                    // work out from the two labels and the two readouts.
+                    hint="Applied on top of the app scale."
                   />
                 )}
 
@@ -961,11 +948,9 @@ export function SettingsWindow({
                     label="Update the CLI when the app starts"
                     checked={draft.updateOnStart}
                     onChange={(checked) => edit('updateOnStart', checked)}
-                    hint={
-                      draft.updateOnStart
-                        ? 'Runs copilot update at startup.'
-                        : 'The CLI is not updated at startup.'
-                    }
+                    // Which command, and that it does not hold the app up. The label covers
+                    // the rest.
+                    hint="Runs copilot update without waiting for it to finish."
                   />
                 )}
 
