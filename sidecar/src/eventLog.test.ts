@@ -36,10 +36,17 @@ describe('readTranscript', () => {
     expect(await readTranscript('missing')).toEqual({ events: [], truncated: false, nextBefore: null });
   });
 
+
   it('handles an empty log', async () => {
     writeLog('s', []);
     const { readTranscript } = await loadEventLog();
-    expect(await readTranscript('s')).toEqual({ events: [], truncated: false, nextBefore: null });
+    expect(await readTranscript('s')).toEqual({
+      events: [],
+      truncated: false,
+      nextBefore: null,
+      // Nothing written yet is a session that is new, not one that has lost anything.
+      reopenable: true,
+    });
   });
 
   it('returns every event when the log is short, in order', async () => {
@@ -180,10 +187,18 @@ describe('readTranscript', () => {
     });
 
     it('says nothing is left when a page holds none it can draw', async () => {
-      writeLog('s', [JSON.stringify({ type: 'system.message', data: { content: 'only this' } })]);
+      writeLog('s', [
+        JSON.stringify({ type: 'session.start', data: {} }),
+        JSON.stringify({ type: 'system.message', data: { content: 'only this' } }),
+      ]);
       const { readTranscript } = await loadEventLog();
 
-      expect(await readTranscript('s')).toEqual({ events: [], truncated: false, nextBefore: null });
+      expect(await readTranscript('s')).toEqual({
+        events: [],
+        truncated: false,
+        nextBefore: null,
+        reopenable: true,
+      });
     });
   });
 
@@ -720,4 +735,92 @@ describe('lastUsage', () => {
     const { lastUsage } = await loadEventLog();
     expect(await lastUsage('s')).toMatchObject({ premiumRequests: 99 });
   }, 30_000);
+});
+
+/**
+ * Whether the CLI could open a session again, which it can only do from a log that still
+ * begins where a run does.
+ *
+ * Worth reporting because the failure is silent otherwise: a session whose history was
+ * destroyed draws an empty transcript, which is exactly what a new session looks like, and
+ * the only way to find out was to write a prompt and have it refused (#196).
+ *
+ * The case is real rather than imagined - one log on this machine is a single fork notice,
+ * 293 bytes, with every event it used to hold gone.
+ */
+describe('whether a session can be opened again', () => {
+  const start = JSON.stringify({ type: 'session.start', data: {} });
+
+  it('says yes for a log that begins with a run', async () => {
+    writeLog('s', [start, line(1)]);
+    const { readTranscript } = await loadEventLog();
+
+    expect((await readTranscript('s')).reopenable).toBe(true);
+  });
+
+  /** A session resumed rather than started fresh carries the other one that opens a run. */
+  it('says yes for a log that begins with a resume', async () => {
+    writeLog('s', [JSON.stringify({ type: 'session.resume', data: {} }), line(1)]);
+    const { readTranscript } = await loadEventLog();
+
+    expect((await readTranscript('s')).reopenable).toBe(true);
+  });
+
+  // What a destroyed session actually looks like: the notice, and nothing it refers to.
+  it('says no for a log rewritten down to a fork notice', async () => {
+    writeLog('s', [
+      JSON.stringify({ type: 'session.info', data: { infoType: 'fork', message: 'Forked this session' } }),
+    ]);
+    const { readTranscript } = await loadEventLog();
+
+    expect((await readTranscript('s')).reopenable).toBe(false);
+  });
+
+  it('still hands back what is left of one', async () => {
+    writeLog('s', [JSON.stringify({ type: 'session.info', data: {} }), line(1)]);
+    const { readTranscript } = await loadEventLog();
+
+    const page = await readTranscript('s');
+    expect(page.reopenable).toBe(false);
+    expect(page.events).toHaveLength(1);
+  });
+
+  /**
+   * Only the opening page answers. The pages behind it are the same log read further back,
+   * where the first line is a window boundary rather than the start of anything.
+   */
+  it('says nothing on a page reached by scrolling back', async () => {
+    writeLog('s', [start, line(1), line(2), line(3)]);
+    const { readTranscript } = await loadEventLog();
+
+    const first = await readTranscript('s', 1);
+    expect(first.reopenable).toBe(true);
+    expect((await readTranscript('s', 1, first.nextBefore ?? undefined)).reopenable).toBeUndefined();
+  });
+
+  /**
+   * A log that cannot be read is not evidence of one that has lost its history, and a
+   * warning on a session that is merely new would be worse than none at all.
+   */
+  it('says yes rather than guessing when the first line is not readable', async () => {
+    writeLog('s', ['not json at all', line(1)]);
+    const { readTranscript } = await loadEventLog();
+
+    expect((await readTranscript('s')).reopenable).toBe(true);
+  });
+
+  it('says yes for a first event that does not name its type', async () => {
+    writeLog('s', [JSON.stringify({ data: {} }), line(1)]);
+    const { readTranscript } = await loadEventLog();
+
+    expect((await readTranscript('s')).reopenable).toBe(true);
+  });
+
+  // A log still being written can have a partial first line, which says nothing either way.
+  it('says yes for a first line still being written', async () => {
+    writeLog('s', [`{"type":"session.start","data":{"padding":"${'x'.repeat(80 * 1024)}`]);
+    const { readTranscript } = await loadEventLog();
+
+    expect((await readTranscript('s')).reopenable).toBe(true);
+  });
 });

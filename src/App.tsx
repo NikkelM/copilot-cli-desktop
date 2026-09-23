@@ -1123,6 +1123,16 @@ export default function App() {
                 child that comes and goes moves the transcript into another row. */}
             <div>
               {error && <p className="error">{error}</p>}
+              {/* Said on arrival rather than on the first message. A session whose history
+                  is gone draws an empty transcript, which is exactly what a new one looks
+                  like - so without this the only way to find out is to write a prompt and
+                  have it refused (#196). */}
+              {!transcript.reopenable && (
+                <p className="error">
+                  This session cannot be reopened: its log no longer starts where a session does, so the
+                  CLI has nothing to replay. What is left of it is shown below and can still be read.
+                </p>
+              )}
             </div>
 
             <Transcript

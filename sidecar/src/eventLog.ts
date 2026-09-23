@@ -30,6 +30,56 @@ const INITIAL_WINDOW = 256 * 1024;
 const GROWTH_FACTOR = 4;
 
 /**
+ * Enough of the front of a log to hold its first line, which is the only line this asks about.
+ *
+ * Generous rather than exact: the first event carries the model, the working directory and
+ * the tools a run opened with, and one here runs to 12kB.
+ */
+const FIRST_LINE_WINDOW = 64 * 1024;
+
+/**
+ * What a log has to begin with for the CLI to open that session again.
+ *
+ * The runtime rebuilds a session by replaying its log from the top, so the first event has to
+ * be the one that starts a run. Its own refusal says so in as many words - "no valid
+ * session.start event was found" - and `explain` already turns that into a sentence, but only
+ * after somebody has sent a message and waited.
+ *
+ * Both are accepted because both open a run: a session resumed rather than started fresh
+ * carries the second.
+ */
+const OPENS_A_RUN = new Set(['session.start', 'session.resume']);
+
+/**
+ * Whether the CLI could open this session again.
+ *
+ * Read from the front, unlike everything else here, because that is where the answer is.
+ * One line of a file already open, so it costs a single read of the head rather than a walk.
+ *
+ * True where the question cannot be answered. A log that is missing, unreadable or still
+ * being written is not evidence of a session that has lost its history, and saying so would
+ * put a warning on a session that is merely new.
+ */
+async function reopenableFrom(file: FileHandle, size: number): Promise<boolean> {
+  if (size === 0) return true;
+
+  const buffer = Buffer.alloc(Math.min(FIRST_LINE_WINDOW, size));
+  await file.read(buffer, 0, buffer.length, 0);
+
+  const text = buffer.toString('utf8');
+  const newline = text.indexOf('\n');
+
+  try {
+    const first = JSON.parse(newline === -1 ? text : text.slice(0, newline)) as { type?: unknown };
+    return typeof first.type === 'string' ? OPENS_A_RUN.has(first.type) : true;
+  } catch {
+    // Covers a first line longer than the window as well as one that is not JSON: a
+    // truncated object does not parse, so both arrive here and both mean "no idea".
+    return true;
+  }
+}
+
+/**
  * Stop growing rather than read an entire multi-hundred-megabyte log.
  * Returning slightly fewer events is a far better outcome than a long freeze.
  */
@@ -66,7 +116,13 @@ export async function readTranscript(
   try {
     const { size } = await file.stat();
     const end = before === undefined ? size : Math.max(0, Math.min(before, size));
-    if (end === 0) return { events: [], truncated: false, nextBefore: null };
+    // Only the opening page asks. The pages after it are the same log read further back,
+    // and the answer cannot have changed between them.
+    const reopenable = before === undefined ? await reopenableFrom(file, size) : undefined;
+    const answer = (result: Omit<GetTranscriptResult, 'reopenable'>): GetTranscriptResult =>
+      reopenable === undefined ? result : { ...result, reopenable };
+
+    if (end === 0) return answer({ events: [], truncated: false, nextBefore: null });
 
     let window = Math.min(INITIAL_WINDOW, end);
 
@@ -97,14 +153,14 @@ export async function readTranscript(
         const kept = located.slice(-limit);
         const more = !reachedStart || kept.length < located.length;
 
-        return {
+        return answer({
           events: kept.map((entry) => entry.event),
           truncated: more,
           // Where the next page should stop reading. Points at the first event actually
           // returned, not the window start, since the window's first line is normally
           // partial and further events may be dropped when slicing to the limit.
           nextBefore: more ? (kept[0]?.offset ?? null) : null,
-        };
+        });
       }
 
       window = Math.min(window * GROWTH_FACTOR, end, MAX_WINDOW);

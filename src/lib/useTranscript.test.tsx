@@ -657,3 +657,62 @@ describe('a subagent streaming into the session that delegated it', () => {
     expect(result.current.events).toHaveLength(2);
   });
 });
+
+/**
+ * A session whose log no longer starts where a run does cannot be reopened by the CLI, and
+ * says nothing about it: it draws an empty transcript, which is what a new session draws
+ * (#196). The hook carries the answer so the window can say so on arrival.
+ */
+describe('a session that cannot be opened again', () => {
+  it('assumes it can until the log says otherwise', () => {
+    getTranscript.mockReturnValue(new Promise(() => {}));
+
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    expect(result.current.reopenable).toBe(true);
+  });
+
+  it('says so when the log has lost its start', async () => {
+    getTranscript.mockResolvedValue({ events: [], nextBefore: null, reopenable: false });
+
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    await waitFor(() => expect(result.current.reopenable).toBe(false));
+  });
+
+  it('says nothing is wrong when the log still has one', async () => {
+    getTranscript.mockResolvedValue({ events: [reply('here', 'e1')], nextBefore: null, reopenable: true });
+
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+    expect(result.current.reopenable).toBe(true);
+  });
+
+  /** A sidecar older than this window does not answer, which is not an answer of no. */
+  it('says nothing is wrong when the sidecar never mentions it', async () => {
+    getTranscript.mockResolvedValue({ events: [reply('here', 'e1')], nextBefore: null });
+
+    const { result } = renderHook(() => useTranscript('s1', () => {}));
+
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+    expect(result.current.reopenable).toBe(true);
+  });
+
+  // Or the warning would follow the reader to the next session they looked at.
+  it('stops saying so once another session is chosen', async () => {
+    getTranscript.mockResolvedValue({ events: [], nextBefore: null, reopenable: false });
+    const { result, rerender } = renderHook(({ id }) => useTranscript(id, () => {}), {
+      initialProps: { id: 's1' },
+    });
+    await waitFor(() => expect(result.current.reopenable).toBe(false));
+
+    // Nothing comes back for the next one, so the only thing that can clear the warning is
+    // choosing it. Left to the fetch, the new session would wear the old one's warning for
+    // as long as its log took to read.
+    getTranscript.mockReturnValue(new Promise(() => {}));
+    rerender({ id: 's2' });
+
+    expect(result.current.reopenable).toBe(true);
+  });
+});

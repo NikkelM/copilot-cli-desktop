@@ -116,6 +116,18 @@ export interface GetTranscriptResult {
    * A byte offset into events.jsonl, pointing at the first event returned here.
    */
   nextBefore: number | null;
+  /**
+   * Whether the CLI could open this session again, which it can only do from a log that
+   * still begins where one must.
+   *
+   * Reported rather than left to be discovered on the first message, because a session whose
+   * history is gone looks exactly like a new one: it draws an empty transcript and invites a
+   * prompt that cannot be answered.
+   *
+   * Only the opening page says: it is read from the front of the log, and the pages after it
+   * are reached by going backwards from the end.
+   */
+  reopenable?: boolean;
 }
 
 export interface RuntimeStatus {

@@ -46,6 +46,14 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
    * long - a short session gives back everything it has.
    */
   const [opening, setOpening] = useState<{ count: number; cursor: number | null } | null>(null);
+  /**
+   * Whether the CLI could open this session again, which it cannot when the log no longer
+   * begins where a run does.
+   *
+   * Starts true, so a session being read is not accused of having lost its history in the
+   * moment before its log has been looked at.
+   */
+  const [reopenable, setReopenable] = useState(true);
 
   // Held in refs so a caller passing a fresh function, or changing session, does not
   // restart the effects below.
@@ -70,6 +78,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     setLive([]);
     setOlderCursor(null);
     setOpening(null);
+    setReopenable(true);
 
     // Selecting elsewhere, or React running this effect twice, leaves a reply in flight
     // that describes a transcript no longer on screen.
@@ -80,6 +89,8 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
         setHistory(result.events);
         setOlderCursor(result.nextBefore);
         setOpening({ count: result.events.length, cursor: result.nextBefore });
+        // Absent means a sidecar that predates the question, which is not an answer of no.
+        setReopenable(result.reopenable !== false);
       })
       .catch((e: unknown) => current && report.current(explain(e)));
 
@@ -247,6 +258,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     showSent,
     showLocal,
     remove,
+    reopenable,
     abandoned: abandoned.current.get(sessionId ?? ''),
   };
 }
