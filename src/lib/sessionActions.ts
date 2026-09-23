@@ -51,7 +51,7 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       // be running on a session that was never resumed.
       refused:
         session.loaded && deps.working.has(session.sessionId)
-          ? 'Still working. It can be unloaded once the turn finishes.'
+          ? 'Still working. Unload once the turn finishes.'
           : undefined,
       run: () => (session.loaded ? deps.unload(session.sessionId) : deps.load(session.sessionId)),
     },
@@ -72,7 +72,7 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       // this asks nothing first. What it does refuse is putting away a session mid-turn:
       // archiving lets it go, and letting go mid-turn loses the turn.
       refused: deps.working.has(session.sessionId)
-        ? 'Still working. It can be archived once the turn finishes.'
+        ? 'Still working. Archive once the turn finishes.'
         : undefined,
       run: () => deps.toggleArchived(session.sessionId),
     },
@@ -96,7 +96,7 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       // The turn would be cut off partway and its record deleted underneath it, which is a
       // worse thing to do by accident than any of the above.
       refused: deps.working.has(session.sessionId)
-        ? 'Still working. It can be deleted once the turn finishes.'
+        ? 'Still working. Delete once the turn finishes.'
         : undefined,
       run: () => deps.remove(session),
     },

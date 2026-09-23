@@ -57,7 +57,7 @@ describe('AgentPicker', () => {
     it('names nothing while the log is still being read', () => {
       picker({ current: undefined });
 
-      expect(screen.getByLabelText('Reading which agent this session uses')).toBeTruthy();
+      expect(screen.getByLabelText('Loading agent')).toBeTruthy();
       expect(control().textContent).not.toContain('Default');
     });
   });

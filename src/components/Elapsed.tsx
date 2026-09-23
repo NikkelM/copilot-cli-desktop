@@ -41,7 +41,7 @@ export function Expiry({ at }: { at?: string | null }) {
   // Rounded up, unlike a duration counting the other way: "1s left" should stand until the
   // second is actually gone, and flooring would skip it entirely.
   return (
-    <span className="expiry" title="This request answers itself once the time runs out">
+    <span className="expiry" title="Answered automatically when this runs out">
       {ms === 0 ? 'expired' : `${formatElapsed(Math.ceil(ms / 1000) * 1000)} left`}
     </span>
   );

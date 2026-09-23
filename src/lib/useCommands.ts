@@ -32,7 +32,7 @@ const REMEMBERED = 'copilot-desktop.commands.v2';
 const BOOTSTRAP_COMMANDS: readonly SlashCommand[] = [
   {
     name: 'add-dir',
-    description: 'Allow file access to a directory and load its .github skills and agents as trusted configuration',
+    description: 'Trust a directory: file access, plus its .github skills and agents',
     aliases: [],
     hint: 'directory',
     required: true,

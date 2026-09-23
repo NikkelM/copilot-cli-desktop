@@ -186,7 +186,7 @@ function CliField({
           value={unset ? '' : String(value)}
           onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
         >
-          <option value="">Whatever the CLI does</option>
+          <option value="">Default</option>
           {setting.options?.map((option) => (
             <option key={option} value={option}>
               {option}
@@ -201,7 +201,7 @@ function CliField({
           className="settings-text cli-value"
           type={setting.kind === 'number' ? 'number' : 'text'}
           value={unset ? '' : String(value)}
-          placeholder="Whatever the CLI does"
+          placeholder="Default"
           onChange={(event) => {
             const text = event.target.value;
             if (text === '') onChange(null);
@@ -321,12 +321,12 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Ask before deleting a session', keywords: 'confirm delete warn' },
     { label: 'Keep a deleted session for', keywords: 'retention days recycle bin restore' },
     { label: 'Waiting to be deleted', keywords: 'recycle bin restore purge deleted sessions' },
-    { label: 'What sessions are using', keywords: 'disk usage size bytes storage space largest' },
+    { label: 'Disk usage', keywords: 'disk usage size bytes storage space largest' },
   ],
   sessions: [
     { label: 'Run tools without asking', keywords: 'allow all yolo permission approve' },
     { label: 'Model', keywords: 'effort reasoning context window default' },
-    { label: 'Working directory', keywords: 'folder path cwd start' },
+    { label: 'Default working directory', keywords: 'folder path cwd start home' },
   ],
   appearance: [
     { label: 'App scale', keywords: 'size zoom bigger smaller' },
@@ -663,18 +663,17 @@ export function SettingsWindow({
             {shown.id === 'management' && (
               <>
                 <h4 className="settings-subhead">Memory</h4>
-                <p className="settings-note">
-                  A session costs nothing until it is opened. These decide how much is kept once it has been.
-                </p>
 
                 {shows('Sessions kept in memory') && (
                   <NumberField
                     label="Sessions kept in memory"
                     value={draft.maxLoaded}
                     onChange={(value) => edit('maxLoaded', value)}
+                    // Only what the current value means, which the label cannot say. Zero
+                    // reads as "none" without it, when it means the opposite.
                     hint={
                       draft.maxLoaded === 0
-                        ? 'No limit. The least recently used is released only when it has been idle.'
+                        ? 'No limit.'
                         : `Past ${draft.maxLoaded}, the least recently used is released. One mid-turn is never released.`
                     }
                   />
@@ -687,8 +686,8 @@ export function SettingsWindow({
                     onChange={(value) => edit('idleMinutes', value)}
                     hint={
                       draft.idleMinutes === 0
-                        ? 'Never. Sessions stay in memory until the app closes or the limit above releases them.'
-                        : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. The default is ${DEFAULT_IDLE_MINUTES}.`
+                        ? 'Never.'
+                        : `${draft.idleMinutes} ${draft.idleMinutes === 1 ? 'minute' : 'minutes'}. Default ${DEFAULT_IDLE_MINUTES}.`
                     }
                   />
                 )}
@@ -702,8 +701,8 @@ export function SettingsWindow({
                     onChange={(value) => edit('permissionMinutes', value)}
                     hint={
                       draft.permissionMinutes === 0
-                        ? 'Never. A question stands until it is answered, and the turn waits however long that takes.'
-                        : `${draft.permissionMinutes} ${draft.permissionMinutes === 1 ? 'minute' : 'minutes'}, after which the turn carries on without whatever was asked for. The default is ${DEFAULT_PERMISSION_MINUTES}.`
+                        ? 'Never. Requests wait until you answer.'
+                        : `${draft.permissionMinutes} ${draft.permissionMinutes === 1 ? 'minute' : 'minutes'}, then the turn carries on without it. Default ${DEFAULT_PERMISSION_MINUTES}.`
                     }
                   />
                 )}
@@ -717,18 +716,13 @@ export function SettingsWindow({
                     onChange={(checked) => edit('confirmDelete', checked)}
                     hint={
                       draft.binRetentionDays > 0
-                        ? 'Deleting takes the transcript and everything the session wrote out of the list. The recycle bin keeps it for a while.'
-                        : 'Deleting removes the transcript and everything the session wrote. There is no undo.'
+                        ? 'Deleted sessions go to the recycle bin.'
+                        : 'Deleting is permanent.'
                     }
                   />
                 )}
 
                 <h4 className="settings-subhead">Recycle bin</h4>
-
-                <p className="settings-note">
-                  Deleted sessions wait here before they are really deleted. Restoring one puts it back
-                  exactly where it was, with its title and its place in the list.
-                </p>
 
                 {shows('Keep a deleted session for') && (
                   <NumberField
@@ -737,8 +731,8 @@ export function SettingsWindow({
                     onChange={(value) => edit('binRetentionDays', value)}
                     hint={
                       draft.binRetentionDays === 0
-                        ? 'Deleting is immediate and cannot be undone.'
-                        : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}, counted from when it was deleted. The default is ${DEFAULT_BIN_RETENTION_DAYS}.`
+                        ? 'Deleted sessions are removed immediately.'
+                        : `${draft.binRetentionDays} ${draft.binRetentionDays === 1 ? 'day' : 'days'}. Default ${DEFAULT_BIN_RETENTION_DAYS}.`
                     }
                   />
                 )}
@@ -749,9 +743,9 @@ export function SettingsWindow({
                     those sessions. */}
                 {losing > 0 && (
                   <p className="settings-warning">
-                    Saving will delete {losing === 1 ? 'the session' : `${losing} of the sessions`} below, which
-                    {losing === 1 ? ' has' : ' have'} been here longer than{' '}
-                    {draft.binRetentionDays === 0 ? 'the new setting keeps anything' : 'the new setting allows'}.
+                    {draft.binRetentionDays === 0
+                      ? 'Saving will empty the recycle bin.'
+                      : `Saving will delete ${losing === 1 ? '1 session' : `${losing} sessions`} below, older than the new limit.`}
                   </p>
                 )}
 
@@ -791,7 +785,7 @@ export function SettingsWindow({
 
                 <h4 className="settings-subhead">Disk usage</h4>
 
-                {shows('What sessions are using') && (
+                {shows('Disk usage') && (
                   <DiskUsage usage={usage} reading={usageReading} onRead={onNeedUsage} onOpen={onOpenSession} />
                 )}
               </>
@@ -800,9 +794,7 @@ export function SettingsWindow({
             {shown.id === 'sessions' && (
               <>
                 <p className="settings-note">
-                  What a session starts with when it is made from the New button. These are this app's
-                  own. Plenty of what a new session answers to belongs to the CLI instead, and those
-                  are in{' '}
+                  Defaults for sessions made with the New button. More are in{' '}
                   <button
                     type="button"
                     className="settings-link"
@@ -823,8 +815,8 @@ export function SettingsWindow({
                     onChange={(checked) => edit('allowAll', checked)}
                     hint={
                       draft.allowAll
-                        ? 'The same as the CLI --allow-all and --yolo, which are the same flag. Set on the session once it is made, and it can still be changed per session afterwards.'
-                        : 'Each tool asks before it runs, which is what the CLI does by default.'
+                        ? 'Uses the CLI --allow-all flag. Can be changed per session.'
+                        : 'Each tool asks before it runs.'
                     }
                   />
                 )}
@@ -858,12 +850,12 @@ export function SettingsWindow({
                         defaultContext: choice.contextTier ?? '',
                       }))
                     }
-                    emptyLabel="Whatever the runtime picks"
+                    emptyLabel="Auto"
                   />
                   <span className="settings-hint">
                     {draft.defaultModel
-                      ? 'Set when the session is made, and still changeable per session afterwards.'
-                      : 'The runtime chooses, which is auto. Naming one also saves the titling a detour, since auto cannot answer the question a title comes from.'}
+                      ? 'Used for new sessions. Can be changed per session.'
+                      : 'New sessions use auto.'}
                   </span>
                   {draft.defaultModel && (
                     <button
@@ -878,17 +870,19 @@ export function SettingsWindow({
                         }))
                       }
                     >
-                      Let the runtime choose again
+                      Reset to auto
                     </button>
                   )}
                 </div>
                 <label className="settings-row">
-                  <span className="settings-label">Working directory</span>
+                  {/* No hint under this one: the label says what it is, and the box already
+                      shows where an empty setting goes. */}
+                  <span className="settings-label">Default working directory</span>
                   <span className="path-field">
                     <input
                       type="text"
                       className="settings-text"
-                      aria-label="Working directory"
+                      aria-label="Default working directory"
                       placeholder="Your home directory"
                       spellCheck={false}
                       value={draft.workingDirectory}
@@ -913,10 +907,6 @@ export function SettingsWindow({
                       </button>
                     )}
                   </span>
-                  <span className="settings-hint">
-                    Where a new session starts. Left empty it is your home directory, which is what the CLI
-                    does when it is run with no directory.
-                  </span>
                 </label>
               </>
             )}
@@ -924,8 +914,7 @@ export function SettingsWindow({
             {shown.id === 'appearance' && (
               <>
                 <p className="settings-note">
-                  Two scales, each keeping its own proportions. The app scale moves everything; the text
-                  size moves only the letters, on top of it.
+                  App scale resizes the whole window. Text size resizes text only.
                 </p>
 
                 {shows('App scale') && (
@@ -935,7 +924,7 @@ export function SettingsWindow({
                     onChange={(value) => edit('scale', value)}
                     hint={
                       draft.scale === 1
-                        ? 'Everything: the panes, the lanes and the controls as well as the letters. Ctrl and + or - does the same, as does Ctrl and the wheel.'
+                        ? 'Scales the whole window. Same as Ctrl+ / Ctrl- and Ctrl+wheel.'
                         : `${Math.round(draft.scale * 100)}% of the app's own size. Ctrl and + or - does the same.`
                     }
                   />
@@ -948,7 +937,7 @@ export function SettingsWindow({
                     onChange={(value) => edit('textScale', value)}
                     hint={
                       draft.textScale === 1
-                        ? 'The letters alone, if they read small at a scale that otherwise suits.'
+                        ? 'Scales text only.'
                         : `${Math.round(draft.textScale * 100)}% of the size the app scale would give them.`
                     }
                   />
@@ -960,7 +949,7 @@ export function SettingsWindow({
                     className="settings-reset"
                     onClick={() => setDraft((current) => ({ ...current, scale: 1, textScale: 1 }))}
                   >
-                    Back to the app&apos;s own sizes
+                    Reset to default sizes
                   </button>
                 )}
               </>
@@ -974,8 +963,8 @@ export function SettingsWindow({
                     onChange={(checked) => edit('updateOnStart', checked)}
                     hint={
                       draft.updateOnStart
-                        ? 'Runs copilot update as the app starts. It carries on without waiting, so a slow download does not hold the app up.'
-                        : 'The CLI updates itself on startup, but never when this app launches it, so it stays on the version it has.'
+                        ? 'Runs copilot update at startup.'
+                        : 'The CLI is not updated at startup.'
                     }
                   />
                 )}
@@ -985,15 +974,13 @@ export function SettingsWindow({
                     means the same thing in both places. They apply without restarting
                     anything: the CLI reads them when a session is made (#202). */}
                 <p className="settings-note">
-                  Kept by the CLI itself, in its own settings file, and shared with it. A change here
-                  reaches the next session either program starts.
+                  Written to the CLI's own settings file. Applies to the next session started by either program.
                 </p>
 
-                {cli === null && <p className="settings-note">Reading what the CLI knows about.</p>}
+                {cli === null && <p className="settings-note">Reading the CLI settings.</p>}
                 {cli?.settings.length === 0 && (
                   <p className="settings-note">
-                    This CLI could not be read, so there is nothing to show. Its settings are still
-                    changeable from the CLI itself.
+                    The CLI settings file could not be read. Change these settings from the CLI instead.
                   </p>
                 )}
 
@@ -1082,7 +1069,7 @@ export function SettingsWindow({
           <div className="settings-pending" role="alertdialog" aria-modal="true" aria-label="Unsaved changes">
             <p>
               {pending.go === 'close'
-                ? 'This window has changes that have not been saved.'
+                ? 'This window has unsaved changes.'
                 : `${shown.label} has changes that have not been saved.`}
             </p>
             <div className="confirm-actions">

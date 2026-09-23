@@ -772,7 +772,7 @@ describe('a stopped turn', () => {
   it.each([
     ['remote_command', 'Stopped by a remote command'],
     ['user_abort', 'Stopped by a connected server'],
-    ['autopilot_credit_limit', 'Stopped: this run reached its credit limit'],
+    ['autopilot_credit_limit', 'Stopped after reaching the credit limit'],
   ])('says what stopped it when it was not the reader (%s)', (reason, expected) => {
     const entries = toEntries([event('abort', { reason })], null);
     expect(entries[0]).toMatchObject({ body: expected });

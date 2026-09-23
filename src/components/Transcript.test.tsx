@@ -657,7 +657,7 @@ describe('a skill in the transcript', () => {
   it('says when the agent reached for the skill itself', () => {
     skill({ name: 'pdf', trigger: 'agent-invoked' });
 
-    expect(screen.getByText('skill the agent reached for')).toBeTruthy();
+    expect(screen.getByText('skill invoked by the agent')).toBeTruthy();
   });
 
   it('says when the skill arrived with the agent', () => {

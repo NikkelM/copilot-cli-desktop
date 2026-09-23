@@ -620,7 +620,7 @@ export default function App() {
       transcript.showLocal('command.failed', {
         text:
           `Unknown command /${what.name}.` +
-          (near.length > 0 ? ` Did you mean ${near.join(', ')}?` : ' Type / to see what there is.'),
+          (near.length > 0 ? ` Did you mean ${near.join(', ')}?` : ' Type / to see all commands.'),
       });
       return;
     }
@@ -1071,7 +1071,7 @@ export default function App() {
 
             <div className="footer">
               <p className="changes-note">
-                What this agent did, as it was watched. It cannot be written to from here.
+                Read-only. Recorded by the session that delegated it.
               </p>
             </div>
           </>
@@ -1098,7 +1098,7 @@ export default function App() {
                     className={panel.open === 'changes' ? 'header-button on' : 'header-button'}
                     onClick={() => (panel.open === 'changes' ? closeChanges() : openChanges())}
                     aria-pressed={panel.open === 'changes'}
-                    title="What this session changed, and the diff for any of it"
+                    title="Show what this session changed"
                   >
                     Changes
                   </button>
@@ -1131,8 +1131,7 @@ export default function App() {
                   have it refused (#196). */}
               {!transcript.reopenable && (
                 <p className="error">
-                  This session cannot be reopened: its log no longer starts where a session does, so the
-                  CLI has nothing to replay. What is left of it is shown below and can still be read.
+                  This session cannot be reopened. Its history is incomplete. What remains is shown below.
                 </p>
               )}
             </div>
@@ -1393,7 +1392,7 @@ export default function App() {
             await revealPointerForPicker();
             const picked = await pickFolder({
               directory: true,
-              title: 'Choose where new sessions start',
+              title: 'Choose a working directory',
               // Opens where the setting already points, so it starts near the last answer
               // rather than at the top of the disk.
               ...(startingAt ? { defaultPath: startingAt } : {}),

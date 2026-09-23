@@ -15,7 +15,7 @@ export function HeaderTags({ tags, onEdit }: { tags: readonly string[]; onEdit: 
       type="button"
       className="header-tags"
       onClick={onEdit}
-      title={tags.length > 0 ? 'Change this session tags' : 'Tag this session'}
+      title={tags.length > 0 ? 'Edit tags' : 'Tag this session'}
     >
       {tags.length > 0 ? (
         tags.map((tag) => (

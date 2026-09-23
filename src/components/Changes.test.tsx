@@ -43,7 +43,7 @@ describe('Changes', () => {
    */
   it('explains an empty list rather than showing nothing', () => {
     render(<Changes {...props} changes={[]} />);
-    expect(screen.getByText(/tools that name the file/)).toBeTruthy();
+    expect(screen.getByText(/Shell commands are not tracked/)).toBeTruthy();
   });
 
   it('counts the files and totals the lines', () => {
@@ -137,7 +137,7 @@ describe('Changes', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /thing\.ts/ }));
-    expect(screen.getByText(/not the file as it stands/)).toBeTruthy();
+    expect(screen.getByText(/not the current file/)).toBeTruthy();
   });
 
   it('says why there is no diff instead of showing an empty one', () => {
@@ -150,7 +150,7 @@ describe('Changes', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: /thing\.ts/ }));
-    expect(screen.getByText(/not on disk any more/)).toBeTruthy();
+    expect(screen.getByText(/no longer exists/)).toBeTruthy();
   });
 
   it('closes a row that is open rather than reopening it', () => {
@@ -229,7 +229,7 @@ describe('Changes, once reviewed', () => {
     render(<Changes {...props} changes={[]} reviewedAt="2026-01-01T00:00:00.000Z" />);
 
     expect(screen.getByText(/Nothing new since you reviewed this/)).toBeTruthy();
-    expect(screen.queryByText(/tools that name the file/)).toBeNull();
+    expect(screen.queryByText(/Shell commands are not tracked/)).toBeNull();
   });
 
   it('offers a way out of an empty list', () => {

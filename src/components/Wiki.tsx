@@ -267,8 +267,7 @@ function Onboarding({
     <div className="wiki-onboarding">
       <h2>{exists ? 'No pages here yet' : 'No knowledge base yet'}</h2>
       <p>
-        This reads a folder of markdown files as a browsable knowledge base - the notes worth
-        keeping between sessions, where the work is rather than in another window.
+        A folder of markdown files.
       </p>
 
       {/* The instruction was a folder to go and make by hand, which is a strange thing to
@@ -479,7 +478,7 @@ export function Wiki({
             className="changes-action"
             onClick={onBack}
             disabled={!canGoBack}
-            title="Back a page (Alt+Left, or the mouse's back button)"
+            title="Back (Alt+Left)"
           >
             ←
           </button>
@@ -488,7 +487,7 @@ export function Wiki({
             className="changes-action"
             onClick={onForward}
             disabled={!canGoForward}
-            title="Forward a page (Alt+Right, or the mouse's forward button)"
+            title="Forward (Alt+Right)"
           >
             →
           </button>

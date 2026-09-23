@@ -370,7 +370,7 @@ export function Sidebar({
                     className="group"
                     aria-expanded={!shut}
                     onClick={() => toggle(group.key, shut)}
-                    title={shut ? `Show the ${group.sessions.length} sessions in this group` : 'Fold this group away'}
+                    title={shut ? `Show the ${group.sessions.length} sessions in this group` : 'Collapse this group'}
                   >
                     <ChevronIcon open={!shut} />
                     {group.label}
@@ -443,7 +443,7 @@ export function Sidebar({
             <li>
               {/* Named for why they were missing rather than for what they are: the reader
                   typed an id, got nothing, and needs to know these were found anyway. */}
-              <p className="group" title="Found by id. Hidden from the list because they have no title and no turns.">
+              <p className="group" title="Found by id. These sessions have no title and no turns.">
                 Not in the list
               </p>
               <ul className="session-list">
@@ -594,7 +594,7 @@ function Favourite({ on, title, onToggle }: { on: boolean; title: string; onTogg
       }}
       aria-pressed={on}
       aria-label={on ? `Unfavourite ${title}` : `Favourite ${title}`}
-      title={on ? 'Remove from favourites' : 'Keep among the favourites'}
+      title={on ? 'Remove from favourites' : 'Add to favourites'}
     >
       {on ? '★' : '☆'}
     </button>

@@ -457,7 +457,7 @@ describe('Environment, switching an MCP server', () => {
   it('says the change applies to new sessions rather than running ones', () => {
     shown({}, vi.fn());
 
-    expect(screen.getByText(/applies to new sessions/)).toBeTruthy();
+    expect(screen.getByText(/Applies to new sessions only/)).toBeTruthy();
   });
 
   it('offers no control when the caller cannot write the configuration', () => {

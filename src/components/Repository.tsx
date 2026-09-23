@@ -157,7 +157,7 @@ function Expanded({ diff, staged }: { diff: FileDiff | undefined; staged: boolea
         {diff.reason === 'binary'
           ? 'Not a text file.'
           : diff.reason === 'gone'
-            ? 'This file is not on disk any more.'
+            ? 'This file no longer exists.'
             : staged
               ? 'Nothing staged for this file.'
               : 'No difference to show.'}
@@ -219,7 +219,7 @@ function Branches({
         <div className="repo-branch-menu">
           {dirty > 0 && (
             <p className="repo-branch-note">
-              {dirty === 1 ? '1 changed file comes' : `${dirty} changed files come`} with you
+              {dirty === 1 ? '1 changed file carries over' : `${dirty} changed files carry over`}
             </p>
           )}
 
@@ -304,7 +304,7 @@ function Commit({
         className="repo-message"
         value={message}
         onChange={(event) => setMessage(event.target.value)}
-        placeholder={amend ? 'Reword the last commit' : 'What this commit does, and why'}
+        placeholder={amend ? 'Reword the last commit' : 'Commit message'}
         rows={3}
         spellCheck
         aria-label="Commit message"
@@ -480,8 +480,8 @@ export function Repository({
                 disabled={syncing !== null || status.upstream === undefined}
                 title={
                   status.upstream === undefined
-                    ? 'This branch tracks nothing to pull from'
-                    : 'Bring the remote work down onto this branch'
+                    ? 'No upstream branch to pull from'
+                    : 'Pull from the remote'
                 }
               >
                 {syncing === 'pull' ? 'Pulling…' : 'Pull'}
@@ -491,7 +491,7 @@ export function Repository({
                 className="changes-action"
                 onClick={() => onSync('push')}
                 disabled={syncing !== null}
-                title={status.upstream === undefined ? 'Publish this branch' : 'Send this branch to its remote'}
+                title={status.upstream === undefined ? 'Publish this branch' : 'Push to the remote'}
               >
                 {syncing === 'push' ? 'Pushing…' : 'Push'}
               </button>
@@ -548,7 +548,7 @@ export function Repository({
                   className="repo-stage"
                   onClick={() => onStage(staged.map((file) => file.path), false)}
                   disabled={staged.some((file) => busy.includes(file.path))}
-                  title="Take everything out of the next commit"
+                  title="Unstage all changes"
                   aria-label="Unstage all"
                 >
                   −
@@ -584,7 +584,7 @@ export function Repository({
                   className="repo-stage"
                   onClick={() => onStage(unstaged.map((file) => file.path), true)}
                   disabled={unstaged.some((file) => busy.includes(file.path))}
-                  title="Put everything into the next commit"
+                  title="Stage all changes"
                   aria-label="Stage all"
                 >
                   +

@@ -406,14 +406,14 @@ describe('the defaults a new session starts with', () => {
     show({ allowAll: true });
     await openSessions();
 
-    expect(screen.getByText(/--allow-all and --yolo, which are the same flag/)).toBeTruthy();
+    expect(screen.getByText(/Uses the CLI --allow-all flag/)).toBeTruthy();
   });
 
   it('takes a directory to start sessions in', async () => {
     const { onSave } = show();
     await openSessions();
 
-    await userEvent.type(screen.getByLabelText('Working directory'), 'F:\\work');
+    await userEvent.type(screen.getByLabelText('Default working directory'), 'F:\\work');
     await userEvent.click(commit());
 
     expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ workingDirectory: 'F:\\work' }));
@@ -433,7 +433,7 @@ describe('the defaults a new session starts with', () => {
     await userEvent.click(screen.getByLabelText('Choose a working directory'));
 
     await vi.waitFor(() =>
-      expect((screen.getByLabelText('Working directory') as HTMLInputElement).value).toBe('F:\\picked'),
+      expect((screen.getByLabelText('Default working directory') as HTMLInputElement).value).toBe('F:\\picked'),
     );
   });
 
@@ -469,7 +469,7 @@ describe('the defaults a new session starts with', () => {
     await userEvent.click(screen.getByLabelText('Choose a working directory'));
 
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect((screen.getByLabelText('Working directory') as HTMLInputElement).value).toBe('F:\\work');
+    expect((screen.getByLabelText('Default working directory') as HTMLInputElement).value).toBe('F:\\work');
   });
 
   it('leaves the picker out when there is none to open', async () => {
@@ -477,7 +477,7 @@ describe('the defaults a new session starts with', () => {
     await openSessions();
 
     expect(screen.queryByLabelText('Choose a working directory')).toBeNull();
-    expect(screen.getByLabelText('Working directory')).toBeTruthy();
+    expect(screen.getByLabelText('Default working directory')).toBeTruthy();
   });
 
   /**
@@ -515,7 +515,7 @@ describe('the defaults a new session starts with', () => {
     };
 
     /** The picker's own trigger, which is the first button in the row. */
-    const trigger = () => screen.getByRole('button', { name: /Whatever the runtime picks|Claude Opus 5/ });
+    const trigger = () => screen.getByRole('button', { name: /Auto|Claude Opus 5/ });
 
     const menu = () => screen.queryByRole('listbox');
 
@@ -526,7 +526,7 @@ describe('the defaults a new session starts with', () => {
         await userEvent.click(trigger());
         expect(menu()).not.toBeNull();
 
-        await userEvent.click(screen.getByText('Working directory'));
+        await userEvent.click(screen.getByText('Default working directory'));
 
         expect(menu()).toBeNull();
       });
@@ -563,7 +563,7 @@ describe('the defaults a new session starts with', () => {
       withModels();
       await openSessions();
 
-      expect(screen.getByText('Whatever the runtime picks')).toBeTruthy();
+      expect(screen.getByText('Auto')).toBeTruthy();
     });
 
     it('offers what the app already knows about', async () => {
@@ -617,7 +617,7 @@ describe('the defaults a new session starts with', () => {
       const { onSave } = withModels({ defaultModel: 'claude-opus-5', defaultEffort: 'high' });
       await openSessions();
 
-      await userEvent.click(screen.getByText(/Let the runtime choose again/));
+      await userEvent.click(screen.getByText(/Reset to auto/));
       await userEvent.click(commit());
 
       expect(onSave).toHaveBeenCalledExactlyOnceWith(
@@ -629,7 +629,7 @@ describe('the defaults a new session starts with', () => {
       withModels();
       await openSessions();
 
-      expect(screen.queryByText(/Let the runtime choose again/)).toBeNull();
+      expect(screen.queryByText(/Reset to auto/)).toBeNull();
     });
 
     /**
@@ -683,7 +683,7 @@ describe('the defaults a new session starts with', () => {
   it('says what an empty directory means rather than leaving it blank', async () => {    show();
     await openSessions();
 
-    expect((screen.getByLabelText('Working directory') as HTMLInputElement).placeholder).toBe(
+    expect((screen.getByLabelText('Default working directory') as HTMLInputElement).placeholder).toBe(
       'Your home directory',
     );
   });
@@ -718,7 +718,7 @@ describe('keeping the CLI up to date', () => {
     show({ updateOnStart: false });
     await openCli();
 
-    expect(screen.getByText(/never when this app launches it/)).toBeTruthy();
+    expect(screen.getByText(/not updated at startup/)).toBeTruthy();
   });
 });
 
@@ -800,10 +800,10 @@ describe('the app scale', () => {
   it('offers a way back to the app own size, and only when it is not there', async () => {
     show({ scale: 1 });
     await openAppearance();
-    expect(screen.queryByText(/Back to the app/)).toBeNull();
+    expect(screen.queryByText(/Reset to default sizes/)).toBeNull();
 
     await userEvent.click(screen.getByLabelText('Increase app scale'));
-    await userEvent.click(screen.getByText(/Back to the app/));
+    await userEvent.click(screen.getByText(/Reset to default sizes/));
 
     expect(readout().value).toBe('100%');
   });
@@ -892,7 +892,7 @@ describe('the text size, apart from the app scale', () => {
     show({ scale: 1.25, textScale: 1.25 });
     await openAppearance();
 
-    await userEvent.click(screen.getByText(/Back to the app/));
+    await userEvent.click(screen.getByText(/Reset to default sizes/));
 
     expect(appScale().value).toBe('100%');
     expect(size().value).toBe('100%');
@@ -950,14 +950,14 @@ describe('the tick box', () => {
    */
   it('does not tick when the note under it is clicked', async () => {
     show({ confirmDelete: false, binRetentionDays: 0 });
-    await userEvent.click(screen.getByText(/Deleting removes the transcript/));
+    await userEvent.click(screen.getByText(/Deleting is permanent/));
 
     expect(asks().checked).toBe(false);
   });
 
   it('keeps the note out of what can be clicked', async () => {
     show({ confirmDelete: false, binRetentionDays: 0 });
-    expect(screen.getByText(/Deleting removes the transcript/).closest('label')).toBeNull();
+    expect(screen.getByText(/Deleting is permanent/).closest('label')).toBeNull();
   });
 });
 
@@ -1047,7 +1047,7 @@ describe('saying what a setting means', () => {
     show({ maxLoaded: 3, idleMinutes: 1 });
 
     expect(screen.getByText(/Past 3, the least recently used is released/)).toBeTruthy();
-    expect(screen.getByText(/1 minute\. The default is 10\./)).toBeTruthy();
+    expect(screen.getByText(/1 minute. Default 10./)).toBeTruthy();
   });
 
   // The note describes the draft, or it would explain a setting that is not on screen.
@@ -1185,7 +1185,7 @@ describe('the recycle bin', () => {
     withBin(catalogue, { binRetentionDays: 0 });
     await openBin();
 
-    expect(screen.getByText(/Deleting is immediate and cannot be undone/)).toBeTruthy();
+    expect(screen.getByText(/removed immediately/)).toBeTruthy();
   });
 
   /**
@@ -1214,16 +1214,16 @@ describe('the recycle bin', () => {
 
       await shorten('1');
 
-      expect(screen.getByText(/Saving will delete the session below/)).toBeTruthy();
+      expect(screen.getByText(/Saving will delete 1 session below/)).toBeTruthy();
     });
 
-    it('counts them all when nothing is to be kept', async () => {
+    it('says the bin will be emptied when nothing is to be kept', async () => {
       withBin(catalogue, { binRetentionDays: 30 });
       await openBin();
 
       await shorten('0');
 
-      expect(screen.getByText(/Saving will delete 2 of the sessions below/)).toBeTruthy();
+      expect(screen.getByText('Saving will empty the recycle bin.')).toBeTruthy();
     });
 
     it('says nothing when the bin is empty', async () => {
@@ -1280,13 +1280,13 @@ describe('the recycle bin', () => {
   it('tells the delete question there is a bin', async () => {
     show({ binRetentionDays: 7 });
 
-    expect(screen.getByText(/The recycle bin keeps it for a while/)).toBeTruthy();
+    expect(screen.getByText(/go to the recycle bin/)).toBeTruthy();
   });
 
   it('tells it there is not, when there is not', async () => {
     show({ binRetentionDays: 0 });
 
-    expect(screen.getByText(/There is no undo/)).toBeTruthy();
+    expect(screen.getByText(/Deleting is permanent/)).toBeTruthy();
   });
 });
 
@@ -1306,7 +1306,7 @@ describe('waiting for an answer', () => {
   it('says what happens when it runs out', () => {
     show({ permissionMinutes: 2 });
 
-    expect(screen.getByText(/2 minutes, after which the turn carries on without/)).toBeTruthy();
+    expect(screen.getByText(/2 minutes, then the turn carries on without it/)).toBeTruthy();
   });
 
   it('reads one minute as a minute', () => {
@@ -1319,7 +1319,7 @@ describe('waiting for an answer', () => {
   it('says that no wait means it never gives up', () => {
     show({ permissionMinutes: 0 });
 
-    expect(screen.getByText(/Never\. A question stands until it is answered/)).toBeTruthy();
+    expect(screen.getByText(/Never\. Requests wait until you answer/)).toBeTruthy();
   });
 
   it('carries the change out', async () => {
@@ -1397,7 +1397,7 @@ describe("the CLI's own settings", () => {
     withCli(null);
     await openCli();
 
-    expect(screen.getByText('Reading what the CLI knows about.')).toBeTruthy();
+    expect(screen.getByText('Reading the CLI settings.')).toBeTruthy();
   });
 
   /** A CLI laid out differently gives nothing, and saying so beats an empty category. */
@@ -1405,7 +1405,7 @@ describe("the CLI's own settings", () => {
     withCli({ settings: [], values: {} });
     await openCli();
 
-    expect(screen.getByText(/This CLI could not be read/)).toBeTruthy();
+    expect(screen.getByText(/could not be read/)).toBeTruthy();
   });
 
   /**
@@ -1636,7 +1636,7 @@ describe("the CLI's own settings", () => {
       show();
       await goToSessions();
 
-      expect(screen.getByText(/belongs to the CLI instead/)).toBeTruthy();
+      expect(screen.getByText(/Defaults for sessions made with the New button/)).toBeTruthy();
     });
 
     it('takes the reader there', async () => {

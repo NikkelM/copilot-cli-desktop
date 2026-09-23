@@ -18,11 +18,10 @@
 
 /** What to say when the window is on its own, where reloading cannot help. */
 export const ORPHANED =
-  'This window was loaded by a dev server that is no longer running, so it may be showing ' +
-  'code that has since changed. Reloading cannot reach it - restart the app.';
+  'The dev server is gone and this window may be showing old code. Restart the app.';
 
 /** What to say when the code is still being served, so the error is probably real. */
-export const RELOADABLE = 'Reloading will fetch the current code, in case this window is showing an older build.';
+export const RELOADABLE = 'Reload to fetch the current code.';
 
 /**
  * Whether this window has outlived the server that loaded it.

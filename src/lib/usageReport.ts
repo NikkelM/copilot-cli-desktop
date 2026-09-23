@@ -47,7 +47,7 @@ function spent(ms: number): string {
  */
 export function usageReport(usage: SessionUsage | null): string {
   if (!usage) {
-    return 'Nothing recorded yet. A session accounts for itself once it has finished a turn.';
+    return 'No usage recorded yet.';
   }
 
   const lines = [
@@ -95,7 +95,7 @@ export function usageReport(usage: SessionUsage | null): string {
     lines.push(
       '',
       'Read from this session\u2019s log, which records what it spent but not how. ' +
-        'Tokens and the rest are only known while the session is loaded.',
+        'The full breakdown is only available while the session is loaded.',
     );
   }
 

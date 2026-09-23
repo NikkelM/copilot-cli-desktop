@@ -96,12 +96,12 @@ describe('ModelPicker', () => {
    */
   it('keeps its shape while the log is being read', () => {
     picker({ current: undefined });
-    expect(screen.getByLabelText('Reading which model this session uses')).toBeTruthy();
+    expect(screen.getByLabelText('Loading model')).toBeTruthy();
   });
 
   it('has no placeholder left once the read comes back', () => {
     picker({ current: { model: 'claude-opus-5' } });
-    expect(screen.queryByLabelText('Reading which model this session uses')).toBeNull();
+    expect(screen.queryByLabelText('Loading model')).toBeNull();
   });
     it('says so when the log never named a model', () => {
       picker({ current: null });
@@ -278,7 +278,7 @@ describe('ModelPicker', () => {
       picker({ current: { model: 'grok-4.6' } });
       await openMenu();
 
-      expect(screen.getByText('Not priced on its own')).toBeTruthy();
+      expect(screen.getByText('No price listed')).toBeTruthy();
     });
 
     // It used to vanish, which is the largest jump of all: in the settings window nothing is
@@ -288,7 +288,7 @@ describe('ModelPicker', () => {
       await openMenu();
 
       expect(screen.getByText(/Cost per 1M tokens/)).toBeTruthy();
-      expect(screen.getByText('Point at a model for its price')).toBeTruthy();
+      expect(screen.getByText('Hover a model to see its price')).toBeTruthy();
     });
 
     it('names no model until there is one to name', async () => {

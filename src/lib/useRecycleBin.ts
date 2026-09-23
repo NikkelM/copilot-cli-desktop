@@ -41,7 +41,7 @@ export function useRecycleBin(onRestored?: () => void, onError?: (message: strin
           // The session list is built from what is on disk, so it only learns about this
           // once something tells it to look again.
           if (went) wentBack.current?.();
-          else report.current?.('A session of that id is already there, so this one was left in the bin.');
+          else report.current?.('A session with that id already exists. This one stayed in the recycle bin.');
         })
         .catch((e: unknown) => report.current?.(explain(e)))
         .finally(refresh);

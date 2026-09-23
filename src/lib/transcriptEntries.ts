@@ -181,7 +181,7 @@ function stopReason(data: Record<string, unknown>): string {
     case 'user_abort':
       return 'Stopped by a connected server';
     case 'autopilot_credit_limit':
-      return 'Stopped: this run reached its credit limit';
+      return 'Stopped after reaching the credit limit';
     default:
       return 'Stopped';
   }

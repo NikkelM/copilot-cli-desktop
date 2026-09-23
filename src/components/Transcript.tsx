@@ -48,7 +48,7 @@ const DROP_OLDER_AFTER_MS = 10_000;
 
 /** Why a skill arrived, for the rows where that is not the reader's own doing. */
 const SKILL_NOTE: Record<string, string> = {
-  agent: 'skill the agent reached for',
+  agent: 'skill invoked by the agent',
   context: 'skill loaded with the agent',
 };
 

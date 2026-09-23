@@ -39,8 +39,8 @@ const SCOPE: Record<InstructionSource['location'], string> = {
  * load whatever is installed, and under the others it means nothing is installed.
  */
 const MODE: Record<SessionEnvironment['extensionMode'], string> = {
-  disabled: 'Extensions are switched off, so none of these load.',
-  load_only: 'Extensions load, but do not add to the model context.',
+  disabled: 'Extensions are switched off.',
+  load_only: 'Extensions load without adding to the model context.',
   load_and_augment: 'Extensions load and add to the model context.',
 };
 
@@ -113,7 +113,7 @@ export function Environment({
             <h3 className="environment-heading">Instructions</h3>
             {instructions.length === 0 ? (
               <p className="changes-note">
-                No instruction files apply here. A session in this directory starts with nothing but its own defaults.
+                No instruction files apply here.
               </p>
             ) : (
               <ul className="environment-list">
@@ -170,7 +170,7 @@ export function Environment({
                     session. This is the reader's own configuration, so it decides what
                     every new session starts with - and changes nothing already running. */}
                 <p className="changes-note">
-                  Switching one off applies to new sessions. Anything already running keeps its connections.
+                  Applies to new sessions only.
                 </p>
                 <ul className="environment-list">
                   {mcpServers.map((server) => (

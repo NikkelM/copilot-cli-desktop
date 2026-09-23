@@ -44,7 +44,7 @@ const PLAINLY: Array<{ when: RegExp; say: string | ((match: RegExpMatchArray) =>
   {
     when: /unknown method:\s*(\S+)/i,
     say: (match) =>
-      `The runtime does not know ${match[1]}, which means it was built before this window. Restart the app.`,
+      `The runtime does not know ${match[1]}. It was built before this window - restart the app.`,
   },
   {
     /**
@@ -53,7 +53,7 @@ const PLAINLY: Array<{ when: RegExp; say: string | ((match: RegExpMatchArray) =>
      * until a session turned up unopenable with the message passed through untouched.
      */
     when: /first event must be session\.(start|resume)|cannot create session from empty events array|session history cannot be recovered|did not include an? ['"]?session\.start['"]? event/i,
-    say: 'This session has no history left to reopen. Its record in the session store is empty or was removed.',
+    say: 'No history left to reopen. The session store has no events for it.',
   },
   {
     when: /session file is corrupted|failed to parse resume replay events/i,
@@ -61,19 +61,19 @@ const PLAINLY: Array<{ when: RegExp; say: string | ((match: RegExpMatchArray) =>
   },
   {
     when: /session not found|failed to (load|read) session events/i,
-    say: 'This session is no longer in the session store, so there is nothing to reopen.',
+    say: 'This session is no longer in the session store.',
   },
   {
     when: /working directory not found|unable to read current working directory/i,
-    say: 'The working directory for this session no longer exists, so it cannot be opened there.',
+    say: 'Its working directory no longer exists.',
   },
   {
     when: /authentication (failed|required)|sign(ed)? in to (use )?github copilot|not signed in/i,
-    say: 'Copilot is not signed in. Sign in with the copilot command in a terminal, then try again.',
+    say: 'Copilot is not signed in. Run copilot in a terminal to sign in.',
   },
   {
     when: /enoent[^]*copilot(\.exe)?['"\s]|spawn copilot/i,
-    say: 'The Copilot CLI could not be started. Check that it is installed and on PATH.',
+    say: 'The Copilot CLI could not be started. Check it is installed and on PATH.',
   },
 ];
 

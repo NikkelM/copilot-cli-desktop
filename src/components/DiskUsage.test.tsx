@@ -54,7 +54,7 @@ describe('what the sessions are using on disk', () => {
   it('says what it all comes to', () => {
     shown({ usage: [session('a', 2_000_000), session('b', 1_000_000)] });
 
-    expect(screen.getByText(/2 sessions are using 3 MB/)).toBeTruthy();
+    expect(screen.getByText(/Sessions: 2 · Disk usage: 3 MB/)).toBeTruthy();
   });
 
   it('says what each one is using', () => {
@@ -66,7 +66,7 @@ describe('what the sessions are using on disk', () => {
   it('says so when there is nothing stored yet', () => {
     shown({ usage: [] });
 
-    expect(screen.getByText('Nothing is stored on disk yet.')).toBeTruthy();
+    expect(screen.getByText('Nothing on disk yet.')).toBeTruthy();
   });
 
   /** Ten rows and a total beats seven hundred rows that mostly read zero. */
@@ -85,7 +85,7 @@ describe('what the sessions are using on disk', () => {
       shown({ usage: many });
 
       // s10 to s13, at 4000, 3000, 2000 and 1000 bytes.
-      expect(screen.getByText(/other 4 sessions hold 10 kB/)).toBeTruthy();
+      expect(screen.getByText(/4 more · 10 kB/)).toBeTruthy();
     });
 
     it('shows the rest when asked', async () => {
@@ -100,7 +100,7 @@ describe('what the sessions are using on disk', () => {
       shown({ usage: many });
 
       // 14 down to 1 thousand bytes, which is 105 thousand altogether.
-      expect(screen.getByText(/14 sessions are using 105 kB/)).toBeTruthy();
+      expect(screen.getByText(/Sessions: 14 · Disk usage: 105 kB/)).toBeTruthy();
     });
   });
 
@@ -129,7 +129,7 @@ describe('what the sessions are using on disk', () => {
     it('still counts its bytes', () => {
       shown({ usage: [forgotten] });
 
-      expect(screen.getByText(/1 session is using 5 MB/)).toBeTruthy();
+      expect(screen.getByText(/Sessions: 1 · Disk usage: 5 MB/)).toBeTruthy();
     });
 
     // There is nothing to open: the sidebar has no row for it.

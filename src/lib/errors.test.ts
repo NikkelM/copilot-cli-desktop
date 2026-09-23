@@ -50,7 +50,7 @@ describe('explain', () => {
     const raw = 'Request session.resume failed with message: session resume failed: First event must be session.start or session.resume';
 
     expect(explain(raw)).toBe(
-      'This session has no history left to reopen. Its record in the session store is empty or was removed.',
+      'No history left to reopen. The session store has no events for it.',
     );
   });
 
@@ -81,7 +81,7 @@ describe('explain', () => {
       'The history for this session is damaged and cannot be replayed.',
     );
     expect(explain('Failed to load session events: Session not found: abc123')).toBe(
-      'This session is no longer in the session store, so there is nothing to reopen.',
+      'This session is no longer in the session store.',
     );
   });
 
@@ -123,12 +123,12 @@ describe('explain', () => {
 
   it('says the working directory is gone', () => {
     expect(explain('working directory not found')).toBe(
-      'The working directory for this session no longer exists, so it cannot be opened there.',
+      'Its working directory no longer exists.',
     );
   });
 
   it('says how to sign in rather than that authentication failed', () => {
-    const signIn = 'Copilot is not signed in. Sign in with the copilot command in a terminal, then try again.';
+    const signIn = 'Copilot is not signed in. Run copilot in a terminal to sign in.';
 
     expect(explain('SDK session authentication failed: token expired')).toBe(signIn);
     expect(explain('Sign in to GitHub Copilot')).toBe(signIn);
@@ -136,7 +136,7 @@ describe('explain', () => {
 
   it('says the CLI could not be started when that is what happened', () => {
     expect(explain("Error: spawn copilot ENOENT")).toBe(
-      'The Copilot CLI could not be started. Check that it is installed and on PATH.',
+      'The Copilot CLI could not be started. Check it is installed and on PATH.',
     );
   });
 
@@ -167,7 +167,7 @@ describe('explain', () => {
       const raw = 'Request sidecar failed with message: Unknown method: sessions.setMode';
 
       expect(explain(raw)).toBe(
-        'The runtime does not know sessions.setMode, which means it was built before this window. Restart the app.',
+        'The runtime does not know sessions.setMode. It was built before this window - restart the app.',
       );
     });
 

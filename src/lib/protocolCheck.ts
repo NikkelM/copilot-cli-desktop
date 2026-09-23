@@ -10,8 +10,7 @@ import { runtimeProtocolVersion } from './sidecar';
  * again - the exact wrong turn this exists to prevent (#169).
  */
 export const STALE_RUNTIME =
-  'The runtime answering this window was built from a different version of the app, so ' +
-  'requests will fail in ways that name the wrong thing. Restart the app.';
+  'The runtime is a different version from this window. Restart the app.';
 
 /**
  * Whether the sidecar on the other end was built from the same protocol as this window.

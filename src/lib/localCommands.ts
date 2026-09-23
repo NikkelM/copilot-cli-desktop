@@ -110,7 +110,7 @@ export const GIT: SlashCommand = {
  */
 export const TAG: SlashCommand = {
   name: 'tag',
-  description: 'tag this session, or see what it has',
+  description: 'tag this session, or show its tags',
   aliases: [],
   hint: 'tag',
   allowDuringTurn: true,

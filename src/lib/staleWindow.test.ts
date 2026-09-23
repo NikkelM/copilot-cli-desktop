@@ -48,11 +48,11 @@ describe('what to tell the reader under a crash', () => {
    * where the reader goes, which is correct, which is where the time goes.
    */
   it('blames the build rather than whatever was on screen', () => {
-    expect(ORPHANED).toMatch(/code that has since changed/i);
-    expect(RELOADABLE).toMatch(/older build/i);
+    expect(ORPHANED).toMatch(/may be showing old code/i);
+    expect(RELOADABLE).toMatch(/current code/i);
   });
 
   it('does not promise a reload will help when it will not', () => {
-    expect(ORPHANED).toMatch(/cannot reach/i);
+    expect(ORPHANED).toMatch(/Restart the app/i);
   });
 });

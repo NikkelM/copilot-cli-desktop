@@ -37,20 +37,14 @@ export function DiskUsage({
 
   if (usage === null) {
     return (
-      <>
-        <p className="settings-note">
-          Every session ever started keeps its transcript here, and nothing removes them. Reading this
-          walks all of them, which takes a moment.
-        </p>
-        <button type="button" className="settings-reset" onClick={onRead} disabled={reading}>
-          {reading ? 'Measuring…' : 'Measure disk usage'}
-        </button>
-      </>
+      <button type="button" className="settings-reset" onClick={onRead} disabled={reading}>
+        {reading ? 'Measuring…' : 'Measure disk usage'}
+      </button>
     );
   }
 
   if (usage.length === 0) {
-    return <p className="settings-note">Nothing is stored on disk yet.</p>;
+    return <p className="settings-note">Nothing on disk yet.</p>;
   }
 
   const shown = all ? usage : usage.slice(0, LISTED);
@@ -60,9 +54,7 @@ export function DiskUsage({
   return (
     <>
       <p className="settings-note">
-        {usage.length} {usage.length === 1 ? 'session is' : 'sessions are'} using {bytes(totalBytes(usage))}.
-        Almost all of that is the transcripts themselves, so there is nothing to tidy inside one:
-        deleting the session is what reclaims the space.
+        Sessions: {usage.length} · Disk usage: {bytes(totalBytes(usage))}
       </p>
 
       {shown.map((session) => (
@@ -89,7 +81,7 @@ export function DiskUsage({
 
       {rest > 0 && (
         <p className="settings-note">
-          The other {rest} {rest === 1 ? 'session holds' : 'sessions hold'} {bytes(restBytes)} between them.{' '}
+          {rest} more · {bytes(restBytes)}{' '}
           <button type="button" className="settings-link" onClick={() => setAll(true)}>
             Show all
           </button>

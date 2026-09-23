@@ -46,14 +46,10 @@ export function MergeChoice({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <h2 className="confirm-title">This branch and the remote have both moved on</h2>
-        <div className="confirm-body">
-          There is no fast-forward from here, so the two histories have to be joined. Rebasing replays your commits on
-          top of the remote's; merging keeps both and adds a commit joining them.
-        </div>
 
         <label className="confirm-remember">
           <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)} />
-          Remember this, and stop asking
+          Remember this choice
         </label>
 
         <div className="confirm-actions">

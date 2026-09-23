@@ -934,7 +934,7 @@ describe('choosing a branch', () => {
 
     await userEvent.click(screen.getByLabelText(/Switch branch/));
 
-    expect(screen.getByText('1 changed file comes with you')).toBeTruthy();
+    expect(screen.getByText('1 changed file carries over')).toBeTruthy();
   });
 
   it('counts more than one of them', async () => {
@@ -945,7 +945,7 @@ describe('choosing a branch', () => {
 
     await userEvent.click(screen.getByLabelText(/Switch branch/));
 
-    expect(screen.getByText('2 changed files come with you')).toBeTruthy();
+    expect(screen.getByText('2 changed files carry over')).toBeTruthy();
   });
 
   it('says nothing about work when there is none', async () => {
@@ -1025,7 +1025,7 @@ describe('choosing how to pull', () => {
     const onSync = vi.fn();
     asking({ onRememberStrategy, onSync });
 
-    await userEvent.click(screen.getByRole('checkbox', { name: /stop asking/i }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /Remember this choice/i }));
     await userEvent.click(screen.getByRole('button', { name: 'Rebase' }));
 
     expect(onRememberStrategy).toHaveBeenCalledWith('rebase');

@@ -45,7 +45,7 @@ describe('reporting what a session cost', () => {
    * cost nothing rather than that nothing is recorded.
    */
   it('says nothing is recorded rather than reporting zero', () => {
-    expect(usageReport(null)).toContain('Nothing recorded yet');
+    expect(usageReport(null)).toContain('No usage recorded yet');
     expect(usageReport(null)).not.toContain('|');
   });
 
@@ -128,8 +128,8 @@ describe('reporting what a session cost', () => {
    * the detail should know that getting it means loading the session.
    */
   it('says why a cold session has less to report', () => {
-    expect(usageReport(cold())).toContain('only known while the session is loaded');
-    expect(usageReport(loaded())).not.toContain('only known while the session is loaded');
+    expect(usageReport(cold())).toContain('only available while the session is loaded');
+    expect(usageReport(loaded())).not.toContain('only available while the session is loaded');
   });
 
   describe('the figures themselves', () => {

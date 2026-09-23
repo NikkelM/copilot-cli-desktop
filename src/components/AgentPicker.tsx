@@ -64,12 +64,12 @@ export function AgentPicker({ current, agents, failed, onOpen, onChoose }: Agent
         type="button"
         className="agent-current"
         onClick={toggle}
-        title="Which custom agent this session's next turns run as"
+        title="Change the agent for this session"
       >
         {/* Holds its shape while the log is being read rather than naming an agent that the
             read may contradict, the same way the model control does. */}
         {current === undefined ? (
-          <span className="agent-name waiting" aria-label="Reading which agent this session uses" />
+          <span className="agent-name waiting" aria-label="Loading agent" />
         ) : (
           <span className={current ? 'agent-name' : 'agent-name default'}>{current?.displayName ?? 'Default'}</span>
         )}

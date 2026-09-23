@@ -114,14 +114,14 @@ export function ModelPicker({
         type="button"
         className="model-current"
         onClick={toggle}
-        title="Change the model, how hard it thinks, and how much room it has"
+        title="Change the model, reasoning effort and context size"
       >
         {/* Named even before the catalogue is known: this comes from the session's own log,
             so a session says what it runs on without being started. While that read is in
             flight the control holds its shape rather than showing a name that may turn out
             to be wrong - blanking the text alone collapsed it to an empty blob. */}
         {current === undefined ? (
-          <span className="model-id waiting" aria-label="Reading which model this session uses" />
+          <span className="model-id waiting" aria-label="Loading model" />
         ) : (
           <span className="model-id">{current?.model ?? emptyLabel}</span>
         )}
@@ -200,7 +200,7 @@ function Prices({ model }: { model: ModelChoice | undefined }) {
 
       {/* Auto has no price of its own: what it costs depends on where it routes. */}
       {known.length === 0 && (
-        <p className="model-price wide">{model ? 'Not priced on its own' : 'Point at a model for its price'}</p>
+        <p className="model-price wide">{model ? 'No price listed' : 'Hover a model to see its price'}</p>
       )}
 
       {known.map(([label, amount]) => (

@@ -595,12 +595,12 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
             }}
             placeholder={
               shell
-                ? 'Run a command in this session\'s shell. Escape leaves shell mode.'
+                ? 'Run a shell command. Escape to leave shell mode.'
                 : stashed
-                  ? 'A prompt is stashed. Ctrl+S brings it back.'
+                  ? 'Prompt stashed. Ctrl+S to bring it back.'
                   : busy
-                    ? 'Agent is working. Enter queues this behind it.'
-                    : 'Send a message. Enter to send, Shift+Enter for a newline, / for commands, ! for a shell command.'
+                    ? 'Agent is working. Enter to queue a message.'
+                    : 'Enter to send · Shift+Enter newline · / commands · ! shell'
             }
             rows={1}
             disabled={disabled}

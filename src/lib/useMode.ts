@@ -15,9 +15,9 @@ export const MODE_ORDER: readonly SessionMode[] = ['interactive', 'plan', 'autop
 
 /** What each mode is called and does, for the indicator and its tooltip. */
 export const MODE_LABELS: Record<SessionMode, { label: string; hint: string }> = {
-  interactive: { label: 'interactive', hint: 'Answers and acts, asking before anything consequential' },
-  plan: { label: 'plan', hint: 'Writes a plan and stops for approval before acting on it' },
-  autopilot: { label: 'autopilot', hint: 'Works towards the goal without stopping to check in' },
+  interactive: { label: 'interactive', hint: 'Asks before anything consequential' },
+  plan: { label: 'plan', hint: 'Writes a plan and waits for approval' },
+  autopilot: { label: 'autopilot', hint: 'Works without asking for approval' },
 };
 
 /**

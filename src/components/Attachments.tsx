@@ -48,7 +48,7 @@ export function Attachments({
 
   useEffect(() => {
     onPicker(() => {
-      open({ multiple: true, title: 'Attach to this message' })
+      open({ multiple: true, title: 'Attach files' })
         .then((picked) => {
           if (picked) {
             const paths = Array.isArray(picked) ? picked : [picked];

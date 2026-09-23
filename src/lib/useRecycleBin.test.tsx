@@ -94,7 +94,7 @@ describe('the recycle bin', () => {
 
       await act(async () => result.current.restore('a'));
 
-      expect(onError).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('already there'));
+      expect(onError).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('already exists'));
     });
 
     it('reports a failure rather than leaving it unhandled', async () => {

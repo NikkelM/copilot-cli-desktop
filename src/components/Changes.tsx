@@ -122,7 +122,7 @@ export function Changes({
               type="button"
               className="changes-action primary"
               onClick={onReview}
-              title="Mark these as seen, so opening this again shows only what is newer"
+              title="Mark these changes as seen"
             >
               Seen this
             </button>
@@ -145,8 +145,7 @@ export function Changes({
           </p>
         ) : (
           <p className="changes-note">
-            Nothing recorded. A session only leaves a record for tools that name the file they change, so work done
-            through the shell does not appear here.
+            No changes recorded. Shell commands are not tracked here.
           </p>
         ))}
 
@@ -182,11 +181,11 @@ export function Changes({
 
 /** Why there is no diff is worth as much as the diff, so it is said rather than left blank. */
 const WHY: Record<NonNullable<FileDiff['reason']>, string> = {
-  gone: 'This file is not on disk any more, and no copy of its contents was kept.',
-  replaced: 'The file on disk is no longer the version the session left, and no copy of that version was kept.',
+  gone: 'File no longer exists, and no snapshot was kept.',
+  replaced: 'Changed since this session wrote it, and no snapshot was kept.',
   binary: 'Not a text file.',
-  'too-large': 'Too large to compare. Diffing a file this size would hold up every session in the app.',
-  untracked: 'No snapshot mentions this file.',
+  'too-large': 'Too large to compare.',
+  untracked: 'No snapshot was taken of this file.',
 };
 
 function Expanded({ diff }: { diff: FileDiff | undefined }) {
@@ -197,7 +196,7 @@ function Expanded({ diff }: { diff: FileDiff | undefined }) {
     <>
       {/* The file has moved on since. Saying so is what stops the diff being read as the
           file's current state, and stops someone else's edit looking like the agent's. */}
-      {diff.stale && <p className="changes-note">Changed again since the session left it, so this is not the file as it stands.</p>}
+      {diff.stale && <p className="changes-note">Changed since this session wrote it. This diff is not the current file.</p>}
       <Diff lines={parsePatch(diff.patch)} />
     </>
   );

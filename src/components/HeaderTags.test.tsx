@@ -41,7 +41,7 @@ describe('HeaderTags', () => {
 
   it('says what pressing it does, which differs by whether there is anything there', () => {
     render(<HeaderTags tags={['bug']} onEdit={() => {}} />);
-    expect(screen.getByRole('button').getAttribute('title')).toBe('Change this session tags');
+    expect(screen.getByRole('button').getAttribute('title')).toBe('Edit tags');
 
     cleanup();
     render(<HeaderTags tags={[]} onEdit={() => {}} />);
