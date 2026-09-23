@@ -1382,3 +1382,119 @@ describe('events that draw nothing', () => {
     expect(entries.map((e) => (e as MessageEntry).body)).toEqual(['first', 'second', 'third']);
   });
 });
+/**
+ * What a finished tool call came to is kept per event, so a page rebuilt on every streamed
+ * chunk reads a completion once rather than once a chunk. On a 60k-event log that took the
+ * walk from 24.6ms to 11 (#186).
+ *
+ * The risk it introduces is staleness, so what these check is that nothing is remembered
+ * that could still change, and that what is remembered is remembered against the right
+ * event.
+ */
+describe('reading the same events twice', () => {
+  const ran = (output: string, id = 't1') => [
+    event('tool.execution_start', { toolCallId: id, toolName: 'local_shell', arguments: { command: 'ls' } }, `${id}s`),
+    event('tool.execution_complete', { toolCallId: id, success: true, result: { content: output } }, `${id}c`),
+  ];
+
+  it('says the same thing the second time', () => {
+    const events = ran('the output');
+
+    expect(toEntries(events, CWD)).toEqual(toEntries(events, CWD));
+  });
+
+  /** Escapes are stripped once; a second read must not hand back the raw text or a re-strip. */
+  it('strips escapes the same way every time', () => {
+    const events = ran('\u001B[32mgreen\u001B[0m');
+
+    const first = (toEntries(events, CWD)[0] as ToolEntry).output;
+    const second = (toEntries(events, CWD)[0] as ToolEntry).output;
+
+    expect(first).toBe('green');
+    expect(second).toBe('green');
+  });
+
+  /**
+   * Paths are shown relative to the working directory, which comes from outside the event -
+   * so a summary read under one directory must not be handed back under another.
+   */
+  it('works the summary out again when the working directory changes', () => {
+    const events = [
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'view', arguments: { path: 'C:\\work\\repo\\a.ts' } }, 'e1'),
+    ];
+
+    const here = (toEntries(events, CWD)[0] as ToolEntry).summary;
+    const elsewhere = (toEntries(events, 'C:\\other')[0] as ToolEntry).summary;
+
+    expect(here).not.toBe(elsewhere);
+  });
+
+  it('gives the same summary back for the same working directory', () => {
+    const events = [
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'view', arguments: { path: 'C:\\work\\repo\\a.ts' } }, 'e1'),
+    ];
+
+    toEntries(events, 'C:\\other');
+    const back = (toEntries(events, CWD)[0] as ToolEntry).summary;
+
+    expect(back).toBe((toEntries([...events], CWD)[0] as ToolEntry).summary);
+  });
+
+  /** A running tool has said nothing final yet, so nothing about it may be held. */
+  it('still finishes a tool whose completion arrives later', () => {
+    const [start, complete] = ran('done at last');
+
+    const running = toEntries([start!], CWD)[0] as ToolEntry;
+    const finished = toEntries([start!, complete!], CWD)[0] as ToolEntry;
+
+    expect(running.status).toBe('running');
+    expect(finished.status).toBe('ok');
+    expect(finished.output).toBe('done at last');
+  });
+
+  /** Two calls that only differ in their output must not be given each other's. */
+  it('keeps two completions apart', () => {
+    const entries = toEntries([...ran('mine', 't1'), ...ran('theirs', 't2')], CWD) as ToolEntry[];
+
+    expect(entries.map((entry) => entry.output)).toEqual(['mine', 'theirs']);
+  });
+
+  /** Output while it runs is the whole output so far, and is read once per report. */
+  it('shows a running tool the same output twice', () => {
+    const events = [
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'local_shell', arguments: { command: 'ls' } }, 'e1'),
+      event('tool.execution_partial_result', { toolCallId: 't1', partialOutput: '\u001B[32mline\u001B[0m' }, 'e2'),
+    ];
+
+    expect((toEntries(events, CWD)[0] as ToolEntry).output).toBe('line');
+    expect((toEntries(events, CWD)[0] as ToolEntry).output).toBe('line');
+  });
+
+  it('carries a diff back the second time as well', () => {
+    const patch = 'diff --git a/a.ts b/a.ts\n@@ -1 +1 @@\n-a\n+b\n';
+    const events = [
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'edit' }, 'e1'),
+      event(
+        'tool.execution_complete',
+        { toolCallId: 't1', success: true, result: { content: 'edited', detailedContent: patch } },
+        'e2',
+      ),
+    ];
+
+    toEntries(events, CWD);
+    expect((toEntries(events, CWD)[0] as ToolEntry).patch).toBe(patch);
+  });
+
+  it('carries a failure back the second time as well', () => {
+    const events = [
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'local_shell' }, 'e1'),
+      event('tool.execution_complete', { toolCallId: 't1', success: false, error: { message: 'no such file' } }, 'e2'),
+    ];
+
+    toEntries(events, CWD);
+    const entry = toEntries(events, CWD)[0] as ToolEntry;
+
+    expect(entry.status).toBe('failed');
+    expect(entry.output).toBe('no such file');
+  });
+});

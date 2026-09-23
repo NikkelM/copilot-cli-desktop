@@ -283,6 +283,54 @@ function clip(value: string): string {
   return trimmed.length > MAX_OUTPUT ? `${trimmed.slice(0, MAX_OUTPUT)}…` : trimmed;
 }
 
+/** What a finished tool call came to, which is the expensive half of building its row. */
+interface Outcome {
+  output: string;
+  patch: string | undefined;
+}
+
+/**
+ * What each completion came to, so a finished tool call is read once rather than on every
+ * chunk of every reply after it.
+ *
+ * The timeline is rebuilt from scratch whenever anything arrives, and the tool rows are most
+ * of what that costs: on a 60k-event log the whole walk is 24ms, of which 16 is the tool
+ * payloads - `stripAnsi` over every byte a shell command ever wrote, again per chunk, for
+ * calls that finished hours ago (#186).
+ *
+ * Sound because a completion is finished: its output and its diff are a function of that one
+ * event, which never changes once it has arrived. Everything about the row that *can* still
+ * change - a subagent's work arriving underneath it, a question's answer - is left outside
+ * this and worked out every time as before.
+ *
+ * Held weakly, so this follows the events rather than holding them: an event dropped by the
+ * page that held it takes its outcome with it, which matters in an app whose whole premise is
+ * not holding what it is not using.
+ */
+const outcomes = new WeakMap<TranscriptEvent, Outcome>();
+
+/**
+ * The same, for the output a tool reports while it is still running.
+ *
+ * Each of these carries the whole output so far rather than the increment, so a chatty
+ * command leaves behind a run of events that are each nearly as long as the last - and a log
+ * read from disk holds every one of them, where a live session only keeps the newest. Left
+ * uncached, replaying one meant stripping escapes from the same text over and over.
+ */
+const partials = new WeakMap<TranscriptEvent, string>();
+
+/**
+ * The line under a tool's name, which is worked out from its arguments.
+ *
+ * Cheaper to keep than to redo: the summary flattens whitespace and clamps a long command or
+ * question, and a page holds thousands of calls that will never say anything different.
+ *
+ * The working directory comes from outside the event - paths are shown relative to it - so it
+ * is kept alongside and checked, rather than assumed. A reader who moves a session to another
+ * folder gets summaries worked out again instead of stale ones.
+ */
+const summaries = new WeakMap<TranscriptEvent, { cwd: string | null; summary: string }>();
+
 /**
  * Why a skill loaded.
  *
@@ -546,12 +594,27 @@ export function toEntries(
             ? [args?.question, args?.message].find((v): v is string => typeof v === 'string' && v.trim() !== '')
             : undefined;
 
+        // Kept per event, since the arguments it reads never change once they have arrived.
+        const held = summaries.get(event);
+        let summary: string;
+        if (held && held.cwd === cwd) {
+          summary = held.summary;
+        } else {
+          summary = question
+            ? clipLine(question)
+            : // A command the reader typed is its own summary. The runtime's description
+              // for one is "Execute shell command: <the command>", which says the same
+              // thing twice and pushes the part that matters off the end of the line.
+              clipLine(command && name === 'local_shell' ? command : summarise(args, cwd));
+          summaries.set(event, { cwd, summary });
+        }
+
         const entry: ToolEntry = question
           ? {
               kind: 'tool',
               key,
               name: label,
-              summary: clipLine(question),
+              summary,
               output: null,
               status: 'running',
               startedAt: event.timestamp,
@@ -564,10 +627,7 @@ export function toEntries(
               kind: 'tool',
               key,
               name: label,
-              // A command the reader typed is its own summary. The runtime's description
-              // for one is "Execute shell command: <the command>", which says the same
-              // thing twice and pushes the part that matters off the end of the line.
-              summary: clipLine(command && name === 'local_shell' ? command : summarise(args, cwd)),
+              summary,
               output: null,
               status: 'running',
               startedAt: event.timestamp,
@@ -640,7 +700,14 @@ export function toEntries(
       case 'tool.execution_partial_result': {
         const running = typeof data.toolCallId === 'string' ? pending.get(data.toolCallId) : undefined;
         const soFar = data.partialOutput;
-        if (running && typeof soFar === 'string' && soFar !== '') running.output = clip(soFar);
+        if (!running || typeof soFar !== 'string' || soFar === '') break;
+
+        let shown = partials.get(event);
+        if (shown === undefined) {
+          shown = clip(soFar);
+          partials.set(event, shown);
+        }
+        running.output = shown;
         break;
       }
 
@@ -650,20 +717,29 @@ export function toEntries(
         if (id) pending.delete(id);
 
         const succeeded = data.success === true;
-        const result = data.result as { content?: unknown; detailedContent?: unknown } | undefined;
-        const error = data.error as { message?: unknown } | undefined;
-        const output = succeeded
-          ? typeof result?.content === 'string'
-            ? clip(result.content)
-            : ''
-          : typeof error?.message === 'string'
-            ? clip(error.message)
-            : 'Tool failed';
+        // Read once per completion rather than once per chunk. Everything below this is
+        // cheap; what it skips is stripping escapes from every byte a shell ever wrote.
+        let outcome = outcomes.get(event);
+        if (!outcome) {
+          const result = data.result as { content?: unknown; detailedContent?: unknown } | undefined;
+          const error = data.error as { message?: unknown } | undefined;
+          // A file tool reports the change it made as a unified diff, which is worth far
+          // more than the sentence saying it succeeded.
+          const detail = result?.detailedContent;
 
-        // A file tool reports the change it made as a unified diff, which is worth far
-        // more than the sentence saying it succeeded.
-        const detail = result?.detailedContent;
-        const patch = typeof detail === 'string' && detail.includes('diff --git') ? detail : undefined;
+          outcome = {
+            output: succeeded
+              ? typeof result?.content === 'string'
+                ? clip(result.content)
+                : ''
+              : typeof error?.message === 'string'
+                ? clip(error.message)
+                : 'Tool failed',
+            patch: typeof detail === 'string' && detail.includes('diff --git') ? detail : undefined,
+          };
+          outcomes.set(event, outcome);
+        }
+        const { output, patch } = outcome;
 
         if (entry) {
           // Updating the entry already in the list keeps the tool as one visual unit.
