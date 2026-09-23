@@ -5291,7 +5291,17 @@ pre.fatal,
 
 .bin-actions {
   display: flex;
+  align-items: center;
   gap: 12px;
+}
+
+/* Wide enough for the largest figure the list can hold, so the sizes line up to be compared. */
+.disk-size {
+  min-width: calc(var(--font-base) * 4);
+  color: var(--text-muted);
+  font-size: var(--font-md);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /*

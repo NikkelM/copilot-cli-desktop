@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
 import { ModelPicker } from './ModelPicker';
+import { DiskUsage } from './DiskUsage';
 import { LARGEST, SMALLEST, STEP, applyScale, clampScale } from '../lib/scale';
-import type { BinnedSession, CliSetting, ModelChoice } from '../../shared/protocol';
+import type { BinnedSession, CliSetting, ModelChoice, SessionDisk } from '../../shared/protocol';
 import type { CliSettingsState } from '../lib/useCliSettings';
 import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
@@ -320,6 +321,7 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Ask before deleting a session', keywords: 'confirm delete warn' },
     { label: 'Keep a deleted session for', keywords: 'retention days recycle bin restore' },
     { label: 'Waiting to be deleted', keywords: 'recycle bin restore purge deleted sessions' },
+    { label: 'What sessions are using', keywords: 'disk usage size bytes storage space largest' },
   ],
   sessions: [
     { label: 'Run tools without asking', keywords: 'allow all yolo permission approve' },
@@ -369,6 +371,10 @@ export function SettingsWindow({
   onNeedBin,
   onRestore,
   onPurge,
+  usage = null,
+  usageReading = false,
+  onNeedUsage,
+  onOpenSession,
   cli,
   onNeedCli,
   onWriteCli,
@@ -410,6 +416,13 @@ export function SettingsWindow({
   onNeedBin?: () => void;
   onRestore?: (sessionId: string) => void;
   onPurge?: (sessionId: string) => void;
+  /** What every session is using on disk, or null before anybody has asked. */
+  usage?: SessionDisk[] | null;
+  usageReading?: boolean;
+  /** Measure it. Asked for by pressing, since it walks every session directory. */
+  onNeedUsage?: () => void;
+  /** Go to a session, which is where anything can be done about one. */
+  onOpenSession?: (sessionId: string) => void;
   /**
    * The CLI's own settings, or null while they are being read.
    *
@@ -774,6 +787,12 @@ export function SettingsWindow({
                       </div>
                     ))}
                   </>
+                )}
+
+                <h4 className="settings-subhead">Disk usage</h4>
+
+                {shows('What sessions are using') && (
+                  <DiskUsage usage={usage} reading={usageReading} onRead={onNeedUsage} onOpen={onOpenSession} />
                 )}
               </>
             )}

@@ -84,7 +84,7 @@ describe('the settings window', () => {
     show();
 
     const names = [...document.querySelectorAll('.settings-subhead')].map((node) => node.textContent);
-    expect(names).toEqual(['Memory', 'Waiting for you', 'Deleting', 'Recycle bin']);
+    expect(names).toEqual(['Memory', 'Waiting for you', 'Deleting', 'Recycle bin', 'Disk usage']);
   });
 
   it('shows what each setting is now', async () => {

@@ -17,6 +17,7 @@ import type {
   MergeStrategy,
   ModelChoice,
   RepoStatus,
+  SessionDisk,
   PendingElicitation,
   PendingPermission,
   PendingPlanApproval,
@@ -132,6 +133,17 @@ export function deleteSession(sessionId: string): Promise<void> {
 /** What is waiting in the recycle bin, newest first. Costs no session: it is read from disk. */
 export function binnedSessions(): Promise<BinnedSession[]> {
   return request('bin.list', {});
+}
+
+/**
+ * What every session is using on disk, largest first.
+ *
+ * Costs a walk of every session directory there has ever been - a quarter of a second here -
+ * so it is asked for when somebody wants to know rather than kept up to date.
+ */
+export async function sessionDiskUsage(): Promise<SessionDisk[]> {
+  const { sessions } = await request('sessions.disk');
+  return sessions;
 }
 
 /** Put a binned session back. False means something is already there under that id. */

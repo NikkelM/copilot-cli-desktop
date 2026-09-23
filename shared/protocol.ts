@@ -40,6 +40,24 @@ export interface BinnedSession {
 /** How long a deleted session is kept when nobody has said otherwise. */
 export const DEFAULT_BIN_RETENTION_DAYS = 7;
 
+/**
+ * What one session is costing on disk.
+ *
+ * Read from the directories rather than from the session store, since disk is what is being
+ * asked about: a session the store has forgotten still has its bytes, and those are exactly
+ * the ones nothing else in the app would ever mention.
+ */
+export interface SessionDisk {
+  sessionId: string;
+  /** What the sidebar calls it, or nothing for a directory the session store has no row for. */
+  title: string | null;
+  /** ISO-8601, when it was last used, or null where the store cannot say. */
+  updatedAt: string | null;
+  bytes: number;
+  /** Whether the session store still knows about it, and so whether the sidebar shows it. */
+  listed: boolean;
+}
+
 /** How long a question to the reader waits when nobody has said otherwise. */
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 5 * 60_000;
 
@@ -964,6 +982,14 @@ export interface SidecarRequests {
   /** Delete a binned session for good, without waiting for its retention to run out. */
   'bin.purge': { params: { sessionId: string }; result: void };
   /**
+   * What every session is using on disk, largest first.
+   *
+   * Asked for rather than sent with the session list: it walks every session directory
+   * there has ever been, which is a quarter of a second here and not something to pay for
+   * on every refresh of a sidebar that never shows it.
+   */
+  'sessions.disk': { params: void; result: { sessions: SessionDisk[] } };
+  /**
    * The CLI's own settings: what it knows about, and what it is set to.
    *
    * Both together, because they are read together and neither is useful alone - a schema
@@ -1302,6 +1328,7 @@ export const SIDECAR_METHODS = [
   'bin.list',
   'bin.restore',
   'bin.purge',
+  'sessions.disk',
   'cliSettings.list',
   'cliSettings.values',
   'cliSettings.write',

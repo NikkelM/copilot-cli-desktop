@@ -54,6 +54,7 @@ import { RenamePrompt } from './components/RenamePrompt';
 import { HeaderTags } from './components/HeaderTags';
 import { sessionDefaults, useSettings } from './lib/useSettings';
 import { useRecycleBin } from './lib/useRecycleBin';
+import { useDiskUsage } from './lib/useDiskUsage';
 import { useCliSettings } from './lib/useCliSettings';
 import { useCliDisplay } from './lib/useCliDisplay';
 import { SettingsWindow } from './components/SettingsWindow';
@@ -178,6 +179,7 @@ export default function App() {
   // A restored session is back on disk but not in the list, which is built from what is
   // there: nothing notices a directory reappearing until it is looked at again.
   const bin = useRecycleBin(sessions.refresh, setError);
+  const disk = useDiskUsage();
   const cliSettings = useCliSettings(setError);
   const mode = useMode(selectedId, setError);
   const contextUsage = useContextUsage(selectedId);
@@ -1369,6 +1371,15 @@ export default function App() {
           onNeedBin={bin.refresh}
           onRestore={bin.restore}
           onPurge={bin.purge}
+          usage={disk.usage}
+          usageReading={disk.reading}
+          onNeedUsage={disk.refresh}
+          // Closing the window on the way, since the session is behind it and a list of
+          // sizes is not what somebody wants to be looking at once they have chosen one.
+          onOpenSession={(sessionId) => {
+            open(sessionId);
+            setSettingsOpen(false);
+          }}
           cli={cliSettings.cli}
           onNeedCli={cliSettings.refresh}
           onWriteCli={(changes) => {
