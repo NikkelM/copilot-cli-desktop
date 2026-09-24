@@ -13,9 +13,9 @@ import type {
   FileDiff,
   GetTranscriptResult,
   ListSessionsResult,
+  McpServerConfig,
   McpServerSummary,
-  MergeStrategy,
-  ModelChoice,
+  MergeStrategy,  ModelChoice,
   RepoStatus,
   SessionDisk,
   PendingElicitation,
@@ -374,6 +374,21 @@ export function describeEnvironment(cwd?: string): Promise<SessionEnvironment> {
  */
 export function setMcpEnabled(name: string, enabled: boolean): Promise<void> {
   return request('mcp.setEnabled', { name, enabled });
+}
+
+/**
+ * Write a server into the reader's own config, or change one already there.
+ *
+ * Costs no Copilot process: the config is a file rather than anything a conversation holds.
+ * Sessions already running keep the servers they connected to.
+ */
+export function saveMcpServer(name: string, config: McpServerConfig): Promise<void> {
+  return request('mcp.save', { name, config });
+}
+
+/** Take a server out of the reader's own config. Costs no Copilot process. */
+export function removeMcpServer(name: string): Promise<void> {
+  return request('mcp.remove', { name });
 }
 
 /** The MCP servers there are, for completing a command that wants one. Costs no Copilot process. */

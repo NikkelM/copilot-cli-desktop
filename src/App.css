@@ -5220,6 +5220,44 @@ pre.fatal,
   text-decoration: underline;
 }
 
+/*
+ * Writing down where an MCP server is. Inside the panel rather than over it: the list it
+ * belongs to is what somebody is reading while they fill it in.
+ */
+.mcp-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.mcp-field {
+  display: grid;
+  grid-template-columns: calc(var(--font-base) * 6) 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.mcp-label {
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}
+
+.mcp-warning {
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-sm);
+}
+
+.mcp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* A path and the control that picks one, side by side as a single field. */
 .path-field {
   display: flex;

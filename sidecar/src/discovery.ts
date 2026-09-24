@@ -5,6 +5,7 @@ import type { CopilotClient } from '@github/copilot-sdk';
 import { copilotHome } from './paths.js';
 import type {
   AgentSummary,
+  McpServerConfig,
   McpServerSummary,
   ModelChoice,
   ReasoningEffort,
@@ -219,15 +220,91 @@ export class Discovery {
    */
   async mcpServers(cwd?: string): Promise<McpServerSummary[]> {
     const client = await this.connect();
-    const { servers } = await client.rpc.mcp.discover(cwd ? { workingDirectory: cwd } : {});
 
-    return (servers ?? []).map((server) => ({
-      name: server.name,
-      ...(server.type ? { type: server.type } : {}),
-      source: server.source,
-      ...(server.sourcePlugin ? { sourcePlugin: server.sourcePlugin } : {}),
-      enabled: server.enabled,
-    }));
+    /**
+     * Two readers, because they answer different questions.
+     *
+     * `discover` says what a directory would be offered and whether each is switched on,
+     * including the servers a plugin brings. `config.list` says what is written in the
+     * reader's own file, which is the only thing this app can change and the only place the
+     * url or command is recorded (#24).
+     */
+    const [discovered, configured] = await Promise.all([
+      client.rpc.mcp.discover(cwd ? { workingDirectory: cwd } : {}),
+      // A config that cannot be read still leaves the list worth showing, just not editable.
+      this.mcpConfig(),
+    ]);
+
+    return (discovered.servers ?? []).map((server) => {
+      const own = configured[server.name];
+      const command = typeof own?.command === 'string' ? own.command : undefined;
+      const url = typeof own?.url === 'string' ? own.url : undefined;
+      const args = Array.isArray(own?.args) ? own.args.filter((arg): arg is string => typeof arg === 'string') : undefined;
+
+      return {
+        name: server.name,
+        ...(server.type ? { type: server.type } : {}),
+        source: server.source,
+        ...(server.sourcePlugin ? { sourcePlugin: server.sourcePlugin } : {}),
+        enabled: server.enabled,
+        ...(url ? { url } : {}),
+        ...(command ? { command } : {}),
+        ...(args?.length ? { args } : {}),
+        // In the reader's own file, which is the file the config RPC writes. A plugin's
+        // server is in the plugin's, and writing here would make a copy rather than a change.
+        editable: own !== undefined && !server.sourcePlugin,
+      };
+    });
+  }
+
+  /**
+   * What is written in the reader's own MCP config, by name.
+   *
+   * Nothing at all when it cannot be read, which leaves a list worth showing rather than no
+   * list: the servers still run, they just cannot be edited from here.
+   */
+  private async mcpConfig(): Promise<Record<string, Record<string, unknown> | undefined>> {
+    const client = await this.connect();
+    try {
+      const { servers } = await client.rpc.mcp.config.list();
+      return (servers ?? {}) as unknown as Record<string, Record<string, unknown> | undefined>;
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Write a server into the reader's own config, or change one that is already there.
+   *
+   * Costs no session. The config is the reader's own file rather than anything a
+   * conversation holds, which is what lets this be offered beside a list that also costs
+   * nothing to read (#24).
+   *
+   * `add` and `update` are separate calls in the runtime and one here, because the
+   * difference is not one a reader is aware of making: a form that was opened on an
+   * existing server saves, and a form that was opened empty saves, and both mean "let this
+   * be what the server is".
+   */
+  async saveMcpServer(name: string, config: McpServerConfig): Promise<void> {
+    const client = await this.connect();
+    const servers = await this.mcpConfig();
+    // Kept, so saving a server does not silently drop the filters and timeouts this app
+    // has no controls for. Only the fields below are this app's to overwrite.
+    const existing = servers[name] ?? {};
+
+    const written =
+      config.transport === 'http'
+        ? { ...existing, type: 'http', url: config.url, command: undefined, args: undefined }
+        : { ...existing, type: 'local', command: config.command, args: config.args ?? [], url: undefined };
+
+    if (servers[name]) await client.rpc.mcp.config.update({ name, config: written as never });
+    else await client.rpc.mcp.config.add({ name, config: written as never });
+  }
+
+  /** Take a server out of the reader's own config. */
+  async removeMcpServer(name: string): Promise<void> {
+    const client = await this.connect();
+    await client.rpc.mcp.config.remove({ name });
   }
 
   /**

@@ -37,6 +37,8 @@ import {
   runShell,
   sessionUsage,
   setMcpEnabled,
+  saveMcpServer,
+  removeMcpServer,
   sendMessage,
   evictSession,
   loadSession,
@@ -45,6 +47,7 @@ import {
   writeCliSettings,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, TAG, USAGE, WIKI, wantsDirectory, withTagChoices } from './lib/localCommands';
+import type { McpServerConfig } from '../shared/protocol';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
@@ -533,6 +536,33 @@ export default function App() {
     setError(null);
     try {
       await setMcpEnabled(name, enabled);
+      await environment.load();
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
+  }
+
+  /**
+   * Write an MCP server down, or take one away, then read the panel again.
+   *
+   * The same shape as the toggle above and for the same reason: the config is the runtime's
+   * file rather than this app's, so the next read is the only account of what took. Neither
+   * costs a session - a server is configuration, not conversation (#24).
+   */
+  async function saveMcp(name: string, config: McpServerConfig) {
+    setError(null);
+    try {
+      await saveMcpServer(name, config);
+      await environment.load();
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
+  }
+
+  async function removeMcp(name: string) {
+    setError(null);
+    try {
+      await removeMcpServer(name);
       await environment.load();
     } catch (e: unknown) {
       setError(explain(e));
@@ -1214,6 +1244,8 @@ export default function App() {
                   disabledSkills={skills.disabled}
                   onToggleSkill={selectedId ? (name, enabled) => void skills.toggle(name, enabled) : undefined}
                   onToggleMcp={(name, enabled) => void toggleMcp(name, enabled)}
+                  onSaveMcp={(name, config) => void saveMcp(name, config)}
+                  onRemoveMcp={(name) => void removeMcp(name)}
                 />
               )}
 

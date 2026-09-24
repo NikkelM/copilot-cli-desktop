@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AgentSummary, HookSummary, SessionEnvironment } from '../../shared/protocol';
@@ -360,7 +361,7 @@ describe('Environment, MCP servers', () => {
   });
 
   it('names each server and how it is reached', () => {
-    shown({ mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true }] });
+    shown({ mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true, editable: true }] });
 
     expect(screen.getByText('context7')).toBeTruthy();
     expect(screen.getByText('http')).toBeTruthy();
@@ -369,7 +370,7 @@ describe('Environment, MCP servers', () => {
   /** A disabled server is still configured, so it is listed and marked rather than hidden. */
   it('marks one that is switched off', () => {
     const { container } = shown({
-      mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: false }],
+      mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: false, editable: true }],
     });
 
     expect(screen.getByText('off')).toBeTruthy();
@@ -378,7 +379,7 @@ describe('Environment, MCP servers', () => {
 
   it('does not mark one that is on', () => {
     const { container } = shown({
-      mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true }],
+      mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true, editable: true }],
     });
 
     expect(container.querySelector('.environment-dot.on')).toBeTruthy();
@@ -399,14 +400,21 @@ describe('Environment, MCP servers', () => {
   });
 
   it('falls back to the source when no plugin provided it', () => {
-    shown({ mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true }] });
+    shown({ mcpServers: [{ name: 'context7', type: 'http', source: 'user', enabled: true, editable: true }] });
 
     expect(screen.getByText('user')).toBeTruthy();
   });
 });
 
 describe('Environment, switching an MCP server', () => {
-  const server = (over = {}) => ({ name: 'context7', type: 'http', source: 'user', enabled: true, ...over });
+  const server = (over = {}) => ({
+    name: 'context7',
+    type: 'http',
+    source: 'user',
+    enabled: true,
+    editable: true,
+    ...over,
+  });
 
   const shown = (over = {}, onToggleMcp?: (name: string, enabled: boolean) => void) =>
     render(
@@ -587,5 +595,167 @@ describe('Environment, hooks', () => {
     withHooks([], ['sounds.json is not valid JSON']);
 
     expect(screen.getByText('sounds.json is not valid JSON')).toBeTruthy();
+  });
+});
+/**
+ * Writing MCP servers down, where the list of them already is. All of it sessionless: the
+ * config is a file rather than anything a conversation holds (#24).
+ */
+describe('Environment, editing MCP servers', () => {
+  const server = (over = {}) => ({
+    name: 'context7',
+    type: 'http',
+    source: 'user',
+    enabled: true,
+    editable: true,
+    url: 'https://c7/mcp',
+    ...over,
+  });
+
+  const shown = (servers = [server()], over: Partial<Parameters<typeof Environment>[0]> = {}) =>
+    render(
+      <Environment
+        {...props}
+        environment={environment({ mcpServers: servers as never })}
+        onSaveMcp={() => {}}
+        onRemoveMcp={() => {}}
+        {...over}
+      />,
+    );
+
+  it('says what an http server is reached at', () => {
+    shown();
+
+    expect(screen.getByText('https://c7/mcp')).toBeTruthy();
+  });
+
+  it('says what a command server runs, arguments and all', () => {
+    shown([server({ url: undefined, command: 'npx', args: ['-y', 'pkg'] })]);
+
+    expect(screen.getByText('npx -y pkg')).toBeTruthy();
+  });
+
+  /** A plugin's server is in the plugin's file, so editing it here would write a copy. */
+  it('offers no editing for a server a plugin brought', () => {
+    shown([server({ editable: false, sourcePlugin: 'awesome-copilot' })]);
+
+    expect(screen.queryByRole('button', { name: /Change how/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Take context7 out/ })).toBeNull();
+  });
+
+  it('removes one when asked', async () => {
+    const onRemoveMcp = vi.fn();
+    shown([server()], { onRemoveMcp });
+
+    await userEvent.click(screen.getByRole('button', { name: /Take context7 out/ }));
+
+    expect(onRemoveMcp).toHaveBeenCalledWith('context7');
+  });
+
+  it('leaves the list read-only when nothing can be written', () => {
+    render(<Environment {...props} environment={environment({ mcpServers: [server()] as never })} />);
+
+    expect(screen.queryByRole('button', { name: 'Add a server' })).toBeNull();
+  });
+
+  describe('the form', () => {
+    const openAdd = async () => userEvent.click(screen.getByRole('button', { name: 'Add a server' }));
+
+    it('writes a new http server down', async () => {
+      const onSaveMcp = vi.fn();
+      shown([server()], { onSaveMcp });
+      await openAdd();
+
+      await userEvent.type(screen.getByLabelText('Name'), 'newone');
+      await userEvent.type(screen.getByLabelText('URL'), 'https://new/mcp');
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(onSaveMcp).toHaveBeenCalledWith('newone', { transport: 'http', url: 'https://new/mcp' });
+    });
+
+    it('writes a command server, splitting the arguments as a shell would', async () => {
+      const onSaveMcp = vi.fn();
+      shown([server()], { onSaveMcp });
+      await openAdd();
+
+      await userEvent.type(screen.getByLabelText('Name'), 'local');
+      await userEvent.click(screen.getByRole('button', { name: 'Command' }));
+      await userEvent.type(screen.getByLabelText('Command'), 'npx');
+      await userEvent.type(screen.getByLabelText('Arguments'), '-y  pkg');
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(onSaveMcp).toHaveBeenCalledWith('local', {
+        transport: 'stdio',
+        command: 'npx',
+        args: ['-y', 'pkg'],
+      });
+    });
+
+    /** The name is the key the config is written under, so a new one must not take another. */
+    it('refuses a name that is already configured', async () => {
+      const onSaveMcp = vi.fn();
+      shown([server()], { onSaveMcp });
+      await openAdd();
+
+      await userEvent.type(screen.getByLabelText('Name'), 'context7');
+
+      expect(screen.getByText(/already configured/)).toBeTruthy();
+      expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('will not save without somewhere to reach the server', async () => {
+      shown([server()], { onSaveMcp: vi.fn() });
+      await openAdd();
+
+      await userEvent.type(screen.getByLabelText('Name'), 'newone');
+
+      expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    it('opens on what an existing server already is', async () => {
+      shown([server()], { onSaveMcp: vi.fn() });
+
+      await userEvent.click(screen.getByRole('button', { name: /Change how/ }));
+
+      expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe('https://c7/mcp');
+    });
+
+    /** Renaming would add a second server rather than rename the first. */
+    it('will not let an existing server be renamed', async () => {
+      shown([server()], { onSaveMcp: vi.fn() });
+
+      await userEvent.click(screen.getByRole('button', { name: /Change how/ }));
+
+      expect((screen.getByLabelText('Name') as HTMLInputElement).disabled).toBe(true);
+    });
+
+    it('puts the form away without saving when cancelled', async () => {
+      const onSaveMcp = vi.fn();
+      shown([server()], { onSaveMcp });
+      await openAdd();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(screen.queryByLabelText('Name')).toBeNull();
+      expect(onSaveMcp).not.toHaveBeenCalled();
+    });
+
+    it('puts the form away once it is saved', async () => {
+      shown([server()], { onSaveMcp: vi.fn() });
+      await openAdd();
+
+      await userEvent.type(screen.getByLabelText('Name'), 'newone');
+      await userEvent.type(screen.getByLabelText('URL'), 'https://new/mcp');
+      await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+      expect(screen.queryByLabelText('URL')).toBeNull();
+    });
+
+    /** Nothing configured is still somewhere to add one from. */
+    it('offers to add a server when there are none at all', () => {
+      shown([]);
+
+      expect(screen.getByRole('button', { name: 'Add a server' })).toBeTruthy();
+    });
   });
 });

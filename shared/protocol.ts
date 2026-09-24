@@ -642,7 +642,32 @@ export interface McpServerSummary {
   sourcePlugin?: string;
   /** Whether new sessions will start it. A disabled server stays configured. */
   enabled: boolean;
+  /** What an HTTP server is reached at. */
+  url?: string;
+  /** What a stdio server runs, and with what. */
+  command?: string;
+  args?: string[];
+  /**
+   * Whether this app can change it.
+   *
+   * True for a server in the reader's own config file, which is the one the config RPC
+   * writes. A plugin's server is real, runs, and can be switched off - but editing it here
+   * would write a copy into the reader's file rather than change the plugin's, so it is
+   * offered as something to read instead (#24).
+   */
+  editable: boolean;
 }
+
+/**
+ * How to reach an MCP server, as the reader would write it.
+ *
+ * The two shapes the runtime accepts, narrowed to what somebody actually types: everything
+ * else in its config is a filter, a timeout or a telemetry policy, and inventing controls
+ * for those here would be guessing at what they are for.
+ */
+export type McpServerConfig =
+  | { transport: 'http'; url: string }
+  | { transport: 'stdio'; command: string; args?: string[] };
 
 /**
  * What invoking a command produced.
@@ -1255,6 +1280,14 @@ export interface SidecarRequests {
    */
   'mcp.servers': { params: { cwd?: string }; result: { servers: McpServerSummary[] } };
   /**
+   * Write a server into the reader's own config, or change one already there.
+   *
+   * Costs no session: the config is a file rather than anything a conversation holds.
+   */
+  'mcp.save': { params: { name: string; config: McpServerConfig }; result: void };
+  /** Take a server out of the reader's own config. */
+  'mcp.remove': { params: { name: string }; result: void };
+  /**
    * The skills a session has switched off, and the means to switch one.
    *
    * Both cost no process. The set belongs to the app rather than to the runtime, whose own
@@ -1389,6 +1422,8 @@ export const SIDECAR_METHODS = [
   'environment.describe',
   'mcp.setEnabled',
   'mcp.servers',
+  'mcp.save',
+  'mcp.remove',
   'skills.disabled',
   'skills.set',
   'sessions.queue',

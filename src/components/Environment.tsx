@@ -1,7 +1,14 @@
 import { useEffect, useState } from 'react';
 
-import type { ExtensionSummary, InstructionSource, SessionEnvironment } from '../../shared/protocol';
+import type {
+  ExtensionSummary,
+  InstructionSource,
+  McpServerConfig,
+  McpServerSummary,
+  SessionEnvironment,
+} from '../../shared/protocol';
 import { Markdown } from './Markdown';
+import { McpEditor } from './McpEditor';
 
 interface EnvironmentProps {
   environment: SessionEnvironment | null;
@@ -22,8 +29,10 @@ interface EnvironmentProps {
    * list as a fixed one rather than offering a control that would fail.
    */
   onToggleMcp?: (name: string, enabled: boolean) => void;
+  /** Write a server down, or change one. Absent leaves the list read-only. */
+  onSaveMcp?: (name: string, config: McpServerConfig) => void;
+  onRemoveMcp?: (name: string) => void;
 }
-
 /** Where a source came from, in the words someone would use to go and find it. */
 const SCOPE: Record<InstructionSource['location'], string> = {
   user: 'Yours',
@@ -69,8 +78,15 @@ export function Environment({
   disabledSkills = [],
   onToggleSkill,
   onToggleMcp,
+  onSaveMcp,
+  onRemoveMcp,
 }: EnvironmentProps) {
   const [open, setOpen] = useState<string | null>(null);
+  /**
+   * Which server is being written down: its name, or an empty string for one being added.
+   * Null when the form is not up at all.
+   */
+  const [editing, setEditing] = useState<string | null>(null);
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
@@ -165,22 +181,25 @@ export function Environment({
 
           <section className="environment-section">
             <h3 className="environment-heading">MCP servers</h3>
-            {mcpServers.length === 0 ? (
+            {mcpServers.length === 0 && editing === null ? (
               <p className="changes-note">No MCP servers configured.</p>
             ) : (
               <>
                 {/* Not the same scope as the skills below, which are switched off for one
                     session. This is the reader's own configuration, so it decides what
                     every new session starts with - and changes nothing already running. */}
-                <p className="changes-note">
-                  Applies to new sessions only.
-                </p>
+                {mcpServers.length > 0 && <p className="changes-note">Applies to new sessions only.</p>}
                 <ul className="environment-list">
                   {mcpServers.map((server) => (
                     <li key={server.name} className="environment-item">
                       <span className={server.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
                       <span>{server.name}</span>
                       {server.type && <span className="environment-meta">{server.type}</span>}
+                      {/* What it actually is, which is the thing a reader came to check and
+                          the only part the list could not say before (#24). */}
+                      <span className="environment-meta environment-description" title={reach(server)}>
+                        {reach(server)}
+                      </span>
                       {/* Where it came from is where it would have to be changed, and a
                           plugin's server cannot be edited where the reader's own can. */}
                       <span className="environment-meta">{server.sourcePlugin ?? server.source}</span>
@@ -201,11 +220,52 @@ export function Environment({
                       ) : (
                         !server.enabled && <span className="environment-off">off</span>
                       )}
+                      {/* Only the reader's own. Editing a plugin's server here would write a
+                          copy into their file rather than change the plugin's. */}
+                      {server.editable && onSaveMcp && (
+                        <button
+                          type="button"
+                          className="settings-reset"
+                          onClick={() => setEditing(server.name)}
+                          // Named for the server it belongs to: a list of them would
+                          // otherwise be a column of buttons all called Edit.
+                          aria-label={`Change how ${server.name} is reached`}
+                        >
+                          Edit
+                        </button>
+                      )}
+                      {server.editable && onRemoveMcp && (
+                        <button
+                          type="button"
+                          className="settings-reset destructive"
+                          onClick={() => onRemoveMcp(server.name)}
+                          aria-label={`Take ${server.name} out of your configuration`}
+                        >
+                          Remove
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>
               </>
             )}
+
+            {onSaveMcp &&
+              (editing === null ? (
+                <button type="button" className="settings-reset" onClick={() => setEditing('')}>
+                  Add a server
+                </button>
+              ) : (
+                <McpEditor
+                  server={mcpServers.find((server) => server.name === editing)}
+                  taken={mcpServers.map((server) => server.name)}
+                  onCancel={() => setEditing(null)}
+                  onSave={(name, config) => {
+                    setEditing(null);
+                    onSaveMcp(name, config);
+                  }}
+                />
+              ))}
           </section>
 
           <section className="environment-section">
@@ -398,6 +458,18 @@ const HOOK_ORIGIN: Record<string, string> = {
 /** The file a hook was written in, without the directories nobody is reading. */
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
+}
+
+/**
+ * What a server actually is, which is the thing a reader came to check.
+ *
+ * Empty for one this app cannot see the config of - a plugin's, or a server the config
+ * could not be read for. Saying nothing beats guessing at it.
+ */
+function reach(server: McpServerSummary): string {
+  if (server.url) return server.url;
+  if (server.command) return [server.command, ...(server.args ?? [])].join(' ');
+  return '';
 }
 
 /** Which plugin an extension arrived with, since that is what turning it off would mean. */

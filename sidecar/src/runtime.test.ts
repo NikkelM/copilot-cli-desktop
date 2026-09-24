@@ -2319,8 +2319,15 @@ describe('environment, MCP servers', () => {
     withEnvironment(parts);
 
     expect((await parts.runtime.discovery.environment('C:\\repo')).mcpServers).toEqual([
-      { name: 'context7', type: 'http', source: 'user', enabled: true },
-      { name: 'from-a-plugin', type: 'stdio', source: 'plugin', sourcePlugin: 'awesome-copilot', enabled: false },
+      { name: 'context7', type: 'http', source: 'user', enabled: true, editable: false },
+      {
+        name: 'from-a-plugin',
+        type: 'stdio',
+        source: 'plugin',
+        sourcePlugin: 'awesome-copilot',
+        enabled: false,
+        editable: false,
+      },
     ]);
   });
 
@@ -2373,7 +2380,14 @@ describe('switching an MCP server on and off', () => {
     const rpc = parts.client.rpc as unknown as Record<string, unknown>;
     rpc.mcp = {
       discover: vi.fn(async () => ({ servers: [] })),
-      config: { enable: vi.fn(async () => undefined), disable: vi.fn(async () => undefined) },
+      config: {
+        list: vi.fn(async () => ({ servers: {} })),
+        add: vi.fn(async () => undefined),
+        update: vi.fn(async () => undefined),
+        remove: vi.fn(async () => undefined),
+        enable: vi.fn(async () => undefined),
+        disable: vi.fn(async () => undefined),
+      },
     };
     return rpc.mcp as { config: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> } };
   }
@@ -2871,7 +2885,7 @@ describe('environment, agents and hooks', () => {
     rpc.instructions = { discover: vi.fn(async () => ({ sources: [] })) };
     rpc.extensions = { discover: vi.fn(async () => ({ extensions: [], mode: 'load_and_augment' })) };
     rpc.skills = { discover: vi.fn(async () => ({ skills: [], errors: [] })) };
-    rpc.mcp = { discover: vi.fn(async () => ({ servers: [] })) };
+    rpc.mcp = { discover: vi.fn(async () => ({ servers: [] })), config: { list: vi.fn(async () => ({ servers: {} })) } };
     return parts;
   }
 
@@ -3041,5 +3055,193 @@ describe('what a shutdown forgets', () => {
     expect(client.createSession).toHaveBeenLastCalledWith(
       expect.objectContaining({ pluginDirectories: [dir('installed-since')] }),
     );
+  });
+});
+/**
+ * Adding, editing and removing an MCP server, which the panel could not do (#24).
+ *
+ * All of it sessionless: the config is the reader's own file rather than anything a
+ * conversation holds, which is what lets it sit beside a list that is free to read. The
+ * session-scoped half of that issue - live connection status, OAuth - is not this.
+ */
+describe('writing the MCP config', () => {
+  function withConfig(parts: ReturnType<typeof makeRuntime>, servers: Record<string, unknown> = {}) {
+    const rpc = parts.client.rpc as unknown as Record<string, unknown>;
+    const config = {
+      list: vi.fn(async () => ({ servers })),
+      add: vi.fn(async () => undefined),
+      update: vi.fn(async () => undefined),
+      remove: vi.fn(async () => undefined),
+      enable: vi.fn(async () => undefined),
+      disable: vi.fn(async () => undefined),
+    };
+    rpc.mcp = { discover: vi.fn(async () => ({ servers: [] })), config };
+    return config;
+  }
+
+  it('adds a server that was not there', async () => {
+    const parts = makeRuntime();
+    const config = withConfig(parts);
+
+    await parts.runtime.discovery.saveMcpServer('c7', { transport: 'http', url: 'https://c7/mcp' });
+
+    expect(config.add).toHaveBeenCalledWith({
+      name: 'c7',
+      config: { type: 'http', url: 'https://c7/mcp', command: undefined, args: undefined },
+    });
+    expect(config.update).not.toHaveBeenCalled();
+  });
+
+  /** One call here and two in the runtime: a reader saving a form is not aware of the difference. */
+  it('updates one that was', async () => {
+    const parts = makeRuntime();
+    const config = withConfig(parts, { c7: { type: 'http', url: 'https://old/mcp' } });
+
+    await parts.runtime.discovery.saveMcpServer('c7', { transport: 'http', url: 'https://new/mcp' });
+
+    expect(config.update).toHaveBeenCalledWith(expect.objectContaining({ name: 'c7' }));
+    expect(config.add).not.toHaveBeenCalled();
+  });
+
+  it('writes a command server as a command', async () => {
+    const parts = makeRuntime();
+    const config = withConfig(parts);
+
+    await parts.runtime.discovery.saveMcpServer('local', {
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', 'pkg'],
+    });
+
+    expect(config.add).toHaveBeenCalledWith({
+      name: 'local',
+      config: { type: 'local', command: 'npx', args: ['-y', 'pkg'], url: undefined },
+    });
+  });
+
+  /**
+   * The config carries filters, timeouts and telemetry policy that this app has no controls
+   * for. Saving a server must not quietly throw those away.
+   */
+  it('keeps the settings it has no controls for', async () => {
+    const parts = makeRuntime();
+    const config = withConfig(parts, { c7: { type: 'http', url: 'https://old/mcp', tools: ['a'], timeout: 9000 } });
+
+    await parts.runtime.discovery.saveMcpServer('c7', { transport: 'http', url: 'https://new/mcp' });
+
+    expect(config.update).toHaveBeenCalledWith({
+      name: 'c7',
+      config: expect.objectContaining({ tools: ['a'], timeout: 9000, url: 'https://new/mcp' }),
+    });
+  });
+
+  /** Switching transport has to clear the other one, or the runtime sees both. */
+  it('clears the url when a server becomes a command', async () => {
+    const parts = makeRuntime();
+    const config = withConfig(parts, { c7: { type: 'http', url: 'https://old/mcp' } });
+
+    await parts.runtime.discovery.saveMcpServer('c7', { transport: 'stdio', command: 'npx' });
+
+    expect(config.update).toHaveBeenCalledWith({
+      name: 'c7',
+      config: expect.objectContaining({ command: 'npx', url: undefined }),
+    });
+  });
+
+  it('removes one by name', async () => {
+    const parts = makeRuntime();
+    const config = withConfig(parts, { c7: {} });
+
+    await parts.runtime.discovery.removeMcpServer('c7');
+
+    expect(config.remove).toHaveBeenCalledWith({ name: 'c7' });
+  });
+
+  it('resumes nothing to do any of it', async () => {
+    const parts = makeRuntime();
+    withConfig(parts);
+
+    await parts.runtime.discovery.saveMcpServer('c7', { transport: 'http', url: 'https://c7/mcp' });
+    await parts.runtime.discovery.removeMcpServer('c7');
+
+    expect(parts.client.resumeSession).not.toHaveBeenCalled();
+    expect(parts.client.createSession).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * What a server is, which the list could not say before: only the reader's own config
+ * records the url or the command, and only servers in it can be changed from here.
+ */
+describe('what the MCP list says about each server', () => {
+  function withServers(
+    parts: ReturnType<typeof makeRuntime>,
+    discovered: Record<string, unknown>[],
+    servers: Record<string, unknown>,
+  ) {
+    const rpc = parts.client.rpc as unknown as Record<string, unknown>;
+    rpc.mcp = {
+      discover: vi.fn(async () => ({ servers: discovered })),
+      config: { list: vi.fn(async () => ({ servers })) },
+    };
+  }
+
+  it('says what an http server is reached at', async () => {
+    const parts = makeRuntime();
+    withServers(parts, [{ name: 'c7', type: 'http', source: 'user', enabled: true }], {
+      c7: { type: 'http', url: 'https://c7/mcp' },
+    });
+
+    const [found] = await parts.runtime.discovery.mcpServers();
+
+    expect(found).toMatchObject({ url: 'https://c7/mcp', editable: true });
+  });
+
+  it('says what a command server runs', async () => {
+    const parts = makeRuntime();
+    withServers(parts, [{ name: 'local', type: 'stdio', source: 'user', enabled: true }], {
+      local: { command: 'npx', args: ['-y', 'pkg'] },
+    });
+
+    const [found] = await parts.runtime.discovery.mcpServers();
+
+    expect(found).toMatchObject({ command: 'npx', args: ['-y', 'pkg'] });
+  });
+
+  /** Editing one here would write a copy into the reader's file rather than change the plugin. */
+  it('will not offer to edit a server a plugin brought', async () => {
+    const parts = makeRuntime();
+    withServers(
+      parts,
+      [{ name: 'theirs', type: 'stdio', source: 'plugin', sourcePlugin: 'awesome-copilot', enabled: true }],
+      { theirs: { command: 'npx' } },
+    );
+
+    const [found] = await parts.runtime.discovery.mcpServers();
+
+    expect(found?.editable).toBe(false);
+  });
+
+  it('will not offer to edit one the config does not mention', async () => {
+    const parts = makeRuntime();
+    withServers(parts, [{ name: 'built-in', type: 'http', source: 'builtin', enabled: true }], {});
+
+    const [found] = await parts.runtime.discovery.mcpServers();
+
+    expect(found?.editable).toBe(false);
+  });
+
+  /** The servers still run and can still be switched off; they just cannot be edited. */
+  it('still lists them when the config cannot be read at all', async () => {
+    const parts = makeRuntime();
+    const rpc = parts.client.rpc as unknown as Record<string, unknown>;
+    rpc.mcp = {
+      discover: vi.fn(async () => ({ servers: [{ name: 'c7', type: 'http', source: 'user', enabled: true }] })),
+      config: { list: vi.fn(async () => { throw new Error('no config'); }) },
+    };
+
+    const found = await parts.runtime.discovery.mcpServers();
+
+    expect(found).toEqual([{ name: 'c7', type: 'http', source: 'user', enabled: true, editable: false }]);
   });
 });

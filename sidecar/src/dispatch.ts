@@ -196,6 +196,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     // no directory to name.
     'mcp.servers': async (params) => ({ servers: await runtime.discovery.mcpServers(params?.cwd) }),
 
+    'mcp.save': ({ name, config }) => runtime.discovery.saveMcpServer(name, config),
+
+    'mcp.remove': ({ name }) => runtime.discovery.removeMcpServer(name),
+
     'skills.disabled': ({ sessionId }) => ({ disabled: runtime.disabledSkills(sessionId) }),
 
     'skills.set': async ({ sessionId, name, enabled }) => ({
