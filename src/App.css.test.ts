@@ -499,3 +499,40 @@ describe('the settings headings', () => {
     expect(block('.settings-body > .settings-subhead:first-child')).toContain('border-top: none;');
   });
 });
+/**
+ * The controls on an MCP row sit beside what they act on.
+ *
+ * Elsewhere in these lists a long description takes the room that is left and the toggle is
+ * pushed to the end. A server's url is short, so the same rule left the controls stranded
+ * across an empty half of the window (#24).
+ */
+describe('the MCP server rows', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('stops pushing the toggle to the far edge', () => {
+    expect(block('.mcp-row .environment-toggle')).toContain('margin-left: 0;');
+  });
+
+  it('lets the url stop growing, so it does not push them either', () => {
+    expect(block('.mcp-row .environment-description')).toContain('flex: 0 1 auto;');
+  });
+
+  /**
+   * They borrowed `settings-reset`, which is a bare link in the settings window and reads
+   * as unstyled text out here. Drawn like the toggle beside them instead.
+   */
+  it('draws its buttons like the toggle beside them', () => {
+    const rule = block('.mcp-action');
+
+    expect(rule).toMatch(/border:\s*1px solid var\(--border\)/);
+    expect(rule).toContain('border-radius:');
+  });
+
+  it('greys out a button with nothing to do', () => {
+    expect(block('.mcp-action:disabled')).toContain('opacity:');
+  });
+});

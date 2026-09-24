@@ -203,7 +203,7 @@ export function Environment({
                   {mcpServers.map((server) => {
                     const live = mcpState?.find((state) => state.name === server.name);
                     return (
-                      <li key={server.name} className="environment-item">
+                      <li key={server.name} className="environment-item mcp-row">
                         <span
                           className={server.enabled ? 'environment-dot on' : 'environment-dot off'}
                           aria-hidden
@@ -228,7 +228,7 @@ export function Environment({
                         {live?.status === 'needs-auth' && onLoginMcp && (
                           <button
                             type="button"
-                            className="settings-reset"
+                            className="mcp-action"
                             onClick={() => onLoginMcp(server.name)}
                             aria-label={`Sign in to ${server.name}`}
                           >
@@ -257,7 +257,7 @@ export function Environment({
                         {server.editable && onSaveMcp && (
                           <button
                             type="button"
-                            className="settings-reset"
+                            className="mcp-action"
                             onClick={() => setEditing(server.name)}
                             // Named for the server it belongs to: a list of them would
                             // otherwise be a column of buttons all called Edit.
@@ -269,7 +269,7 @@ export function Environment({
                         {server.editable && onRemoveMcp && (
                           <button
                             type="button"
-                            className="settings-reset destructive"
+                            className="mcp-action destructive"
                             onClick={() => onRemoveMcp(server.name)}
                             aria-label={`Take ${server.name} out of your configuration`}
                           >
@@ -285,7 +285,7 @@ export function Environment({
 
             {onSaveMcp &&
               (editing === null ? (
-                <button type="button" className="settings-reset" onClick={() => setEditing('')}>
+                <button type="button" className="mcp-action mcp-add" onClick={() => setEditing('')}>
                   Add a server
                 </button>
               ) : (

@@ -5221,6 +5221,66 @@ pre.fatal,
 }
 
 /*
+ * The buttons on an MCP row: sign in, edit, remove, and the one that adds a server.
+ *
+ * Drawn like the toggle beside them rather than like the bare links in the settings window,
+ * whose `settings-reset` they borrowed and which reads as unstyled text out here.
+ */
+.mcp-action {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.mcp-action:hover {
+  border-color: var(--text-muted);
+}
+
+.mcp-action.destructive {
+  color: var(--danger);
+}
+
+.mcp-action.destructive:hover {
+  border-color: var(--danger);
+}
+
+/* Nothing to save yet, which the Save button should look like rather than only behave like. */
+.mcp-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.mcp-action:disabled:hover {
+  border-color: var(--border);
+}
+
+/* Away from the list it belongs under, and indented to its rows. */
+.mcp-add {
+  margin: 4px 0 0 10px;
+}
+
+/*
+ * The controls sit beside what they act on rather than at the far edge of the panel.
+ *
+ * Elsewhere in these lists a description takes the room that is left and the toggle is
+ * pushed to the end, which works because the description is long. A server's url is short,
+ * so the same rule left the controls stranded across an empty half of the window.
+ */
+.mcp-row .environment-toggle {
+  margin-left: 0;
+}
+
+.mcp-row .environment-description {
+  flex: 0 1 auto;
+}
+
+/*
  * What an MCP server is doing, as against what it is configured as. Only ever shown for a
  * session that is loaded, which is the only thing that has tried to connect.
  */

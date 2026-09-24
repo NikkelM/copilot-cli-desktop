@@ -135,10 +135,10 @@ export function McpEditor({
       )}
 
       <div className="mcp-actions">
-        <button type="button" className="settings-reset" onClick={onCancel}>
+        <button type="button" className="mcp-action" onClick={onCancel}>
           Cancel
         </button>
-        <button type="submit" className="settings-reset" disabled={!ready}>
+        <button type="submit" className="mcp-action" disabled={!ready}>
           Save
         </button>
       </div>
