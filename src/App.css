@@ -5221,6 +5221,31 @@ pre.fatal,
 }
 
 /*
+ * What an MCP server is doing, as against what it is configured as. Only ever shown for a
+ * session that is loaded, which is the only thing that has tried to connect.
+ */
+.mcp-status {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
+.mcp-status-connected {
+  color: var(--success);
+}
+
+/* The two worth noticing: one is broken, the other is waiting for the reader. */
+.mcp-status-failed {
+  color: var(--danger);
+}
+
+.mcp-status-needs-auth {
+  color: var(--accent);
+}
+
+/*
  * Writing down where an MCP server is. Inside the panel rather than over it: the list it
  * belongs to is what somebody is reading while they fill it in.
  */

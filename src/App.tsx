@@ -39,6 +39,7 @@ import {
   setMcpEnabled,
   saveMcpServer,
   removeMcpServer,
+  mcpLogin,
   sendMessage,
   evictSession,
   loadSession,
@@ -58,6 +59,7 @@ import { HeaderTags } from './components/HeaderTags';
 import { sessionDefaults, useSettings } from './lib/useSettings';
 import { useRecycleBin } from './lib/useRecycleBin';
 import { useDiskUsage } from './lib/useDiskUsage';
+import { useMcpStatus } from './lib/useMcpStatus';
 import { useCliSettings } from './lib/useCliSettings';
 import { useCliDisplay } from './lib/useCliDisplay';
 import { SettingsWindow } from './components/SettingsWindow';
@@ -66,7 +68,7 @@ import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
 import { SidebarToggle } from './components/SidebarToggle';
 import { useSidebarWidth } from './lib/useSidebarWidth';
-import { openPath } from '@tauri-apps/plugin-opener';
+import { openPath, openUrl } from '@tauri-apps/plugin-opener';
 import { explain, messageOf } from './lib/errors';
 import { revealPointerForPicker } from './lib/nativePicker';
 import { usageReport } from './lib/usageReport';
@@ -183,6 +185,11 @@ export default function App() {
   // there: nothing notices a directory reappearing until it is looked at again.
   const bin = useRecycleBin(sessions.refresh, setError);
   const disk = useDiskUsage();
+  /**
+   * What each MCP server is doing in the session on screen, for a session that is loaded.
+   * Nothing is resumed to find out - connection state is worth seeing, not worth a process.
+   */
+  const mcp = useMcpStatus(selectedId);
   const cliSettings = useCliSettings(setError);
   const mode = useMode(selectedId, setError);
   const contextUsage = useContextUsage(selectedId);
@@ -309,6 +316,17 @@ export default function App() {
       if (event.type === 'abort') queue.clear(sessionId);
 
       if (sessionId !== selectedRef.current) return;
+
+      // A server connecting, failing or asking to be signed in to. Only reached for the
+      // session on screen, and only ever a prompt to read the list again: the event names
+      // one server, and the panel is showing all of them.
+      if (
+        event.type === 'session.mcp_server_status_changed' ||
+        event.type === 'session.mcp_servers_loaded' ||
+        event.type === 'session.mcp_oauth_completed'
+      ) {
+        mcp.reread();
+      }
 
       if (event.type === 'assistant.turn_start') setBusy(true);
       // Not `assistant.turn_end`, which is one model round trip: a request that calls tools
@@ -564,6 +582,25 @@ export default function App() {
     try {
       await removeMcpServer(name);
       await environment.load();
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
+  }
+
+  /**
+   * Begin signing in to an MCP server that is waiting for it.
+   *
+   * Unlike reading the status, this may resume the session: pressing a button is somebody
+   * asking, which is the case the rule allows a resume for. The runtime holds the other end
+   * of the exchange and says how it went through an event, so there is nothing to wait on
+   * here beyond opening the page.
+   */
+  async function loginMcp(sessionId: string, name: string) {
+    setError(null);
+    try {
+      const url = await mcpLogin(sessionId, name);
+      if (url) await openUrl(url);
+      else setError(`${name} did not ask for a sign-in page.`);
     } catch (e: unknown) {
       setError(explain(e));
     }
@@ -1246,6 +1283,8 @@ export default function App() {
                   onToggleMcp={(name, enabled) => void toggleMcp(name, enabled)}
                   onSaveMcp={(name, config) => void saveMcp(name, config)}
                   onRemoveMcp={(name) => void removeMcp(name)}
+                  mcpState={mcp.status}
+                  onLoginMcp={(name) => void loginMcp(selected.sessionId, name)}
                 />
               )}
 

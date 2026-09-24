@@ -12,6 +12,7 @@ import {
 } from '@github/copilot-sdk';
 
 import type {
+  McpServerState,
   Attachment,
   CommandOutcome,
   ContextTier,
@@ -1175,6 +1176,48 @@ export class SessionRuntime {
       },
       models,
     };
+  }
+
+  /**
+   * What each MCP server is actually doing in one session.
+   *
+   * The configured list says what a directory would be offered. This says what happened
+   * when it was tried, which is the question a reader opens the panel with and the one
+   * nothing could answer: a server that is configured, enabled and quietly failing looked
+   * exactly like one that was working (#24).
+   *
+   * Null for a session that is not loaded, and no session is ever resumed to answer.
+   * Connection state is something a reader would like to see rather than something they
+   * asked for, and this app does not start a process for that - the same rule `usage`
+   * follows, and the one this repository is built on.
+   */
+  async mcpStatus(sessionId: string): Promise<McpServerState[] | null> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return null;
+
+    const { servers } = await live.rpc.mcp.list();
+    return (servers ?? []).map((server) => ({
+      name: server.name,
+      status: server.status,
+      ...(server.error ? { error: server.error } : {}),
+    }));
+  }
+
+  /**
+   * Begin signing in to a server that is waiting for it.
+   *
+   * Answers with the page to send the reader to, and nothing else: the runtime holds the
+   * other end of the exchange, and says how it went through `session.mcp_oauth_completed`
+   * rather than by returning.
+   *
+   * Needs a loaded session, and this one may resume to get it - unlike reading the status.
+   * Signing in is something a reader asked for by pressing a button, which is exactly the
+   * case the rule allows a resume for.
+   */
+  async mcpLogin(sessionId: string, name: string): Promise<string | null> {
+    const session = await this.ensureSession(sessionId);
+    const { authorizationUrl } = await session.rpc.mcp.oauth.login({ serverName: name });
+    return authorizationUrl ?? null;
   }
 
   /**

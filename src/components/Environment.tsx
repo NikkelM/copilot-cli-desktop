@@ -4,6 +4,7 @@ import type {
   ExtensionSummary,
   InstructionSource,
   McpServerConfig,
+  McpServerState,
   McpServerSummary,
   SessionEnvironment,
 } from '../../shared/protocol';
@@ -32,6 +33,13 @@ interface EnvironmentProps {
   /** Write a server down, or change one. Absent leaves the list read-only. */
   onSaveMcp?: (name: string, config: McpServerConfig) => void;
   onRemoveMcp?: (name: string) => void;
+  /**
+   * What each server is actually doing, for a session that is loaded. Absent for a cold
+   * one: nothing is resumed to find out.
+   */
+  mcpState?: McpServerState[] | null;
+  /** Begin signing in to a server waiting for it. Offered only where one is. */
+  onLoginMcp?: (name: string) => void;
 }
 /** Where a source came from, in the words someone would use to go and find it. */
 const SCOPE: Record<InstructionSource['location'], string> = {
@@ -80,6 +88,8 @@ export function Environment({
   onToggleMcp,
   onSaveMcp,
   onRemoveMcp,
+  mcpState = null,
+  onLoginMcp,
 }: EnvironmentProps) {
   const [open, setOpen] = useState<string | null>(null);
   /**
@@ -190,62 +200,85 @@ export function Environment({
                     every new session starts with - and changes nothing already running. */}
                 {mcpServers.length > 0 && <p className="changes-note">Applies to new sessions only.</p>}
                 <ul className="environment-list">
-                  {mcpServers.map((server) => (
-                    <li key={server.name} className="environment-item">
-                      <span className={server.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                      <span>{server.name}</span>
-                      {server.type && <span className="environment-meta">{server.type}</span>}
-                      {/* What it actually is, which is the thing a reader came to check and
-                          the only part the list could not say before (#24). */}
-                      <span className="environment-meta environment-description" title={reach(server)}>
-                        {reach(server)}
-                      </span>
-                      {/* Where it came from is where it would have to be changed, and a
-                          plugin's server cannot be edited where the reader's own can. */}
-                      <span className="environment-meta">{server.sourcePlugin ?? server.source}</span>
-                      {onToggleMcp ? (
-                        <button
-                          type="button"
-                          className={server.enabled ? 'environment-toggle' : 'environment-toggle off'}
-                          onClick={() => onToggleMcp(server.name, !server.enabled)}
-                          aria-pressed={server.enabled}
-                          title={
-                            server.enabled
-                              ? `Stop starting ${server.name} in new sessions`
-                              : `Start ${server.name} in new sessions again`
-                          }
-                        >
-                          {server.enabled ? 'On' : 'Off'}
-                        </button>
-                      ) : (
-                        !server.enabled && <span className="environment-off">off</span>
-                      )}
-                      {/* Only the reader's own. Editing a plugin's server here would write a
-                          copy into their file rather than change the plugin's. */}
-                      {server.editable && onSaveMcp && (
-                        <button
-                          type="button"
-                          className="settings-reset"
-                          onClick={() => setEditing(server.name)}
-                          // Named for the server it belongs to: a list of them would
-                          // otherwise be a column of buttons all called Edit.
-                          aria-label={`Change how ${server.name} is reached`}
-                        >
-                          Edit
-                        </button>
-                      )}
-                      {server.editable && onRemoveMcp && (
-                        <button
-                          type="button"
-                          className="settings-reset destructive"
-                          onClick={() => onRemoveMcp(server.name)}
-                          aria-label={`Take ${server.name} out of your configuration`}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                  {mcpServers.map((server) => {
+                    const live = mcpState?.find((state) => state.name === server.name);
+                    return (
+                      <li key={server.name} className="environment-item">
+                        <span
+                          className={server.enabled ? 'environment-dot on' : 'environment-dot off'}
+                          aria-hidden
+                        />
+                        <span>{server.name}</span>
+                        {server.type && <span className="environment-meta">{server.type}</span>}
+                        {/* What it actually is, which is the thing a reader came to check and
+                            the only part the list could not say before (#24). */}
+                        <span className="environment-meta environment-description" title={reach(server)}>
+                          {reach(server)}
+                        </span>
+                        {/* Where it came from is where it would have to be changed, and a
+                            plugin's server cannot be edited where the reader's own can. */}
+                        <span className="environment-meta">{server.sourcePlugin ?? server.source}</span>
+                        {/* What happened when the session tried it, which only a loaded
+                            session can say. Absent rather than guessed at for a cold one. */}
+                        {live && (
+                          <span className={`mcp-status mcp-status-${live.status}`} title={live.error}>
+                            {STATUS[live.status] ?? live.status}
+                          </span>
+                        )}
+                        {live?.status === 'needs-auth' && onLoginMcp && (
+                          <button
+                            type="button"
+                            className="settings-reset"
+                            onClick={() => onLoginMcp(server.name)}
+                            aria-label={`Sign in to ${server.name}`}
+                          >
+                            Sign in
+                          </button>
+                        )}
+                        {onToggleMcp ? (
+                          <button
+                            type="button"
+                            className={server.enabled ? 'environment-toggle' : 'environment-toggle off'}
+                            onClick={() => onToggleMcp(server.name, !server.enabled)}
+                            aria-pressed={server.enabled}
+                            title={
+                              server.enabled
+                                ? `Stop starting ${server.name} in new sessions`
+                                : `Start ${server.name} in new sessions again`
+                            }
+                          >
+                            {server.enabled ? 'On' : 'Off'}
+                          </button>
+                        ) : (
+                          !server.enabled && <span className="environment-off">off</span>
+                        )}
+                        {/* Only the reader's own. Editing a plugin's server here would write a
+                            copy into their file rather than change the plugin's. */}
+                        {server.editable && onSaveMcp && (
+                          <button
+                            type="button"
+                            className="settings-reset"
+                            onClick={() => setEditing(server.name)}
+                            // Named for the server it belongs to: a list of them would
+                            // otherwise be a column of buttons all called Edit.
+                            aria-label={`Change how ${server.name} is reached`}
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {server.editable && onRemoveMcp && (
+                          <button
+                            type="button"
+                            className="settings-reset destructive"
+                            onClick={() => onRemoveMcp(server.name)}
+                            aria-label={`Take ${server.name} out of your configuration`}
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </>
             )}
@@ -447,8 +480,7 @@ const AGENT_SOURCE: Record<string, string> = {
   builtin: 'Built in',
 };
 
-/** Where a hook came from, which is also where it would have to be turned off. */
-const HOOK_ORIGIN: Record<string, string> = {
+/** Where a hook came from, which is also where it would have to be turned off. */const HOOK_ORIGIN: Record<string, string> = {
   user: 'Yours',
   repository: 'This repository',
   plugin: 'Plugin',
@@ -471,6 +503,21 @@ function reach(server: McpServerSummary): string {
   if (server.command) return [server.command, ...(server.args ?? [])].join(' ');
   return '';
 }
+
+/**
+ * What a server is doing, in words rather than in the runtime's own.
+ *
+ * Not a closed set - anything unrecognised is shown as the runtime named it, which is the
+ * same rule the sources above follow.
+ */
+const STATUS: Record<string, string> = {
+  connected: 'connected',
+  pending: 'connecting',
+  failed: 'failed',
+  'needs-auth': 'needs sign-in',
+  disabled: 'disabled',
+  stopped: 'stopped',
+};
 
 /** Which plugin an extension arrived with, since that is what turning it off would mean. */
 function source(extension: ExtensionSummary): string {

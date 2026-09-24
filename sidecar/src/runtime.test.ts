@@ -3245,3 +3245,105 @@ describe('what the MCP list says about each server', () => {
     expect(found).toEqual([{ name: 'c7', type: 'http', source: 'user', enabled: true, editable: false }]);
   });
 });
+/**
+ * What an MCP server is actually doing, which only a loaded session can say (#24).
+ *
+ * The rule this follows is the one `usage` follows: a loaded session is asked, a cold one
+ * answers nothing, and neither is ever resumed. Connection state is something a reader
+ * would like to see rather than something they asked for.
+ */
+describe('what a session says its MCP servers are doing', () => {
+  const listing = (servers: unknown[]) => vi.fn(async () => ({ servers }));
+
+  it('says nothing at all for a session that is not loaded', async () => {
+    const { runtime } = makeRuntime();
+
+    expect(await runtime.mcpStatus('cold')).toBeNull();
+  });
+
+  it('resumes nothing to find out', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.mcpStatus('cold');
+
+    expect(client.resumeSession).not.toHaveBeenCalled();
+    expect(client.createSession).not.toHaveBeenCalled();
+  });
+
+  it('reports what a loaded session found', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'hello');
+    const session = harness.sessions.get('s1')!;
+    (session.rpc as unknown as Record<string, unknown>).mcp = {
+      list: listing([
+        { name: 'context7', status: 'connected' },
+        { name: 'broken', status: 'failed', error: 'no such command' },
+      ]),
+    };
+
+    expect(await harness.runtime.mcpStatus('s1')).toEqual([
+      { name: 'context7', status: 'connected' },
+      { name: 'broken', status: 'failed', error: 'no such command' },
+    ]);
+  });
+
+  it('leaves out a reason where there was none', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'hello');
+    const session = harness.sessions.get('s1')!;
+    (session.rpc as unknown as Record<string, unknown>).mcp = {
+      list: listing([{ name: 'context7', status: 'pending' }]),
+    };
+
+    expect((await harness.runtime.mcpStatus('s1'))?.[0]).not.toHaveProperty('error');
+  });
+});
+
+/**
+ * Signing in to a server that is waiting for it. Unlike reading the status, this may resume:
+ * pressing a button is somebody asking, which is what the rule allows a resume for.
+ */
+describe('signing in to an MCP server', () => {
+  it('hands back the page to send the reader to', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'hello');
+    const session = harness.sessions.get('s1')!;
+    (session.rpc as unknown as Record<string, unknown>).mcp = {
+      oauth: { login: vi.fn(async () => ({ serverName: 'c7', authorizationUrl: 'https://auth/x' })) },
+    };
+
+    expect(await harness.runtime.mcpLogin('s1', 'c7')).toBe('https://auth/x');
+  });
+
+  it('says nothing rather than inventing a page when the runtime offered none', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'hello');
+    const session = harness.sessions.get('s1')!;
+    (session.rpc as unknown as Record<string, unknown>).mcp = {
+      oauth: { login: vi.fn(async () => ({ serverName: 'c7' })) },
+    };
+
+    expect(await harness.runtime.mcpLogin('s1', 'c7')).toBeNull();
+  });
+
+  it('names the server it is signing in to', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('s1', 'hello');
+    const session = harness.sessions.get('s1')!;
+    const login = vi.fn(async () => ({ serverName: 'c7', authorizationUrl: 'https://auth/x' }));
+    (session.rpc as unknown as Record<string, unknown>).mcp = { oauth: { login } };
+
+    await harness.runtime.mcpLogin('s1', 'c7');
+
+    expect(login).toHaveBeenCalledWith({ serverName: 'c7' });
+  });
+
+  /** The one MCP call that may start a session, because the reader asked for it. */
+  it('resumes a cold session to do it', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.mcpLogin('cold', 'c7').catch(() => undefined);
+
+    expect(harness.client.resumeSession).toHaveBeenCalled();
+  });
+});

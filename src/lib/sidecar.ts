@@ -14,6 +14,7 @@ import type {
   GetTranscriptResult,
   ListSessionsResult,
   McpServerConfig,
+  McpServerState,
   McpServerSummary,
   MergeStrategy,  ModelChoice,
   RepoStatus,
@@ -389,6 +390,28 @@ export function saveMcpServer(name: string, config: McpServerConfig): Promise<vo
 /** Take a server out of the reader's own config. Costs no Copilot process. */
 export function removeMcpServer(name: string): Promise<void> {
   return request('mcp.remove', { name });
+}
+
+/**
+ * What each MCP server is actually doing in a session.
+ *
+ * Null for a session that is not loaded, which is not a failure: only a session that has
+ * tried to connect can say whether it worked, and this never resumes one to ask.
+ */
+export async function mcpStatus(sessionId: string): Promise<McpServerState[] | null> {
+  const { servers } = await request('mcp.status', { sessionId });
+  return servers;
+}
+
+/**
+ * Begin signing in to a server that is waiting for it.
+ *
+ * Answers with the page to send the reader to. Unlike reading the status, this may resume
+ * the session: signing in is something they asked for by pressing a button.
+ */
+export async function mcpLogin(sessionId: string, name: string): Promise<string | null> {
+  const { authorizationUrl } = await request('mcp.login', { sessionId, name });
+  return authorizationUrl;
 }
 
 /** The MCP servers there are, for completing a command that wants one. Costs no Copilot process. */

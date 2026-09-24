@@ -200,6 +200,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'mcp.remove': ({ name }) => runtime.discovery.removeMcpServer(name),
 
+    'mcp.status': async ({ sessionId }) => ({ servers: await runtime.mcpStatus(sessionId) }),
+
+    'mcp.login': async ({ sessionId, name }) => ({ authorizationUrl: await runtime.mcpLogin(sessionId, name) }),
+
     'skills.disabled': ({ sessionId }) => ({ disabled: runtime.disabledSkills(sessionId) }),
 
     'skills.set': async ({ sessionId, name, enabled }) => ({

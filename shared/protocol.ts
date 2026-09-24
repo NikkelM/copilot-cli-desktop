@@ -659,6 +659,21 @@ export interface McpServerSummary {
 }
 
 /**
+ * What an MCP server is actually doing in one session.
+ *
+ * The configured view says what a directory would be offered; this says what happened when
+ * it was tried - connected, failed, waiting to be signed in to. Only a loaded session can
+ * answer, because only a loaded session has tried (#24).
+ */
+export interface McpServerState {
+  name: string;
+  /** `connected`, `failed`, `needs-auth`, `pending`, `disabled`, `stopped`. */
+  status: string;
+  /** Why it failed, where the runtime said. */
+  error?: string;
+}
+
+/**
  * How to reach an MCP server, as the reader would write it.
  *
  * The two shapes the runtime accepts, narrowed to what somebody actually types: everything
@@ -1288,6 +1303,21 @@ export interface SidecarRequests {
   /** Take a server out of the reader's own config. */
   'mcp.remove': { params: { name: string }; result: void };
   /**
+   * What each MCP server is actually doing in a session.
+   *
+   * Null for a session that is not loaded, which is not a failure: only a session that has
+   * tried to connect can say whether it worked, and browsing what a directory offers must
+   * not cost a resume. The same rule `sessions.usage` follows (#24).
+   */
+  'mcp.status': { params: { sessionId: string }; result: { servers: McpServerState[] | null } };
+  /**
+   * Begin signing in to a server that is waiting for it.
+   *
+   * Answers with the page to send the reader to, which this app opens in their browser. The
+   * runtime holds the other end and says so through `session.mcp_oauth_completed`.
+   */
+  'mcp.login': { params: { sessionId: string; name: string }; result: { authorizationUrl: string | null } };
+  /**
    * The skills a session has switched off, and the means to switch one.
    *
    * Both cost no process. The set belongs to the app rather than to the runtime, whose own
@@ -1424,6 +1454,8 @@ export const SIDECAR_METHODS = [
   'mcp.servers',
   'mcp.save',
   'mcp.remove',
+  'mcp.status',
+  'mcp.login',
   'skills.disabled',
   'skills.set',
   'sessions.queue',

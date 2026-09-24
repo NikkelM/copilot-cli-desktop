@@ -759,3 +759,89 @@ describe('Environment, editing MCP servers', () => {
     });
   });
 });
+/**
+ * What a server is actually doing, which only a loaded session can say. Absent for a cold
+ * one, and nothing is resumed to find out (#24).
+ */
+describe('Environment, live MCP status', () => {
+  const server = (over = {}) => ({
+    name: 'context7',
+    type: 'http',
+    source: 'user',
+    enabled: true,
+    editable: true,
+    url: 'https://c7/mcp',
+    ...over,
+  });
+
+  const shown = (mcpState: unknown, over: Partial<Parameters<typeof Environment>[0]> = {}) =>
+    render(
+      <Environment
+        {...props}
+        environment={environment({ mcpServers: [server()] as never })}
+        mcpState={mcpState as never}
+        {...over}
+      />,
+    );
+
+  it('says nothing about it for a session that is not loaded', () => {
+    shown(null);
+
+    expect(screen.queryByText('connected')).toBeNull();
+  });
+
+  it('says a server is connected', () => {
+    shown([{ name: 'context7', status: 'connected' }]);
+
+    expect(screen.getByText('connected')).toBeTruthy();
+  });
+
+  it('puts the runtime words into the reader own', () => {
+    shown([{ name: 'context7', status: 'needs-auth' }]);
+
+    expect(screen.getByText('needs sign-in')).toBeTruthy();
+  });
+
+  /** Unrecognised statuses are shown as the runtime named them rather than hidden. */
+  it('passes on a status it has no words for', () => {
+    shown([{ name: 'context7', status: 'something-new' }]);
+
+    expect(screen.getByText('something-new')).toBeTruthy();
+  });
+
+  it('keeps the reason a server failed where it can be read', () => {
+    shown([{ name: 'context7', status: 'failed', error: 'no such command' }]);
+
+    expect(screen.getByTitle('no such command')).toBeTruthy();
+  });
+
+  it('says nothing about a server the session did not mention', () => {
+    shown([{ name: 'somewhere-else', status: 'connected' }]);
+
+    expect(screen.queryByText('connected')).toBeNull();
+  });
+
+  describe('signing in', () => {
+    it('offers it for a server waiting to be signed in to', async () => {
+      const onLoginMcp = vi.fn();
+      shown([{ name: 'context7', status: 'needs-auth' }], { onLoginMcp });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Sign in to context7' }));
+
+      expect(onLoginMcp).toHaveBeenCalledWith('context7');
+    });
+
+    // Nothing to sign in to, so offering would be a button that does nothing.
+    it('does not offer it for a server that is connected', () => {
+      shown([{ name: 'context7', status: 'connected' }], { onLoginMcp: vi.fn() });
+
+      expect(screen.queryByRole('button', { name: /Sign in/ })).toBeNull();
+    });
+
+    it('does not offer it where the app cannot do it', () => {
+      shown([{ name: 'context7', status: 'needs-auth' }]);
+
+      expect(screen.queryByRole('button', { name: /Sign in/ })).toBeNull();
+    });
+  });
+});
