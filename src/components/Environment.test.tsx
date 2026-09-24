@@ -482,7 +482,7 @@ describe('Environment, switching an MCP server', () => {
 /**
  * Custom agents and hooks, which the CLI's own /env lists and this panel did not (#165).
  */
-describe('Environment, custom agents', () => {
+describe('Environment, agents', () => {
   const agent = (over: Partial<AgentSummary> = {}): AgentSummary => ({
     id: 'deep-audit',
     name: 'deep-audit',
@@ -527,7 +527,18 @@ describe('Environment, custom agents', () => {
   it('says nothing is there rather than showing an empty heading', () => {
     withAgents([]);
 
-    expect(screen.getByText('No custom agents found for this directory.')).toBeTruthy();
+    expect(screen.getByText('No agents found for this directory.')).toBeTruthy();
+  });
+
+  /**
+   * The CLI's own heading for this section of /env, which it calls Agents. Ours said
+   * Custom agents, which is what they are and not what the other half of the pair calls
+   * them (#24).
+   */
+  it('is headed the way the CLI heads it', () => {
+    withAgents([agent()]);
+
+    expect(screen.getByRole('heading', { name: 'Agents' })).toBeTruthy();
   });
 });
 
@@ -799,7 +810,7 @@ describe('Environment, live MCP status', () => {
   it('puts the runtime words into the reader own', () => {
     shown([{ name: 'context7', status: 'needs-auth' }]);
 
-    expect(screen.getByText('needs sign-in')).toBeTruthy();
+    expect(screen.getByText('needs authentication')).toBeTruthy();
   });
 
   /** Unrecognised statuses are shown as the runtime named them rather than hidden. */
@@ -807,6 +818,25 @@ describe('Environment, live MCP status', () => {
     shown([{ name: 'context7', status: 'something-new' }]);
 
     expect(screen.getByText('something-new')).toBeTruthy();
+  });
+
+  /**
+   * The runtime's own labels rather than synonyms for them, so a reader who has seen a
+   * state in the terminal does not have to learn this window's word for the same thing.
+   * Every one the SDK can report, since a missing arm shows the raw key (#24).
+   */
+  it.each([
+    ['connected', 'connected'],
+    ['failed', 'failed'],
+    ['needs-auth', 'needs authentication'],
+    ['pending', 'pending'],
+    ['disabled', 'disabled'],
+    ['stopped', 'stopped'],
+    ['not_configured', 'not configured'],
+  ])('says %s the way the CLI does', (status, shownAs) => {
+    shown([{ name: 'context7', status }]);
+
+    expect(screen.getByText(shownAs)).toBeTruthy();
   });
 
   it('keeps the reason a server failed where it can be read', () => {

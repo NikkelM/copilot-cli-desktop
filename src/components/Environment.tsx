@@ -386,9 +386,9 @@ export function Environment({
           </section>
 
           <section className="environment-section">
-            <h3 className="environment-heading">Custom agents</h3>
+            <h3 className="environment-heading">Agents</h3>
             {agents.length === 0 ? (
-              <p className="changes-note">No custom agents found for this directory.</p>
+              <p className="changes-note">No agents found for this directory.</p>
             ) : (
               <ul className="environment-list">
                 {agents.map((agent) => (
@@ -521,18 +521,24 @@ function reach(server: McpServerSummary): string {
 }
 
 /**
- * What a server is doing, in words rather than in the runtime's own.
+ * What a server is doing, in the CLI's own words.
  *
- * Not a closed set - anything unrecognised is shown as the runtime named it, which is the
- * same rule the sources above follow.
+ * Its labels rather than synonyms for them: these are a closed set of runtime states, and a
+ * reader who has seen `Needs authentication` in the terminal should not have to learn that
+ * this window's `needs sign-in` is the same thing. Lower case because the chips beside them
+ * are, which is this window's own business (#24).
+ *
+ * Anything unrecognised is shown as the runtime named it, which is the same rule the
+ * sources above follow.
  */
 const STATUS: Record<string, string> = {
   connected: 'connected',
-  pending: 'connecting',
   failed: 'failed',
-  'needs-auth': 'needs sign-in',
+  'needs-auth': 'needs authentication',
+  pending: 'pending',
   disabled: 'disabled',
   stopped: 'stopped',
+  not_configured: 'not configured',
 };
 
 /** Which plugin an extension arrived with, since that is what turning it off would mean. */
