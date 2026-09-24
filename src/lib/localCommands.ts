@@ -119,21 +119,20 @@ export const TAG: SlashCommand = {
 /**
  * Manage the MCP servers, which are otherwise only reachable through the panel.
  *
- * Subcommands rather than one action, because there are three and they are not variations
- * of each other: `add` opens an empty form, `edit` opens one on a server, `remove` takes a
- * server out. No argument opens the panel, which is where all three end up anyway.
- *
- * `remove` rather than `delete`, to match the button that does the same thing.
+ * The CLI's own words, so the same line means the same thing in both: `/mcp add [name]`,
+ * `/mcp edit <name>`, `/mcp delete <name>`, and `/mcp` or `/mcp list` for the list itself.
+ * Its `delete` rather than the panel button's `remove`, because a command typed here should
+ * not be a command that fails there.
  */
 export const MCP: SlashCommand = {
   name: 'mcp',
-  description: 'add, edit or remove an MCP server',
+  description: 'add, edit or delete an MCP server',
   aliases: [],
-  hint: 'add|edit|remove',
+  hint: 'add|edit|delete',
   choices: [
     { name: 'add', description: 'write down a new server' },
     { name: 'edit', description: 'change how a server is reached' },
-    { name: 'remove', description: 'take a server out of your configuration' },
+    { name: 'delete', description: 'take a server out of your configuration' },
   ],
   allowDuringTurn: true,
 };
@@ -281,19 +280,23 @@ export function withTagChoices(
 /** What `/mcp` was asked to do, once its line has been read. */
 export type McpAction =
   | { kind: 'panel' }
-  | { kind: 'add' }
+  /** A name only when one was given, which the CLI takes as a prefill for the new server. */
+  | { kind: 'add'; name?: string }
   | { kind: 'edit'; name: string }
-  | { kind: 'remove'; name: string }
+  | { kind: 'delete'; name: string }
   | { kind: 'needs-name'; verb: string }
   | { kind: 'unknown'; verb: string };
 
 /**
  * Read the line `/mcp` was given.
  *
- * The first word is what to do and the rest is which server, so a name with a space in it
- * survives - `/mcp remove my server` means the one server whose name is "my server" rather
- * than two arguments. Nothing configured has a space in it today, but the config is a JSON
- * object whose keys are free text, so assuming otherwise would be assuming.
+ * The CLI's vocabulary, so the same line means the same thing in both: `add` takes an
+ * optional name, `edit` and `delete` require one, and `list` is the bare form written out.
+ *
+ * The rest of the line is the name rather than the next argument, so a name with a space in
+ * it survives - `/mcp delete my server` means the one server whose name is "my server".
+ * Nothing configured has a space in it today, but the config is a JSON object whose keys are
+ * free text, so assuming otherwise would be assuming.
  *
  * A verb with no name is its own answer rather than an error: the reader has said what they
  * want to do, and what is missing is nameable.
@@ -306,7 +309,8 @@ export function readMcpCommand(argument: string): McpAction {
   const verb = (space === -1 ? said : said.slice(0, space)).toLowerCase();
   const name = space === -1 ? '' : said.slice(space + 1).trim();
 
-  if (verb === 'add') return { kind: 'add' };
-  if (verb !== 'edit' && verb !== 'remove') return { kind: 'unknown', verb };
+  if (verb === 'list') return { kind: 'panel' };
+  if (verb === 'add') return name === '' ? { kind: 'add' } : { kind: 'add', name };
+  if (verb !== 'edit' && verb !== 'delete') return { kind: 'unknown', verb };
   return name === '' ? { kind: 'needs-name', verb } : { kind: verb, name };
 }

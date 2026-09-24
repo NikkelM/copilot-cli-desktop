@@ -246,7 +246,7 @@ describe('readMcpCommand', () => {
   it('reads the three it knows', () => {
     expect(readMcpCommand('add')).toEqual({ kind: 'add' });
     expect(readMcpCommand('edit context7')).toEqual({ kind: 'edit', name: 'context7' });
-    expect(readMcpCommand('remove context7')).toEqual({ kind: 'remove', name: 'context7' });
+    expect(readMcpCommand('delete context7')).toEqual({ kind: 'delete', name: 'context7' });
   });
 
   it('does not mind how it was capitalised', () => {
@@ -259,7 +259,7 @@ describe('readMcpCommand', () => {
    * object whose keys are free text, so a server called "my server" is possible.
    */
   it('keeps a name with a space in it whole', () => {
-    expect(readMcpCommand('remove my server')).toEqual({ kind: 'remove', name: 'my server' });
+    expect(readMcpCommand('delete my server')).toEqual({ kind: 'delete', name: 'my server' });
   });
 
   it('is not troubled by the spacing', () => {
@@ -274,15 +274,24 @@ describe('readMcpCommand', () => {
   /** A verb with no name is answerable: the reader said what they want and left out which. */
   it('says which name is missing rather than refusing the whole line', () => {
     expect(readMcpCommand('edit')).toEqual({ kind: 'needs-name', verb: 'edit' });
-    expect(readMcpCommand('remove')).toEqual({ kind: 'needs-name', verb: 'remove' });
+    expect(readMcpCommand('delete')).toEqual({ kind: 'needs-name', verb: 'delete' });
   });
 
   it('names a verb it does not know', () => {
     expect(readMcpCommand('destroy context7')).toEqual({ kind: 'unknown', verb: 'destroy' });
   });
 
-  /** Adding takes no name, so one given is ignored rather than making the line unreadable. */
-  it('adds whatever follows add', () => {
-    expect(readMcpCommand('add something')).toEqual({ kind: 'add' });
+  /** The CLI takes a name after `add` as a prefill for the new server rather than a target. */
+  it('carries a name given to add, for the form to open on', () => {
+    expect(readMcpCommand('add something')).toEqual({ kind: 'add', name: 'something' });
+  });
+
+  it('leaves the name out where add was given none', () => {
+    expect(readMcpCommand('add')).not.toHaveProperty('name');
+  });
+
+  /** The CLI has both, and they mean the same thing. */
+  it('reads list as the bare form written out', () => {
+    expect(readMcpCommand('list')).toEqual({ kind: 'panel' });
   });
 });

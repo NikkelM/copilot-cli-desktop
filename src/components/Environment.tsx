@@ -304,6 +304,9 @@ export function Environment({
               ) : (
                 <McpEditor
                   server={mcpServers.find((server) => server.name === editing)}
+                  // A name that matches nothing is one being written down under it, which
+                  // is what `/mcp add <name>` means and what the CLI does with it.
+                  initialName={editing}
                   taken={mcpServers.map((server) => server.name)}
                   onCancel={() => setEditing(null)}
                   onSave={(name, config) => {

@@ -892,6 +892,16 @@ describe('Environment, a form opened from outside', () => {
     expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe('https://c7/mcp');
   });
 
+  /** `/mcp add <name>` names a server that does not exist yet, as the CLI's own does. */
+  it('fills in a name that matches nothing rather than ignoring it', () => {
+    shown('not-yet');
+
+    const named = screen.getByLabelText('Name') as HTMLInputElement;
+    expect(named.value).toBe('not-yet');
+    // A new server, so the name is still the reader's to change.
+    expect(named.disabled).toBe(false);
+  });
+
   /** The panel asks; the caller decides. Otherwise the two would disagree about what is up. */
   it('asks the caller to open one rather than opening it itself', async () => {
     const onEditMcp = shown(null);

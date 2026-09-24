@@ -619,11 +619,11 @@ export default function App() {
     const what = readMcpCommand(argument);
 
     if (what.kind === 'unknown') {
-      transcript.showLocal('command.failed', { text: `/mcp cannot ${what.verb}. Try add, edit or remove.` });
+      transcript.showLocal('command.failed', { text: `/mcp cannot ${what.verb}. Try add, edit or delete.` });
       return;
     }
     if (what.kind === 'needs-name') {
-      transcript.showLocal('command.failed', { text: `Name the server to ${what.verb}.` });
+      transcript.showLocal('command.failed', { text: `Usage: /mcp ${what.verb} <server-name>` });
       return;
     }
 
@@ -632,7 +632,9 @@ export default function App() {
 
     if (what.kind === 'panel') return;
     if (what.kind === 'add') {
-      setMcpEditing('');
+      // A name given to `add` fills the form in rather than naming a server to open, which
+      // is what the CLI does with it. The panel reads a name it does not know as a new one.
+      setMcpEditing(what.name ?? '');
       return;
     }
 
@@ -641,12 +643,14 @@ export default function App() {
     // save.
     const server = environment.environment?.mcpServers.find((each) => each.name === what.name);
     if (!server) {
-      transcript.showLocal('command.failed', { text: `No MCP server called ${what.name}.` });
+      transcript.showLocal('command.failed', {
+        text: `Server "${what.name}" not found. Use /mcp add to create it.`,
+      });
       return;
     }
     if (!server.editable) {
       transcript.showLocal('command.failed', {
-        text: `${what.name} came from ${server.sourcePlugin ?? server.source} rather than your own configuration, so it cannot be changed here.`,
+        text: `Cannot edit "${what.name}": it came from ${server.sourcePlugin ?? server.source} rather than your own configuration.`,
       });
       return;
     }
@@ -654,7 +658,7 @@ export default function App() {
     if (what.kind === 'edit') setMcpEditing(what.name);
     else {
       void removeMcp(what.name);
-      transcript.showLocal('command.output', { text: `Removed the MCP server ${what.name}.` });
+      transcript.showLocal('command.output', { text: `Deleted the MCP server ${what.name}.` });
     }
   }
 

@@ -15,18 +15,21 @@ import type { McpServerConfig, McpServerSummary } from '../../shared/protocol';
  */
 export function McpEditor({
   server,
+  initialName,
   taken,
   onSave,
   onCancel,
 }: {
   /** The server being changed, or nothing when one is being added. */
   server?: McpServerSummary;
+  /** What to call a server being added, for a caller that already has a name in mind. */
+  initialName?: string;
   /** Names already in use, so a new server cannot quietly replace one. */
   taken: readonly string[];
   onSave: (name: string, config: McpServerConfig) => void;
   onCancel: () => void;
 }) {
-  const [name, setName] = useState(server?.name ?? '');
+  const [name, setName] = useState(server?.name ?? initialName ?? '');
   // A server with a command is one the runtime runs; anything else it calls.
   const [transport, setTransport] = useState<'http' | 'stdio'>(server?.command ? 'stdio' : 'http');
   const [url, setUrl] = useState(server?.url ?? '');
