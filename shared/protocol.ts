@@ -583,6 +583,10 @@ export interface SessionEnvironment {
   skills: SkillSummary[];
   /** The MCP servers a session here would be offered, and whether each is switched on. */
   mcpServers: McpServerSummary[];
+  /** The custom agents a session here could be run as. */
+  agents: AgentSummary[];
+  /** The hooks that would fire for a session here. */
+  hooks: HookSummary[];
   /**
    * Skills that were found but could not be read, as the runtime described them.
    *
@@ -590,11 +594,33 @@ export interface SessionEnvironment {
    * list otherwise, which reads as never having been installed.
    */
   skillErrors: string[];
+  /** The same for hooks, which fail the same silent way and for the same reasons. */
+  hookErrors: string[];
   /**
    * Whether extensions are loaded at all, and whether the agent may manage them.
    * Worth showing, because an empty list means something different under `disabled`.
    */
   extensionMode: string;
+}
+
+/**
+ * A hook that would fire for a session in this directory.
+ *
+ * Hooks carry no name and no description - the runtime identifies one by a hash. What there
+ * is to show is when it fires, where it came from, and the file it was written in, which is
+ * also the only place it can be changed (#165).
+ */
+export interface HookSummary {
+  /** The runtime's own id, which is a hash rather than anything to read. */
+  id: string;
+  /** When it fires: `preToolUse`, `agentStop`, and the rest. */
+  event: string;
+  /** Where it came from: the reader's own settings, the repository, a plugin, or policy. */
+  origin: string;
+  /** The file it was written in. Absent for a hook the runtime did not attribute. */
+  source?: string;
+  /** Whether it will actually fire. A disabled hook stays configured. */
+  enabled: boolean;
 }
 
 /**

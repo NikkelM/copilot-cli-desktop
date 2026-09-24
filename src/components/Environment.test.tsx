@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { SessionEnvironment } from '../../shared/protocol';
+import type { AgentSummary, HookSummary, SessionEnvironment } from '../../shared/protocol';
 import { Environment } from './Environment';
 
 const source = (over: Partial<SessionEnvironment['instructions'][number]> = {}) => ({
@@ -22,6 +22,9 @@ const environment = (over: Partial<SessionEnvironment> = {}): SessionEnvironment
   skills: [],
   skillErrors: [],
   mcpServers: [],
+  agents: [],
+  hooks: [],
+  hookErrors: [],
   extensionMode: 'load_and_augment',
   ...over,
 });
@@ -465,5 +468,124 @@ describe('Environment, switching an MCP server', () => {
 
     expect(screen.queryByTitle(/context7/)).toBeNull();
     expect(screen.getByText('off')).toBeTruthy();
+  });
+});
+
+/**
+ * Custom agents and hooks, which the CLI's own /env lists and this panel did not (#165).
+ */
+describe('Environment, custom agents', () => {
+  const agent = (over: Partial<AgentSummary> = {}): AgentSummary => ({
+    id: 'deep-audit',
+    name: 'deep-audit',
+    displayName: 'Deep Audit',
+    description: 'Audits things',
+    source: 'user',
+    path: 'C:\\Users\\x\\.copilot\\agents\\deep-audit.agent.md',
+    userInvocable: true,
+    ...over,
+  });
+
+  const withAgents = (agents: AgentSummary[]) =>
+    render(<Environment {...props} environment={environment({ agents })} />);
+
+  it('lists them by the name they are shown under', () => {
+    withAgents([agent()]);
+
+    expect(screen.getByText('Deep Audit')).toBeTruthy();
+    expect(screen.getByText('Audits things')).toBeTruthy();
+  });
+
+  it('says where one came from', () => {
+    withAgents([agent({ source: 'project' })]);
+
+    expect(screen.getByText('This project')).toBeTruthy();
+  });
+
+  /** Unrecognised sources are shown as the runtime named them rather than hidden. */
+  it('passes on a source it has no words for', () => {
+    withAgents([agent({ source: 'somewhere-new' })]);
+
+    expect(screen.getByText('somewhere-new')).toBeTruthy();
+  });
+
+  /** They still load, and another agent can still delegate to one, so they are listed. */
+  it('marks the ones a reader cannot choose', () => {
+    withAgents([agent({ id: 'spawned', name: 'spawned', displayName: 'Spawned', userInvocable: false })]);
+
+    expect(screen.getByText('delegated only')).toBeTruthy();
+  });
+
+  it('says nothing is there rather than showing an empty heading', () => {
+    withAgents([]);
+
+    expect(screen.getByText('No custom agents found for this directory.')).toBeTruthy();
+  });
+});
+
+describe('Environment, hooks', () => {
+  const hook = (over: Partial<HookSummary> = {}): HookSummary => ({
+    id: 'hook:abc',
+    event: 'preToolUse',
+    origin: 'user',
+    source: 'C:\\Users\\x\\.copilot\\hooks\\sounds.json',
+    enabled: true,
+    ...over,
+  });
+
+  const withHooks = (hooks: HookSummary[], hookErrors: string[] = []) =>
+    render(<Environment {...props} environment={environment({ hooks, hookErrors })} />);
+
+  /**
+   * The runtime identifies a hook by a hash and carries no name for one, so when it fires
+   * and the file it lives in are all there is to show.
+   */
+  it('names one by when it fires', () => {
+    withHooks([hook()]);
+
+    expect(screen.getByText('preToolUse')).toBeTruthy();
+  });
+
+  it('shows the file it lives in, without the directories nobody is reading', () => {
+    withHooks([hook()]);
+
+    expect(screen.getByText('sounds.json')).toBeTruthy();
+  });
+
+  it('keeps the whole path where it can be pointed at', () => {
+    withHooks([hook()]);
+
+    expect(screen.getByTitle('C:\\Users\\x\\.copilot\\hooks\\sounds.json')).toBeTruthy();
+  });
+
+  it('says where one came from', () => {
+    withHooks([hook({ origin: 'repository' })]);
+
+    expect(screen.getByText('This repository')).toBeTruthy();
+  });
+
+  it('marks one that will not fire', () => {
+    withHooks([hook({ enabled: false })]);
+
+    expect(screen.getByText('off')).toBeTruthy();
+  });
+
+  it('survives a hook the runtime did not attribute to a file', () => {
+    withHooks([hook({ source: undefined })]);
+
+    expect(screen.getByText('preToolUse')).toBeTruthy();
+  });
+
+  it('says nothing is there rather than showing an empty heading', () => {
+    withHooks([]);
+
+    expect(screen.getByText('No hooks found for this directory.')).toBeTruthy();
+  });
+
+  /** A hook whose source failed to load is absent, which reads as never having been written. */
+  it('reports what could not be loaded', () => {
+    withHooks([], ['sounds.json is not valid JSON']);
+
+    expect(screen.getByText('sounds.json is not valid JSON')).toBeTruthy();
   });
 });

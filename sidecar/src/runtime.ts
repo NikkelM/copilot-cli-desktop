@@ -1148,7 +1148,7 @@ export class SessionRuntime {
     const client = await this.ensureClient();
     const projectPaths = cwd ? { projectPaths: [cwd] } : {};
 
-    const [instructions, plugins, extensions, skills, mcpServers] = await Promise.all([
+    const [instructions, plugins, extensions, skills, mcpServers, agents, hooks] = await Promise.all([
       client.rpc.instructions.discover(projectPaths),
       client.rpc.plugins.list(),
       client.rpc.extensions.discover(),
@@ -1156,6 +1156,9 @@ export class SessionRuntime {
       // Through the same reader the composer uses, so the panel and the completion cannot
       // come to describe the servers differently.
       this.mcpServers(cwd),
+      // The same reader the agent picker uses, for the same reason.
+      this.agents(cwd),
+      client.rpc.hooks.discover(projectPaths),
     ]);
 
     return {
@@ -1192,6 +1195,17 @@ export class SessionRuntime {
       })),
       skillErrors: skills.errors ?? [],
       mcpServers,
+      agents,
+      hooks: (hooks.hooks ?? []).map((hook) => ({
+        id: hook.id,
+        event: hook.hookType,
+        origin: hook.origin,
+        ...(hook.source ? { source: hook.source } : {}),
+        enabled: hook.enabled !== false,
+      })),
+      // Warnings alongside errors: the runtime separates a source that loaded with a
+      // complaint from one that did not load, and both mean a hook may not fire.
+      hookErrors: [...(hooks.errors ?? []), ...(hooks.warnings ?? [])],
       extensionMode: extensions.mode,
     };
   }

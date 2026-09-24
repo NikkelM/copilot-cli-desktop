@@ -27,6 +27,9 @@ const environment: SessionEnvironment = {
   skills: [],
   skillErrors: [],
   mcpServers: [],
+  agents: [],
+  hooks: [],
+  hookErrors: [],
   extensionMode: 'load_and_augment',
 };
 

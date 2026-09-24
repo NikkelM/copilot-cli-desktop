@@ -83,7 +83,10 @@ export function Environment({
   const extensions = environment?.extensions ?? [];
   const skills = environment?.skills ?? [];
   const mcpServers = environment?.mcpServers ?? [];
+  const agents = environment?.agents ?? [];
+  const hooks = environment?.hooks ?? [];
   const skillErrors = environment?.skillErrors ?? [];
+  const hookErrors = environment?.hookErrors ?? [];
   const off = new Set(disabledSkills);
 
   return (
@@ -274,6 +277,67 @@ export function Environment({
           </section>
 
           <section className="environment-section">
+            <h3 className="environment-heading">Custom agents</h3>
+            {agents.length === 0 ? (
+              <p className="changes-note">No custom agents found for this directory.</p>
+            ) : (
+              <ul className="environment-list">
+                {agents.map((agent) => (
+                  <li key={agent.id} className="environment-item">
+                    <span className="environment-dot on" aria-hidden />
+                    <span title={agent.path}>{agent.displayName}</span>
+                    <span className="environment-meta environment-description" title={agent.description}>
+                      {agent.description}
+                    </span>
+                    <span className="environment-meta">{AGENT_SOURCE[agent.source] ?? agent.source}</span>
+                    {/* The ones a reader cannot choose, which are here because they still
+                        load and can still be delegated to by another agent. */}
+                    {!agent.userInvocable && (
+                      <span className="environment-off" title="Only another agent can delegate to this one">
+                        delegated only
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="environment-section">
+            <h3 className="environment-heading">Hooks</h3>
+            {hooks.length === 0 ? (
+              <p className="changes-note">No hooks found for this directory.</p>
+            ) : (
+              <ul className="environment-list">
+                {/* Named by when they fire and the file they live in: the runtime identifies
+                    a hook by a hash, and carries no name or description for one. The file is
+                    also the only place it can be changed. */}
+                {hooks.map((hook) => (
+                  <li key={hook.id} className="environment-item">
+                    <span className={hook.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
+                    <span>{hook.event}</span>
+                    <span className="environment-meta environment-description" title={hook.source}>
+                      {hook.source ? fileName(hook.source) : ''}
+                    </span>
+                    <span className="environment-meta">{HOOK_ORIGIN[hook.origin] ?? hook.origin}</span>
+                    {!hook.enabled && <span className="environment-off">off</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {hookErrors.length > 0 && (
+              <ul className="environment-list environment-errors">
+                {hookErrors.map((message) => (
+                  <li key={message} className="environment-item">
+                    <span className="environment-dot off" aria-hidden />
+                    <span className="environment-meta">{message}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="environment-section">
             <h3 className="environment-heading">Extensions</h3>
             <p className="changes-note">{MODE[environment.extensionMode]}</p>
             {extensions.length > 0 && (
@@ -312,6 +376,29 @@ const SKILL_SOURCE: Record<string, string> = {
   remote: 'Your organisation',
   sdk: 'This app',
 };
+
+/** Where a custom agent came from, in the same words the skills above use. */
+const AGENT_SOURCE: Record<string, string> = {
+  user: 'Yours',
+  project: 'This project',
+  inherited: 'A parent directory',
+  remote: 'Your organisation',
+  plugin: 'Plugin',
+  builtin: 'Built in',
+};
+
+/** Where a hook came from, which is also where it would have to be turned off. */
+const HOOK_ORIGIN: Record<string, string> = {
+  user: 'Yours',
+  repository: 'This repository',
+  plugin: 'Plugin',
+  policy: 'Your organisation',
+};
+
+/** The file a hook was written in, without the directories nobody is reading. */
+function fileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
 
 /** Which plugin an extension arrived with, since that is what turning it off would mean. */
 function source(extension: ExtensionSummary): string {

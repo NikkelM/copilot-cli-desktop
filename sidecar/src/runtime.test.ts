@@ -270,6 +270,13 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
           ],
         })),
       },
+      hooks: {
+        discover: vi.fn(async (_params: { projectPaths?: string[] }) => ({
+          hooks: [],
+          warnings: [],
+          errors: [],
+        })),
+      },
     },
     resumeSession: vi.fn(
       async (
@@ -2288,6 +2295,7 @@ describe('environment, MCP servers', () => {
     rpc.instructions = { discover: vi.fn(async () => ({ sources: [] })) };
     rpc.extensions = { discover: vi.fn(async () => ({ extensions: [], mode: 'load_and_augment' })) };
     rpc.skills = { discover: vi.fn(async () => ({ skills: [], errors: [] })) };
+    rpc.hooks = { discover: vi.fn(async () => ({ hooks: [], warnings: [], errors: [] })) };
     rpc.mcp = {
       discover: vi.fn(async (_params: { workingDirectory?: string }) => ({
         servers: [
@@ -2848,5 +2856,145 @@ describe('how long a question waits', () => {
 
     // Still gives up, so the five milliseconds survived rules that said nothing about it.
     await expect(askAbout(runtime, permissionHandlers)).resolves.toEqual({ kind: 'user-not-available' });
+  });
+});
+
+/**
+ * Custom agents and hooks, which the CLI's own /env lists and this panel did not (#165).
+ *
+ * Both are discovered from the server rather than from a session, so the panel still answers
+ * for a directory nothing has ever run in - which is the whole reason /env was taken over.
+ */
+describe('environment, agents and hooks', () => {
+  function withEnvironment(parts: ReturnType<typeof makeRuntime>) {
+    const rpc = parts.client.rpc as unknown as Record<string, unknown>;
+    rpc.instructions = { discover: vi.fn(async () => ({ sources: [] })) };
+    rpc.extensions = { discover: vi.fn(async () => ({ extensions: [], mode: 'load_and_augment' })) };
+    rpc.skills = { discover: vi.fn(async () => ({ skills: [], errors: [] })) };
+    rpc.mcp = { discover: vi.fn(async () => ({ servers: [] })) };
+    return parts;
+  }
+
+  const hook = (over: Record<string, unknown> = {}) => ({
+    id: 'hook:abc',
+    hookType: 'preToolUse',
+    origin: 'user',
+    enabled: true,
+    source: 'C:\\Users\\x\\.copilot\\hooks\\sounds.json',
+    ...over,
+  });
+
+  it('lists the agents a session here could run as', async () => {
+    const { runtime } = withEnvironment(makeRuntime());
+
+    const found = await runtime.environment('C:\\repo');
+
+    expect(found.agents.map((agent) => agent.name)).toEqual(['deep-audit', 'spawned-only']);
+  });
+
+  /** The same reader the picker uses, so the two cannot come to disagree about an agent. */
+  it('reads them through the same discovery the picker uses', async () => {
+    const parts = withEnvironment(makeRuntime());
+
+    await parts.runtime.environment('C:\\repo');
+
+    const discover = (parts.client.rpc.agents as { discover: ReturnType<typeof vi.fn> }).discover;
+    expect(discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
+  });
+
+  it('lists the hooks that would fire', async () => {
+    const parts = withEnvironment(makeRuntime());
+    (parts.client.rpc as unknown as Record<string, unknown>).hooks = {
+      discover: vi.fn(async () => ({
+        hooks: [hook(), hook({ id: 'hook:def', hookType: 'agentStop', enabled: false })],
+        warnings: [],
+        errors: [],
+      })),
+    };
+
+    const found = await parts.runtime.environment('C:\\repo');
+
+    expect(found.hooks).toEqual([
+      {
+        id: 'hook:abc',
+        event: 'preToolUse',
+        origin: 'user',
+        source: 'C:\\Users\\x\\.copilot\\hooks\\sounds.json',
+        enabled: true,
+      },
+      {
+        id: 'hook:def',
+        event: 'agentStop',
+        origin: 'user',
+        source: 'C:\\Users\\x\\.copilot\\hooks\\sounds.json',
+        enabled: false,
+      },
+    ]);
+  });
+
+  it('looks for hooks in the working directory', async () => {
+    const parts = withEnvironment(makeRuntime());
+
+    await parts.runtime.environment('C:\\repo');
+
+    const discover = (parts.client.rpc.hooks as { discover: ReturnType<typeof vi.fn> }).discover;
+    expect(discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
+  });
+
+  it('asks about no project at all when there is no working directory', async () => {
+    const parts = withEnvironment(makeRuntime());
+
+    await parts.runtime.environment();
+
+    const discover = (parts.client.rpc.hooks as { discover: ReturnType<typeof vi.fn> }).discover;
+    expect(discover).toHaveBeenCalledWith({});
+  });
+
+  it('leaves out a source the runtime did not attribute', async () => {
+    const parts = withEnvironment(makeRuntime());
+    (parts.client.rpc as unknown as Record<string, unknown>).hooks = {
+      discover: vi.fn(async () => ({ hooks: [hook({ source: undefined })], warnings: [], errors: [] })),
+    };
+
+    const found = await parts.runtime.environment('C:\\repo');
+
+    expect(found.hooks[0]).not.toHaveProperty('source');
+  });
+
+  /**
+   * A hook whose source failed to load is simply absent, which reads as never having been
+   * written. Both kinds of complaint are passed on, since either can mean a hook that will
+   * not fire.
+   */
+  it('passes on what could not be loaded, warnings as well as errors', async () => {
+    const parts = withEnvironment(makeRuntime());
+    (parts.client.rpc as unknown as Record<string, unknown>).hooks = {
+      discover: vi.fn(async () => ({ hooks: [], warnings: ['a warning'], errors: ['an error'] })),
+    };
+
+    const found = await parts.runtime.environment('C:\\repo');
+
+    expect(found.hookErrors).toEqual(['an error', 'a warning']);
+  });
+
+  it('treats absent complaints as none', async () => {
+    const parts = withEnvironment(makeRuntime());
+    (parts.client.rpc as unknown as Record<string, unknown>).hooks = {
+      discover: vi.fn(async () => ({ hooks: [] })),
+    };
+
+    const found = await parts.runtime.environment('C:\\repo');
+
+    expect(found.hookErrors).toEqual([]);
+  });
+
+  // The panel exists to answer without one, so neither of these may reach for a session.
+  it('resumes nothing to answer', async () => {
+    const parts = withEnvironment(makeRuntime());
+
+    await parts.runtime.environment('C:\\repo');
+
+    expect(parts.client.resumeSession).not.toHaveBeenCalled();
+    expect(parts.client.createSession).not.toHaveBeenCalled();
   });
 });
