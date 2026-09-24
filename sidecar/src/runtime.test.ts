@@ -1672,7 +1672,7 @@ describe('custom agents', () => {
   it('lists agents without resuming any session', async () => {
     const { runtime, client } = makeRuntime();
 
-    await runtime.agents();
+    await runtime.discovery.agents();
 
     expect(client.start).toHaveBeenCalledTimes(1);
     expect(client.resumeSession).not.toHaveBeenCalled();
@@ -1681,7 +1681,7 @@ describe('custom agents', () => {
   it('asks about a project when given a directory, so its own agents are found', async () => {
     const { runtime, client } = makeRuntime();
 
-    await runtime.agents('C:\\repo');
+    await runtime.discovery.agents('C:\\repo');
 
     expect(client.rpc.agents.discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
   });
@@ -1690,7 +1690,7 @@ describe('custom agents', () => {
   it('asks about no project when given no directory', async () => {
     const { runtime, client } = makeRuntime();
 
-    await runtime.agents();
+    await runtime.discovery.agents();
 
     expect(client.rpc.agents.discover).toHaveBeenCalledWith({});
   });
@@ -1698,7 +1698,7 @@ describe('custom agents', () => {
   it('keeps what a picker needs and drops what it does not', async () => {
     const { runtime } = makeRuntime();
 
-    const [first] = await runtime.agents();
+    const [first] = await runtime.discovery.agents();
 
     expect(first).toEqual({
       id: 'deep-audit',
@@ -1715,7 +1715,7 @@ describe('custom agents', () => {
   it('treats an agent that does not say as one the reader may choose', async () => {
     const { runtime } = makeRuntime();
 
-    const agents = await runtime.agents();
+    const agents = await runtime.discovery.agents();
 
     expect(agents.map((agent) => agent.userInvocable)).toEqual([true, false]);
   });
@@ -2048,7 +2048,7 @@ describe('environment', () => {
       errors: ['pdf: SKILL.md has no description'],
     }));
 
-    const environment = await parts.runtime.environment('C:\\repo');
+    const environment = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(environment.skillErrors).toEqual(['pdf: SKILL.md has no description']);
   });
@@ -2059,7 +2059,7 @@ describe('environment', () => {
     const rpc = withEnvironment(parts);
     (rpc.skills as { discover: unknown }).discover = vi.fn(async () => ({ skills: [] }));
 
-    const environment = await parts.runtime.environment('C:\\repo');
+    const environment = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(environment.skillErrors).toEqual([]);
   });
@@ -2067,7 +2067,7 @@ describe('environment', () => {
     const parts = makeRuntime();
     withEnvironment(parts);
 
-    const environment = await parts.runtime.environment('C:\\repo');
+    const environment = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(environment.instructions).toEqual([
       {
@@ -2091,7 +2091,7 @@ describe('environment', () => {
     const parts = makeRuntime();
     withEnvironment(parts);
 
-    const { extensions } = await parts.runtime.environment('C:\\repo');
+    const { extensions } = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(extensions[0]).toMatchObject({ id: 'plugin:awesome-copilot/thing', plugin: 'awesome-copilot' });
   });
@@ -2100,7 +2100,7 @@ describe('environment', () => {
     const parts = makeRuntime();
     withEnvironment(parts);
 
-    const { skills } = await parts.runtime.environment('C:\\repo');
+    const { skills } = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(skills).toEqual([
       {
@@ -2128,7 +2128,7 @@ describe('environment', () => {
     const parts = makeRuntime();
     const rpc = withEnvironment(parts);
 
-    await parts.runtime.environment('C:\\repo');
+    await parts.runtime.discovery.environment('C:\\repo');
 
     const discover = (rpc.skills as { discover: ReturnType<typeof vi.fn> }).discover;
     expect(discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
@@ -2138,7 +2138,7 @@ describe('environment', () => {
     const parts = makeRuntime();
     withEnvironment(parts);
 
-    const { plugins } = await parts.runtime.environment('C:\\repo');
+    const { plugins } = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(plugins.find((plugin) => plugin.name === 'switched-off')?.enabled).toBe(false);
   });
@@ -2147,7 +2147,7 @@ describe('environment', () => {
     const parts = makeRuntime();
     const rpc = withEnvironment(parts);
 
-    await parts.runtime.environment('C:\\repo');
+    await parts.runtime.discovery.environment('C:\\repo');
 
     const discover = (rpc.instructions as { discover: ReturnType<typeof vi.fn> }).discover;
     expect(discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
@@ -2157,7 +2157,7 @@ describe('environment', () => {
     const parts = makeRuntime();
     const rpc = withEnvironment(parts);
 
-    await parts.runtime.environment();
+    await parts.runtime.discovery.environment();
 
     const discover = (rpc.instructions as { discover: ReturnType<typeof vi.fn> }).discover;
     expect(discover).toHaveBeenCalledWith({});
@@ -2167,7 +2167,7 @@ describe('environment', () => {
     const parts = makeRuntime();
     withEnvironment(parts);
 
-    await parts.runtime.environment('C:\\repo');
+    await parts.runtime.discovery.environment('C:\\repo');
 
     expect(parts.client.resumeSession).not.toHaveBeenCalled();
     expect(parts.client.createSession).not.toHaveBeenCalled();
@@ -2318,7 +2318,7 @@ describe('environment, MCP servers', () => {
     const parts = makeRuntime();
     withEnvironment(parts);
 
-    expect((await parts.runtime.environment('C:\\repo')).mcpServers).toEqual([
+    expect((await parts.runtime.discovery.environment('C:\\repo')).mcpServers).toEqual([
       { name: 'context7', type: 'http', source: 'user', enabled: true },
       { name: 'from-a-plugin', type: 'stdio', source: 'plugin', sourcePlugin: 'awesome-copilot', enabled: false },
     ]);
@@ -2329,7 +2329,7 @@ describe('environment, MCP servers', () => {
     const parts = makeRuntime();
     withEnvironment(parts);
 
-    const found = (await parts.runtime.environment()).mcpServers.find((s) => s.name === 'from-a-plugin');
+    const found = (await parts.runtime.discovery.environment()).mcpServers.find((s) => s.name === 'from-a-plugin');
     expect(found?.enabled).toBe(false);
   });
 
@@ -2340,7 +2340,7 @@ describe('environment, MCP servers', () => {
   it('asks about the working directory it was given', async () => {
     const parts = makeRuntime();
     const rpc = withEnvironment(parts);
-    await parts.runtime.environment('C:\\repo');
+    await parts.runtime.discovery.environment('C:\\repo');
 
     expect((rpc.mcp as { discover: ReturnType<typeof vi.fn> }).discover).toHaveBeenCalledWith({
       workingDirectory: 'C:\\repo',
@@ -2350,7 +2350,7 @@ describe('environment, MCP servers', () => {
   it('asks about no directory at all when there is none', async () => {
     const parts = makeRuntime();
     const rpc = withEnvironment(parts);
-    await parts.runtime.environment();
+    await parts.runtime.discovery.environment();
 
     expect((rpc.mcp as { discover: ReturnType<typeof vi.fn> }).discover).toHaveBeenCalledWith({});
   });
@@ -2358,7 +2358,7 @@ describe('environment, MCP servers', () => {
   it('resumes nothing to answer', async () => {
     const parts = makeRuntime();
     withEnvironment(parts);
-    await parts.runtime.environment('C:\\repo');
+    await parts.runtime.discovery.environment('C:\\repo');
 
     expect(parts.client.resumeSession).not.toHaveBeenCalled();
   });
@@ -2382,7 +2382,7 @@ describe('switching an MCP server on and off', () => {
     const parts = makeRuntime();
     const mcp = withMcpConfig(parts);
 
-    await parts.runtime.setMcpEnabled('context7', false);
+    await parts.runtime.discovery.setMcpEnabled('context7', false);
 
     expect(mcp.config.disable).toHaveBeenCalledWith({ names: ['context7'] });
     expect(mcp.config.enable).not.toHaveBeenCalled();
@@ -2392,7 +2392,7 @@ describe('switching an MCP server on and off', () => {
     const parts = makeRuntime();
     const mcp = withMcpConfig(parts);
 
-    await parts.runtime.setMcpEnabled('context7', true);
+    await parts.runtime.discovery.setMcpEnabled('context7', true);
 
     expect(mcp.config.enable).toHaveBeenCalledWith({ names: ['context7'] });
     expect(mcp.config.disable).not.toHaveBeenCalled();
@@ -2402,7 +2402,7 @@ describe('switching an MCP server on and off', () => {
     const parts = makeRuntime();
     withMcpConfig(parts);
 
-    await parts.runtime.setMcpEnabled('context7', false);
+    await parts.runtime.discovery.setMcpEnabled('context7', false);
 
     expect(parts.client.resumeSession).not.toHaveBeenCalled();
   });
@@ -2887,7 +2887,7 @@ describe('environment, agents and hooks', () => {
   it('lists the agents a session here could run as', async () => {
     const { runtime } = withEnvironment(makeRuntime());
 
-    const found = await runtime.environment('C:\\repo');
+    const found = await runtime.discovery.environment('C:\\repo');
 
     expect(found.agents.map((agent) => agent.name)).toEqual(['deep-audit', 'spawned-only']);
   });
@@ -2896,7 +2896,7 @@ describe('environment, agents and hooks', () => {
   it('reads them through the same discovery the picker uses', async () => {
     const parts = withEnvironment(makeRuntime());
 
-    await parts.runtime.environment('C:\\repo');
+    await parts.runtime.discovery.environment('C:\\repo');
 
     const discover = (parts.client.rpc.agents as { discover: ReturnType<typeof vi.fn> }).discover;
     expect(discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
@@ -2912,7 +2912,7 @@ describe('environment, agents and hooks', () => {
       })),
     };
 
-    const found = await parts.runtime.environment('C:\\repo');
+    const found = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(found.hooks).toEqual([
       {
@@ -2935,7 +2935,7 @@ describe('environment, agents and hooks', () => {
   it('looks for hooks in the working directory', async () => {
     const parts = withEnvironment(makeRuntime());
 
-    await parts.runtime.environment('C:\\repo');
+    await parts.runtime.discovery.environment('C:\\repo');
 
     const discover = (parts.client.rpc.hooks as { discover: ReturnType<typeof vi.fn> }).discover;
     expect(discover).toHaveBeenCalledWith({ projectPaths: ['C:\\repo'] });
@@ -2944,7 +2944,7 @@ describe('environment, agents and hooks', () => {
   it('asks about no project at all when there is no working directory', async () => {
     const parts = withEnvironment(makeRuntime());
 
-    await parts.runtime.environment();
+    await parts.runtime.discovery.environment();
 
     const discover = (parts.client.rpc.hooks as { discover: ReturnType<typeof vi.fn> }).discover;
     expect(discover).toHaveBeenCalledWith({});
@@ -2956,7 +2956,7 @@ describe('environment, agents and hooks', () => {
       discover: vi.fn(async () => ({ hooks: [hook({ source: undefined })], warnings: [], errors: [] })),
     };
 
-    const found = await parts.runtime.environment('C:\\repo');
+    const found = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(found.hooks[0]).not.toHaveProperty('source');
   });
@@ -2972,7 +2972,7 @@ describe('environment, agents and hooks', () => {
       discover: vi.fn(async () => ({ hooks: [], warnings: ['a warning'], errors: ['an error'] })),
     };
 
-    const found = await parts.runtime.environment('C:\\repo');
+    const found = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(found.hookErrors).toEqual(['an error', 'a warning']);
   });
@@ -2983,7 +2983,7 @@ describe('environment, agents and hooks', () => {
       discover: vi.fn(async () => ({ hooks: [] })),
     };
 
-    const found = await parts.runtime.environment('C:\\repo');
+    const found = await parts.runtime.discovery.environment('C:\\repo');
 
     expect(found.hookErrors).toEqual([]);
   });
@@ -2992,9 +2992,54 @@ describe('environment, agents and hooks', () => {
   it('resumes nothing to answer', async () => {
     const parts = withEnvironment(makeRuntime());
 
-    await parts.runtime.environment('C:\\repo');
+    await parts.runtime.discovery.environment('C:\\repo');
 
     expect(parts.client.resumeSession).not.toHaveBeenCalled();
     expect(parts.client.createSession).not.toHaveBeenCalled();
+  });
+});
+/**
+ * The plugin directories are cached against the client that answered for them, so stopping
+ * the server has to drop them. A second run could be a different CLI with different plugins
+ * installed, and a stale list would send a session looking for skills that are not there.
+ *
+ * The cache moved out with the rest of discovery (#183); this is the one thread between the
+ * two that is not just a call.
+ */
+describe('what a shutdown forgets', () => {
+  const dir = (name: string) => join(copilotHome, 'installed-plugins', 'awesome-copilot', name);
+
+  it('reads the plugins once while the server stays up', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.create('C:\\repo');
+    await runtime.create('C:\\repo');
+
+    expect(client.rpc.plugins.list).toHaveBeenCalledOnce();
+  });
+
+  it('reads them again after the server has stopped', async () => {
+    const { runtime, client } = makeRuntime();
+    await runtime.create('C:\\repo');
+    await runtime.shutdown();
+
+    await runtime.create('C:\\repo');
+
+    expect(client.rpc.plugins.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives the new session what the new server reported', async () => {
+    const { runtime, client } = makeRuntime();
+    await runtime.create('C:\\repo');
+    await runtime.shutdown();
+
+    client.rpc.plugins.list.mockResolvedValue({
+      plugins: [{ name: 'installed-since', marketplace: 'awesome-copilot', enabled: true }],
+    });
+    await runtime.create('C:\\repo');
+
+    expect(client.createSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pluginDirectories: [dir('installed-since')] }),
+    );
   });
 });

@@ -165,7 +165,7 @@ describe('what the sidecar answers', () => {
   /** Browsing agents outside any session sends nothing at all, for the same reason. */
   it('asks for agents without a directory when none was named', async () => {
     const agents = vi.fn(async () => []);
-    const bare = createHandlers({ ...runtime, agents } as unknown as SessionRuntime);
+    const bare = createHandlers({ ...runtime, discovery: { agents } } as unknown as SessionRuntime);
 
     await bare['agents.list'](undefined as never);
 
@@ -174,7 +174,7 @@ describe('what the sidecar answers', () => {
 
   it('passes a working directory on, so a project\u2019s own agents are found', async () => {
     const agents = vi.fn(async () => []);
-    const bare = createHandlers({ ...runtime, agents } as unknown as SessionRuntime);
+    const bare = createHandlers({ ...runtime, discovery: { agents } } as unknown as SessionRuntime);
 
     await bare['agents.list']({ cwd: 'C:\\repo' });
 

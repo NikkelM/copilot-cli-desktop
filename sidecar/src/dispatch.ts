@@ -140,7 +140,7 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'attachments.preview': ({ path }) => ({ dataUrl: previewImage(path) }),
 
-    'models.list': async () => ({ models: await runtime.models() }),
+    'models.list': async () => ({ models: await runtime.discovery.models() }),
 
     // Params are read defensively because a caller with nothing to say may send none at all,
     // and the one field here is optional in the first place.
@@ -180,7 +180,7 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     // Params are read defensively for the same reason `commands.list` reads them that way:
     // a caller browsing agents outside any session has nothing to say and may send nothing.
-    'agents.list': async (params) => ({ agents: await runtime.agents(params?.cwd) }),
+    'agents.list': async (params) => ({ agents: await runtime.discovery.agents(params?.cwd) }),
 
     'agents.current': async ({ sessionId }) => ({ agent: await lastAgent(sessionId) }),
 
@@ -188,13 +188,13 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'agents.deselect': ({ sessionId }) => runtime.selectAgent(sessionId, null),
 
-    'environment.describe': (params) => runtime.environment(params?.cwd),
+    'environment.describe': (params) => runtime.discovery.environment(params?.cwd),
 
-    'mcp.setEnabled': ({ name, enabled }) => runtime.setMcpEnabled(name, enabled),
+    'mcp.setEnabled': ({ name, enabled }) => runtime.discovery.setMcpEnabled(name, enabled),
 
     // Params are read defensively: a composer completing a command outside any session has
     // no directory to name.
-    'mcp.servers': async (params) => ({ servers: await runtime.mcpServers(params?.cwd) }),
+    'mcp.servers': async (params) => ({ servers: await runtime.discovery.mcpServers(params?.cwd) }),
 
     'skills.disabled': ({ sessionId }) => ({ disabled: runtime.disabledSkills(sessionId) }),
 
