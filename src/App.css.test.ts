@@ -536,3 +536,32 @@ describe('the MCP server rows', () => {
     expect(block('.mcp-action:disabled')).toContain('opacity:');
   });
 });
+/**
+ * The buttons on one row are all the same height.
+ *
+ * The toggle took the browser's own font for buttons while the ones beside it took the
+ * app's, and the two carry different line heights - so a row of controls that should have
+ * been level was a pixel out (#24).
+ */
+describe('the controls on a row', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('gives every one of them the same font to measure against', () => {
+    for (const selector of ['.environment-toggle', '.mcp-action']) {
+      expect(block(selector), `${selector} should take the app's font`).toContain('font: inherit;');
+    }
+  });
+
+  /** Without it the next section starts immediately under the button. */
+  it('keeps the add button clear of what follows it', () => {
+    const rule = block('.mcp-add');
+    const margin = /margin:\s*[\d.]+\w*\s+[\d.]+\w*\s+([\d.]+)/.exec(rule);
+
+    expect(margin, 'the add button should set a margin on all four sides').toBeTruthy();
+    expect(Number(margin![1]), 'it needs room below it').toBeGreaterThan(0);
+  });
+});

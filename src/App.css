@@ -3459,6 +3459,9 @@ pre.fatal,
   border-radius: 5px;
   background: none;
   color: var(--success);
+  /* The app's font rather than the browser's own for buttons, which carries a different
+     line height and made this a pixel shorter than the buttons beside it. */
+  font: inherit;
   font-size: var(--font-sm);
   cursor: pointer;
 }
@@ -5260,9 +5263,9 @@ pre.fatal,
   border-color: var(--border);
 }
 
-/* Away from the list it belongs under, and indented to its rows. */
+/* Away from the list it belongs under, and clear of the section that follows. */
 .mcp-add {
-  margin: 4px 0 0 10px;
+  margin: 4px 0 8px 10px;
 }
 
 /*
