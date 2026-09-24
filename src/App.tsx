@@ -47,7 +47,7 @@ import {
   deleteSession,
   writeCliSettings,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, GIT, TAG, USAGE, WIKI, wantsDirectory, withTagChoices } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, GIT, MCP, TAG, USAGE, WIKI, readMcpCommand, wantsDirectory, withTagChoices } from './lib/localCommands';
 import type { McpServerConfig } from '../shared/protocol';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
@@ -190,6 +190,8 @@ export default function App() {
    * Nothing is resumed to find out - connection state is worth seeing, not worth a process.
    */
   const mcp = useMcpStatus(selectedId);
+  /** Which MCP server's form the panel is showing, so `/mcp add` and `/mcp edit` can open one. */
+  const [mcpEditing, setMcpEditing] = useState<string | null>(null);
   const cliSettings = useCliSettings(setError);
   const mode = useMode(selectedId, setError);
   const contextUsage = useContextUsage(selectedId);
@@ -607,6 +609,56 @@ export default function App() {
   }
 
   /**
+   * Answer `/mcp`, which opens the panel and may open a form on the way.
+   *
+   * A name that matches nothing is said so rather than quietly doing nothing: typing one is
+   * how these are reached from the keyboard, and a typo would otherwise look like a server
+   * that had already gone.
+   */
+  function mcpFromCommand(argument: string) {
+    const what = readMcpCommand(argument);
+
+    if (what.kind === 'unknown') {
+      transcript.showLocal('command.failed', { text: `/mcp cannot ${what.verb}. Try add, edit or remove.` });
+      return;
+    }
+    if (what.kind === 'needs-name') {
+      transcript.showLocal('command.failed', { text: `Name the server to ${what.verb}.` });
+      return;
+    }
+
+    // Every arm below ends up looking at the panel, so it opens either way.
+    openEnvironment();
+
+    if (what.kind === 'panel') return;
+    if (what.kind === 'add') {
+      setMcpEditing('');
+      return;
+    }
+
+    // Against what the panel is showing rather than the config: a server a plugin brought
+    // is listed and is not the reader's to change, and saying so beats a form that cannot
+    // save.
+    const server = environment.environment?.mcpServers.find((each) => each.name === what.name);
+    if (!server) {
+      transcript.showLocal('command.failed', { text: `No MCP server called ${what.name}.` });
+      return;
+    }
+    if (!server.editable) {
+      transcript.showLocal('command.failed', {
+        text: `${what.name} came from ${server.sourcePlugin ?? server.source} rather than your own configuration, so it cannot be changed here.`,
+      });
+      return;
+    }
+
+    if (what.kind === 'edit') setMcpEditing(what.name);
+    else {
+      void removeMcp(what.name);
+      transcript.showLocal('command.output', { text: `Removed the MCP server ${what.name}.` });
+    }
+  }
+
+  /**
    * Answer `/tag`, which either names one or opens the picker.
    *
    * An argument acts and no argument asks, which is the shape every other command with an
@@ -671,6 +723,7 @@ export default function App() {
       else if (what.command.name === USAGE.name) void showUsage(selectedId);
       else if (what.command.name === WIKI.name) setShowWiki(true);
       else if (what.command.name === TAG.name) tagFromCommand(selectedId, what.input);
+      else if (what.command.name === MCP.name) mcpFromCommand(what.input);
       else if (what.command.name === GIT.name) {
         panel.show('repository');
         repository.refresh();
@@ -1285,6 +1338,8 @@ export default function App() {
                   onRemoveMcp={(name) => void removeMcp(name)}
                   mcpState={mcp.status}
                   onLoginMcp={(name) => void loginMcp(selected.sessionId, name)}
+                  editingMcp={mcpEditing}
+                  onEditMcp={setMcpEditing}
                 />
               )}
 

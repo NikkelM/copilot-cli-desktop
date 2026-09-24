@@ -845,3 +845,84 @@ describe('Environment, live MCP status', () => {
     });
   });
 });
+/**
+ * `/mcp add` and `/mcp edit` open the panel with a form already showing, so the form's state
+ * is the caller's to hold where there is one (#24).
+ */
+describe('Environment, a form opened from outside', () => {
+  const server = (over = {}) => ({
+    name: 'context7',
+    type: 'http',
+    source: 'user',
+    enabled: true,
+    editable: true,
+    url: 'https://c7/mcp',
+    ...over,
+  });
+
+  const shown = (editingMcp: string | null, onEditMcp = vi.fn()) => {
+    render(
+      <Environment
+        {...props}
+        environment={environment({ mcpServers: [server()] as never })}
+        onSaveMcp={() => {}}
+        onRemoveMcp={() => {}}
+        editingMcp={editingMcp}
+        onEditMcp={onEditMcp}
+      />,
+    );
+    return onEditMcp;
+  };
+
+  it('shows no form when the caller is holding none', () => {
+    shown(null);
+
+    expect(screen.queryByLabelText('Name')).toBeNull();
+  });
+
+  it('opens an empty form for an empty name', () => {
+    shown('');
+
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('');
+  });
+
+  it('opens on the server the caller named', () => {
+    shown('context7');
+
+    expect((screen.getByLabelText('URL') as HTMLInputElement).value).toBe('https://c7/mcp');
+  });
+
+  /** The panel asks; the caller decides. Otherwise the two would disagree about what is up. */
+  it('asks the caller to open one rather than opening it itself', async () => {
+    const onEditMcp = shown(null);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add a server' }));
+
+    expect(onEditMcp).toHaveBeenCalledWith('');
+    expect(screen.queryByLabelText('Name')).toBeNull();
+  });
+
+  it('asks the caller to put it away again', async () => {
+    const onEditMcp = shown('context7');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(onEditMcp).toHaveBeenCalledWith(null);
+  });
+
+  /** With no caller holding it, the panel keeps its own, as it did before. */
+  it('holds the form itself when nobody else does', async () => {
+    render(
+      <Environment
+        {...props}
+        environment={environment({ mcpServers: [server()] as never })}
+        onSaveMcp={() => {}}
+        onRemoveMcp={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add a server' }));
+
+    expect(screen.getByLabelText('Name')).toBeTruthy();
+  });
+});

@@ -40,6 +40,12 @@ interface EnvironmentProps {
   mcpState?: McpServerState[] | null;
   /** Begin signing in to a server waiting for it. Offered only where one is. */
   onLoginMcp?: (name: string) => void;
+  /**
+   * Which server's form is showing, when the caller is holding that rather than this.
+   * An empty string means one being added; null means no form at all.
+   */
+  editingMcp?: string | null;
+  onEditMcp?: (name: string | null) => void;
 }
 /** Where a source came from, in the words someone would use to go and find it. */
 const SCOPE: Record<InstructionSource['location'], string> = {
@@ -90,13 +96,20 @@ export function Environment({
   onRemoveMcp,
   mcpState = null,
   onLoginMcp,
+  editingMcp = null,
+  onEditMcp,
 }: EnvironmentProps) {
   const [open, setOpen] = useState<string | null>(null);
   /**
    * Which server is being written down: its name, or an empty string for one being added.
    * Null when the form is not up at all.
+   *
+   * Held by the caller where there is one, so `/mcp add` can open the panel with the form
+   * already showing rather than leaving the reader to press the button themselves.
    */
-  const [editing, setEditing] = useState<string | null>(null);
+  const [ownEditing, setOwnEditing] = useState<string | null>(null);
+  const editing = onEditMcp ? editingMcp : ownEditing;
+  const setEditing = onEditMcp ?? setOwnEditing;
 
   useEffect(() => {
     const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();

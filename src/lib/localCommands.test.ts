@@ -5,6 +5,7 @@ import {
   LOCAL_COMMANDS,
   TAG,
   isLocal,
+  readMcpCommand,
   typedServerName,
   wantsDirectory,
   withLocalChoices,
@@ -230,5 +231,58 @@ describe('the tag command', () => {
 
   it('does not insist on an argument, since naming none opens the picker', () => {
     expect(TAG.required).toBeUndefined();
+  });
+});
+/**
+ * Reading the line `/mcp` was given. Three subcommands rather than one action, because they
+ * are not variations of each other (#24).
+ */
+describe('readMcpCommand', () => {
+  it('opens the panel when nothing was asked for', () => {
+    expect(readMcpCommand('')).toEqual({ kind: 'panel' });
+    expect(readMcpCommand('   ')).toEqual({ kind: 'panel' });
+  });
+
+  it('reads the three it knows', () => {
+    expect(readMcpCommand('add')).toEqual({ kind: 'add' });
+    expect(readMcpCommand('edit context7')).toEqual({ kind: 'edit', name: 'context7' });
+    expect(readMcpCommand('remove context7')).toEqual({ kind: 'remove', name: 'context7' });
+  });
+
+  it('does not mind how it was capitalised', () => {
+    expect(readMcpCommand('ADD')).toEqual({ kind: 'add' });
+    expect(readMcpCommand('Edit c7')).toEqual({ kind: 'edit', name: 'c7' });
+  });
+
+  /**
+   * The rest of the line is the name rather than the next argument: the config is a JSON
+   * object whose keys are free text, so a server called "my server" is possible.
+   */
+  it('keeps a name with a space in it whole', () => {
+    expect(readMcpCommand('remove my server')).toEqual({ kind: 'remove', name: 'my server' });
+  });
+
+  it('is not troubled by the spacing', () => {
+    expect(readMcpCommand('  edit   context7  ')).toEqual({ kind: 'edit', name: 'context7' });
+  });
+
+  /** Whatever the composer put between them, which is not always a plain space. */
+  it('separates the verb from the name on any whitespace', () => {
+    expect(readMcpCommand('edit\tcontext7')).toEqual({ kind: 'edit', name: 'context7' });
+  });
+
+  /** A verb with no name is answerable: the reader said what they want and left out which. */
+  it('says which name is missing rather than refusing the whole line', () => {
+    expect(readMcpCommand('edit')).toEqual({ kind: 'needs-name', verb: 'edit' });
+    expect(readMcpCommand('remove')).toEqual({ kind: 'needs-name', verb: 'remove' });
+  });
+
+  it('names a verb it does not know', () => {
+    expect(readMcpCommand('destroy context7')).toEqual({ kind: 'unknown', verb: 'destroy' });
+  });
+
+  /** Adding takes no name, so one given is ignored rather than making the line unreadable. */
+  it('adds whatever follows add', () => {
+    expect(readMcpCommand('add something')).toEqual({ kind: 'add' });
   });
 });
