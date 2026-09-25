@@ -5558,3 +5558,25 @@ pre.fatal,
   border-color: var(--accent);
   outline: none;
 }
+
+/* Why a row is here at all, under a row the name did not find. Two lines at most: the point
+   is to recognise the conversation, not to read it in the sidebar. */
+.session-excerpt {
+  margin: -2px 0 0;
+  padding: 0 14px 10px;
+  color: var(--text-dim);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The matched words, drawn as emphasis rather than as a highlighter pen: a row of yellow
+   blocks in a narrow column is harder to read than the sentence it is meant to help with. */
+.session-excerpt mark {
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+}

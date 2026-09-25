@@ -9,7 +9,9 @@ import { SessionMenu, type SessionAction } from './SessionMenu';
 import { SidebarToggle } from './SidebarToggle';
 import { Waiting } from './Waiting';
 import { isEmpty, matchesQuery, parseQuery } from '../lib/sessionFilter';
+import { useSessionSearch } from '../lib/useSessionSearch';
 import { TagFilter } from './TagFilter';
+import { Excerpt } from './Excerpt';
 import { countTags } from '../lib/useTags';
 import { read as readStore, save } from '../lib/store';
 import type { Tags } from '../lib/useTags';
@@ -196,16 +198,48 @@ export function Sidebar({
     [],
   );
 
-  // Filtering runs over the already-fetched list, so it costs nothing and needs no query.
-  const matches = useMemo(() => {
+  /**
+   * What the sessions themselves said, which the list in memory cannot answer.
+   *
+   * Asked of the free text only. A `tag:` term narrows what is already here and has nothing
+   * to look for in a transcript, so a query of only tags asks nothing.
+   */
+  const said = useSessionSearch(parseQuery(query).text);
+
+  // The name half runs over the already-fetched list, so it costs nothing and needs no query.
+  const { matches, named } = useMemo(() => {
     const typed = parseQuery(query);
     // Chosen and typed tags are the same ask arriving two ways, so they join one list and
     // every one of them has to be present.
     const parsed = { ...typed, tags: [...new Set([...typed.tags, ...chosen])] };
-    if (isEmpty(parsed)) return sessions;
+    if (isEmpty(parsed)) return { matches: sessions, named: null };
 
-    return sessions.filter((session) => matchesQuery(session, parsed, tags[session.sessionId] ?? []));
-  }, [sessions, query, tags, chosen]);
+    const byName = sessions.filter((session) => matchesQuery(session, parsed, tags[session.sessionId] ?? []));
+    const already = new Set(byName.map((session) => session.sessionId));
+    if (said.size === 0) return { matches: byName, named: already };
+
+    /**
+     * Named first, then the ones that only said it.
+     *
+     * Somebody who types a word that is also a session's title means that session, and
+     * burying it among thirty that mentioned the word in passing would be the wrong answer
+     * to the right query. Both halves keep the list's own order, which is by last use: two
+     * orderings interleaved in one list is harder to read than one, and the excerpt on a
+     * row already says why it is there.
+     *
+     * A `tag:` term still has to hold. It narrows what is being looked at rather than
+     * describing what to look for, so it applies to a session that said the word as much as
+     * to one named after it.
+     */
+    const spoke = sessions.filter(
+      (session) =>
+        said.has(session.sessionId) &&
+        !already.has(session.sessionId) &&
+        parsed.tags.every((tag) => (tags[session.sessionId] ?? []).includes(tag)),
+    );
+
+    return { matches: [...byName, ...spoke], named: already };
+  }, [sessions, query, tags, chosen, said]);
 
   /** What the menu offers: how many sessions each tag would leave, given what is already chosen. */
   const known = useMemo(() => countTags(tags, chosen), [tags, chosen]);
@@ -423,6 +457,9 @@ export function Sidebar({
                             )}
                           </div>
                           <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
+                          {/* Only on a row the name did not find, which is the row whose
+                              presence needs explaining. */}
+                          {!named?.has(session.sessionId) && <Excerpt match={said.get(session.sessionId)} />}
                         </div>
                         <Delegated
                           subagents={subagents}

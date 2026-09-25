@@ -13,6 +13,7 @@ import type {
   FileDiff,
   GetTranscriptResult,
   ListSessionsResult,
+  SessionMatch,
   McpServerConfig,
   McpServerState,
   McpServerSummary,
@@ -141,6 +142,17 @@ export function deleteSession(sessionId: string): Promise<void> {
 export async function forkSession(sessionId: string, name?: string): Promise<string> {
   const { sessionId: made } = await request('sessions.fork', { sessionId, name });
   return made;
+}
+
+/**
+ * Which sessions said something, and the words around where they said it.
+ *
+ * Costs no session and no new index: it reads the FTS5 table the CLI already keeps, in
+ * single-digit milliseconds, so the sidebar can ask while somebody is still typing (#30).
+ */
+export async function searchSessions(query: string): Promise<SessionMatch[]> {
+  const { matches } = await request('sessions.search', { query });
+  return matches;
 }
 
 /** What is waiting in the recycle bin, newest first. Costs no session: it is read from disk. */

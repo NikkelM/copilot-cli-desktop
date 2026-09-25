@@ -8,9 +8,16 @@ import { Sidebar } from './Sidebar';
 import type { SessionSummary } from '../../shared/protocol';
 
 const findSessions = vi.hoisted(() => vi.fn());
-vi.mock('../lib/sidecar', () => ({ findSessions: (prefix: string) => findSessions(prefix) }));
+const searchSessions = vi.hoisted(() => vi.fn());
+vi.mock('../lib/sidecar', () => ({
+  findSessions: (prefix: string) => findSessions(prefix),
+  searchSessions: (query: string) => searchSessions(query),
+}));
 
-beforeEach(() => findSessions.mockReset().mockResolvedValue({ sessions: [] }));
+beforeEach(() => {
+  findSessions.mockReset().mockResolvedValue({ sessions: [] });
+  searchSessions.mockReset().mockResolvedValue([]);
+});
 
 const session = (over: Partial<SessionSummary>): SessionSummary =>
   ({
@@ -1369,5 +1376,109 @@ describe('a session on its way into memory', () => {
     );
 
     expect(markOn('Alpha')?.className).toContain('activity-idle');
+  });
+});
+
+/**
+ * The box looks inside the conversations as well as at the labels (#30). What a session was
+ * called is still the stronger signal, so those come first and the rest explain themselves.
+ */
+describe('filtering by what a session said', () => {
+  const three = [
+    session({ sessionId: 'a', title: 'Alpha' }),
+    session({ sessionId: 'b', title: 'Beta' }),
+    session({ sessionId: 'c', title: 'Gamma' }),
+  ];
+
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={three}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        {...over}
+      />,
+    );
+
+  const type = async (text: string) => {
+    await userEvent.type(screen.getByPlaceholderText(/Filter by title/), text);
+    // The ask is debounced, and the reply lands a tick after that.
+    await vi.waitFor(() => expect(searchSessions).toHaveBeenCalled());
+  };
+
+  const said = (sessionId: string, excerpt = 'we discussed \u0002eviction\u0003 here') => ({
+    sessionId,
+    excerpt,
+    turn: 4,
+  });
+
+  const titles = () => [...document.querySelectorAll('.session-title')].map((n) => n.textContent);
+
+  it('finds a session by something it said rather than by its name', async () => {
+    searchSessions.mockResolvedValue([said('c')]);
+    shown();
+
+    await type('eviction');
+
+    await vi.waitFor(() => expect(screen.getByText('Gamma')).toBeTruthy());
+    expect(screen.queryByText('Alpha')).toBeNull();
+  });
+
+  it('says why a session nobody named is in the list', async () => {
+    searchSessions.mockResolvedValue([said('c')]);
+    shown();
+
+    await type('eviction');
+
+    await vi.waitFor(() => expect(document.querySelector('.session-excerpt')).toBeTruthy());
+    expect(document.querySelector('.session-excerpt mark')?.textContent).toBe('eviction');
+  });
+
+  it('puts the ones named after it above the ones that merely said it', async () => {
+    // Gamma is above Alpha in the list, so only the ranking can put Alpha first.
+    searchSessions.mockResolvedValue([said('c'), said('a')]);
+    shown({
+      sessions: [session({ sessionId: 'c', title: 'Gamma' }), session({ sessionId: 'a', title: 'Alpha' })],
+    });
+
+    await type('alpha');
+
+    await vi.waitFor(() => expect(titles().length).toBe(2));
+    expect(titles()).toEqual(['Alpha', 'Gamma']);
+  });
+
+  // Its name already explains it; an excerpt under every row would be a wall of prose.
+  it('explains nothing under a row the name found', async () => {
+    searchSessions.mockResolvedValue([said('a')]);
+    shown();
+
+    await type('alpha');
+
+    await vi.waitFor(() => expect(screen.getByText('Alpha')).toBeTruthy());
+    expect(document.querySelector('.session-excerpt')).toBeNull();
+  });
+
+  it('still wants every chosen tag, even from a session that said it', async () => {
+    searchSessions.mockResolvedValue([said('c')]);
+    shown({ tags: { a: ['bug'], c: ['spike'] } });
+
+    await userEvent.type(screen.getByPlaceholderText(/Filter by title/), 'tag:bug eviction');
+    await vi.waitFor(() => expect(searchSessions).toHaveBeenCalled());
+
+    expect(screen.queryByText('Gamma')).toBeNull();
+  });
+
+  // A tag term narrows what is here; it has nothing to look for in a transcript.
+  it('asks nothing of the transcripts for a query of only tags', async () => {
+    shown({ tags: { a: ['bug'] } });
+
+    await userEvent.type(screen.getByPlaceholderText(/Filter by title/), 'tag:bug');
+
+    await new Promise((r) => setTimeout(r, 300));
+    expect(searchSessions).not.toHaveBeenCalled();
   });
 });
