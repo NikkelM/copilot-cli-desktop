@@ -27,6 +27,7 @@ import { previewImage } from './images.js';
 import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
 import { sessionDiskUsage } from './diskUsage.js';
+import { searchSessions } from './sessionSearch.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
 import { existingSessions, findSessions, listSessions, renameSession } from './sessionIndex.js';
@@ -118,6 +119,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'bin.purge': ({ sessionId }) => purgeSession(sessionId),
 
     'sessions.disk': async () => ({ sessions: await sessionDiskUsage() }),
+
+    'sessions.search': ({ query }) => ({ matches: searchSessions(query) }),
 
     'cliSettings.list': () => ({ settings: cliSettingsSchema(), values: readCliSettings() }),
 

@@ -4,6 +4,26 @@
  */
 
 /** A session as shown in the sidebar. Sourced from session-store.db - never requires a running CLI process. */
+/**
+ * A session that said what was searched for, and where it said it.
+ *
+ * One per session rather than one per hit: the sidebar lists sessions, so the best-ranked
+ * excerpt is the one worth showing and the rest would only push other sessions off the end.
+ */
+export interface SessionMatch {
+  sessionId: string;
+  /**
+   * The words around the match, with the matched words wrapped in STX and ETX.
+   *
+   * Control characters rather than markup, because the excerpt is drawn as text and anything
+   * a reader could have typed - `<b>`, `**`, `[` - would be indistinguishable from a match
+   * that happened to contain it.
+   */
+  excerpt: string;
+  /** Which turn to go to, or null for a match in a checkpoint rather than the conversation. */
+  turn: number | null;
+}
+
 export interface SessionSummary {
   sessionId: string;
   /** Generated or user-set session name. */
@@ -1068,6 +1088,14 @@ export interface SidecarRequests {
    * that cannot be loaded is refused rather than forked.
    */
   'sessions.fork': { params: { sessionId: string; name?: string }; result: { sessionId: string } };
+  /**
+   * Which sessions said something, and the words around where they said it.
+   *
+   * Costs no session: read from the FTS5 index the CLI already maintains, in single-digit
+   * milliseconds, so the sidebar can ask on a keystroke. Only sessions the CLI has indexed
+   * can be found, which is every session with content bar a handful (#30).
+   */
+  'sessions.search': { params: { query: string }; result: { matches: SessionMatch[] } };
   /** What is in the recycle bin, newest first. Costs no session: it is read from disk. */
   'bin.list': { params: Record<string, never>; result: BinnedSession[] };
   /**
@@ -1447,6 +1475,7 @@ export const SIDECAR_METHODS = [
   'sessions.evict',
   'sessions.delete',
   'sessions.fork',
+  'sessions.search',
   'bin.list',
   'bin.restore',
   'bin.purge',
