@@ -7,8 +7,6 @@ import { SessionPath } from './SessionPath';
 import type { TreeState } from '../../shared/protocol';
 
 vi.mock('@tauri-apps/api/path', () => ({ homeDir: () => Promise.resolve('C:\\Users\\test') }));
-const openUrl = vi.hoisted(() => vi.fn(() => Promise.resolve()));
-vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl, openPath: vi.fn() }));
 
 const clean: TreeState = {
   branch: 'main',
@@ -19,9 +17,18 @@ const clean: TreeState = {
   remote: null,
 };
 
-/** The error sink is the same for every case here, so it is filled in rather than repeated. */
-const Path = (props: Omit<Parameters<typeof SessionPath>[0], 'onError'>) => (
-  <SessionPath {...props} onError={() => {}} />
+/** The wiring is the same for every case here, so it is filled in rather than repeated. */
+const Path = (
+  props: Partial<Parameters<typeof SessionPath>[0]> & { cwd: string | null; state: TreeState | null },
+) => (
+  <SessionPath
+    branches={[]}
+    switching={false}
+    busy={false}
+    onBranches={() => {}}
+    onSwitch={() => {}}
+    {...props}
+  />
 );
 
 describe('SessionPath', () => {
@@ -79,26 +86,78 @@ describe('SessionPath', () => {
   });
 
   /**
-   * The branch is the obvious thing to click to go and look at the work, so it does what
-   * the GitHub button does - but only when there is somewhere for it to go.
+   * Noticing the branch is the moment it wants changing, so the indicator is the control
+   * rather than a label to read and then go elsewhere to act on (#102).
    */
-  describe('as a link', () => {
-    it('opens the branch on GitHub when the checkout has a remote', async () => {
-      const user = userEvent.setup();
-      render(<Path cwd={'C:\\work\\repo'} state={{ ...clean, remote: 'NikkelM/thing' }} />);
+  describe('as a branch picker', () => {
+    const list = [
+      { name: 'main', current: true },
+      { name: 'feature', current: false },
+    ];
 
+    it('reads the branches only once the picker is opened', async () => {
+      const user = userEvent.setup();
+      const onBranches = vi.fn();
+      render(<Path cwd={'C:\\work\\repo'} state={clean} onBranches={onBranches} />);
+
+      expect(onBranches).not.toHaveBeenCalled();
       await user.click(screen.getByRole('button'));
-      expect(openUrl).toHaveBeenCalledWith('https://github.com/NikkelM/thing/tree/main');
+      expect(onBranches).toHaveBeenCalled();
     });
 
-    it('stays plain text when the checkout has no GitHub remote', () => {
-      render(<Path cwd={'C:\\work\\repo'} state={clean} />);
+    it('switches to a branch that is chosen', async () => {
+      const user = userEvent.setup();
+      const onSwitch = vi.fn();
+      render(<Path cwd={'C:\\work\\repo'} state={clean} branches={list} onSwitch={onSwitch} />);
+
+      await user.click(screen.getByRole('button'));
+      await user.click(screen.getByRole('button', { name: 'feature' }));
+      expect(onSwitch).toHaveBeenCalledWith('feature', false);
+    });
+
+    it('makes a branch from a name that is not in the list', async () => {
+      const user = userEvent.setup();
+      const onSwitch = vi.fn();
+      render(<Path cwd={'C:\\work\\repo'} state={clean} branches={list} onSwitch={onSwitch} />);
+
+      await user.click(screen.getByRole('button'));
+      await user.type(screen.getByLabelText('New branch name'), 'spike');
+      await user.click(screen.getByRole('button', { name: 'Create' }));
+      expect(onSwitch).toHaveBeenCalledWith('spike', true);
+    });
+
+    // Switching underneath a working agent would produce a diff nobody could explain.
+    it('refuses while a turn is running, and says why', async () => {
+      const user = userEvent.setup();
+      const onBranches = vi.fn();
+      render(<Path cwd={'C:\\work\\repo'} state={clean} busy onBranches={onBranches} />);
+
+      const trigger = screen.getByRole('button');
+      expect(trigger.hasAttribute('disabled')).toBe(true);
+      expect(trigger.getAttribute('title')).toBe('Cannot switch branch while the agent is working');
+      await user.click(trigger);
+      expect(onBranches).not.toHaveBeenCalled();
+    });
+
+    it('says what a switch would carry across, and nothing when the tree is clean', async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(<Path cwd={'C:\\work\\repo'} state={clean} branches={list} />);
+      await user.click(screen.getByRole('button'));
+      expect(screen.queryByText('Changed files carry over')).toBeNull();
+
+      rerender(<Path cwd={'C:\\work\\repo'} state={{ ...clean, modified: true }} branches={list} />);
+      expect(screen.getByText('Changed files carry over')).toBeTruthy();
+    });
+
+    // A commit is not a branch: there is no name to switch away from.
+    it('stays plain text on a detached HEAD', () => {
+      render(<Path cwd={'C:\\work\\repo'} state={{ ...clean, branch: 'a1b2c3d4', detached: true }} />);
       expect(screen.queryByRole('button')).toBeNull();
     });
 
-    it('says where clicking goes', () => {
-      render(<Path cwd={'C:\\work\\repo'} state={{ ...clean, modified: true, remote: 'NikkelM/thing' }} />);
-      expect(screen.getByTitle('on branch main, unstaged changes - open on GitHub')).toBeTruthy();
+    it('says which branch it is on, where a screen reader can hear it', () => {
+      render(<Path cwd={'C:\\work\\repo'} state={clean} />);
+      expect(screen.getByRole('button', { name: 'Switch branch, on main' })).toBeTruthy();
     });
   });
 });

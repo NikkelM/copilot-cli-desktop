@@ -1245,19 +1245,29 @@ body {
   white-space: nowrap;
 }
 
-/* The branch doubles as the link to it on GitHub, so it has to look like it can be clicked
-   without becoming a second button next to the row of them. */
+/* The branch doubles as the control for changing it, so it has to look like it can be
+   clicked without becoming a second button next to the row of them. The caret is the only
+   thing saying it opens rather than navigates, so it sits on the baseline of the name. */
 .branch.link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   background: none;
   font: inherit;
   font-size: inherit;
   cursor: pointer;
 }
 
-.branch.link:hover,
+.branch.link:hover:not(:disabled),
 .branch.link:focus-visible {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* Said rather than hidden: a turn is running and the reader can see why it will not open. */
+.branch.link:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .notice {
@@ -3932,7 +3942,9 @@ pre.fatal,
 }
 
 /* Over the file list rather than pushing it down: the list is what the reader came for, and
-   a menu that moved it would lose their place every time they looked at the branch. */
+   a menu that moved it would lose their place every time they looked at the branch. The
+   font is stated rather than inherited because the header indicator this also opens under
+   is monospace, and a menu should read the same from either place it is reached from. */
 .repo-branch-menu {
   position: absolute;
   top: 100%;
@@ -3946,6 +3958,7 @@ pre.fatal,
   border-radius: 6px;
   background: var(--bg-raised);
   box-shadow: 0 6px 20px rgb(0 0 0 / 35%);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
   text-transform: none;
   letter-spacing: normal;
 }

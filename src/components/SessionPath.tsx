@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { homeDir } from '@tauri-apps/api/path';
-import { openUrl } from '@tauri-apps/plugin-opener';
 
-import { githubUrl } from './OpenIn';
+import { Branches } from './Branches';
 import { shortenHome } from '../lib/paths';
 import type { TreeState } from '../../shared/protocol';
 
@@ -29,18 +28,30 @@ const MARKERS: ReadonlyArray<[keyof TreeState, string, string]> = [
  * two branches is two different pieces of work, and one left on the wrong branch is worth
  * noticing before sending rather than after.
  *
- * The branch is the obvious thing to click to go and look at it, so when the checkout has a
- * GitHub remote it does what the GitHub button does. Without one it stays plain text rather
- * than becoming a button that cannot go anywhere.
+ * Noticing it is also the moment it wants changing, so the indicator is where the branch is
+ * chosen rather than somewhere to read and then go elsewhere to act on (#102). It used to
+ * open the branch on GitHub instead, which the button immediately right of it already does.
+ *
+ * A detached HEAD is a commit rather than a branch, so it stays plain text: there is no name
+ * to switch away from and a picker would be claiming otherwise.
  */
 export function SessionPath({
   cwd,
   state,
-  onError,
+  branches,
+  switching,
+  busy,
+  onBranches,
+  onSwitch,
 }: {
   cwd: string | null;
   state: TreeState | null;
-  onError: (message: string) => void;
+  branches: { name: string; current: boolean }[];
+  switching: boolean;
+  /** Whether a turn is running, which is the one time a switch is refused. */
+  busy: boolean;
+  onBranches: () => void;
+  onSwitch: (name: string, create: boolean) => void;
 }) {
   const [homePath, setHomePath] = useState('');
   useEffect(() => {
@@ -71,23 +82,30 @@ export function SessionPath({
     ].join(', ');
 
   return (
-    <p className="cwd">
+    // A div rather than a paragraph: the picker's menu is a list and a form, and neither
+    // belongs inside a <p>.
+    <div className="cwd">
       {shortenHome(cwd, homePath)}
       {state &&
-        (state.remote ? (
-          <button
-            type="button"
-            className="branch link"
-            title={`${meaning} - open on GitHub`}
-            onClick={() => openUrl(githubUrl(state.remote!, state.branch)).catch((e) => onError(String(e)))}
-          >
-            {label}
-          </button>
-        ) : (
+        (state.detached ? (
           <span className="branch" title={meaning ?? undefined}>
             {label}
           </span>
+        ) : (
+          <Branches
+            branch={state.branch}
+            label={label}
+            className="branch link"
+            title={meaning ?? undefined}
+            note={marks.length > 0 ? 'Changed files carry over' : null}
+            branches={branches}
+            switching={switching}
+            disabled={busy}
+            disabledReason="Cannot switch branch while the agent is working"
+            onOpen={onBranches}
+            onSwitch={onSwitch}
+          />
         ))}
-    </p>
+    </div>
   );
 }

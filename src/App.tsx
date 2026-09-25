@@ -223,6 +223,16 @@ export default function App() {
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');
+  /**
+   * Switching, then reading the tree again.
+   *
+   * The header indicator and the panel read the repository through different paths, so a
+   * switch made in either has to say so to both or one of them goes on naming the branch
+   * that was left behind (#102).
+   */
+  const switchBranch = (name: string, create: boolean) => {
+    void repository.switchTo(name, create).then(() => tree.refresh());
+  };
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
   const prompts = usePrompts(selectedId, setError);
@@ -1206,7 +1216,15 @@ export default function App() {
               {/* Path, buttons and controls on one line: the buttons were a row of their
                   own against the left edge, which wasted the width the header has. */}
               <div className="header-row">
-                <SessionPath cwd={selected.cwd} state={tree.state} onError={setError} />
+                <SessionPath
+          cwd={selected.cwd}
+          state={tree.state}
+          branches={repository.branches}
+          switching={repository.switching}
+          busy={busy}
+          onBranches={() => void repository.readBranches()}
+          onSwitch={switchBranch}
+        />
                 <OpenIn
                   cwd={selected.cwd}
                   remote={tree.state?.remote ?? null}
@@ -1317,7 +1335,7 @@ export default function App() {
                   }}
                   branches={repository.branches}
                   onBranches={() => void repository.readBranches()}
-                  onSwitch={(name, create) => void repository.switchTo(name, create)}
+                  onSwitch={switchBranch}
                   switching={repository.switching}
                   failed={repository.failed}
                   onRefresh={repository.refresh}

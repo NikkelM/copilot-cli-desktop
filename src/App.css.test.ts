@@ -565,3 +565,34 @@ describe('the controls on a row', () => {
     expect(Number(margin![1]), 'it needs room below it').toBeGreaterThan(0);
   });
 });
+
+/**
+ * The branch indicator opens the same picker the source control panel does (#102), so the
+ * two sit in different type: the header is monospace and the panel is a heading with
+ * letter-spacing. The menu has to read the same from either.
+ */
+describe('the branch picker', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('states its own type rather than taking the monospace it drops out of', () => {
+    const rule = block('.repo-branch-menu');
+    expect(rule, 'the menu should name a font family').toContain('font-family:');
+    expect(rule, 'and it should not be the monospace of the path').not.toContain('ui-monospace');
+  });
+
+  /** The caret is the only thing saying the branch opens rather than navigates. */
+  it('lays the header indicator out as a row, so the caret sits beside the name', () => {
+    const rule = block('.branch.link');
+    expect(rule).toContain('inline-flex');
+    expect(rule, 'the caret should line up with the name').toContain('align-items: center;');
+  });
+
+  it('positions the menu against the control it drops out of', () => {
+    expect(block('.repo-branches'), 'the wrapper anchors the menu').toContain('position: relative;');
+    expect(block('.repo-branch-menu'), 'the menu hangs off it').toContain('position: absolute;');
+  });
+});
