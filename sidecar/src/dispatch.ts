@@ -9,7 +9,7 @@ import type { JsonRpcRequest, SidecarHandlers } from '../../shared/protocol.js';
 import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
 import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
-import { lastAgent, lastModel, readTranscript } from './eventLog.js';
+import { lastAgent, lastModel, locateTurn, readTranscript } from './eventLog.js';
 import { updateCli } from './updateCli.js';
 import {
   commitStaged,
@@ -27,7 +27,7 @@ import { previewImage } from './images.js';
 import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
 import { sessionDiskUsage } from './diskUsage.js';
-import { searchSessions } from './sessionSearch.js';
+import { searchSessions, turnTime } from './sessionSearch.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
 import { existingSessions, findSessions, listSessions, renameSession } from './sessionIndex.js';
@@ -121,6 +121,15 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'sessions.disk': async () => ({ sessions: await sessionDiskUsage() }),
 
     'sessions.search': ({ query }) => ({ matches: searchSessions(query) }),
+
+    /**
+     * Where to open a session so a match is on the page, as a cursor to read back from.
+     * Null when the log does not reach that far, which a truncated one will not.
+     */
+    'sessions.locate': async ({ sessionId, turn }) => {
+      const found = turnTime(sessionId, turn);
+      return { cursor: found ? await locateTurn(sessionId, found.next) : null };
+    },
 
     'cliSettings.list': () => ({ settings: cliSettingsSchema(), values: readCliSettings() }),
 

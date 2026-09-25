@@ -96,6 +96,41 @@ export function searchSessions(query: string): SessionMatch[] {
 }
 
 /**
+ * When a turn happened, and when the one after it did.
+ *
+ * A turn index is not a position in a log - there are more `user.message` events than there
+ * are turns, 861 against 790 in one session here - so the log is reached through time rather
+ * than through counting, which is the one thing the database and the log agree on.
+ *
+ * The next turn's time is what bounds this one. Reaching a fixed distance past a turn
+ * instead overshoots into the turn after it on a busy log, which was measured landing a
+ * whole question late.
+ *
+ * `next` is null for the last turn, which nothing follows.
+ */
+export function turnTime(sessionId: string, turn: number): { when: string; next: string | null } | null {
+  if (!existsSync(sessionStoreDb)) return null;
+
+  const db = new DatabaseSync(sessionStoreDb, { readOnly: true });
+  try {
+    const rows = db
+      .prepare(
+        `SELECT turn_index, timestamp FROM turns
+         WHERE session_id = ? AND turn_index IN (?, ?) ORDER BY turn_index`,
+      )
+      .all(sessionId, turn, turn + 1) as unknown as { turn_index: number; timestamp?: string }[];
+
+    const found = rows.find((row) => row.turn_index === turn);
+    if (!found?.timestamp) return null;
+
+    const after = rows.find((row) => row.turn_index === turn + 1);
+    return { when: String(found.timestamp), next: after?.timestamp ? String(after.timestamp) : null };
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * Which turn a match sits in, when it sits in one.
  *
  * `source_id` is a composite string rather than a key into `turns`, so the index is read out

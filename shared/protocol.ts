@@ -1096,6 +1096,14 @@ export interface SidecarRequests {
    * can be found, which is every session with content bar a handful (#30).
    */
   'sessions.search': { params: { query: string }; result: { matches: SessionMatch[] } };
+  /**
+   * Where to open a session so a given turn is on the page, as a cursor to read back from.
+   *
+   * Costs no session: the turn's time comes from the CLI's database and the log is halved
+   * rather than scanned, so this is a dozen small reads whatever the log's size. Null when
+   * the log does not reach that turn, which a truncated one will not (#30).
+   */
+  'sessions.locate': { params: { sessionId: string; turn: number }; result: { cursor: number | null } };
   /** What is in the recycle bin, newest first. Costs no session: it is read from disk. */
   'bin.list': { params: Record<string, never>; result: BinnedSession[] };
   /**
@@ -1476,6 +1484,7 @@ export const SIDECAR_METHODS = [
   'sessions.delete',
   'sessions.fork',
   'sessions.search',
+  'sessions.locate',
   'bin.list',
   'bin.restore',
   'bin.purge',

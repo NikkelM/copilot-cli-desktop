@@ -472,6 +472,111 @@ async function eventsIn(
 const NAMES_A_MODEL = new Set(['session.model_change', 'session.start', 'session.resume']);
 
 /**
+ * How much to read when landing at an arbitrary point in a log.
+ *
+ * Enough to hold a whole event with room to spare, because the read lands mid-line and the
+ * first partial one is discarded: one event here reaches 12kB, and a search that had to
+ * widen its window at every step would lose what the search is for.
+ */
+const PROBE_WINDOW = 64 * 1024;
+
+/**
+ * Where in the log a moment in time sits.
+ *
+ * Found by halving rather than by scanning. A log is appended to and never reordered, so its
+ * timestamps only go forwards, which is the one property a binary search needs. Scanning
+ * instead would cost what `readTranscript` exists to avoid: a forward walk of a 287 MB log
+ * takes about three seconds, while this reads a few dozen kilobytes a dozen times whatever
+ * the size.
+ *
+ * The answer is the first event at or after `when`, which is where that turn begins. Null
+ * when every event predates it - a turn recorded in the database whose events are not in
+ * this log, which is what a truncated or rotated log leaves behind.
+ */
+async function offsetAt(file: FileHandle, size: number, when: string): Promise<number | null> {
+  /** The first whole event beginning at or after `from`, and where it began. */
+  const eventFrom = async (from: number): Promise<{ at: number; when: string } | null> => {
+    let window = PROBE_WINDOW;
+
+    for (;;) {
+      const start = Math.min(from, size);
+      const length = Math.min(window, size - start);
+      if (length <= 0) return null;
+
+      const buffer = Buffer.alloc(length);
+      await file.read(buffer, 0, length, start);
+      const [first] = locateEvents(buffer, start, start === 0);
+      if (first?.event?.timestamp) return { at: first.offset, when: String(first.event.timestamp) };
+
+      // Nothing whole in the window: either one enormous event, or the tail of the file.
+      if (start + length >= size) return null;
+      window *= GROWTH_FACTOR;
+    }
+  };
+
+  let low = 0;
+  let high = size;
+  let best: number | null = null;
+
+  // Ten or so rounds on any log this app will meet, each one read of a few dozen kilobytes.
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    const found = await eventFrom(middle);
+
+    // Nothing whole after the midpoint, so the answer is behind it.
+    if (!found) {
+      high = middle;
+      continue;
+    }
+
+    if (found.when >= when) {
+      best = found.at;
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+
+  return best;
+}
+
+/**
+ * Where a turn ends in a session's log, as a cursor the transcript can open at.
+ *
+ * Search finds which session said something and which turn it said it in, but a turn index
+ * is not a position in a log: the two are kept in different places, and there are more
+ * `user.message` events than there are turns - 861 against 790 in one session here - so
+ * counting them would land somewhere plausible and wrong. Time is the one thing both agree
+ * on, and every event in a log carries it (#30).
+ *
+ * The cursor points at where the *next* turn begins, because `readTranscript` reads back from
+ * a cursor and returns what is before it. So the matched turn is the last thing on the page
+ * that opens, with what led up to it above - which is the direction this reader already goes,
+ * and the reason a match is worth opening is usually what came before it.
+ *
+ * `until` is null for the last turn in a session, which runs to the end of the log.
+ */
+export async function locateTurn(sessionId: string, until: string | null): Promise<number | null> {
+  const path = sessionEventLog(sessionId);
+  if (!existsSync(path)) return null;
+
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    if (size === 0) return null;
+    // Nothing follows the last turn, so the end of the log is where it ends.
+    if (!until) return size;
+
+    const at = await offsetAt(file, size, until);
+    // The next turn is not in this log, which a truncated one will do. What was asked for is
+    // still somewhere behind the end, so the end is the honest place to stop reading.
+    return at ?? size;
+  } finally {
+    await file.close();
+  }
+}
+
+/**
  * Parse the lines in a window, recording where each event began.
  *
  * Unless the window reaches the start of the file its first line began before it and is

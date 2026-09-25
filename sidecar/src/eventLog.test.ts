@@ -824,3 +824,92 @@ describe('whether a session can be opened again', () => {
     expect((await readTranscript('s')).reopenable).toBe(true);
   });
 });
+
+/**
+ * Where a turn sits in a log, found by halving rather than by scanning.
+ *
+ * A turn index is not a position in a log, and there are more `user.message` events than
+ * there are turns, so time is what the two agree on. The cursor points at where the next turn
+ * begins, because the reader reads back from it - so the matched turn is what it lands on.
+ */
+describe('finding a turn in a log', () => {
+  /** A log whose timestamps only go forwards, which is the property the halving relies on. */
+  const timed = (count: number) =>
+    Array.from({ length: count }, (_, index) =>
+      JSON.stringify({
+        type: 'user.message',
+        timestamp: `2026-01-01T00:${String(Math.floor(index / 60)).padStart(2, '0')}:${String(index % 60).padStart(2, '0')}.000Z`,
+        data: { content: `m${index}` },
+      }),
+    );
+
+  it('lands on the event a moment names', async () => {
+    writeLog('s', timed(600));
+    const { locateTurn, readTranscript } = await loadEventLog();
+
+    const cursor = await locateTurn('s', '2026-01-01T00:05:00.000Z');
+    const page = await readTranscript('s', 1, cursor!);
+
+    // Reading back one event from the cursor gives the event just before it, which is m299.
+    expect(page.events[0]?.data).toEqual({ content: 'm299' });
+  });
+
+  it('reads the end of the log for a turn nothing follows', async () => {
+    writeLog('s', timed(20));
+    const { locateTurn } = await loadEventLog();
+
+    const cursor = await locateTurn('s', null);
+
+    expect(cursor).toBe(timed(20).join('\n').length);
+  });
+
+  // A truncated log holds none of the turn, and stopping at the end is the honest answer.
+  it('reads to the end when the moment is past everything in the log', async () => {
+    writeLog('s', timed(20));
+    const { locateTurn } = await loadEventLog();
+
+    const cursor = await locateTurn('s', '2099-01-01T00:00:00.000Z');
+
+    expect(cursor).toBe(timed(20).join('\n').length);
+  });
+
+  it('lands at the very start for a moment before anything happened', async () => {
+    writeLog('s', timed(40));
+    const { locateTurn } = await loadEventLog();
+
+    expect(await locateTurn('s', '2020-01-01T00:00:00.000Z')).toBe(0);
+  });
+
+  it('has nowhere to point in a log that is not there', async () => {
+    const { locateTurn } = await loadEventLog();
+    expect(await locateTurn('missing', '2026-01-01T00:00:00.000Z')).toBeNull();
+  });
+
+  it('has nowhere to point in an empty log', async () => {
+    writeLog('s', []);
+    const { locateTurn } = await loadEventLog();
+    expect(await locateTurn('s', '2026-01-01T00:00:00.000Z')).toBeNull();
+  });
+
+  /**
+   * The search has to cope with a window holding no whole event at all, which is what a log
+   * of very long events looks like: the window grows until one fits.
+   */
+  it('finishes on a log of events larger than the window it reads', async () => {
+    const fat = Array.from({ length: 12 }, (_, index) =>
+      JSON.stringify({
+        type: 'user.message',
+        timestamp: `2026-01-01T00:00:${String(index).padStart(2, '0')}.000Z`,
+        data: { content: 'x'.repeat(80 * 1024) },
+      }),
+    );
+    writeLog('s', fat);
+    const { locateTurn, readTranscript } = await loadEventLog();
+
+    const cursor = await locateTurn('s', '2026-01-01T00:00:06.000Z');
+    const page = await readTranscript('s', 1, cursor!);
+
+    expect((page.events[0]?.data as { content: string }).content.length).toBe(80 * 1024);
+    expect(page.events[0]?.timestamp).toBe('2026-01-01T00:00:05.000Z');
+  });
+});
