@@ -1163,3 +1163,43 @@ describe("what the CLI's settings say to draw", () => {
     expect(container.querySelector('.message-meta time')).toBeTruthy();
   });
 });
+
+/**
+ * A jump to a search result leaves the transcript showing the middle of a conversation, which
+ * is the one time its last row is not its end - and the one thing a reader cannot tell by
+ * looking (#30).
+ */
+describe('coming back from a search result', () => {
+  const at = (props: Partial<ComponentProps<typeof Transcript>> = {}) =>
+    render(
+      <Transcript
+        events={[]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        {...props}
+      />,
+    );
+
+  it('says nothing about the end when it is showing the end', () => {
+    at();
+    expect(screen.queryByRole('button', { name: /end of the session/i })).toBeNull();
+  });
+
+  it('offers the way back when it is not', () => {
+    at({ onLatest: () => {} });
+    expect(screen.getByRole('button', { name: /end of the session/i })).toBeTruthy();
+  });
+
+  it('takes it when it is pressed', async () => {
+    const onLatest = vi.fn();
+    at({ onLatest });
+
+    await userEvent.click(screen.getByRole('button', { name: /end of the session/i }));
+
+    expect(onLatest).toHaveBeenCalledOnce();
+  });
+});

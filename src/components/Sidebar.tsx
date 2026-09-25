@@ -26,7 +26,8 @@ interface SidebarProps {
    * The summary comes back with the id because a session found by id may not be in the
    * list at all - the caller has nowhere else to look it up from.
    */
-  onSelect: (sessionId: string, session?: SessionSummary) => void;
+  /** `turn` sends the transcript to where a search match was said, rather than to the end. */
+  onSelect: (sessionId: string, session?: SessionSummary, turn?: number | null) => void;
   /** Starting a session needs a directory to start it in, which only the reader knows. */
   onCreate: () => void;
   /** Open the local knowledge base, which belongs to no session. */
@@ -439,7 +440,15 @@ export function Sidebar({
                       <li key={session.sessionId}>
                         <div
                           className={`session-row${session.sessionId === selectedId ? ' selected' : ''}`}
-                          onClick={() => onSelect(session.sessionId, session)}
+                          // A row the name did not find was found by something said in it,
+                          // so opening it means opening it there rather than at the end.
+                          onClick={() =>
+                            onSelect(
+                              session.sessionId,
+                              session,
+                              named?.has(session.sessionId) ? null : (said.get(session.sessionId)?.turn ?? null),
+                            )
+                          }
                           onContextMenu={openMenu(session.sessionId)}
                         >
                           <div className="session-line">

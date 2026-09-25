@@ -155,6 +155,17 @@ export async function searchSessions(query: string): Promise<SessionMatch[]> {
   return matches;
 }
 
+/**
+ * Where to open a session so a turn is on the page, as a cursor to read back from.
+ *
+ * Costs no session and does not read the log: the turn's time comes from the CLI's database
+ * and the log is halved to find it. Null when the log does not reach that turn (#30).
+ */
+export async function locateTurn(sessionId: string, turn: number): Promise<number | null> {
+  const { cursor } = await request('sessions.locate', { sessionId, turn });
+  return cursor;
+}
+
 /** What is waiting in the recycle bin, newest first. Costs no session: it is read from disk. */
 export function binnedSessions(): Promise<BinnedSession[]> {
   return request('bin.list', {});

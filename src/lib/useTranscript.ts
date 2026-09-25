@@ -43,7 +43,7 @@ const PAGE_EVENTS = 150;
  * Keeping them apart is the whole point, so they are kept apart here rather than in a
  * component with a dozen other things to think about.
  */
-export function useTranscript(sessionId: string | null, onError: (message: string) => void) {
+export function useTranscript(sessionId: string | null, onError: (message: string) => void, openAt?: number | null) {
   /** Replayed from the log. Replaced wholesale by a fetch, so nothing live lives here. */
   const [history, setHistory] = useState<TimelineEvent[]>([]);
   /** Everything since the session was selected, which no replay may overwrite. */
@@ -96,7 +96,9 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     // Selecting elsewhere, or React running this effect twice, leaves a reply in flight
     // that describes a transcript no longer on screen.
     let current = true;
-    getTranscript(sessionId, PAGE_EVENTS)
+    // A cursor opens the session partway back, at a turn somebody went looking for. Without
+    // one it opens where a session is normally read from, which is the end.
+    getTranscript(sessionId, PAGE_EVENTS, openAt ?? undefined)
       .then((result) => {
         if (!current) return;
         setHistory(result.events);
@@ -110,7 +112,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     return () => {
       current = false;
     };
-  }, [sessionId]);
+  }, [sessionId, openAt]);
 
   /** Fetch the page before the events already held and prepend it. */
   const loadOlder = useCallback(() => {

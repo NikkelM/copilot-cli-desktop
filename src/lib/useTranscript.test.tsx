@@ -716,3 +716,51 @@ describe('a session that cannot be opened again', () => {
     expect(result.current.reopenable).toBe(true);
   });
 });
+
+/**
+ * A search result opens a session partway back rather than at its end (#30), so the cursor
+ * is part of what decides which page is read.
+ */
+describe('opening at a turn somebody went looking for', () => {
+  beforeEach(() => {
+    getTranscript.mockReset().mockResolvedValue({ events: [], truncated: false, nextBefore: null });
+  });
+
+  it('reads from the end when nothing sent it elsewhere', async () => {
+    renderHook(() => useTranscript('s', () => {}));
+
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+    expect(getTranscript.mock.calls[0][2]).toBeUndefined();
+  });
+
+  it('reads back from the cursor it is given', async () => {
+    renderHook(() => useTranscript('s', () => {}, 4096));
+
+    await waitFor(() => expect(getTranscript).toHaveBeenCalled());
+    expect(getTranscript.mock.calls[0][2]).toBe(4096);
+  });
+
+  // Going back to the end is the cursor being taken away, and has to re-read.
+  it('reads the end again once the cursor is dropped', async () => {
+    const { rerender } = renderHook(({ at }) => useTranscript('s', () => {}, at), {
+      initialProps: { at: 4096 as number | null },
+    });
+    await waitFor(() => expect(getTranscript).toHaveBeenCalledTimes(1));
+
+    rerender({ at: null });
+
+    await waitFor(() => expect(getTranscript).toHaveBeenCalledTimes(2));
+    expect(getTranscript.mock.calls[1][2]).toBeUndefined();
+  });
+
+  it('does not re-read when the cursor has not moved', async () => {
+    const { rerender } = renderHook(({ at }) => useTranscript('s', () => {}, at), {
+      initialProps: { at: 4096 as number | null },
+    });
+    await waitFor(() => expect(getTranscript).toHaveBeenCalledTimes(1));
+
+    rerender({ at: 4096 });
+
+    expect(getTranscript).toHaveBeenCalledTimes(1);
+  });
+});

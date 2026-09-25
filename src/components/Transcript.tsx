@@ -288,6 +288,14 @@ interface TranscriptProps {
   extraPages?: boolean;
   /** Give back the pages reached by scrolling up. Absent leaves them held for as long as the session is open. */
   onDropOlder?: () => void;
+  /**
+   * Return to the end of the conversation, when a search result opened it partway back.
+   *
+   * Absent when the transcript is already showing the end, which is every other time. A
+   * jump with no way back is a door that only opens one way, and the reader who followed a
+   * match usually wants to see what the session came to in the end (#30).
+   */
+  onLatest?: () => void;
   /** Whether the model's thinking is shown at all, which ctrl+t turns off (#72). */
   /**
    * Whose timeline this is, when it belongs to a subagent rather than the session.
@@ -308,6 +316,7 @@ export function Transcript({
   loadingOlder = false,
   onLoadOlder,
   extraPages = false,
+  onLatest,
   onDropOlder,
   ofAgent,
   display,
@@ -457,6 +466,16 @@ export function Transcript({
         {shown.map((entry) => (
           <EntryRow key={entry.key} entry={entry} />
         ))}
+        {/* The bottom of this page is not the bottom of the conversation, which is the one
+            thing a reader who followed a search result cannot tell by looking. */}
+        {onLatest && (
+          <li className="history-edge">
+            Showing where this was said.{' '}
+            <button type="button" className="settings-reset" onClick={onLatest}>
+              Go to the end of the session
+            </button>
+          </li>
+        )}
       </ol>
     </Shows.Provider>
   );

@@ -42,6 +42,7 @@ import {
   renameSession,
   deleteSession,
   forkSession as fork,
+  locateTurn,
   writeCliSettings,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, MCP, TAG, USAGE, WIKI, readMcpCommand, wantsDirectory, withTagChoices } from './lib/localCommands';
@@ -162,7 +163,15 @@ export default function App() {
   const sessions = useSessions(setError);
   const selected = sessions.find(selectedId) ?? (offList?.sessionId === selectedId ? offList : null);
 
-  const open = useCallback((sessionId: string, session?: SessionSummary) => {
+  /**
+   * Where the transcript should open, when a search result sent the reader to a turn.
+   *
+   * Held against the session it belongs to so a cursor into one log cannot be used to open
+   * another, which would read a page from the middle of an unrelated conversation.
+   */
+  const [jump, setJump] = useState<{ sessionId: string; cursor: number } | null>(null);
+
+  const open = useCallback((sessionId: string, session?: SessionSummary, turn?: number | null) => {
     setSelectedId(sessionId);
     setOffList(session ?? null);
     // Choosing a session is asking for that conversation, including the one whose delegated
@@ -171,9 +180,20 @@ export default function App() {
     // The wiki is somewhere else entirely, and a session chosen while reading it is a
     // request to go back to work.
     setShowWiki(false);
+
+    // Opening a session normally means opening it at the end, so any earlier jump is spent.
+    setJump(null);
+    if (turn === undefined || turn === null) return;
+
+    // The log is halved rather than read, so this is a handful of small reads even on a
+    // log of several hundred megabytes. A turn the log does not reach leaves the session
+    // opening where it otherwise would.
+    locateTurn(sessionId, turn)
+      .then((cursor) => cursor !== null && setJump({ sessionId, cursor }))
+      .catch(() => undefined);
   }, []);
 
-  const transcript = useTranscript(selectedId, setError);
+  const transcript = useTranscript(selectedId, setError, jump?.sessionId === selectedId ? jump.cursor : null);
   const tree = useTreeState(selected?.cwd ?? null);
   const queue = useQueue();
   const model = useModel(selectedId, setError);
@@ -1265,6 +1285,9 @@ export default function App() {
               extraPages={transcript.extraPages}
               onDropOlder={transcript.dropOlder}
               display={display}
+              // Set only while a search result is being read, which is the one time the
+              // transcript is not showing the end of the conversation.
+              onLatest={jump?.sessionId === selected.sessionId ? () => setJump(null) : undefined}
             />
 
             <div className="footer">
