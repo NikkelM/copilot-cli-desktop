@@ -231,28 +231,38 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
    * Check one out, or make one and check it out.
    *
    * Everything on screen describes the branch being left, so the diffs go with it.
+   *
+   * The failure is returned as well as held. The panel shows what it holds, but the header
+   * indicator reaches this too and has nowhere to show anything, so the caller is told what
+   * happened rather than left to guess from a branch that did not change (#102).
    */
-  const switchTo = useCallback(async (name: string, create: boolean) => {
-    const directory = showing.current;
-    if (!directory) return;
+  const switchTo = useCallback(
+    async (name: string, create: boolean): Promise<string | null> => {
+      const directory = showing.current;
+      if (!directory) return null;
 
-    setSwitching(true);
-    setFailed(null);
-    try {
-      const found = await gitSwitch(directory, name, create);
-      if (showing.current !== directory) return;
+      setSwitching(true);
+      setFailed(null);
+      try {
+        const found = await gitSwitch(directory, name, create);
+        if (showing.current !== directory) return null;
 
-      reading.current += 1;
-      asking.current.clear();
-      setDiffs({});
-      setStatus(found);
-      void readBranches();
-    } catch (error: unknown) {
-      if (showing.current === directory) setFailed(messageOf(error));
-    } finally {
-      setSwitching(false);
-    }
-  }, [readBranches]);
+        reading.current += 1;
+        asking.current.clear();
+        setDiffs({});
+        setStatus(found);
+        void readBranches();
+        return null;
+      } catch (error: unknown) {
+        const message = messageOf(error);
+        if (showing.current === directory) setFailed(message);
+        return message;
+      } finally {
+        setSwitching(false);
+      }
+    },
+    [readBranches],
+  );
 
   return {
     status,

@@ -595,6 +595,36 @@ describe('branches', () => {
     expect(result.current.failed).toMatch(/in the way/);
   });
 
+  /**
+   * The panel prints what the hook holds, but the header indicator reaches this too and has
+   * nowhere to print anything, so it is told rather than left with a branch that did not
+   * change and no reason why (#102).
+   */
+  it('hands the refusal back as well as holding it', async () => {
+    gitSwitch.mockRejectedValue(new Error('Uncommitted changes are in the way.'));
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    let handed: string | null = 'unset';
+    await act(async () => {
+      handed = await result.current.switchTo('feature', false);
+    });
+
+    expect(handed).toMatch(/in the way/);
+  });
+
+  it('hands back nothing when the switch worked, so nobody reports a success', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+
+    let handed: string | null = 'unset';
+    await act(async () => {
+      handed = await result.current.switchTo('feature', false);
+    });
+
+    expect(handed).toBeNull();
+  });
+
   it('stops switching once it has finished failing', async () => {
     gitSwitch.mockRejectedValue(new Error('nope'));
     const { result } = renderHook(() => useRepoStatus('C:\\repo', true));

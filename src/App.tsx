@@ -229,9 +229,16 @@ export default function App() {
    * The header indicator and the panel read the repository through different paths, so a
    * switch made in either has to say so to both or one of them goes on naming the branch
    * that was left behind (#102).
+   *
+   * Git refuses a switch more often than it fails one - a file that differs between the two
+   * branches is in the way, and it says so rather than overwriting the work. The panel
+   * prints that under its file list, so only a switch made from the header needs telling
+   * somewhere, and only when the panel is not already showing it.
    */
-  const switchBranch = (name: string, create: boolean) => {
-    void repository.switchTo(name, create).then(() => tree.refresh());
+  const switchBranch = async (name: string, create: boolean) => {
+    const failure = await repository.switchTo(name, create);
+    tree.refresh();
+    return failure;
   };
   const environment = useEnvironment(selected?.cwd ?? null);
   const skills = useDisabledSkills(selectedId);
@@ -1223,7 +1230,11 @@ export default function App() {
           switching={repository.switching}
           busy={busy}
           onBranches={() => void repository.readBranches()}
-          onSwitch={switchBranch}
+          onSwitch={(name, create) => {
+            void switchBranch(name, create).then((failure) => {
+              if (failure && panel.open !== 'repository') setError(failure);
+            });
+          }}
         />
                 <OpenIn
                   cwd={selected.cwd}
@@ -1335,7 +1346,7 @@ export default function App() {
                   }}
                   branches={repository.branches}
                   onBranches={() => void repository.readBranches()}
-                  onSwitch={switchBranch}
+                  onSwitch={(name, create) => void switchBranch(name, create)}
                   switching={repository.switching}
                   failed={repository.failed}
                   onRefresh={repository.refresh}
