@@ -587,6 +587,8 @@ export interface SessionEnvironment {
   agents: AgentSummary[];
   /** The hooks that would fire for a session here. */
   hooks: HookSummary[];
+  /** The language servers a session here would be offered. */
+  lsps: LspSummary[];
   /**
    * Skills that were found but could not be read, as the runtime described them.
    *
@@ -671,6 +673,27 @@ export interface McpServerState {
   status: string;
   /** Why it failed, where the runtime said. */
   error?: string;
+}
+
+/**
+ * A language server a session in this directory would be offered.
+ *
+ * Read from the config files rather than from a session, like the MCP servers beside them.
+ * The SDK's only LSP method is `lsp.initialize`, which loads a configuration rather than
+ * reporting one - but the configuration is `~/.copilot/lsp.json` and `.github/lsp.json`,
+ * which this app can read for itself (#165).
+ */
+export interface LspSummary {
+  /** The key it is configured under. */
+  name: string;
+  /** What runs it, or nothing where the config gives only a script. */
+  command?: string;
+  /** The file extensions it is asked to handle, which is what it is for. */
+  extensions: string[];
+  /** Where it was configured: the reader's own file, or this project's. */
+  source: string;
+  /** Whether it will actually start. A disabled server stays configured. */
+  enabled: boolean;
 }
 
 /**

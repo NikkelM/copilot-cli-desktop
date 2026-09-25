@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { CopilotClient } from '@github/copilot-sdk';
 
 import { copilotHome } from './paths.js';
+import { lspServers } from './lsp.js';
 import type {
   AgentSummary,
   McpServerConfig,
@@ -147,7 +148,7 @@ export class Discovery {
     const client = await this.connect();
     const projectPaths = cwd ? { projectPaths: [cwd] } : {};
 
-    const [instructions, plugins, extensions, skills, mcpServers, agents, hooks] = await Promise.all([
+    const [instructions, plugins, extensions, skills, mcpServers, agents, hooks, lsps] = await Promise.all([
       client.rpc.instructions.discover(projectPaths),
       client.rpc.plugins.list(),
       client.rpc.extensions.discover(),
@@ -158,6 +159,9 @@ export class Discovery {
       // The same reader the agent picker uses, for the same reason.
       this.agents(cwd),
       client.rpc.hooks.discover(projectPaths),
+      // Read from the config files rather than asked for: the SDK's only LSP method loads a
+      // configuration rather than reporting one (#165).
+      lspServers(cwd),
     ]);
 
     return {
@@ -205,6 +209,7 @@ export class Discovery {
       // Warnings alongside errors: the runtime separates a source that loaded with a
       // complaint from one that did not load, and both mean a hook may not fire.
       hookErrors: [...(hooks.errors ?? []), ...(hooks.warnings ?? [])],
+      lsps,
       extensionMode: extensions.mode,
     };
   }

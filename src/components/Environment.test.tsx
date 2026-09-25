@@ -26,6 +26,7 @@ const environment = (over: Partial<SessionEnvironment> = {}): SessionEnvironment
   agents: [],
   hooks: [],
   hookErrors: [],
+  lsps: [],
   extensionMode: 'load_and_augment',
   ...over,
 });
@@ -964,5 +965,67 @@ describe('Environment, a form opened from outside', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Add a server' }));
 
     expect(screen.getByLabelText('Name')).toBeTruthy();
+  });
+});
+/**
+ * Language servers, the last of the sections the CLI's own /env has and this panel did not.
+ * Read from the config files rather than asked for (#165).
+ */
+describe('Environment, language servers', () => {
+  const lsp = (over = {}) => ({
+    name: 'csharp-ls',
+    command: 'csharp-ls',
+    extensions: ['.cs'],
+    source: 'user',
+    enabled: true,
+    ...over,
+  });
+
+  const shown = (lsps: unknown[]) =>
+    render(<Environment {...props} environment={environment({ lsps: lsps as never })} />);
+
+  it('names one and says what runs it', () => {
+    shown([lsp({ name: 'csharp', command: 'csharp-ls --stdio' })]);
+
+    expect(screen.getByText('csharp')).toBeTruthy();
+    expect(screen.getByText('csharp-ls --stdio')).toBeTruthy();
+  });
+
+  it('says what it is for', () => {
+    shown([lsp({ extensions: ['.ts', '.tsx'] })]);
+
+    expect(screen.getByText('.ts .tsx')).toBeTruthy();
+  });
+
+  it('says which file it was written in', () => {
+    shown([lsp({ source: 'project' })]);
+
+    expect(screen.getByText('This project')).toBeTruthy();
+  });
+
+  /** A disabled server stays configured, which is the point of listing it. */
+  it('marks one that will not start', () => {
+    shown([lsp({ enabled: false })]);
+
+    expect(screen.getByText('off')).toBeTruthy();
+  });
+
+  it('survives one with no command at all', () => {
+    shown([lsp({ name: 'scripted', command: undefined })]);
+
+    expect(screen.getByText('scripted')).toBeTruthy();
+  });
+
+  // The CLI says the same: they are configured explicitly, and most readers never do.
+  it('says nothing is configured rather than showing an empty heading', () => {
+    shown([]);
+
+    expect(screen.getByText('No language servers configured.')).toBeTruthy();
+  });
+
+  it('is headed the way the CLI heads it', () => {
+    shown([lsp()]);
+
+    expect(screen.getByRole('heading', { name: 'Language servers' })).toBeTruthy();
   });
 });

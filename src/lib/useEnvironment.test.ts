@@ -30,6 +30,7 @@ const environment: SessionEnvironment = {
   agents: [],
   hooks: [],
   hookErrors: [],
+  lsps: [],
   extensionMode: 'load_and_augment',
 };
 

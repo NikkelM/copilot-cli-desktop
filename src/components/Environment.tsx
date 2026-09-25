@@ -124,6 +124,7 @@ export function Environment({
   const mcpServers = environment?.mcpServers ?? [];
   const agents = environment?.agents ?? [];
   const hooks = environment?.hooks ?? [];
+  const lsps = environment?.lsps ?? [];
   const skillErrors = environment?.skillErrors ?? [];
   const hookErrors = environment?.hookErrors ?? [];
   const off = new Set(disabledSkills);
@@ -447,6 +448,34 @@ export function Environment({
           </section>
 
           <section className="environment-section">
+            <h3 className="environment-heading">Language servers</h3>
+            {lsps.length === 0 ? (
+              // The CLI says the same: they are configured explicitly, and most readers
+              // never configure one.
+              <p className="changes-note">No language servers configured.</p>
+            ) : (
+              <ul className="environment-list">
+                {lsps.map((lsp) => (
+                  <li key={lsp.name} className="environment-item">
+                    <span className={lsp.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
+                    <span>{lsp.name}</span>
+                    {/* What it runs and what it is for, which is the whole of what a
+                        language server's config says. */}
+                    <span className="environment-meta environment-description" title={lsp.command}>
+                      {lsp.command ?? ''}
+                    </span>
+                    {lsp.extensions.length > 0 && (
+                      <span className="environment-meta">{lsp.extensions.join(' ')}</span>
+                    )}
+                    <span className="environment-meta">{LSP_SOURCE[lsp.source] ?? lsp.source}</span>
+                    {!lsp.enabled && <span className="environment-off">off</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="environment-section">
             <h3 className="environment-heading">Extensions</h3>
             <p className="changes-note">{MODE[environment.extensionMode]}</p>
             {extensions.length > 0 && (
@@ -495,12 +524,17 @@ const AGENT_SOURCE: Record<string, string> = {
   plugin: 'Plugin',
   builtin: 'Built in',
 };
-
 /** Where a hook came from, which is also where it would have to be turned off. */const HOOK_ORIGIN: Record<string, string> = {
   user: 'Yours',
   repository: 'This repository',
   plugin: 'Plugin',
   policy: 'Your organisation',
+};
+
+/** Which of the two files a language server was written in. */
+const LSP_SOURCE: Record<string, string> = {
+  user: 'Yours',
+  project: 'This project',
 };
 
 /** The file a hook was written in, without the directories nobody is reading. */
