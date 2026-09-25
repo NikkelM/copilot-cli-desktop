@@ -432,12 +432,37 @@ export function Transcript({
     // that reapplied itself would flash again at each of those.
     if (!list || !wanted || marked.current === `${sessionId}:${wanted}`) return;
 
-    const rows = [...list.querySelectorAll<HTMLElement>('.entry')];
-    const found = rows.reverse().find((row) => row.textContent?.toLowerCase().includes(wanted));
+    const rows = list.querySelectorAll<HTMLElement>('.entry');
+    if (rows.length === 0) return;
+
+    /**
+     * Looked for in what was said, rather than in what the page shows.
+     *
+     * Only questions and replies, which is exactly what the index holds: it is built from
+     * each turn's `user_message` and `assistant_response`, so tool output was never
+     * searchable and looking through it here would point at something the search could not
+     * have found.
+     *
+     * Read from the entries rather than the rendered page because a row can be collapsed,
+     * and a reply that is scrolled past is still the reply that matched.
+     *
+     * The last one rather than the first: the page ends at the match, so anything earlier
+     * is an older mention of the same thing.
+     */
+    const at = shown.reduce(
+      (best, entry, index) =>
+        entry.kind === 'message' && entry.body.toLowerCase().includes(wanted) ? index : best,
+      -1,
+    );
+
+    // The end of the page when it cannot be placed more precisely, because that is where
+    // the cursor put the matched turn. Leaving the reader at the top of a page they were
+    // sent into is the one outcome worth avoiding.
+    const found = rows[at >= 0 ? at : rows.length - 1];
     if (!found) return;
 
     marked.current = `${sessionId}:${wanted}`;
-    found.classList.add('found');
+    if (at >= 0) found.classList.add('found');
 
     scrollingSelf.current = true;
     found.scrollIntoView({ block: 'center' });
@@ -451,7 +476,7 @@ export function Transcript({
       clearTimeout(release);
       clearTimeout(clear);
     };
-  }, [highlight, sessionId, entries.length]);
+  }, [highlight, sessionId, shown]);
 
   // A row from the last session must not be looked for in this one.
   useEffect(() => {

@@ -1348,3 +1348,76 @@ describe('holding a jump against the rest of the page arriving', () => {
     expect(document.querySelector('.entry.found')).toBeNull();
   });
 });
+
+/**
+ * What a match is looked for in, which is what the index holds: each turn''s question and
+ * its reply. Tool output is not in the index, so pointing at it here would point at
+ * something the search could not have found.
+ */
+describe('what counts as having said it', () => {
+  const ran = (output: string, id: string) =>
+    ({
+      type: 'tool.execution_complete',
+      data: { toolCallId: id, success: true, result: { content: output } },
+      id,
+    }) as unknown as TranscriptEvent;
+
+  const started = (id: string) =>
+    ({
+      type: 'tool.execution_start',
+      data: { toolCallId: id, toolName: 'shell', description: 'List branches' },
+      id: `${id}-start`,
+    }) as unknown as TranscriptEvent;
+
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  const asked = (content: string, id: string) =>
+    ({ type: 'user.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  const at = (props: Partial<ComponentProps<typeof Transcript>> = {}) =>
+    render(
+      <Transcript
+        events={[]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        {...props}
+      />,
+    );
+
+  it('points at a reply that said it', async () => {
+    at({ events: [said('nothing here', 'a'), said('the eviction rule', 'b')], highlight: 'eviction' });
+
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    expect(document.querySelector('.entry.found')?.textContent).toContain('eviction rule');
+  });
+
+  it('points at a question that asked it', async () => {
+    at({ events: [said('nothing here', 'a'), asked('what about eviction?', 'b')], highlight: 'eviction' });
+
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    expect(document.querySelector('.entry.found')?.textContent).toContain('what about eviction');
+  });
+
+  // The index is built from questions and replies, so a match can never be in tool output.
+  it('does not point at tool output, which the search cannot see either', async () => {
+    at({
+      events: [said('nothing here', 'a'), started('t1'), ran('  feature/npc-assist-traits', 't1')],
+      highlight: 'assist',
+    });
+
+    await new Promise((r) => setTimeout(r, 40));
+    expect(document.querySelector('.entry.found')).toBeNull();
+  });
+
+  it('marks nothing at all when the page is empty', async () => {
+    at({ events: [], highlight: 'eviction' });
+
+    await new Promise((r) => setTimeout(r, 40));
+    expect(document.querySelector('.entry.found')).toBeNull();
+  });
+});
