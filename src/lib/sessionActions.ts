@@ -20,16 +20,14 @@ export interface SessionActionDeps {
   load: (sessionId: string) => void;
   copy: (text: string) => void;
   openDirectory: (path: string) => void;
+  /** Asked to fork. Costs a resume, which the label says rather than this hiding it. */
+  fork: (session: SessionSummary) => void;
   /** Asked to delete. Confirming is the caller's business, not this list's. */
   remove: (session: SessionSummary) => void;
 }
 
 /**
  * What right-clicking a session offers.
- *
- * Only things the app can actually do today. Renaming, archiving and deleting are named in
- * #107 but none of them exist yet, and a menu that lists them greyed out would promise four
- * features this app does not have (#29, #101, #63).
  *
  * An action that cannot be taken is named and refused rather than left out, so the menu keeps
  * its shape and the reason is where the reader is already looking.
@@ -64,6 +62,19 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       id: 'tag',
       label: 'Tags…',
       run: () => deps.tag(session),
+    },
+    {
+      id: 'fork',
+      // The cost is in the label because there is nowhere else to put it and it is the one
+      // thing worth knowing before pressing: this app opens nothing it is not asked to, and
+      // forking is a request that has to open the session being copied.
+      label: session.loaded ? 'Fork session' : 'Fork session (loads it first)',
+      // Forking mid-turn would copy a turn that is still being written, and the copy would
+      // stop partway through a reply nobody sent.
+      refused: deps.working.has(session.sessionId)
+        ? 'Still working. Fork once the turn finishes.'
+        : undefined,
+      run: () => deps.fork(session),
     },
     {
       id: 'archive',

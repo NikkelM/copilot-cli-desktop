@@ -1059,6 +1059,15 @@ export interface SidecarRequests {
    * title and its place in the list intact.
    */
   'sessions.delete': { params: { sessionId: string }; result: void };
+  /**
+   * Copy a session's history into a new one, leaving the original alone.
+   *
+   * Costs a resume, and has to: forking a session the CLI is not holding rewrites the
+   * original's log down to the fork notice alone, losing every event behind it and leaving
+   * something that cannot be reopened (#196). So the source is loaded first, and a source
+   * that cannot be loaded is refused rather than forked.
+   */
+  'sessions.fork': { params: { sessionId: string; name?: string }; result: { sessionId: string } };
   /** What is in the recycle bin, newest first. Costs no session: it is read from disk. */
   'bin.list': { params: Record<string, never>; result: BinnedSession[] };
   /**
@@ -1437,6 +1446,7 @@ export const SIDECAR_METHODS = [
   'sessions.load',
   'sessions.evict',
   'sessions.delete',
+  'sessions.fork',
   'bin.list',
   'bin.restore',
   'bin.purge',

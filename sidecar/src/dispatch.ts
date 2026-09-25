@@ -107,6 +107,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.delete': ({ sessionId }) => runtime.deleteSession(sessionId),
 
+    'sessions.fork': async ({ sessionId, name }) => ({
+      sessionId: await runtime.forkSession(sessionId, name),
+    }),
+
     'bin.list': () => runtime.binnedSessions(),
 
     'bin.restore': ({ sessionId }) => ({ restored: runtime.restoreSession(sessionId) }),

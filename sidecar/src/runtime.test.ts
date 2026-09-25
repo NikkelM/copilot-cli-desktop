@@ -225,6 +225,14 @@ function makeRuntime(options: Partial<RuntimeOptions> = {}) {
     // one and merely taking the first are different answers.
     listModels: vi.fn(async () => [{ id: 'auto' }, { id: 'an-expensive-model' }, { id: 'a-haiku-model' }]),
     rpc: {
+      // Hands back a new id, and leaves the source alone - which is only true because the
+      // runtime loads it first. The real one empties a source it is not holding (#196).
+      sessions: {
+        fork: vi.fn(async ({ sessionId, name }: { sessionId: string; name?: string }) => ({
+          sessionId: `${sessionId}-fork`,
+          name: name ?? null,
+        })),
+      },
       commands: {
         list: vi.fn(async () => ({
           commands: [
@@ -593,6 +601,86 @@ describe('SessionRuntime', () => {
 
     await expect(runtime.deleteSession('doomed')).rejects.toThrow(/Session file not found/);
     expect(runtime.isActive('doomed')).toBe(false);
+  });
+
+  /**
+   * Forking a session the CLI is not holding rewrites the source's log down to the fork
+   * notice alone and loses everything behind it - measured on 1.0.88 as nine events reduced
+   * to one, leaving a log that no longer begins with `session.start` and so cannot be
+   * reopened (#196). Loading first is the whole of the defence, so these are about the load
+   * rather than about the fork.
+   */
+  describe('forking a session', () => {
+    it('loads the source before forking it, because a cold fork empties it', async () => {
+      const { runtime, client } = makeRuntime();
+
+      const made = await runtime.forkSession('source');
+
+      expect(client.resumeSession).toHaveBeenCalledWith('source', expect.anything());
+      expect(client.rpc.sessions.fork).toHaveBeenCalledWith({ sessionId: 'source' });
+      expect(made).toBe('source-fork');
+    });
+
+    it('does not fork at all when the source cannot be opened', async () => {
+      const { runtime, client } = makeRuntime();
+      client.resumeSession.mockRejectedValue(new Error('Session history cannot be recovered'));
+
+      await expect(runtime.forkSession('wrecked')).rejects.toThrow(/could not be opened first/);
+      expect(client.rpc.sessions.fork).not.toHaveBeenCalled();
+    });
+
+    // The reason has to travel: "it could not be opened" is the whole of why it was refused.
+    it('says what stopped it, rather than only that something did', async () => {
+      const { runtime, client } = makeRuntime();
+      client.resumeSession.mockRejectedValue(new Error('Session history cannot be recovered'));
+
+      await expect(runtime.forkSession('wrecked')).rejects.toThrow(/history cannot be recovered/);
+    });
+
+    it('forks a session that is already loaded without resuming it twice', async () => {
+      const { runtime, client, sessions } = makeRuntime();
+      await sendAndFinish({ runtime, sessions }, 'warm');
+      client.resumeSession.mockClear();
+
+      await runtime.forkSession('warm');
+
+      expect(client.resumeSession).not.toHaveBeenCalled();
+      expect(client.rpc.sessions.fork).toHaveBeenCalledWith({ sessionId: 'warm' });
+    });
+
+    it('passes a name on when it is given one, and leaves it out when it is not', async () => {
+      const { runtime, client } = makeRuntime();
+
+      await runtime.forkSession('source', 'a second opinion');
+      expect(client.rpc.sessions.fork).toHaveBeenLastCalledWith({
+        sessionId: 'source',
+        name: 'a second opinion',
+      });
+
+      await runtime.forkSession('source');
+      expect(client.rpc.sessions.fork).toHaveBeenLastCalledWith({ sessionId: 'source' });
+    });
+
+    // A fork nobody can name is one the reader cannot be sent to.
+    it('refuses an answer with no new session in it', async () => {
+      const { runtime, client } = makeRuntime();
+      client.rpc.sessions.fork.mockResolvedValue({ sessionId: '', name: null });
+
+      await expect(runtime.forkSession('source')).rejects.toThrow(/did not say what the new one is called/);
+    });
+
+    /** The source has just been read from end to end, so it is the last thing to evict. */
+    it('counts the source as freshly used, having just resumed it', async () => {
+      const { runtime } = makeRuntime({ maxLoadedSessions: 2 });
+      await runtime.load('a');
+      await runtime.load('b');
+
+      await runtime.forkSession('a');
+      await runtime.load('c');
+
+      expect(runtime.isActive('a')).toBe(true);
+      expect(runtime.isActive('b')).toBe(false);
+    });
   });
 
   /**

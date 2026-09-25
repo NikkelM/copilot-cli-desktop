@@ -27,6 +27,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   load: vi.fn(),
   copy: vi.fn(),
   openDirectory: vi.fn(),
+  fork: vi.fn(),
   remove: vi.fn(),
   ...over,
 });
@@ -41,6 +42,7 @@ describe('sessionActions', () => {
       'memory',
       'rename',
       'tag',
+      'fork',
       'archive',
       'copy-id',
       'directory',
@@ -186,6 +188,44 @@ describe('sessionActions', () => {
     it('is marked apart from the actions that lose nothing', () => {
       const actions = sessionActions(session(), deps());
       expect(actions.filter((a) => a.destructive).map((a) => a.id)).toEqual(['delete']);
+    });
+  });
+
+  /**
+   * Forking has to open the session it copies, because forking one the CLI is not holding
+   * empties the original instead of copying it (#196). This app opens nothing it is not
+   * asked to, so that cost is said before it is paid.
+   */
+  describe('forking', () => {
+    it('hands the session up rather than forking it here', () => {
+      const fork = vi.fn();
+      const target = session({ sessionId: 'source' });
+      byId(target, deps({ fork })).fork.run();
+
+      expect(fork).toHaveBeenCalledExactlyOnceWith(target);
+    });
+
+    it('says that a session not in memory will be opened first', () => {
+      expect(byId(session({ loaded: false }), deps()).fork.label).toMatch(/loads it first/i);
+    });
+
+    it('says nothing about loading one that is already loaded', () => {
+      expect(byId(session({ loaded: true }), deps()).fork.label).toBe('Fork session');
+    });
+
+    // The copy would stop partway through a reply nobody sent.
+    it('refuses a session mid-turn', () => {
+      const action = byId(session({ loaded: true }), deps({ working: new Set(['abc']) })).fork;
+      expect(action.refused).toMatch(/still working/i);
+    });
+
+    it('forks a session that is not loaded, which is the whole point of saying so', () => {
+      expect(byId(session({ loaded: false }), deps()).fork.refused).toBeUndefined();
+    });
+
+    // It takes nothing away: the source is left exactly as it was.
+    it('is not one of the actions that loses something', () => {
+      expect(byId(session(), deps()).fork.destructive).toBeUndefined();
     });
   });
 

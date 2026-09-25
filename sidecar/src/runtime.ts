@@ -829,6 +829,46 @@ export class SessionRuntime {
     await client.deleteSession(sessionId);
   }
 
+  /**
+   * Copy a session's history into a new session, leaving the original alone.
+   *
+   * The source is loaded first, and that is not a convenience. Forking a session the CLI
+   * does not hold rewrites the original's log down to the fork notice alone and loses every
+   * event behind it: measured on 1.0.88 as 42,769 bytes and nine events reduced to 295 and
+   * one, leaving a log that cannot be resumed because it no longer begins with
+   * `session.start` (#196).
+   *
+   * The CLI does carry a guard against this, but not on the path an SDK client takes:
+   * `forkSession` reads the events from disk only when the session has a filesystem store
+   * it recognises, and falls through to the RPC that does not when it does not. So this has
+   * to be answered here.
+   *
+   * Loading first is therefore the whole of the safety, and the refusal below is the rest of
+   * it: a source that cannot be resumed is a source that must not be forked, because the
+   * fork would take what is left rather than what was there. Better to say so than to hand
+   * back a new session and quietly empty the old one.
+   *
+   * `ensureSession` also marks the source as freshly used, so it does not become the next
+   * thing evicted for having been read from end to end.
+   */
+  async forkSession(sessionId: string, name?: string): Promise<string> {
+    try {
+      await this.ensureSession(sessionId);
+    } catch (error: unknown) {
+      const said = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Cannot fork this session: it could not be opened first, and forking one the CLI is not holding destroys it. ${said}`,
+      );
+    }
+
+    const client = await this.ensureClient();
+    const forked = await client.rpc.sessions.fork({ sessionId, ...(name ? { name } : {}) });
+    const made = forked?.sessionId;
+    if (!made) throw new Error('The CLI forked the session but did not say what the new one is called.');
+
+    return made;
+  }
+
   /** Put a binned session back where the CLI looks for it. */
   restoreSession(sessionId: string): boolean {
     return restoreSession(sessionId);

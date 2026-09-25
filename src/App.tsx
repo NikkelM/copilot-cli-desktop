@@ -41,6 +41,7 @@ import {
   loadSession,
   renameSession,
   deleteSession,
+  forkSession as fork,
   writeCliSettings,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, MCP, TAG, USAGE, WIKI, readMcpCommand, wantsDirectory, withTagChoices } from './lib/localCommands';
@@ -991,6 +992,26 @@ export default function App() {
     [slash.commands, knownTags, tags, selectedId],
   );
 
+  /**
+   * Copy a session into a new one and go to the copy.
+   *
+   * The sidecar opens the source before copying it, and refuses when it cannot: forking a
+   * session the CLI is not holding empties the original rather than copying it (#196). So
+   * this waits rather than guessing - the new session does not exist until it answers.
+   */
+  const forkSession = useCallback(
+    (target: SessionSummary) => {
+      setError(null);
+      fork(target.sessionId)
+        .then(async (made) => {
+          await sessions.refresh();
+          setSelectedId(made);
+        })
+        .catch((e: unknown) => setError(explain(e)));
+    },
+    [sessions],
+  );
+
   const sessionMenu = useCallback(
     (session: SessionSummary) =>
       sessionActions(session, {
@@ -1023,8 +1044,18 @@ export default function App() {
         // happens to contain "copilot" would be read as the CLI failing to start.
         openDirectory: (path) => void openPath(path).catch((e: unknown) => setError(messageOf(e))),
         remove: (target) => (settings.confirmDelete ? setDeleting(target) : void removeSession(target)),
+        fork: forkSession,
       }),
-    [favourites, toggleFavourite, archived, toggleArchived, sessions, settings.confirmDelete, removeSession],
+    [
+      favourites,
+      toggleFavourite,
+      archived,
+      toggleArchived,
+      sessions,
+      settings.confirmDelete,
+      removeSession,
+      forkSession,
+    ],
   );
 
   return (

@@ -131,6 +131,18 @@ export function deleteSession(sessionId: string): Promise<void> {
   return request('sessions.delete', { sessionId });
 }
 
+/**
+ * Copy a session's history into a new one, leaving the original alone.
+ *
+ * Costs a resume, which the caller should say before asking for it. The sidecar loads the
+ * source first and refuses outright when it cannot, because forking a session the CLI is
+ * not holding empties the original instead of copying it (#196).
+ */
+export async function forkSession(sessionId: string, name?: string): Promise<string> {
+  const { sessionId: made } = await request('sessions.fork', { sessionId, name });
+  return made;
+}
+
 /** What is waiting in the recycle bin, newest first. Costs no session: it is read from disk. */
 export function binnedSessions(): Promise<BinnedSession[]> {
   return request('bin.list', {});
