@@ -107,9 +107,12 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
 
   useEffect(() => {
     // Cleared rather than left behind: another repository's files under this session's name
-    // would be worse than an empty panel for a moment.
+    // would be worse than an empty panel for a moment. The branches go with them - the
+    // header picker can be opened without the panel ever having been, so a list held from
+    // the session before would be offering to check out branches of a different repository.
     setStatus(null);
     setDiffs({});
+    setBranches([]);
     if (open && cwd) load();
   }, [cwd, open, load]);
 

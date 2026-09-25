@@ -527,6 +527,22 @@ describe('branches', () => {
     expect(result.current.branches).toEqual([{ name: 'main', current: true }]);
   });
 
+  /**
+   * The header picker can be opened without the panel ever having been, so a list left from
+   * the session before would offer to check out branches of a different repository.
+   */
+  it('forgets them when the session changes, rather than offering another repository\'s', async () => {
+    const { result, rerender } = renderHook(({ cwd }) => useRepoStatus(cwd, true), {
+      initialProps: { cwd: 'C:\\repo' },
+    });
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+    await act(async () => void (await result.current.readBranches()));
+    expect(result.current.branches).toHaveLength(1);
+
+    rerender({ cwd: 'C:\\elsewhere' });
+    expect(result.current.branches).toEqual([]);
+  });
+
   it('says nothing over the file list when the branches cannot be read', async () => {
     gitBranches.mockRejectedValue(new Error('nope'));
     const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
