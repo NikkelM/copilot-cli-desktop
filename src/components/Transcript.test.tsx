@@ -1276,3 +1276,75 @@ describe('pointing at what a search was looking for', () => {
     }
   });
 });
+
+/**
+ * The page is still filling in when a jump lands: the budgeted renderer adds rows in
+ * batches, and each batch used to throw the view to the bottom a frame after it had arrived
+ * in the right place. Following the end and being sent somewhere are different requests.
+ */
+describe('holding a jump against the rest of the page arriving', () => {
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  const page = (count: number, at: number) =>
+    Array.from({ length: count }, (_, index) =>
+      said(index === at ? 'the eviction rule was wrong' : `filler ${index}`, `e${index}`),
+    );
+
+  it('does not follow the end while pointing at something', async () => {
+    const { rerender } = render(
+      <Transcript
+        events={page(12, 4)}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        highlight="eviction"
+      />,
+    );
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+
+    const list = document.querySelector('.transcript') as HTMLElement;
+    // jsdom lays nothing out, so a list is zero high and going to the bottom cannot be told
+    // apart from staying put. Giving it a height makes the difference measurable.
+    Object.defineProperty(list, 'scrollHeight', { value: 5000, configurable: true });
+    list.scrollTop = 0;
+
+    // Rows arriving after the jump, which is what the budgeted renderer does.
+    rerender(
+      <Transcript
+        events={[...page(12, 4), said('much later', 'z')]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        highlight="eviction"
+      />,
+    );
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(list.scrollTop, 'the page should not have been thrown to the bottom').toBe(0);
+  });
+
+  // Without a search sending it there, a session still opens at its end.
+  it('follows the end when nothing is being pointed at', async () => {
+    render(
+      <Transcript
+        events={page(12, 4)}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(document.querySelector('.entry.found')).toBeNull();
+  });
+});

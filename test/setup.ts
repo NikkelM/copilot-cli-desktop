@@ -49,9 +49,17 @@ beforeEach(() => resetStores());
  * Stubbed here rather than guarded at the call site: a component that scrolls somewhere is
  * doing something ordinary, and writing `?.` around every such call to please a test
  * environment would put the gap in the product instead of where it belongs.
+ *
+ * It raises a scroll event, as a browser does. That matters: code that scrolls and code that
+ * reacts to scrolling are usually the same code, and a stub that scrolled silently would let
+ * that pair pass here and break in front of a reader.
  */
 beforeEach(() => {
-  if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
-    Element.prototype.scrollIntoView = function scrollIntoView() {};
-  }
+  if (typeof Element === 'undefined' || Element.prototype.scrollIntoView) return;
+
+  Element.prototype.scrollIntoView = function scrollIntoView() {
+    for (let node = this.parentElement; node; node = node.parentElement) {
+      node.dispatchEvent(new Event('scroll', { bubbles: false }));
+    }
+  };
 });

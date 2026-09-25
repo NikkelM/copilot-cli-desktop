@@ -370,11 +370,15 @@ export function Transcript({
 
   // Selecting a session re-pins to the bottom. The transcript itself arrives a moment
   // later, so the actual scroll happens in the effect below once content exists.
+  //
+  // Not when a search result sent the reader here: that is a request to look at one place,
+  // and following the end instead is how a jump landed correctly and was then thrown to the
+  // bottom a frame later, as the budgeted renderer added the rest of the page.
   useLayoutEffect(() => {
-    pinned.current = true;
+    pinned.current = !highlight;
     restoreFrom.current = null;
     filled.current = 0;
-  }, [sessionId]);
+  }, [sessionId, highlight]);
 
   useLayoutEffect(() => {
     const list = listRef.current;
@@ -410,6 +414,17 @@ export function Transcript({
    * would still be there, meaning nothing, on the next visit.
    */
   const marked = useRef<string | null>(null);
+  /**
+   * Set while this component is doing the scrolling.
+   *
+   * A scroll event says nothing about who caused it. `scrollIntoView` raises one like any
+   * other, and the handler below reads the position it lands in as the reader's choice - so
+   * scrolling to a search result was immediately taken as the reader having scrolled to the
+   * bottom, and the next batch of rows threw the page there. Which is what it looked like:
+   * the right place for one frame, then somewhere else.
+   */
+  const scrollingSelf = useRef(false);
+
   useEffect(() => {
     const list = listRef.current;
     const wanted = highlight?.trim().toLowerCase();
@@ -423,11 +438,25 @@ export function Transcript({
 
     marked.current = `${sessionId}:${wanted}`;
     found.classList.add('found');
+
+    scrollingSelf.current = true;
     found.scrollIntoView({ block: 'center' });
+    // Cleared after the event this raised has been and gone, rather than at once.
+    const release = setTimeout(() => {
+      scrollingSelf.current = false;
+    }, 0);
 
     const clear = setTimeout(() => found.classList.remove('found'), 2600);
-    return () => clearTimeout(clear);
+    return () => {
+      clearTimeout(release);
+      clearTimeout(clear);
+    };
   }, [highlight, sessionId, entries.length]);
+
+  // A row from the last session must not be looked for in this one.
+  useEffect(() => {
+    marked.current = null;
+  }, [sessionId]);
 
   /**
    * Keep up with a reply as it is written.
@@ -468,6 +497,8 @@ export function Transcript({
   function onScroll() {
     const list = listRef.current;
     if (!list) return;
+    // This component's own scrolling is not the reader saying where they want to be.
+    if (scrollingSelf.current) return;
 
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
     pinned.current = distance <= BOTTOM_TOLERANCE_PX;
