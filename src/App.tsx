@@ -36,10 +36,6 @@ import {
   enqueueCommand,
   runShell,
   sessionUsage,
-  setMcpEnabled,
-  saveMcpServer,
-  removeMcpServer,
-  mcpLogin,
   sendMessage,
   evictSession,
   loadSession,
@@ -48,7 +44,6 @@ import {
   writeCliSettings,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, MCP, TAG, USAGE, WIKI, readMcpCommand, wantsDirectory, withTagChoices } from './lib/localCommands';
-import type { McpServerConfig } from '../shared/protocol';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
@@ -59,7 +54,7 @@ import { HeaderTags } from './components/HeaderTags';
 import { sessionDefaults, useSettings } from './lib/useSettings';
 import { useRecycleBin } from './lib/useRecycleBin';
 import { useDiskUsage } from './lib/useDiskUsage';
-import { useMcpStatus } from './lib/useMcpStatus';
+import { useMcp } from './lib/useMcp';
 import { useCliSettings } from './lib/useCliSettings';
 import { useCliDisplay } from './lib/useCliDisplay';
 import { SettingsWindow } from './components/SettingsWindow';
@@ -185,13 +180,6 @@ export default function App() {
   // there: nothing notices a directory reappearing until it is looked at again.
   const bin = useRecycleBin(sessions.refresh, setError);
   const disk = useDiskUsage();
-  /**
-   * What each MCP server is doing in the session on screen, for a session that is loaded.
-   * Nothing is resumed to find out - connection state is worth seeing, not worth a process.
-   */
-  const mcp = useMcpStatus(selectedId);
-  /** Which MCP server's form the panel is showing, so `/mcp add` and `/mcp edit` can open one. */
-  const [mcpEditing, setMcpEditing] = useState<string | null>(null);
   const cliSettings = useCliSettings(setError);
   const mode = useMode(selectedId, setError);
   const contextUsage = useContextUsage(selectedId);
@@ -241,6 +229,14 @@ export default function App() {
     return failure;
   };
   const environment = useEnvironment(selected?.cwd ?? null);
+  /**
+   * What each MCP server is doing in the session on screen, and changing what they are.
+   *
+   * Nothing is resumed to find out - connection state is worth seeing, not worth a process.
+   * Every change is the same shape because the runtime owns the config rather than this app:
+   * do it, then read the panel again, which is the only account of what took (#24).
+   */
+  const mcp = useMcp(selectedId, environment.load, setError, openUrl);
   const skills = useDisabledSkills(selectedId);
   const prompts = usePrompts(selectedId, setError);
   /**
@@ -564,68 +560,6 @@ export default function App() {
   }
 
   /**
-   * Turn an MCP server on or off, then read the panel again so it shows what is now true.
-   *
-   * The runtime keeps the disabled list, not this app, so there is nothing here to update
-   * optimistically - the next read is the only account of what took.
-   */
-  async function toggleMcp(name: string, enabled: boolean) {
-    setError(null);
-    try {
-      await setMcpEnabled(name, enabled);
-      await environment.load();
-    } catch (e: unknown) {
-      setError(explain(e));
-    }
-  }
-
-  /**
-   * Write an MCP server down, or take one away, then read the panel again.
-   *
-   * The same shape as the toggle above and for the same reason: the config is the runtime's
-   * file rather than this app's, so the next read is the only account of what took. Neither
-   * costs a session - a server is configuration, not conversation (#24).
-   */
-  async function saveMcp(name: string, config: McpServerConfig) {
-    setError(null);
-    try {
-      await saveMcpServer(name, config);
-      await environment.load();
-    } catch (e: unknown) {
-      setError(explain(e));
-    }
-  }
-
-  async function removeMcp(name: string) {
-    setError(null);
-    try {
-      await removeMcpServer(name);
-      await environment.load();
-    } catch (e: unknown) {
-      setError(explain(e));
-    }
-  }
-
-  /**
-   * Begin signing in to an MCP server that is waiting for it.
-   *
-   * Unlike reading the status, this may resume the session: pressing a button is somebody
-   * asking, which is the case the rule allows a resume for. The runtime holds the other end
-   * of the exchange and says how it went through an event, so there is nothing to wait on
-   * here beyond opening the page.
-   */
-  async function loginMcp(sessionId: string, name: string) {
-    setError(null);
-    try {
-      const url = await mcpLogin(sessionId, name);
-      if (url) await openUrl(url);
-      else setError(`${name} did not ask for a sign-in page.`);
-    } catch (e: unknown) {
-      setError(explain(e));
-    }
-  }
-
-  /**
    * Answer `/mcp`, which opens the panel and may open a form on the way.
    *
    * A name that matches nothing is said so rather than quietly doing nothing: typing one is
@@ -651,7 +585,7 @@ export default function App() {
     if (what.kind === 'add') {
       // A name given to `add` fills the form in rather than naming a server to open, which
       // is what the CLI does with it. The panel reads a name it does not know as a new one.
-      setMcpEditing(what.name ?? '');
+      mcp.edit(what.name ?? '');
       return;
     }
 
@@ -672,9 +606,9 @@ export default function App() {
       return;
     }
 
-    if (what.kind === 'edit') setMcpEditing(what.name);
+    if (what.kind === 'edit') mcp.edit(what.name);
     else {
-      void removeMcp(what.name);
+      void mcp.remove(what.name);
       transcript.showLocal('command.output', { text: `Deleted the MCP server ${what.name}.` });
     }
   }
@@ -1366,13 +1300,13 @@ export default function App() {
                   onClose={closeEnvironment}
                   disabledSkills={skills.disabled}
                   onToggleSkill={selectedId ? (name, enabled) => void skills.toggle(name, enabled) : undefined}
-                  onToggleMcp={(name, enabled) => void toggleMcp(name, enabled)}
-                  onSaveMcp={(name, config) => void saveMcp(name, config)}
-                  onRemoveMcp={(name) => void removeMcp(name)}
+                  onToggleMcp={(name, enabled) => void mcp.toggle(name, enabled)}
+                  onSaveMcp={(name, config) => void mcp.save(name, config)}
+                  onRemoveMcp={(name) => void mcp.remove(name)}
                   mcpState={mcp.status}
-                  onLoginMcp={(name) => void loginMcp(selected.sessionId, name)}
-                  editingMcp={mcpEditing}
-                  onEditMcp={setMcpEditing}
+                  onLoginMcp={(name) => void mcp.signIn(selected.sessionId, name)}
+                  editingMcp={mcp.editing}
+                  onEditMcp={mcp.edit}
                 />
               )}
 
