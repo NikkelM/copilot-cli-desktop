@@ -4,8 +4,8 @@ import { canAmend, type FileDiff, type MergeStrategy, type RepoFile, type RepoSt
 import { fileBadge } from '../lib/fileBadge';
 import { parsePatch } from '../lib/patch';
 import { diffKey } from '../lib/useRepoStatus';
+import { Branches, carryNote } from './Branches';
 import { Diff } from './Diff';
-import { ChevronIcon } from './Icons';
 import { MergeChoice } from './MergeChoice';
 
 interface RepositoryProps {
@@ -166,103 +166,6 @@ function Expanded({ diff, staged }: { diff: FileDiff | undefined; staged: boolea
   }
 
   return <Diff lines={parsePatch(diff.patch)} />;
-}
-
-/**
- * Choosing a branch, or starting one.
- *
- * Uncommitted work comes along - that is git's behaviour, not a decision made here - so the
- * picker says so rather than warning about it. A warning implies something might go wrong,
- * and nothing does: git carries the changes over, or refuses and leaves everything where it
- * was. What the reader needs is to know where their work will be, not to be alarmed.
- */
-function Branches({
-  status,
-  branches,
-  switching,
-  onOpen,
-  onSwitch,
-}: {
-  status: RepoStatus;
-  branches: { name: string; current: boolean }[];
-  switching: boolean;
-  onOpen: () => void;
-  onSwitch: (name: string, create: boolean) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [naming, setNaming] = useState('');
-  const dirty = status.files.length;
-
-  const close = () => {
-    setOpen(false);
-    setNaming('');
-  };
-
-  return (
-    <span className="repo-branches">
-      <button
-        type="button"
-        className="repo-branch-button"
-        onClick={() => {
-          if (!open) onOpen();
-          setOpen(!open);
-        }}
-        disabled={switching}
-        aria-expanded={open}
-        aria-label={`Switch branch, on ${status.branch}`}
-      >
-        {status.branch}
-        <ChevronIcon open={open} />
-      </button>
-
-      {open && (
-        <div className="repo-branch-menu">
-          {dirty > 0 && (
-            <p className="repo-branch-note">
-              {dirty === 1 ? '1 changed file carries over' : `${dirty} changed files carry over`}
-            </p>
-          )}
-
-          <ul>
-            {branches.map((branch) => (
-              <li key={branch.name}>
-                <button
-                  type="button"
-                  className={branch.current ? 'repo-branch-item current' : 'repo-branch-item'}
-                  onClick={() => {
-                    if (!branch.current) onSwitch(branch.name, false);
-                    close();
-                  }}
-                >
-                  {branch.name}
-                </button>
-              </li>
-            ))}
-          </ul>
-
-          <form
-            className="repo-branch-new"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (!naming.trim()) return;
-              onSwitch(naming, true);
-              close();
-            }}
-          >
-            <input
-              value={naming}
-              onChange={(event) => setNaming(event.target.value)}
-              placeholder="New branch"
-              aria-label="New branch name"
-            />
-            <button type="submit" className="changes-action" disabled={!naming.trim()}>
-              Create
-            </button>
-          </form>
-        </div>
-      )}
-    </span>
-  );
 }
 
 /**
@@ -452,7 +355,8 @@ export function Repository({
                 status.branch
               ) : (
                 <Branches
-                  status={status}
+                  branch={status.branch}
+                  note={carryNote(status.files.length)}
                   branches={branches}
                   switching={switching}
                   onOpen={onBranches}
