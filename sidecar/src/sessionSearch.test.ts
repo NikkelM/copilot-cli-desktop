@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { asPhrase, turnOf } from './sessionSearch.js';
+import { asPhrase } from './sessionSearch.js';
 
 /**
  * A throwaway store with the CLI's real FTS5 table.
@@ -23,6 +23,12 @@ function makeStore() {
     CREATE VIRTUAL TABLE search_index USING fts5(
       content, session_id UNINDEXED, source_type UNINDEXED, source_id UNINDEXED
     );
+    CREATE TABLE turns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, turn_index INTEGER, timestamp TEXT
+    );
+    CREATE TABLE checkpoints (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT, checkpoint_number INTEGER, created_at TEXT
+    );
   `);
 
   return {
@@ -32,6 +38,20 @@ function makeStore() {
       db.prepare(
         `INSERT INTO search_index (content, session_id, source_type, source_id) VALUES (?, ?, ?, ?)`,
       ).run(content, sessionId, turn === null ? 'checkpoint_history' : 'turn', sourceId);
+    },
+    turn(sessionId: string, index: number, timestamp: string) {
+      db.prepare(`INSERT INTO turns (session_id, turn_index, timestamp) VALUES (?, ?, ?)`).run(
+        sessionId,
+        index,
+        timestamp,
+      );
+    },
+    checkpoint(sessionId: string, number: number, createdAt: string) {
+      db.prepare(`INSERT INTO checkpoints (session_id, checkpoint_number, created_at) VALUES (?, ?, ?)`).run(
+        sessionId,
+        number,
+        createdAt,
+      );
     },
     close() {
       db.close();
@@ -77,27 +97,6 @@ describe('turning what was typed into a query', () => {
   });
 });
 
-describe('which turn a match sits in', () => {
-  it('reads the index out of a turn source', () => {
-    expect(turnOf('abc:turn:269')).toBe(269);
-  });
-
-  it('has none for a checkpoint, which is not in the conversation', () => {
-    expect(turnOf('abc:ckpt:0:checkpoint_history')).toBeNull();
-  });
-
-  it('has none for anything it does not recognise', () => {
-    expect(turnOf('rubbish')).toBeNull();
-    expect(turnOf('')).toBeNull();
-  });
-
-  // `turn` with nothing after it, or something that is not a number, is not a turn.
-  it('has none when the index is missing or not a number', () => {
-    expect(turnOf('abc:turn:')).toBeNull();
-    expect(turnOf('abc:turn:later')).toBeNull();
-  });
-});
-
 describe('searching what sessions said', () => {
   it('finds the session that said it', async () => {
     store.say('one', 3, 'the eviction rule was wrong');
@@ -106,7 +105,7 @@ describe('searching what sessions said', () => {
     const found = await search('eviction');
 
     expect(found.map((m) => m.sessionId)).toEqual(['one']);
-    expect(found[0].turn).toBe(3);
+    expect(found[0].source).toBe('one:turn:3');
   });
 
   it('names a session once, however often it said it', async () => {
@@ -133,7 +132,7 @@ describe('searching what sessions said', () => {
 
     const [match] = await search('eviction');
 
-    expect(match.turn).toBe(4);
+    expect(match.source).toBe('one:turn:4');
     expect(match.excerpt).toContain('\u0002eviction\u0003');
   });
 
@@ -153,7 +152,7 @@ describe('searching what sessions said', () => {
   it('has no turn to go to for something said in a checkpoint', async () => {
     store.say('one', null, 'eviction was settled here');
 
-    expect((await search('eviction'))[0].turn).toBeNull();
+    expect((await search('eviction'))[0].source).toContain(':ckpt:');
   });
 
   it('marks the match inside the words around it', async () => {
@@ -214,5 +213,71 @@ describe('searching what sessions said', () => {
     store.close();
     expect(await search('eviction')).toEqual([]);
     store = makeStore();
+  });
+});
+
+/**
+ * Where to stop reading so a match is on the page that opens.
+ *
+ * A turn ends where the next begins; a checkpoint summarises up to the moment it was
+ * written, so its own time is where to arrive. Getting this wrong for checkpoints is what
+ * made a match in one open at the end of the session instead, with nothing saying why.
+ */
+describe('the moment a match should open at', () => {
+  const at = async (sessionId: string, source: string) => {
+    vi.resetModules();
+    process.env.COPILOT_HOME = store.home;
+    const { momentAfter } = await import('./sessionSearch.js');
+    return momentAfter(sessionId, source);
+  };
+
+  it('ends a turn where the next one begins', async () => {
+    store.turn('one', 3, '2026-01-01T00:03:00.000Z');
+    store.turn('one', 4, '2026-01-01T00:04:00.000Z');
+
+    expect(await at('one', 'one:turn:3')).toBe('2026-01-01T00:04:00.000Z');
+  });
+
+  // Nothing follows the last turn, so it runs to the end of the log.
+  it('has no bound for the last turn', async () => {
+    store.turn('one', 3, '2026-01-01T00:03:00.000Z');
+
+    expect(await at('one', 'one:turn:3')).toBeNull();
+  });
+
+  it('arrives at a checkpoint where it was written', async () => {
+    store.checkpoint('one', 2, '2026-01-01T09:00:00.000Z');
+
+    expect(await at('one', 'one:ckpt:2:checkpoint_history')).toBe('2026-01-01T09:00:00.000Z');
+  });
+
+  /** Not the same answer as a turn that runs to the end: this names nothing at all. */
+  it('says nothing for a turn the database does not hold', async () => {
+    store.turn('one', 3, '2026-01-01T00:03:00.000Z');
+
+    expect(await at('one', 'one:turn:9')).toBeUndefined();
+  });
+
+  it('says nothing for a checkpoint the database does not hold', async () => {
+    expect(await at('one', 'one:ckpt:7:checkpoint_history')).toBeUndefined();
+  });
+
+  it('says nothing for a handle of a kind it does not know', async () => {
+    expect(await at('one', 'one:something:3')).toBeUndefined();
+    expect(await at('one', 'rubbish')).toBeUndefined();
+    expect(await at('one', '')).toBeUndefined();
+  });
+
+  it('says nothing for a turn whose index is not a number', async () => {
+    expect(await at('one', 'one:turn:later')).toBeUndefined();
+    expect(await at('one', 'one:turn:')).toBeUndefined();
+  });
+
+  // Another session's turn three is not this one's.
+  it('answers for the session it was asked about', async () => {
+    store.turn('one', 3, '2026-01-01T00:03:00.000Z');
+    store.turn('one', 4, '2026-01-01T00:04:00.000Z');
+
+    expect(await at('two', 'two:turn:3')).toBeUndefined();
   });
 });

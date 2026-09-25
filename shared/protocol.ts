@@ -20,8 +20,14 @@ export interface SessionMatch {
    * that happened to contain it.
    */
   excerpt: string;
-  /** Which turn to go to, or null for a match in a checkpoint rather than the conversation. */
-  turn: number | null;
+  /**
+   * Where the match came from, as the index's own composite handle.
+   *
+   * `<sessionId>:turn:269` or `<sessionId>:ckpt:0:checkpoint_history`. Passed back rather
+   * than picked apart here, because what it takes to reach each kind differs and the sidecar
+   * is where that is known.
+   */
+  source: string;
 }
 
 export interface SessionSummary {
@@ -1097,13 +1103,13 @@ export interface SidecarRequests {
    */
   'sessions.search': { params: { query: string }; result: { matches: SessionMatch[] } };
   /**
-   * Where to open a session so a given turn is on the page, as a cursor to read back from.
+   * Where to open a session so a match is on the page, as a cursor to read back from.
    *
-   * Costs no session: the turn's time comes from the CLI's database and the log is halved
-   * rather than scanned, so this is a dozen small reads whatever the log's size. Null when
-   * the log does not reach that turn, which a truncated one will not (#30).
+   * Costs no session: the moment comes from the CLI's database and the log is halved rather
+   * than scanned, so this is a dozen small reads whatever the log's size. Null when the log
+   * does not reach that far, which a truncated one will not (#30).
    */
-  'sessions.locate': { params: { sessionId: string; turn: number }; result: { cursor: number | null } };
+  'sessions.locate': { params: { sessionId: string; source: string }; result: { cursor: number | null } };
   /** What is in the recycle bin, newest first. Costs no session: it is read from disk. */
   'bin.list': { params: Record<string, never>; result: BinnedSession[] };
   /**

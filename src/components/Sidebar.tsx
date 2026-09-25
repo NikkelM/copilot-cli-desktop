@@ -16,7 +16,7 @@ import { countTags } from '../lib/useTags';
 import { read as readStore, save } from '../lib/store';
 import type { Tags } from '../lib/useTags';
 
-import type { SessionSummary } from '../../shared/protocol';
+import type { SessionMatch, SessionSummary } from '../../shared/protocol';
 import type { WatchedSubagent } from '../lib/useSubagents';
 
 interface SidebarProps {
@@ -26,8 +26,8 @@ interface SidebarProps {
    * The summary comes back with the id because a session found by id may not be in the
    * list at all - the caller has nowhere else to look it up from.
    */
-  /** `turn` sends the transcript to where a search match was said, rather than to the end. */
-  onSelect: (sessionId: string, session?: SessionSummary, turn?: number | null) => void;
+  /** `found` sends the transcript to where a search match was said, rather than to the end. */
+  onSelect: (sessionId: string, session?: SessionSummary, found?: SessionMatch, words?: string) => void;
   /** Starting a session needs a directory to start it in, which only the reader knows. */
   onCreate: () => void;
   /** Open the local knowledge base, which belongs to no session. */
@@ -446,7 +446,8 @@ export function Sidebar({
                             onSelect(
                               session.sessionId,
                               session,
-                              named?.has(session.sessionId) ? null : (said.get(session.sessionId)?.turn ?? null),
+                              named?.has(session.sessionId) ? undefined : said.get(session.sessionId),
+                              parseQuery(query).text,
                             )
                           }
                           onContextMenu={openMenu(session.sessionId)}

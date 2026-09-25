@@ -625,7 +625,7 @@ describe('keeping a session among the favourites', () => {
 
     await userEvent.click(screen.getByText('Beta').closest('.session-row') as HTMLElement);
 
-    expect(onSelect).toHaveBeenCalledExactlyOnceWith('b', expect.objectContaining({ sessionId: 'b' }), null);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith('b', expect.objectContaining({ sessionId: 'b' }), undefined, '');
   });
 
   it('selects once when the click lands on the text itself', async () => {
@@ -1413,7 +1413,7 @@ describe('filtering by what a session said', () => {
   const said = (sessionId: string, excerpt = 'we discussed \u0002eviction\u0003 here') => ({
     sessionId,
     excerpt,
-    turn: 4,
+    source: `${sessionId}:turn:4`,
   });
 
   const titles = () => [...document.querySelectorAll('.session-title')].map((n) => n.textContent);
@@ -1509,8 +1509,8 @@ describe('opening a search result where it was said', () => {
     await vi.waitFor(() => expect(searchSessions).toHaveBeenCalled());
   };
 
-  it('sends the turn a match was found in', async () => {
-    searchSessions.mockResolvedValue([{ sessionId: 'c', excerpt: 'said \u0002it\u0003', turn: 42 }]);
+  it('sends the match, so the transcript can open where it was said', async () => {
+    searchSessions.mockResolvedValue([{ sessionId: 'c', excerpt: 'said \u0002it\u0003', source: 'c:turn:42' }]);
     const onSelect = vi.fn();
     shown({ onSelect });
 
@@ -1518,24 +1518,24 @@ describe('opening a search result where it was said', () => {
     await vi.waitFor(() => expect(screen.getByText('Gamma')).toBeTruthy());
     await userEvent.click(screen.getByText('Gamma').closest('.session-row') as HTMLElement);
 
-    expect(onSelect).toHaveBeenCalledWith('c', expect.objectContaining({ sessionId: 'c' }), 42);
+    expect(onSelect).toHaveBeenCalledWith('c', expect.objectContaining({ sessionId: 'c' }), expect.objectContaining({ source: 'c:turn:42' }), 'eviction');
   });
 
   // The name found it, so the reader meant the session rather than a moment inside it.
-  it('sends no turn for a session the name found', async () => {
-    searchSessions.mockResolvedValue([{ sessionId: 'a', excerpt: 'said \u0002it\u0003', turn: 42 }]);
+  it('sends no match for a session the name found', async () => {
+    searchSessions.mockResolvedValue([{ sessionId: 'a', excerpt: 'said \u0002it\u0003', source: 'a:turn:42' }]);
     const onSelect = vi.fn();
     shown({ onSelect });
 
     await find('alpha');
     await userEvent.click(screen.getByText('Alpha').closest('.session-row') as HTMLElement);
 
-    expect(onSelect).toHaveBeenCalledWith('a', expect.objectContaining({ sessionId: 'a' }), null);
+    expect(onSelect).toHaveBeenCalledWith('a', expect.objectContaining({ sessionId: 'a' }), undefined, 'alpha');
   });
 
   // A match in a checkpoint is not in the conversation, so there is no turn to go to.
   it('sends no turn for a match that is not in a turn', async () => {
-    searchSessions.mockResolvedValue([{ sessionId: 'c', excerpt: 'said \u0002it\u0003', turn: null }]);
+    searchSessions.mockResolvedValue([{ sessionId: 'c', excerpt: 'said \u0002it\u0003', source: 'c:ckpt:0:checkpoint_history' }]);
     const onSelect = vi.fn();
     shown({ onSelect });
 
@@ -1543,6 +1543,11 @@ describe('opening a search result where it was said', () => {
     await vi.waitFor(() => expect(screen.getByText('Gamma')).toBeTruthy());
     await userEvent.click(screen.getByText('Gamma').closest('.session-row') as HTMLElement);
 
-    expect(onSelect).toHaveBeenCalledWith('c', expect.objectContaining({ sessionId: 'c' }), null);
+    expect(onSelect).toHaveBeenCalledWith(
+      'c',
+      expect.objectContaining({ sessionId: 'c' }),
+      expect.objectContaining({ source: 'c:ckpt:0:checkpoint_history' }),
+      'eviction',
+    );
   });
 });

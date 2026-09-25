@@ -1203,3 +1203,76 @@ describe('coming back from a search result', () => {
     expect(onLatest).toHaveBeenCalledOnce();
   });
 });
+
+/**
+ * A page of conversation is a lot to arrive in front of when the reason for arriving is a
+ * few words somewhere in it, so the row holding them is pointed at and then let go (#30).
+ */
+describe('pointing at what a search was looking for', () => {
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  const at = (props: Partial<ComponentProps<typeof Transcript>> = {}) =>
+    render(
+      <Transcript
+        events={[said('nothing of interest', 'a'), said('the eviction rule was wrong', 'b'), said('later still', 'c')]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        {...props}
+      />,
+    );
+
+  it('marks nothing when nothing was being looked for', () => {
+    at();
+    expect(document.querySelector('.entry.found')).toBeNull();
+  });
+
+  it('marks the row holding the words', async () => {
+    at({ highlight: 'eviction' });
+
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    expect(document.querySelector('.entry.found')?.textContent).toContain('eviction rule');
+  });
+
+  it('finds them whatever their case', async () => {
+    at({ highlight: 'EVICTION' });
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+  });
+
+  // The page ends at the match, so an earlier mention is an older one of the same thing.
+  it('marks the last row holding them rather than the first', async () => {
+    at({
+      events: [said('eviction, first mention', 'a'), said('eviction, the one meant', 'b')],
+      highlight: 'eviction',
+    });
+
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    expect(document.querySelector('.entry.found')?.textContent).toContain('the one meant');
+  });
+
+  it('marks nothing when the words are not on the page', async () => {
+    at({ highlight: 'nowhere in this page' });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(document.querySelector('.entry.found')).toBeNull();
+  });
+
+  // A mark that stayed would become part of how the session looks.
+  it('lets go of the row again', async () => {
+    vi.useFakeTimers();
+    try {
+      at({ highlight: 'eviction' });
+      await vi.advanceTimersByTimeAsync(20);
+      expect(document.querySelector('.entry.found')).toBeTruthy();
+
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(document.querySelector('.entry.found')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

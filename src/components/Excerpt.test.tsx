@@ -14,12 +14,12 @@ describe('Excerpt', () => {
   });
 
   it('says nothing for a match with no words around it', () => {
-    const { container } = render(<Excerpt match={{ sessionId: 'a', excerpt: '', turn: 1 }} />);
+    const { container } = render(<Excerpt match={{ sessionId: 'a', excerpt: '', source: 'a:turn:1' }} />);
     expect(container.textContent).toBe('');
   });
 
   it('draws the matched words apart from the rest', () => {
-    render(<Excerpt match={{ sessionId: 'a', excerpt: `the ${OPEN}eviction${SHUT} rule`, turn: 1 }} />);
+    render(<Excerpt match={{ sessionId: 'a', excerpt: `the ${OPEN}eviction${SHUT} rule`, source: 'a:turn:1' }} />);
 
     const hit = screen.getByText('eviction');
     expect(hit.tagName).toBe('MARK');
@@ -28,7 +28,7 @@ describe('Excerpt', () => {
   // The row clips to two lines, so the whole of it has to be reachable some other way.
   it('carries the whole excerpt as plain text for a reader who hovers', () => {
     const { container } = render(
-      <Excerpt match={{ sessionId: 'a', excerpt: `the ${OPEN}eviction${SHUT} rule`, turn: 1 }} />,
+      <Excerpt match={{ sessionId: 'a', excerpt: `the ${OPEN}eviction${SHUT} rule`, source: 'a:turn:1' }} />,
     );
 
     expect(container.querySelector('p')?.getAttribute('title')).toBe('the eviction rule');

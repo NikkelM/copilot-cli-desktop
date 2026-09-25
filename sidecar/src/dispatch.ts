@@ -27,7 +27,7 @@ import { previewImage } from './images.js';
 import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
 import { sessionDiskUsage } from './diskUsage.js';
-import { searchSessions, turnTime } from './sessionSearch.js';
+import { momentAfter, searchSessions } from './sessionSearch.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
 import { existingSessions, findSessions, listSessions, renameSession } from './sessionIndex.js';
@@ -126,9 +126,11 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
      * Where to open a session so a match is on the page, as a cursor to read back from.
      * Null when the log does not reach that far, which a truncated one will not.
      */
-    'sessions.locate': async ({ sessionId, turn }) => {
-      const found = turnTime(sessionId, turn);
-      return { cursor: found ? await locateTurn(sessionId, found.next) : null };
+    'sessions.locate': async ({ sessionId, source }) => {
+      const until = momentAfter(sessionId, source);
+      // Undefined names nothing the database holds, which is not the same as a match that
+      // runs to the end of the log.
+      return { cursor: until === undefined ? null : await locateTurn(sessionId, until) };
     },
 
     'cliSettings.list': () => ({ settings: cliSettingsSchema(), values: readCliSettings() }),

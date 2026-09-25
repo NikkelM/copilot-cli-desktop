@@ -296,6 +296,13 @@ interface TranscriptProps {
    * match usually wants to see what the session came to in the end (#30).
    */
   onLatest?: () => void;
+  /**
+   * What was searched for, so the part of the page that answers it can be pointed at.
+   *
+   * A page of conversation is a lot to arrive in front of, and the reason for arriving is a
+   * few words somewhere in it. Set only while a search result is being read.
+   */
+  highlight?: string;
   /** Whether the model's thinking is shown at all, which ctrl+t turns off (#72). */
   /**
    * Whose timeline this is, when it belongs to a subagent rather than the session.
@@ -317,6 +324,7 @@ export function Transcript({
   onLoadOlder,
   extraPages = false,
   onLatest,
+  highlight,
   onDropOlder,
   ofAgent,
   display,
@@ -385,6 +393,41 @@ export function Transcript({
     // history never flashes at the top before jumping down.
     if (pinned.current) list.scrollTop = list.scrollHeight;
   }, [entries.length, sessionId]);
+
+  /**
+   * Point at the part of the page that was being looked for.
+   *
+   * A page of conversation is a lot to arrive in front of when the reason for arriving is a
+   * few words somewhere in it. The last row containing them is marked rather than the first,
+   * because the page ends at the match and anything earlier is an older mention of the same
+   * thing.
+   *
+   * The words are looked for in the rendered text rather than in the events, so this finds
+   * them wherever they ended up on screen - in a reply, in a question, in the output of a
+   * tool - without needing to know which.
+   *
+   * It fades by itself. A mark that stayed would become part of how the session looks and
+   * would still be there, meaning nothing, on the next visit.
+   */
+  const marked = useRef<string | null>(null);
+  useEffect(() => {
+    const list = listRef.current;
+    const wanted = highlight?.trim().toLowerCase();
+    // Done once per arrival: the page also changes as rows stream and expand, and a mark
+    // that reapplied itself would flash again at each of those.
+    if (!list || !wanted || marked.current === `${sessionId}:${wanted}`) return;
+
+    const rows = [...list.querySelectorAll<HTMLElement>('.entry')];
+    const found = rows.reverse().find((row) => row.textContent?.toLowerCase().includes(wanted));
+    if (!found) return;
+
+    marked.current = `${sessionId}:${wanted}`;
+    found.classList.add('found');
+    found.scrollIntoView({ block: 'center' });
+
+    const clear = setTimeout(() => found.classList.remove('found'), 2600);
+    return () => clearTimeout(clear);
+  }, [highlight, sessionId, entries.length]);
 
   /**
    * Keep up with a reply as it is written.

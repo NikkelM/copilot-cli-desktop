@@ -5580,3 +5580,23 @@ pre.fatal,
   color: var(--accent);
   font-weight: 600;
 }
+
+/* The row that answers a search, pointed at on arrival and then let go. It fades rather than
+   switching off so the eye is drawn by the change and not left with a coloured block. */
+.entry.found {
+  animation: found 2.6s ease-out;
+  border-radius: 6px;
+}
+
+@keyframes found {
+  0%,
+  55% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+
+  100% {
+    background: transparent;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}

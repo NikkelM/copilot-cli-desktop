@@ -161,8 +161,8 @@ export async function searchSessions(query: string): Promise<SessionMatch[]> {
  * Costs no session and does not read the log: the turn's time comes from the CLI's database
  * and the log is halved to find it. Null when the log does not reach that turn (#30).
  */
-export async function locateTurn(sessionId: string, turn: number): Promise<number | null> {
-  const { cursor } = await request('sessions.locate', { sessionId, turn });
+export async function locateTurn(sessionId: string, source: string): Promise<number | null> {
+  const { cursor } = await request('sessions.locate', { sessionId, source });
   return cursor;
 }
 

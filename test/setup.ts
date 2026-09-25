@@ -42,3 +42,16 @@ afterEach(async () => {
  * forty-one of them failed the moment it moved (#191).
  */
 beforeEach(() => resetStores());
+
+/**
+ * jsdom has no `scrollIntoView`, which is not a fact about this app.
+ *
+ * Stubbed here rather than guarded at the call site: a component that scrolls somewhere is
+ * doing something ordinary, and writing `?.` around every such call to please a test
+ * environment would put the gap in the product instead of where it belongs.
+ */
+beforeEach(() => {
+  if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = function scrollIntoView() {};
+  }
+});

@@ -3,6 +3,7 @@ import { open as pickFolder } from '@tauri-apps/plugin-dialog';
 
 import type {
   Attachment,
+  SessionMatch,
   SessionSummary,
   SlashCommand,
   TranscriptEvent,
@@ -164,14 +165,15 @@ export default function App() {
   const selected = sessions.find(selectedId) ?? (offList?.sessionId === selectedId ? offList : null);
 
   /**
-   * Where the transcript should open, when a search result sent the reader to a turn.
+   * Where the transcript should open, and what sent it there.
    *
    * Held against the session it belongs to so a cursor into one log cannot be used to open
-   * another, which would read a page from the middle of an unrelated conversation.
+   * another, which would read a page from the middle of an unrelated conversation. The words
+   * come along so the page can say which part of it was being looked for.
    */
-  const [jump, setJump] = useState<{ sessionId: string; cursor: number } | null>(null);
+  const [jump, setJump] = useState<{ sessionId: string; cursor: number; words: string } | null>(null);
 
-  const open = useCallback((sessionId: string, session?: SessionSummary, turn?: number | null) => {
+  const open = useCallback((sessionId: string, session?: SessionSummary, found?: SessionMatch, words?: string) => {
     setSelectedId(sessionId);
     setOffList(session ?? null);
     // Choosing a session is asking for that conversation, including the one whose delegated
@@ -183,13 +185,13 @@ export default function App() {
 
     // Opening a session normally means opening it at the end, so any earlier jump is spent.
     setJump(null);
-    if (turn === undefined || turn === null) return;
+    if (!found) return;
 
-    // The log is halved rather than read, so this is a handful of small reads even on a
-    // log of several hundred megabytes. A turn the log does not reach leaves the session
+    // The log is halved rather than read, so this is a handful of small reads even on a log
+    // of several hundred megabytes. A match the log does not reach leaves the session
     // opening where it otherwise would.
-    locateTurn(sessionId, turn)
-      .then((cursor) => cursor !== null && setJump({ sessionId, cursor }))
+    locateTurn(sessionId, found.source)
+      .then((cursor) => cursor !== null && setJump({ sessionId, cursor, words: words ?? '' }))
       .catch(() => undefined);
   }, []);
 
@@ -1288,6 +1290,7 @@ export default function App() {
               // Set only while a search result is being read, which is the one time the
               // transcript is not showing the end of the conversation.
               onLatest={jump?.sessionId === selected.sessionId ? () => setJump(null) : undefined}
+              highlight={jump?.sessionId === selected.sessionId ? jump.words : undefined}
             />
 
             <div className="footer">

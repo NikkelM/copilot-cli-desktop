@@ -85,7 +85,7 @@ export function searchSessions(query: string): SessionMatch[] {
       found.set(row.session_id, {
         sessionId: row.session_id,
         excerpt: row.excerpt ?? '',
-        turn: turnOf(row.source_id),
+        source: row.source_id,
       });
     }
 
@@ -96,56 +96,54 @@ export function searchSessions(query: string): SessionMatch[] {
 }
 
 /**
- * When a turn happened, and when the one after it did.
+ * Where in time to stop reading, so a match sits at the end of the page that opens.
  *
- * A turn index is not a position in a log - there are more `user.message` events than there
- * are turns, 861 against 790 in one session here - so the log is reached through time rather
- * than through counting, which is the one thing the database and the log agree on.
+ * What that means differs by what matched, which is why the index's composite handle is
+ * carried back rather than picked apart in the interface:
  *
- * The next turn's time is what bounds this one. Reaching a fixed distance past a turn
- * instead overshoots into the turn after it on a busy log, which was measured landing a
- * whole question late.
+ * - a turn ends where the next one begins, so its successor's time is the bound. The last
+ *   turn has no successor and runs to the end of the log, which `null` asks for.
+ * - a checkpoint summarises the work up to the moment it was written, so its own time is
+ *   both its end and the place worth arriving at.
  *
- * `next` is null for the last turn, which nothing follows.
+ * Reaching a fixed distance past a turn was tried instead and overshoots into the turn after
+ * it on a busy log, landing a whole question late.
+ *
+ * `undefined` means the handle names nothing this database holds - a turn or checkpoint
+ * recorded elsewhere, or a source kind that is new - which is different from `null`.
  */
-export function turnTime(sessionId: string, turn: number): { when: string; next: string | null } | null {
-  if (!existsSync(sessionStoreDb)) return null;
+export function momentAfter(sessionId: string, source: string): string | null | undefined {
+  if (!existsSync(sessionStoreDb)) return undefined;
+
+  const parts = String(source ?? '').split(':');
+  const kind = parts.indexOf('turn') >= 0 ? 'turn' : parts.indexOf('ckpt') >= 0 ? 'ckpt' : null;
+  if (!kind) return undefined;
+
+  const index = Number(parts[parts.indexOf(kind) + 1]);
+  if (!Number.isInteger(index) || index < 0) return undefined;
 
   const db = new DatabaseSync(sessionStoreDb, { readOnly: true });
   try {
+    if (kind === 'ckpt') {
+      const row = db
+        .prepare(`SELECT created_at FROM checkpoints WHERE session_id = ? AND checkpoint_number = ?`)
+        .get(sessionId, index) as { created_at?: string } | undefined;
+      return row?.created_at ? String(row.created_at) : undefined;
+    }
+
     const rows = db
       .prepare(
         `SELECT turn_index, timestamp FROM turns
          WHERE session_id = ? AND turn_index IN (?, ?) ORDER BY turn_index`,
       )
-      .all(sessionId, turn, turn + 1) as unknown as { turn_index: number; timestamp?: string }[];
+      .all(sessionId, index, index + 1) as unknown as { turn_index: number; timestamp?: string }[];
 
-    const found = rows.find((row) => row.turn_index === turn);
-    if (!found?.timestamp) return null;
+    // The turn itself has to exist, or this names a conversation the database does not hold.
+    if (!rows.some((row) => row.turn_index === index)) return undefined;
 
-    const after = rows.find((row) => row.turn_index === turn + 1);
-    return { when: String(found.timestamp), next: after?.timestamp ? String(after.timestamp) : null };
+    const after = rows.find((row) => row.turn_index === index + 1);
+    return after?.timestamp ? String(after.timestamp) : null;
   } finally {
     db.close();
   }
-}
-
-/**
- * Which turn a match sits in, when it sits in one.
- *
- * `source_id` is a composite string rather than a key into `turns`, so the index is read out
- * of it: `<sessionId>:turn:269` is turn 269, while `<sessionId>:ckpt:0:checkpoint_history`
- * is part of a checkpoint and has no turn to go to.
- */
-export function turnOf(sourceId: string): number | null {
-  const parts = String(sourceId ?? '').split(':');
-  const at = parts.indexOf('turn');
-  if (at < 0) return null;
-
-  // Tested for digits rather than handed to Number, which reads the empty string as zero -
-  // and a malformed id quietly becoming turn zero would send the reader to the wrong place.
-  const index = parts[at + 1];
-  if (!index || !/^\d+$/.test(index)) return null;
-
-  return Number(index);
 }
