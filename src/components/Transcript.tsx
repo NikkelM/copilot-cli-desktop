@@ -310,7 +310,15 @@ interface TranscriptProps {
    * A page of conversation is a lot to arrive in front of, and the reason for arriving is a
    * few words somewhere in it. Set only while a search result is being read.
    */
-  highlight?: string;
+  /**
+   * What was searched for, and which arrival at it this is.
+   *
+   * The words say which row answers it. `at` says that this is a fresh request rather than
+   * the one already being shown: asking for the same result again, in the session already
+   * open, is a reader saying "take me back there" - and without something to tell the two
+   * apart it was read as them already being there and answered with nothing.
+   */
+  highlight?: { words: string; at: number };
   /** Whether the model's thinking is shown at all, which ctrl+t turns off (#72). */
   /**
    * Whose timeline this is, when it belongs to a subagent rather than the session.
@@ -443,7 +451,7 @@ export function Transcript({
    * The last one rather than the first: the page ends at the matched turn, so anything
    * earlier is an older mention of the same thing.
    */
-  const wanted = highlight?.trim().toLowerCase() ?? '';
+  const wanted = highlight?.words.trim().toLowerCase() ?? '';
   const target = useMemo(() => {
     if (!wanted) return -1;
 
@@ -473,7 +481,7 @@ export function Transcript({
    * it and would undo what they had just done - a mistake this has already made twice.
    */
   const lastArrival = useRef<string | null>(null);
-  const arrival = `${sessionId}:${wanted}`;
+  const arrival = `${sessionId}:${highlight?.at ?? ''}`;
   if (lastArrival.current !== arrival) {
     lastArrival.current = arrival;
     if (tookOver) setTookOver(false);

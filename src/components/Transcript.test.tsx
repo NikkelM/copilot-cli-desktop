@@ -1232,14 +1232,14 @@ describe('pointing at what a search was looking for', () => {
   });
 
   it('marks the row holding the words', async () => {
-    at({ highlight: 'eviction' });
+    at({ highlight: { words: 'eviction', at: 1 } });
 
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
     expect(document.querySelector('.entry.found')?.textContent).toContain('eviction rule');
   });
 
   it('finds them whatever their case', async () => {
-    at({ highlight: 'EVICTION' });
+    at({ highlight: { words: 'EVICTION', at: 1 } });
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
   });
 
@@ -1247,7 +1247,7 @@ describe('pointing at what a search was looking for', () => {
   it('marks the last row holding them rather than the first', async () => {
     at({
       events: [said('eviction, first mention', 'a'), said('eviction, the one meant', 'b')],
-      highlight: 'eviction',
+      highlight: { words: 'eviction', at: 1 },
     });
 
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
@@ -1255,7 +1255,7 @@ describe('pointing at what a search was looking for', () => {
   });
 
   it('marks nothing when the words are not on the page', async () => {
-    at({ highlight: 'nowhere in this page' });
+    at({ highlight: { words: 'nowhere in this page', at: 1 } });
 
     await new Promise((r) => setTimeout(r, 50));
     expect(document.querySelector('.entry.found')).toBeNull();
@@ -1267,7 +1267,7 @@ describe('pointing at what a search was looking for', () => {
    * when those two seconds were up - and it was missed every time it was looked for.
    */
   it('stays until the reader takes over', async () => {
-    at({ highlight: 'eviction' });
+    at({ highlight: { words: 'eviction', at: 1 } });
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
 
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -1303,7 +1303,7 @@ describe('holding a jump against the rest of the page arriving', () => {
         loadingOlder={false}
         onLoadOlder={() => {}}
         display={ASSUMED_DISPLAY}
-        highlight="eviction"
+        highlight={{ words: 'eviction', at: 1 }}
       />,
     );
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
@@ -1324,7 +1324,7 @@ describe('holding a jump against the rest of the page arriving', () => {
         loadingOlder={false}
         onLoadOlder={() => {}}
         display={ASSUMED_DISPLAY}
-        highlight="eviction"
+        highlight={{ words: 'eviction', at: 1 }}
       />,
     );
     await new Promise((r) => setTimeout(r, 30));
@@ -1392,14 +1392,14 @@ describe('what counts as having said it', () => {
     );
 
   it('points at a reply that said it', async () => {
-    at({ events: [said('nothing here', 'a'), said('the eviction rule', 'b')], highlight: 'eviction' });
+    at({ events: [said('nothing here', 'a'), said('the eviction rule', 'b')], highlight: { words: 'eviction', at: 1 } });
 
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
     expect(document.querySelector('.entry.found')?.textContent).toContain('eviction rule');
   });
 
   it('points at a question that asked it', async () => {
-    at({ events: [said('nothing here', 'a'), asked('what about eviction?', 'b')], highlight: 'eviction' });
+    at({ events: [said('nothing here', 'a'), asked('what about eviction?', 'b')], highlight: { words: 'eviction', at: 1 } });
 
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
     expect(document.querySelector('.entry.found')?.textContent).toContain('what about eviction');
@@ -1409,7 +1409,7 @@ describe('what counts as having said it', () => {
   it('does not point at tool output, which the search cannot see either', async () => {
     at({
       events: [said('nothing here', 'a'), started('t1'), ran('  feature/npc-assist-traits', 't1')],
-      highlight: 'assist',
+      highlight: { words: 'assist', at: 1 },
     });
 
     await new Promise((r) => setTimeout(r, 40));
@@ -1417,7 +1417,7 @@ describe('what counts as having said it', () => {
   });
 
   it('marks nothing at all when the page is empty', async () => {
-    at({ events: [], highlight: 'eviction' });
+    at({ events: [], highlight: { words: 'eviction', at: 1 } });
 
     await new Promise((r) => setTimeout(r, 40));
     expect(document.querySelector('.entry.found')).toBeNull();
@@ -1450,7 +1450,7 @@ describe('reaching a match that the drawn window stopped short of', () => {
         loadingOlder={false}
         onLoadOlder={() => {}}
         display={ASSUMED_DISPLAY}
-        highlight="eviction"
+        highlight={{ words: 'eviction', at: 1 }}
       />,
     );
 
@@ -1495,7 +1495,7 @@ describe('reaching a match that the drawn window stopped short of', () => {
         loadingOlder={false}
         onLoadOlder={() => {}}
         display={ASSUMED_DISPLAY}
-        highlight="eviction"
+        highlight={{ words: 'eviction', at: 1 }}
       />,
     );
 
@@ -1525,7 +1525,7 @@ describe('keeping hold of the row while the page settles around it', () => {
         loadingOlder={false}
         onLoadOlder={() => {}}
         display={ASSUMED_DISPLAY}
-        highlight="eviction"
+        highlight={{ words: 'eviction', at: 1 }}
         {...props}
       />,
     );
@@ -1558,7 +1558,7 @@ describe('keeping hold of the row while the page settles around it', () => {
         loadingOlder={false}
         onLoadOlder={() => {}}
         display={ASSUMED_DISPLAY}
-        highlight="eviction"
+        highlight={{ words: 'eviction', at: 1 }}
       />,
     );
 
@@ -1583,7 +1583,7 @@ describe('keeping hold of the row while the page settles around it', () => {
         loadingOlder={false}
         onLoadOlder={() => {}}
         display={ASSUMED_DISPLAY}
-        highlight="eviction"
+        highlight={{ words: 'eviction', at: 1 }}
       />,
     );
     await new Promise((r) => setTimeout(r, 60));
@@ -1655,7 +1655,7 @@ describe('coming back to a result a second time', () => {
       loadingOlder={false}
       onLoadOlder={() => {}}
       display={ASSUMED_DISPLAY}
-      highlight="eviction"
+      highlight={{ words: 'eviction', at: 1 }}
       onLatest={() => {}}
     />
   );
@@ -1713,7 +1713,7 @@ describe('not mistaking where it put the reader for where they went', () => {
 
   it('does not reach further back just because a result landed at the top', async () => {
     const onLoadOlder = vi.fn();
-    show({ highlight: 'eviction', onLoadOlder });
+    show({ highlight: { words: 'eviction', at: 1 }, onLoadOlder });
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
     await settled();
 
@@ -1724,7 +1724,7 @@ describe('not mistaking where it put the reader for where they went', () => {
 
   it('reaches back once the reader scrolls there themselves', async () => {
     const onLoadOlder = vi.fn();
-    show({ highlight: 'eviction', onLoadOlder });
+    show({ highlight: { words: 'eviction', at: 1 }, onLoadOlder });
     await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
     await settled();
     const list = document.querySelector('.transcript') as HTMLElement;

@@ -171,7 +171,7 @@ export default function App() {
    * another, which would read a page from the middle of an unrelated conversation. The words
    * come along so the page can say which part of it was being looked for.
    */
-  const [jump, setJump] = useState<{ sessionId: string; cursor: number; words: string } | null>(null);
+  const [jump, setJump] = useState<{ sessionId: string; cursor: number; words: string; at: number } | null>(null);
 
   const open = useCallback(
     async (sessionId: string, session?: SessionSummary, found?: SessionMatch, words?: string) => {
@@ -189,7 +189,9 @@ export default function App() {
        */
       const at = found ? await locateTurn(sessionId, found.source).catch(() => null) : null;
 
-      setJump(at === null ? null : { sessionId, cursor: at, words: words ?? '' });
+      // Stamped so that asking for the same result again, in the session already open, is a
+      // fresh arrival rather than the one already being shown.
+      setJump(at === null ? null : { sessionId, cursor: at, words: words ?? '', at: Date.now() });
       setSelectedId(sessionId);
       setOffList(session ?? null);
       // Choosing a session is asking for that conversation, including the one whose delegated
@@ -1297,7 +1299,7 @@ export default function App() {
               // Set only while a search result is being read, which is the one time the
               // transcript is not showing the end of the conversation.
               onLatest={jump?.sessionId === selected.sessionId ? () => setJump(null) : undefined}
-              highlight={jump?.sessionId === selected.sessionId ? jump.words : undefined}
+              highlight={jump?.sessionId === selected.sessionId ? { words: jump.words, at: jump.at } : undefined}
             />
 
             <div className="footer">

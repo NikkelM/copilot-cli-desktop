@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { useState } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -30,13 +30,13 @@ const pageOf = (of: string) => [
  */
 function Harness() {
   const [selected, setSelected] = useState<string | null>(null);
-  const [jump, setJump] = useState<{ sessionId: string; cursor: number; words: string } | null>(null);
+  const [jump, setJump] = useState<{ sessionId: string; cursor: number; words: string; at: number } | null>(null);
   const transcript = useTranscript(selected, () => {}, jump?.sessionId === selected ? jump.cursor : null);
 
   const open = async (sessionId: string) => {
     // Stands in for the sidecar working out where the match sits in the log.
     const cursor = await Promise.resolve(sessionId === 'one' ? 100 : 200);
-    setJump({ sessionId, cursor, words: 'eviction' });
+    setJump({ sessionId, cursor, words: 'eviction', at: Date.now() });
     setSelected(sessionId);
   };
 
@@ -70,7 +70,7 @@ function Harness() {
           loadingOlder={transcript.loadingOlder}
           onLoadOlder={transcript.loadOlder}
           display={ASSUMED_DISPLAY}
-          highlight={jump?.sessionId === selected ? jump.words : undefined}
+          highlight={jump?.sessionId === selected ? { words: jump.words, at: jump.at } : undefined}
           onLatest={() => setJump(null)}
         />
       )}
@@ -136,5 +136,26 @@ describe('opening one search result after another', () => {
     await userEvent.click(screen.getByText('open two'));
 
     await vi.waitFor(() => expect(marked()).toContain('eviction rule in two'));
+  });
+});
+
+/**
+ * Asking for the same result again, in the session already open, is a reader saying "take me
+ * back there". Without something to tell one request from the next it was read as them
+ * already being there - so after they had scrolled away, clicking it did nothing at all.
+ */
+describe('asking for a result in the session already open', () => {
+  it('takes the reader back after they have scrolled away', async () => {
+    render(<Harness />);
+    await userEvent.click(screen.getByText('open one'));
+    await vi.waitFor(() => expect(marked()).toContain('eviction rule in one'));
+
+    // Reading on, which is what lets go of the mark.
+    fireEvent.wheel(document.querySelector('.transcript') as HTMLElement);
+    await vi.waitFor(() => expect(marked()).toBeNull());
+
+    await userEvent.click(screen.getByText('open one'));
+
+    await vi.waitFor(() => expect(marked()).toContain('eviction rule in one'));
   });
 });
