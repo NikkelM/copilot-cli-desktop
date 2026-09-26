@@ -5602,10 +5602,12 @@ pre.fatal,
    it is drawn outside the row, so it laid a second layer over the tint of whatever it
    reached, and the seam between the two looked like a mistake rather than a highlight. */
 .entry.found {
-  /* Reaching up and down as well as out, and pulled back by what it reaches, so that marking
-     a row does not shift the conversation around it. */
+  /* Reaching up and down as well as out. Only the sides are pulled back: there the row is
+     reaching into padding the list keeps for it, while above and below there is nothing to
+     reach into but the row before and the row after - so it makes room rather than covering
+     them. */
   padding: 12px 8px;
-  margin: -6px -8px;
+  margin: 0 -8px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   outline: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);

@@ -665,8 +665,9 @@ describe('room for a row to be drawn around', () => {
 });
 
 /**
- * A marked row reaches past its own text on every side, and is pulled back by what it
- * reaches - so marking a row does not shift the conversation around it.
+ * A marked row reaches past its own text on every side. At the sides it reaches into padding
+ * the list keeps for it and is pulled back by what it took; above and below there is nothing
+ * to reach into but its neighbours, so it makes room rather than covering them.
  */
 describe('a marked row reaching past its text', () => {
   const rule = (selector: string) => {
@@ -682,14 +683,19 @@ describe('a marked row reaching past its text', () => {
     return { vertical: value(0), horizontal: parts!.length > 1 ? value(1) : value(0) };
   };
 
-  it('is padded further than an unmarked row, and pulled back by the difference', () => {
+  it('makes room above and below rather than covering what is there', () => {
     const plain = box('.entry', 'padding');
+    const marked = box('.entry.found', 'padding');
+
+    expect(marked.vertical, 'it reaches above and below the text').toBeGreaterThan(plain.vertical);
+    expect(box('.entry.found', 'margin').vertical, 'and is not pulled back over its neighbours').toBe(0);
+  });
+
+  it('reaches into the list at the sides, and gives back what it took', () => {
     const marked = box('.entry.found', 'padding');
     const pull = box('.entry.found', 'margin');
 
-    expect(marked.vertical, 'it reaches above and below the text').toBeGreaterThan(plain.vertical);
-    expect(pull.vertical, 'and gives back exactly what it reached').toBe(plain.vertical - marked.vertical);
-    expect(marked.horizontal, 'the sides are already padded by every row').toBe(plain.horizontal);
+    expect(marked.horizontal, 'the sides are already padded by every row').toBe(box('.entry', 'padding').horizontal);
     expect(pull.horizontal).toBe(-marked.horizontal);
   });
 });
