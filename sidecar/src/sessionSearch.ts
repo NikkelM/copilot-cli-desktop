@@ -42,11 +42,18 @@ export function asPhrase(query: string): string {
 }
 
 /**
- * Which sessions said something, and the words around where they said it.
+ * Which sessions said what was typed, and the words around where they said it.
  *
  * Read from the FTS5 index the CLI maintains, which costs one query and no Copilot process -
  * the same bargain the session list makes. Measured at 2-4ms over 206 sessions and 3.45 GB
  * of logs, so it runs on a keystroke rather than behind a button (#30).
+ *
+ * Only what was actually said: the index also holds checkpoint summaries and workspace
+ * artefacts, and those are written *about* a session rather than in it. Their words are
+ * nowhere in the conversation, so a reader sent to one arrives at a page with nothing to
+ * see - which is what made some sessions look broken while others worked. Nothing is lost
+ * by leaving them out: all 207 sessions with any indexed content have indexed turns, so
+ * every session that could be found still can be, and every result can now be gone to.
  *
  * Only sessions the CLI has indexed can be found. That is 206 of 891 rows, but 675 of the
  * rest have no event log at all and are not in the sidebar either, so by content it is about
@@ -66,7 +73,7 @@ export function searchSessions(query: string): SessionMatch[] {
         `SELECT session_id, source_id,
                 snippet(search_index, 0, char(2), char(3), '…', 14) AS excerpt
          FROM search_index
-         WHERE search_index MATCH ?
+         WHERE search_index MATCH ? AND source_type = 'turn'
          ORDER BY rank
          LIMIT ?`,
       )
@@ -98,39 +105,30 @@ export function searchSessions(query: string): SessionMatch[] {
 /**
  * Where in time to stop reading, so a match sits at the end of the page that opens.
  *
- * What that means differs by what matched, which is why the index's composite handle is
- * carried back rather than picked apart in the interface:
+ * A turn ends where the next one begins, so its successor's time is the bound. The last turn
+ * has no successor and runs to the end of the log, which `null` asks for. Reaching a fixed
+ * distance past a turn was tried instead and overshoots into the turn after it on a busy log,
+ * landing a whole question late.
  *
- * - a turn ends where the next one begins, so its successor's time is the bound. The last
- *   turn has no successor and runs to the end of the log, which `null` asks for.
- * - a checkpoint summarises the work up to the moment it was written, so its own time is
- *   both its end and the place worth arriving at.
+ * Time is what the database and the log agree on. A turn index is not a position in a log -
+ * there are more `user.message` events than there are turns, 861 against 790 in one session
+ * here - so counting them would land somewhere plausible and wrong.
  *
- * Reaching a fixed distance past a turn was tried instead and overshoots into the turn after
- * it on a busy log, landing a whole question late.
- *
- * `undefined` means the handle names nothing this database holds - a turn or checkpoint
- * recorded elsewhere, or a source kind that is new - which is different from `null`.
+ * `undefined` means the handle names nothing this database holds, which is different from
+ * `null`. Only turns are searched, so only turns ever arrive here.
  */
 export function momentAfter(sessionId: string, source: string): string | null | undefined {
   if (!existsSync(sessionStoreDb)) return undefined;
 
   const parts = String(source ?? '').split(':');
-  const kind = parts.indexOf('turn') >= 0 ? 'turn' : parts.indexOf('ckpt') >= 0 ? 'ckpt' : null;
-  if (!kind) return undefined;
+  const at = parts.indexOf('turn');
+  if (at < 0) return undefined;
 
-  const index = Number(parts[parts.indexOf(kind) + 1]);
-  if (!Number.isInteger(index) || index < 0) return undefined;
+  const index = Number(parts[at + 1]);
+  if (!/^\d+$/.test(parts[at + 1] ?? '') || !Number.isInteger(index)) return undefined;
 
   const db = new DatabaseSync(sessionStoreDb, { readOnly: true });
   try {
-    if (kind === 'ckpt') {
-      const row = db
-        .prepare(`SELECT created_at FROM checkpoints WHERE session_id = ? AND checkpoint_number = ?`)
-        .get(sessionId, index) as { created_at?: string } | undefined;
-      return row?.created_at ? String(row.created_at) : undefined;
-    }
-
     const rows = db
       .prepare(
         `SELECT turn_index, timestamp FROM turns

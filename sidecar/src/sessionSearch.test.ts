@@ -149,10 +149,15 @@ describe('searching what sessions said', () => {
     expect((await search('branch picker')).map((m) => m.sessionId)).toEqual(['together']);
   });
 
-  it('has no turn to go to for something said in a checkpoint', async () => {
-    store.say('one', null, 'eviction was settled here');
+  /**
+   * The index also holds checkpoint summaries, which are written about a session rather than
+   * in it. Their words are nowhere in the conversation, so a reader sent to one arrives at a
+   * page with nothing to see.
+   */
+  it('finds only what was said, not what was written about it', async () => {
+    store.say('one', null, 'the eviction rule was settled here');
 
-    expect((await search('eviction'))[0].source).toContain(':ckpt:');
+    expect(await search('eviction')).toEqual([]);
   });
 
   it('marks the match inside the words around it', async () => {
@@ -245,10 +250,11 @@ describe('the moment a match should open at', () => {
     expect(await at('one', 'one:turn:3')).toBeNull();
   });
 
-  it('arrives at a checkpoint where it was written', async () => {
+  // Only turns are searched, so only turns ever arrive here.
+  it('says nothing for a handle that is not a turn', async () => {
     store.checkpoint('one', 2, '2026-01-01T09:00:00.000Z');
 
-    expect(await at('one', 'one:ckpt:2:checkpoint_history')).toBe('2026-01-01T09:00:00.000Z');
+    expect(await at('one', 'one:ckpt:2:checkpoint_history')).toBeUndefined();
   });
 
   /** Not the same answer as a turn that runs to the end: this names nothing at all. */
