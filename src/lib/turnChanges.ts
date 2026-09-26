@@ -6,8 +6,14 @@ export interface ChangedFile {
   path: string;
   added: number;
   removed: number;
-  /** How many separate edits touched it, since a file is often written more than once. */
-  edits: number;
+  /**
+   * Every edit made to it in this turn, in the order they were made.
+   *
+   * Kept apart rather than merged: the second edit's line numbers count a file the first
+   * one already changed, so joining them would place its hunks wrong. Their count is also
+   * how often the file was written.
+   */
+  patches: string[];
 }
 
 /** What a turn changed, taken together. */
@@ -39,9 +45,14 @@ export function changesByTurn(entries: Entry[]): Map<number, TurnChanges> {
   let startedAt = -1;
 
   const close = (endsAt: number) => {
+    // A cheap gate before parsing: a turn that called a file tool at most once can never
+    // have more than one change in it, whatever the patches turn out to say.
     if (edits.length > 1) {
       const summary = gather(edits);
-      if (summary.files.length > 0) byTurn.set(endsAt, summary);
+      // Counted after parsing, because a call that wrote a file without changing it is not
+      // an edit, and a turn left with one real change is one its own row already reports.
+      const made = summary.files.reduce((n, file) => n + file.patches.length, 0);
+      if (made > 1) byTurn.set(endsAt, summary);
     }
     edits = [];
   };
@@ -77,6 +88,10 @@ function gather(edits: Entry[]): TurnChanges {
     if (entry.kind !== 'tool' || !entry.patch || !entry.path) continue;
 
     const counts = countChanges(parsePatch(entry.patch));
+    // Writing a file without changing it leaves a patch of nothing but context. Counting it
+    // would claim an edit that is not there and draw a diff with nothing in it.
+    if (counts.added === 0 && counts.removed === 0) continue;
+
     added += counts.added;
     removed += counts.removed;
 
@@ -84,9 +99,14 @@ function gather(edits: Entry[]): TurnChanges {
     if (held) {
       held.added += counts.added;
       held.removed += counts.removed;
-      held.edits += 1;
+      held.patches.push(entry.patch);
     } else {
-      files.set(entry.path, { path: entry.path, added: counts.added, removed: counts.removed, edits: 1 });
+      files.set(entry.path, {
+        path: entry.path,
+        added: counts.added,
+        removed: counts.removed,
+        patches: [entry.patch],
+      });
     }
   }
 

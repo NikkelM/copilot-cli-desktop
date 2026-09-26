@@ -5,14 +5,24 @@ import { describe, expect, it } from 'vitest';
 
 import { TurnSummary } from './TurnSummary';
 
+const patched = (line: string) => ['diff --git a/x b/x', '@@ -1,0 +1,1 @@', `+${line}`].join('\n');
+
 const changes = {
   files: [
-    { path: 'src/lib/patch.ts', added: 12, removed: 3, edits: 1 },
-    { path: 'README.md', added: 1, removed: 0, edits: 2 },
+    { path: 'src/lib/patch.ts', added: 12, removed: 3, patches: [patched('the first thing')] },
+    {
+      path: 'README.md',
+      added: 1,
+      removed: 0,
+      patches: [patched('the earlier wording'), patched('the later wording')],
+    },
   ],
   added: 13,
   removed: 3,
 };
+
+/** The line at the top, rather than any of the file rows under it. */
+const head = () => screen.getByRole('button', { name: /files? changed/ });
 
 describe('what a turn changed', () => {
   it('says how many files and what they came to, without being opened', () => {
@@ -34,7 +44,7 @@ describe('what a turn changed', () => {
     render(<TurnSummary changes={changes} />);
     expect(screen.queryByText('patch.ts')).toBeNull();
 
-    await userEvent.click(screen.getByRole('button'));
+    await userEvent.click(head());
 
     expect(screen.getByText('patch.ts')).toBeTruthy();
     expect(screen.getByText('README.md')).toBeTruthy();
@@ -43,7 +53,7 @@ describe('what a turn changed', () => {
   /** The name is what a reader recognises; the folder says where it is. */
   it('names the file apart from the folder it is in', async () => {
     render(<TurnSummary changes={changes} />);
-    await userEvent.click(screen.getByRole('button'));
+    await userEvent.click(head());
 
     expect(screen.getByText('patch.ts')).toBeTruthy();
     expect(screen.getByText('src/lib')).toBeTruthy();
@@ -51,7 +61,7 @@ describe('what a turn changed', () => {
 
   it('says what each file came to', async () => {
     const { container } = render(<TurnSummary changes={changes} />);
-    await userEvent.click(screen.getByRole('button'));
+    await userEvent.click(head());
 
     // Scoped to the list: the totals on the line above use the same words.
     const files = container.querySelector('.turn-changes-files')!;
@@ -63,9 +73,71 @@ describe('what a turn changed', () => {
   // On most rows it would be a 1 beside every file, saying nothing.
   it('says how often a file was written only when it was written more than once', async () => {
     render(<TurnSummary changes={changes} />);
-    await userEvent.click(screen.getByRole('button'));
+    await userEvent.click(head());
 
     expect(screen.getByText('2 edits')).toBeTruthy();
     expect(screen.queryByText('1 edits')).toBeNull();
+  });
+
+  /**
+   * The point of the list: a file named but not openable leaves the reader to hunt back up
+   * the transcript for the row that changed it.
+   */
+  it('opens a file onto the change itself', async () => {
+    const { container } = render(<TurnSummary changes={changes} />);
+    await userEvent.click(head());
+    expect(container.querySelector('.tool-diff')).toBeNull();
+
+    await userEvent.click(screen.getByRole('button', { name: /patch\.ts/ }));
+
+    expect(container.querySelector('.tool-diff')).toBeTruthy();
+    expect(screen.getByText('the first thing')).toBeTruthy();
+  });
+
+  /**
+   * Each edit's line numbers count the file as the edit before it left it, so joining them
+   * would place the later hunks wrong. They are shown in order instead, and numbered.
+   */
+  it('shows a file written twice as two edits rather than one', async () => {
+    const { container } = render(<TurnSummary changes={changes} />);
+    await userEvent.click(head());
+    await userEvent.click(screen.getByRole('button', { name: /README\.md/ }));
+
+    expect(container.querySelectorAll('.tool-diff')).toHaveLength(2);
+    expect(screen.getByText('Edit 1 of 2')).toBeTruthy();
+    expect(screen.getByText('Edit 2 of 2')).toBeTruthy();
+    expect(screen.getByText('the earlier wording')).toBeTruthy();
+    expect(screen.getByText('the later wording')).toBeTruthy();
+  });
+
+  // One edit needs no numbering: there is nothing for it to be in sequence with.
+  it('does not number the change of a file written once', async () => {
+    render(<TurnSummary changes={changes} />);
+    await userEvent.click(head());
+    await userEvent.click(screen.getByRole('button', { name: /patch\.ts/ }));
+
+    expect(screen.queryByText('Edit 1 of 1')).toBeNull();
+  });
+
+  // Two diffs at once is the transcript problem again, one level down.
+  it('keeps one file open at a time', async () => {
+    const { container } = render(<TurnSummary changes={changes} />);
+    await userEvent.click(head());
+
+    await userEvent.click(screen.getByRole('button', { name: /patch\.ts/ }));
+    await userEvent.click(screen.getByRole('button', { name: /README\.md/ }));
+
+    expect(screen.queryByText('the first thing')).toBeNull();
+    expect(container.querySelectorAll('.tool-diff')).toHaveLength(2);
+  });
+
+  it('closes a file that is open when it is asked again', async () => {
+    const { container } = render(<TurnSummary changes={changes} />);
+    await userEvent.click(head());
+
+    await userEvent.click(screen.getByRole('button', { name: /patch\.ts/ }));
+    await userEvent.click(screen.getByRole('button', { name: /patch\.ts/ }));
+
+    expect(container.querySelector('.tool-diff')).toBeNull();
   });
 });

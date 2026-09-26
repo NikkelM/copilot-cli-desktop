@@ -39,8 +39,8 @@ describe('what a turn changed', () => {
     expect([...byTurn.keys()], 'the last row of the turn').toEqual([3]);
     expect(byTurn.get(3)).toEqual({
       files: [
-        { path: 'one.ts', added: 3, removed: 1, edits: 1 },
-        { path: 'two.ts', added: 2, removed: 0, edits: 1 },
+        { path: 'one.ts', added: 3, removed: 1, patches: [patch(3, 1)] },
+        { path: 'two.ts', added: 2, removed: 0, patches: [patch(2, 0)] },
       ],
       added: 5,
       removed: 1,
@@ -53,7 +53,9 @@ describe('what a turn changed', () => {
 
     const only = changesByTurn(entries).get(3);
 
-    expect(only?.files).toEqual([{ path: 'one.ts', added: 7, removed: 3, edits: 2 }]);
+    expect(only?.files).toEqual([
+      { path: 'one.ts', added: 7, removed: 3, patches: [patch(3, 1), patch(4, 2)] },
+    ]);
     expect(only?.added).toBe(7);
   });
 
@@ -68,6 +70,33 @@ describe('what a turn changed', () => {
     const entries = [asked('a'), ran('b'), ran('c'), said('d')];
 
     expect(changesByTurn(entries).size).toBe(0);
+  });
+
+  /**
+   * A file written back unchanged leaves a patch of nothing but context. It is not an edit,
+   * and drawing it produces a diff with nothing in it.
+   */
+  it('does not count writing a file without changing it', () => {
+    const entries = [asked('a'), edited('b', 'one.ts', 2, 0), edited('c', 'one.ts', 0, 0), said('d')];
+
+    // Two file tools ran, but only one of them changed anything, so there is nothing the
+    // edit's own row does not already say.
+    expect(changesByTurn(entries).size).toBe(0);
+  });
+
+  it('leaves an unchanged write out of a turn that did change other things', () => {
+    const entries = [
+      asked('a'),
+      edited('b', 'one.ts', 2, 0),
+      edited('c', 'two.ts', 0, 0),
+      edited('d', 'three.ts', 1, 0),
+      said('e'),
+    ];
+
+    const only = changesByTurn(entries).get(4);
+
+    expect(only?.files.map((file) => file.path)).toEqual(['one.ts', 'three.ts']);
+    expect(only?.added).toBe(3);
   });
 
   it('keeps each turn apart from the next', () => {

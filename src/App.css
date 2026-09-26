@@ -5661,11 +5661,43 @@ pre.fatal,
 }
 
 .turn-changes-files li {
+  font-size: var(--font-sm);
+}
+
+/* The whole row opens the change, so it is the button rather than something inside it. */
+.turn-changes-file {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  padding: 3px 0;
-  font-size: var(--font-sm);
+  width: 100%;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.turn-changes-file:hover,
+.turn-changes-file.open {
+  background: var(--bg);
+}
+
+.turn-changes-file .caret {
+  flex: none;
+  align-self: center;
+}
+
+.turn-changes-diffs {
+  padding: 2px 0 6px 18px;
+}
+
+.turn-changes-step {
+  margin: 6px 0 2px;
+  color: var(--text-dim);
+  font-size: var(--font-xs);
 }
 
 .turn-changes-name {
