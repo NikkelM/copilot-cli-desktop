@@ -402,7 +402,10 @@ export function Transcript({
     pinned.current = !highlight;
     restoreFrom.current = null;
     filled.current = 0;
-  }, [sessionId, highlight]);
+    // Depending on the arrival rather than on the object that carries it: the object is
+    // built fresh on every render, so this ran on every render - and wiped, every time, the
+    // scroll position recorded a moment earlier to be given back once the page had grown.
+  }, [sessionId, highlight?.at]);
 
   useLayoutEffect(() => {
     const list = listRef.current;
@@ -498,9 +501,11 @@ export function Transcript({
    * are long the match can be outside it - measured on real sessions at five of ten matches,
    * one of them 39 kB behind a 16 kB window. A row that is not drawn cannot be pointed at.
    */
+  const { showAtLeast } = budgeted;
   useEffect(() => {
-    if (target >= 0 && target < from) budgeted.showAtLeast(entries.length - target);
-  }, [target, from, entries.length, budgeted]);
+    if (target >= 0 && target < from) showAtLeast(entries.length - target);
+    // The one function rather than the object holding it, which is rebuilt on every render.
+  }, [target, from, entries.length, showAtLeast]);
 
   /**
    * Put it in view, and again while the page around it is still arriving.
