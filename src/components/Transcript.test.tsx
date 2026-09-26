@@ -1745,3 +1745,92 @@ describe('not mistaking where it put the reader for where they went', () => {
     expect(onLoadOlder).toHaveBeenCalled();
   });
 });
+
+/**
+ * What a turn changed, gathered where the turn ends (#40). The edits are scattered through a
+ * turn, often with a long reply between them, so no single row says what it came to.
+ */
+describe('summarising what a turn changed', () => {
+  const asked = (content: string, id: string) =>
+    ({ type: 'user.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  const patch = (added: number) =>
+    ['diff --git a/x b/x', '@@ -1,1 +1,1 @@', ...Array.from({ length: added }, (_, i) => `+line ${i}`)].join('\n');
+
+  const edit = (path: string, id: string, added: number) => [
+    {
+      type: 'tool.execution_start',
+      data: { toolCallId: id, toolName: 'str_replace_editor', arguments: { path } },
+      id: `${id}-start`,
+    } as unknown as TranscriptEvent,
+    {
+      type: 'tool.execution_complete',
+      data: { toolCallId: id, success: true, result: { content: 'edited', detailedContent: patch(added) } },
+      id,
+    } as unknown as TranscriptEvent,
+  ];
+
+  const show = (events: TranscriptEvent[], props: Partial<ComponentProps<typeof Transcript>> = {}) =>
+    render(
+      <Transcript
+        events={events}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        {...props}
+      />,
+    );
+
+  it('says what a turn came to, at the end of the turn', async () => {
+    show([
+      asked('change two things', 'q'),
+      ...edit('one.ts', 't1', 3),
+      ...edit('two.ts', 't2', 2),
+      said('done', 'a'),
+    ]);
+
+    await vi.waitFor(() => expect(screen.getByText('2 files changed')).toBeTruthy());
+  });
+
+  // Its own row already says the same thing.
+  it('says nothing about a turn with one edit in it', async () => {
+    show([asked('change one thing', 'q'), ...edit('one.ts', 't1', 3), said('done', 'a')]);
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(document.querySelector('.turn-summary')).toBeNull();
+  });
+
+  /**
+   * A summary is placed by where its turn ends among all the entries, while the rows drawn
+   * are only the tail of them - so the two are read through the window's offset, not against
+   * each other.
+   */
+  it('puts a summary on the right row when the window starts partway down', async () => {
+    // Long enough that the byte budget stops short of the top, so the window begins below it.
+    const bulk = Array.from({ length: 12 }, (_, i) => said('x'.repeat(4000), `bulk-${i}`));
+
+    show([
+      asked('something earlier', 'q0'),
+      ...bulk,
+      asked('change two things', 'q'),
+      ...edit('one.ts', 't1', 3),
+      ...edit('two.ts', 't2', 2),
+      said('done', 'a'),
+    ]);
+
+    await vi.waitFor(() => expect(screen.getByText('2 files changed')).toBeTruthy());
+
+    const list = document.querySelector('li.entry')?.parentElement;
+    const rows = [...(list?.children ?? [])];
+    const summary = document.querySelector('.turn-summary');
+    const reply = [...document.querySelectorAll('li.entry')].find((row) => row.textContent?.includes('done'));
+
+    expect(rows.indexOf(summary!)).toBe(rows.indexOf(reply!) + 1);
+  });
+});

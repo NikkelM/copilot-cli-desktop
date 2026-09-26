@@ -5615,3 +5615,75 @@ pre.fatal,
   /* Drawn clear of the text rather than against it, and outside the box so nothing moves. */
   outline-offset: 2px;
 }
+
+/* What a turn changed, gathered where the turn ends. Set apart from the conversation rather
+   than inside it: it is the app summarising, not anybody speaking. */
+.turn-summary {
+  padding: 2px 8px 10px;
+  margin: 0 -8px;
+  list-style: none;
+}
+
+.turn-changes {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+}
+
+.turn-changes-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.turn-changes-head:hover {
+  color: var(--text);
+}
+
+/* Takes the room left over, so the counts sit at the right edge where they do on a tool row. */
+.turn-changes-label {
+  flex: 1;
+}
+
+.turn-changes-files {
+  margin: 0;
+  padding: 0 10px 8px;
+  list-style: none;
+}
+
+.turn-changes-files li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: var(--font-sm);
+}
+
+.turn-changes-name {
+  font-family: ui-monospace, monospace;
+  overflow-wrap: anywhere;
+}
+
+/* The folder reads as where the file is rather than as part of its name. */
+.turn-changes-where {
+  flex: 1;
+  color: var(--text-dim);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-xs);
+  overflow-wrap: anywhere;
+}
+
+.turn-changes-edits {
+  color: var(--text-dim);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+}

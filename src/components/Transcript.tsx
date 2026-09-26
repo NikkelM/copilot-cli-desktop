@@ -1,9 +1,11 @@
-import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
 import { useBudgetedEntries } from '../lib/useBudgetedEntries';
 import { fileBadge } from '../lib/fileBadge';
+import { changesByTurn } from '../lib/turnChanges';
+import { TurnSummary } from './TurnSummary';
 import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
 import { ASSUMED_DISPLAY, type CliDisplay } from '../lib/useCliDisplay';
@@ -490,6 +492,14 @@ export function Transcript({
     if (tookOver) setTookOver(false);
   }
 
+  /**
+   * What each turn changed, gathered at the row its turn ends on.
+   *
+   * Over the whole page rather than the drawn part of it, so a summary does not change as
+   * the window widens - the totals are of the turn, not of how much of it is on screen.
+   */
+  const turnChanges = useMemo(() => changesByTurn(entries), [entries]);
+
   /** Where the drawn window starts, so an index into the entries can be found among the rows. */
   const from = entries.length - shown.length;
   const pointingAt = target >= 0 && !tookOver ? target - from : -1;
@@ -619,7 +629,17 @@ export function Transcript({
           {loadingOlder ? 'Loading earlier messages…' : more ? 'Scroll up for earlier messages' : 'Start of session'}
         </li>
         {shown.map((entry, index) => (
-          <EntryRow key={entry.key} entry={entry} found={index === pointingAt} />
+          <Fragment key={entry.key}>
+            <EntryRow entry={entry} found={index === pointingAt} />
+            {/* At the end of the turn, which is where somebody looks to find out what it came
+                to. Not an `entry` itself: an entry is a row somebody said or did something
+                in, and the styling and the search's landing row both go by that class. */}
+            {turnChanges.has(index + from) && (
+              <li className="turn-summary">
+                <TurnSummary changes={turnChanges.get(index + from)!} />
+              </li>
+            )}
+          </Fragment>
         ))}
         {/* The bottom of this page is not the bottom of the conversation, which is the one
             thing a reader who followed a search result cannot tell by looking. */}
