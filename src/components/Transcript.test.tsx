@@ -1501,3 +1501,91 @@ describe('reaching a match that the drawn window stopped short of', () => {
     expect(document.querySelector('.entry.found')?.textContent).toContain('eviction rule');
   });
 });
+
+/**
+ * Reaching back to a match draws rows above it, and every one of them pushes it further down
+ * as its markdown lays out - so a page that arrived in the right place slid out of it a
+ * moment later. That is the second half of what being sent somewhere weird looked like.
+ */
+describe('keeping hold of the row while the page settles around it', () => {
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  const events = [said('the eviction rule was wrong', 'match'), said('and on we went', 'tail')];
+
+  const show = (props: Partial<ComponentProps<typeof Transcript>> = {}) =>
+    render(
+      <Transcript
+        events={events}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        highlight="eviction"
+        {...props}
+      />,
+    );
+
+  /** How many times the marked row has been asked to put itself back in view. */
+  const centrings = () => {
+    const row = document.querySelector('.entry.found');
+    return row ? Number((row as HTMLElement).dataset.centred ?? 0) : 0;
+  };
+
+  beforeEach(() => {
+    // Counted per element, since the marked row is the only one this asks about.
+    Element.prototype.scrollIntoView = function scrollIntoView(this: HTMLElement) {
+      this.dataset.centred = String(Number(this.dataset.centred ?? 0) + 1);
+    };
+  });
+
+  it('puts itself back in view when the page moves underneath it', async () => {
+    const { rerender } = show();
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    const before = centrings();
+
+    // Something arriving above the match, which is what widening the window does.
+    rerender(
+      <Transcript
+        events={[said('an older exchange', 'above'), ...events]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        highlight="eviction"
+      />,
+    );
+
+    await vi.waitFor(() => expect(centrings()).toBeGreaterThan(before));
+  });
+
+  // The reader taking over ends it at once, and a wheel is not something scrolling raises.
+  it('lets go the moment the reader takes over', async () => {
+    const { rerender } = show();
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+
+    fireEvent.wheel(document.querySelector('.transcript') as HTMLElement);
+    const after = centrings();
+
+    // The same page movement that would otherwise pull the row back into view.
+    rerender(
+      <Transcript
+        events={[said('an older exchange', 'above'), ...events]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        highlight="eviction"
+      />,
+    );
+    await new Promise((r) => setTimeout(r, 60));
+
+    expect(centrings()).toBe(after);
+  });
+});

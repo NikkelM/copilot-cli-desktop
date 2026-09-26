@@ -1,4 +1,4 @@
-import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
@@ -45,6 +45,15 @@ const AUTO_FILL_LIMIT = 4;
  * later. Ten seconds is roughly the gap between reading something and typing about it.
  */
 const DROP_OLDER_AFTER_MS = 10_000;
+
+/**
+ * How long a row reached by a search is held in view while the page settles around it.
+ *
+ * Reaching back to a match draws rows above it, and each one pushes it down as its markdown
+ * lays out. Long enough to cover that; short enough that a page which has stopped moving is
+ * not still being pulled at. It ends the moment the reader touches the transcript.
+ */
+const HOLD_MS = 1_200;
 
 /** Why a skill arrived, for the rows where that is not the reader's own doing. */
 const SKILL_NOTE: Record<string, string> = {
@@ -413,6 +422,14 @@ export function Transcript({
    * It fades by itself. A mark that stayed would become part of how the session looks and
    * would still be there, meaning nothing, on the next visit.
    */
+  /**
+   * What has already been pointed at, as the session and the words together.
+   *
+   * Once per arrival: the page goes on changing as rows stream, expand and are reached back
+   * through, and a mark that reapplied itself would flash again at every one of those. The
+   * session is part of the key rather than cleared by an effect of its own, which ran after
+   * this one on mount and wiped the guard it was meant to keep.
+   */
   const marked = useRef<string | null>(null);
   /**
    * Set while this component is doing the scrolling.
@@ -424,6 +441,23 @@ export function Transcript({
    * the right place for one frame, then somewhere else.
    */
   const scrollingSelf = useRef(false);
+  /**
+   * The row being pointed at and how long to keep hold of it.
+   *
+   * Reaching back to a match draws rows *above* it, and every one of them pushes it further
+   * down as its markdown lays out - so a page that arrived in the right place slid out of it
+   * a moment later. Holding it for a beat while the page settles is the difference between
+   * landing on the match and landing near where it used to be.
+   *
+   * Bounded rather than indefinite: once the page has stopped moving there is nothing to
+   * correct for, and a transcript that kept pulling itself back would be unreadable.
+   */
+  const holding = useRef<{ row: HTMLElement; until: number } | null>(null);
+
+  /** Let go of the row, because the reader has taken over or the page has settled. */
+  const release = useCallback(() => {
+    holding.current = null;
+  }, []);
 
   useEffect(() => {
     const list = listRef.current;
@@ -484,22 +518,19 @@ export function Transcript({
 
     scrollingSelf.current = true;
     found.scrollIntoView({ block: 'center' });
+    // Kept in view while whatever is above it finishes arriving and laying out.
+    holding.current = { row: found, until: Date.now() + HOLD_MS };
     // Cleared after the event this raised has been and gone, rather than at once.
-    const release = setTimeout(() => {
+    const settling = setTimeout(() => {
       scrollingSelf.current = false;
     }, 0);
 
     const clear = setTimeout(() => found.classList.remove('found'), 2600);
     return () => {
-      clearTimeout(release);
+      clearTimeout(settling);
       clearTimeout(clear);
     };
   }, [highlight, sessionId, entries, shown.length, budgeted]);
-
-  // A row from the last session must not be looked for in this one.
-  useEffect(() => {
-    marked.current = null;
-  }, [sessionId]);
 
   /**
    * Keep up with a reply as it is written.
@@ -513,6 +544,17 @@ export function Transcript({
     if (!list) return;
 
     const follow = new MutationObserver(() => {
+      // A row being pointed at outranks following the end: the reader asked to be at one
+      // particular place, and the page moving underneath it is what this corrects for.
+      if (holding.current) {
+        if (Date.now() < holding.current.until) {
+          scrollingSelf.current = true;
+          holding.current.row.scrollIntoView({ block: 'center' });
+          scrollingSelf.current = false;
+          return;
+        }
+        holding.current = null;
+      }
       if (pinned.current && restoreFrom.current === null) list.scrollTop = list.scrollHeight;
     });
     follow.observe(list, { childList: true, subtree: true, characterData: true });
@@ -576,7 +618,16 @@ export function Transcript({
 
   return (
     <Shows.Provider value={display}>
-      <ol className="transcript" ref={listRef} onScroll={onScroll}>
+      <ol
+        className="transcript"
+        ref={listRef}
+        onScroll={onScroll}
+        // Unambiguous ways of taking over, none of which `scrollIntoView` raises - unlike a
+        // scroll event, which says nothing about who caused it.
+        onWheel={release}
+        onPointerDown={release}
+        onKeyDown={release}
+      >
         <li className="history-edge">
           {loadingOlder ? 'Loading earlier messages…' : more ? 'Scroll up for earlier messages' : 'Start of session'}
         </li>
