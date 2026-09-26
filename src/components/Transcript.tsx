@@ -629,11 +629,6 @@ export function Transcript({
             <button type="button" className="settings-reset" onClick={onLatest}>
               Go to the end of the session
             </button>
-            {/* TEMPORARY: reporting what the search found, to be removed once it is understood. */}
-            <span style={{ opacity: 0.6, marginLeft: 12 }}>
-              [entries {entries.length} · drawn {shown.length} · target {target} · at {pointingAt} · took
-              over {String(tookOver)} · words {JSON.stringify(wanted)}]
-            </span>
           </li>
         )}
       </ol>
