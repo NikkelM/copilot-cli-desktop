@@ -394,7 +394,9 @@ export function Transcript({
     if (!list) return;
 
     // Older events were prepended: keep the reader where they were rather than letting
-    // the added height push their position away.
+    // the added height push their position away. Both ways of reaching back do it - a page
+    // fetched from disk changes how many entries there are, and widening the drawn window
+    // changes only how many are shown, so this has to watch for both.
     if (restoreFrom.current !== null) {
       list.scrollTop += list.scrollHeight - restoreFrom.current;
       restoreFrom.current = null;
@@ -405,7 +407,7 @@ export function Transcript({
     // initial load and streamed events. useLayoutEffect runs before paint, so a long
     // history never flashes at the top before jumping down.
     if (pinned.current) list.scrollTop = list.scrollHeight;
-  }, [entries.length, sessionId]);
+  }, [entries.length, shown.length, sessionId]);
 
   /**
    * Point at the part of the page that was being looked for.

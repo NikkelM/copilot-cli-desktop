@@ -1589,3 +1589,45 @@ describe('keeping hold of the row while the page settles around it', () => {
     expect(centrings()).toBe(after);
   });
 });
+
+/**
+ * Reaching back has two shapes: a page fetched from disk, which changes how many entries
+ * there are, and the drawn window widening, which changes only how many are shown. Both add
+ * height above the reader, and only the first was being corrected for - so scrolling up
+ * moved the text under whoever was reading it.
+ */
+describe('holding the reader still when the window widens', () => {
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  it('gives back the height that showing more entries added', async () => {
+    render(
+      <Transcript
+        events={Array.from({ length: 16 }, (_, index) => said('x'.repeat(2 * 1024), `e${index}`))}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+    await new Promise((r) => setTimeout(r, 40));
+
+    const list = document.querySelector('.transcript') as HTMLElement;
+    const rows = () => document.querySelectorAll('.transcript > li.entry').length;
+    const before = rows();
+
+    // jsdom lays nothing out, so height is stated as what it really tracks: the rows drawn.
+    const ROW = 250;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => rows() * ROW });
+    list.scrollTop = 0;
+
+    // At the top, which is what asks for more of what is already held.
+    fireEvent.scroll(list);
+    await new Promise((r) => setTimeout(r, 40));
+
+    expect(rows(), 'more should have been drawn').toBeGreaterThan(before);
+    expect(list.scrollTop, 'and the reader given back the height it added').toBe((rows() - before) * ROW);
+  });
+});
