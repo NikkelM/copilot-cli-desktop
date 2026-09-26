@@ -5583,11 +5583,15 @@ pre.fatal,
 
 /* The row that answers a search. It stays until the reader moves the transcript themselves,
    rather than fading on a timer: a mark you have to catch within two seconds is one you miss,
-   and the page it sits on is often still arriving when those two seconds are up. */
+   and the page it sits on is often still arriving when those two seconds are up.
+
+   A flat tint and one crisp line around it. A translucent glow was tried and read as ragged:
+   it is drawn outside the row, so it laid a second layer over the tint of whatever it
+   reached, and the seam between the two looked like a mistake rather than a highlight. */
 .entry.found {
   border-radius: 6px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  box-shadow:
-    0 0 0 6px color-mix(in srgb, var(--accent) 14%, transparent),
-    inset 3px 0 0 var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  /* Drawn clear of the text rather than against it, and outside the box so nothing moves. */
+  outline-offset: 2px;
 }

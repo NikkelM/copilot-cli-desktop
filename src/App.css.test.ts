@@ -596,3 +596,27 @@ describe('the branch picker', () => {
     expect(block('.repo-branch-menu'), 'the menu hangs off it').toContain('position: absolute;');
   });
 });
+
+/**
+ * The row a search result landed on. It is drawn flat: a translucent glow around it was
+ * tried and read as ragged, because a shadow is drawn outside the row and laid a second
+ * layer over whatever tint it reached (#30).
+ */
+describe('the row a search landed on', () => {
+  const rule = () => {
+    const at = css.indexOf('.entry.found {');
+    expect(at, '.entry.found should be in the stylesheet').toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('is tinted rather than haloed', () => {
+    expect(rule()).toContain('background:');
+    expect(rule(), 'a shadow around it stacks with what it overlaps').not.toContain('box-shadow');
+  });
+
+  // An outline is drawn outside the box, so nothing on the page moves when it appears.
+  it('is outlined in a way that moves nothing', () => {
+    expect(rule()).toContain('outline:');
+    expect(rule(), 'a border would widen the row').not.toMatch(/\bborder:/);
+  });
+});
