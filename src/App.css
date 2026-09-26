@@ -5605,9 +5605,10 @@ pre.fatal,
   /* Reaching up and down as well as out. Only the sides are pulled back: there the row is
      reaching into padding the list keeps for it, while above and below there is nothing to
      reach into but the row before and the row after - so it makes room rather than covering
-     them. */
+     them. The vertical margin is that room: without it the box, and the line drawn outside
+     the box, end up against whatever is above. */
   padding: 12px 8px;
-  margin: 0 -8px;
+  margin: 8px -8px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   outline: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);

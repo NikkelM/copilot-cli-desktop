@@ -686,9 +686,13 @@ describe('a marked row reaching past its text', () => {
   it('makes room above and below rather than covering what is there', () => {
     const plain = box('.entry', 'padding');
     const marked = box('.entry.found', 'padding');
+    const room = box('.entry.found', 'margin').vertical;
+    const offset = Number(/outline-offset:\s*([\d.]+)px/.exec(rule('.entry.found'))?.[1] ?? 0);
 
     expect(marked.vertical, 'it reaches above and below the text').toBeGreaterThan(plain.vertical);
-    expect(box('.entry.found', 'margin').vertical, 'and is not pulled back over its neighbours').toBe(0);
+    expect(room, 'and stands clear of its neighbours rather than over them').toBeGreaterThan(0);
+    // The line is drawn outside the box, so the room has to hold that as well as the box.
+    expect(room, 'with room for the line drawn around it').toBeGreaterThan(offset);
   });
 
   it('reaches into the list at the sides, and gives back what it took', () => {
