@@ -140,8 +140,18 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   const freeform = choices && entry.answer && !choices.includes(entry.answer) ? entry.answer : null;
 
   // What a file tool changed, which is the reason to open its row at all.
-  const patch = entry.patch ? parsePatch(entry.patch) : null;
-  const changed = patch ? countChanges(patch) : null;
+  const written = entry.patch ? parsePatch(entry.patch) : null;
+  const counts = written ? countChanges(written) : null;
+
+  /**
+   * A call that changed nothing did not produce a change, whatever it reported.
+   *
+   * Viewing a file answers with a diff of nothing but context, as does writing one back
+   * unchanged. Treating that as a patch draws an empty table and, worse, takes the row's
+   * count of what it did return, since a row that changed something says that instead.
+   */
+  const patch = counts && (counts.added > 0 || counts.removed > 0) ? written : null;
+  const changed = patch ? counts : null;
 
   const expandable =
     Boolean(entry.output) ||

@@ -1807,6 +1807,45 @@ describe('summarising what a turn changed', () => {
   });
 
   /**
+   * Viewing a file answers with a diff of nothing but context, so a row that only looked at
+   * a file must not be dressed as one that changed it.
+   */
+  it('does not draw a diff for a call that changed nothing', async () => {
+    const empty = ['diff --git a/x b/x', '@@ -1,2 +1,2 @@', ' kept one', ' kept two'].join('\n');
+
+    render(
+      <Transcript
+        events={[
+          asked('look at it', 'q'),
+          {
+            type: 'tool.execution_start',
+            data: { toolCallId: 'v', toolName: 'view', arguments: { path: 'one.ts' } },
+            id: 'v-start',
+          } as unknown as TranscriptEvent,
+          {
+            type: 'tool.execution_complete',
+            data: { toolCallId: 'v', success: true, result: { content: 'one\ntwo', detailedContent: empty } },
+            id: 'v',
+          } as unknown as TranscriptEvent,
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+
+    await vi.waitFor(() => expect(screen.getByText(/one\.ts/)).toBeTruthy());
+    await userEvent.click(screen.getByRole('button', { name: /one\.ts/ }));
+
+    expect(document.querySelector('.tool-diff')).toBeNull();
+    // The count the phantom patch was taking: a row that changed nothing says what it read.
+    expect(screen.getByText('2 lines')).toBeTruthy();
+  });
+
+  /**
    * A summary is placed by where its turn ends among all the entries, while the rows drawn
    * are only the tail of them - so the two are read through the window's offset, not against
    * each other.
