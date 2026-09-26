@@ -1551,3 +1551,39 @@ describe('opening a search result where it was said', () => {
     );
   });
 });
+
+/** A row shows its title and repository; anything else it matched on needs saying. */
+describe('saying why a row is in the list', () => {
+  const shown = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={[session({ sessionId: 'a', title: 'Design Nyx NPC Traits', branch: 'feature/npc-assist-traits' })]}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        {...over}
+      />,
+    );
+
+  it('names the branch a row was found by, which the row does not show', async () => {
+    shown();
+
+    await userEvent.type(screen.getByPlaceholderText(/Filter by title/), 'assist');
+
+    await vi.waitFor(() => expect(document.querySelector('.session-excerpt')).toBeTruthy());
+    expect(document.querySelector('.session-excerpt')?.textContent).toContain('feature/npc-assist-traits');
+    expect(document.querySelector('.session-excerpt mark')?.textContent).toBe('assist');
+  });
+
+  it('says nothing when the title is the reason, which is already on the row', async () => {
+    shown({ sessions: [session({ sessionId: 'a', title: 'Assist with the form' })] });
+
+    await userEvent.type(screen.getByPlaceholderText(/Filter by title/), 'assist');
+
+    await new Promise((r) => setTimeout(r, 60));
+    expect(document.querySelector('.session-excerpt')).toBeNull();
+  });
+});

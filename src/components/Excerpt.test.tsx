@@ -9,17 +9,17 @@ const SHUT = '\u0003';
 
 describe('Excerpt', () => {
   it('says nothing when the session was not found by what it said', () => {
-    const { container } = render(<Excerpt match={undefined} />);
+    const { container } = render(<Excerpt excerpt={undefined} />);
     expect(container.textContent).toBe('');
   });
 
   it('says nothing for a match with no words around it', () => {
-    const { container } = render(<Excerpt match={{ sessionId: 'a', excerpt: '', source: 'a:turn:1' }} />);
+    const { container } = render(<Excerpt excerpt="" />);
     expect(container.textContent).toBe('');
   });
 
   it('draws the matched words apart from the rest', () => {
-    render(<Excerpt match={{ sessionId: 'a', excerpt: `the ${OPEN}eviction${SHUT} rule`, source: 'a:turn:1' }} />);
+    render(<Excerpt excerpt={`the ${OPEN}eviction${SHUT} rule`} />);
 
     const hit = screen.getByText('eviction');
     expect(hit.tagName).toBe('MARK');
@@ -27,9 +27,7 @@ describe('Excerpt', () => {
 
   // The row clips to two lines, so the whole of it has to be reachable some other way.
   it('carries the whole excerpt as plain text for a reader who hovers', () => {
-    const { container } = render(
-      <Excerpt match={{ sessionId: 'a', excerpt: `the ${OPEN}eviction${SHUT} rule`, source: 'a:turn:1' }} />,
-    );
+    const { container } = render(<Excerpt excerpt={`the ${OPEN}eviction${SHUT} rule`} />);
 
     expect(container.querySelector('p')?.getAttribute('title')).toBe('the eviction rule');
   });

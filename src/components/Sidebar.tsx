@@ -8,7 +8,7 @@ import { ChevronIcon, GearIcon } from './Icons';
 import { SessionMenu, type SessionAction } from './SessionMenu';
 import { SidebarToggle } from './SidebarToggle';
 import { Waiting } from './Waiting';
-import { isEmpty, matchesQuery, parseQuery } from '../lib/sessionFilter';
+import { hiddenReason, isEmpty, matchesQuery, parseQuery } from '../lib/sessionFilter';
 import { useSessionSearch } from '../lib/useSessionSearch';
 import { TagFilter } from './TagFilter';
 import { Excerpt } from './Excerpt';
@@ -469,7 +469,15 @@ export function Sidebar({
                           <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
                           {/* Only on a row the name did not find, which is the row whose
                               presence needs explaining. */}
-                          {!named?.has(session.sessionId) && <Excerpt match={said.get(session.sessionId)} />}
+                          {/* Why the row is here, when that is not already on it: the words
+                              it said, or the folder or branch its name does not show. */}
+                          <Excerpt
+                            excerpt={
+                              named?.has(session.sessionId)
+                                ? (hiddenReason(session, parseQuery(query)) ?? undefined)
+                                : said.get(session.sessionId)?.excerpt
+                            }
+                          />
                         </div>
                         <Delegated
                           subagents={subagents}

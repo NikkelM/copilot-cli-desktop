@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { SessionSummary } from '../../shared/protocol';
-import { isEmpty, matchesQuery, parseQuery } from './sessionFilter';
+import { hiddenReason, isEmpty, matchesQuery, parseQuery } from './sessionFilter';
 
 const session = (over: Partial<SessionSummary> = {}): SessionSummary =>
   ({
@@ -117,5 +117,51 @@ describe('matchesQuery', () => {
       expect(match('spike', {}, ['spike'])).toBe(true);
       expect(match('spi', {}, ['spike'])).toBe(true);
     });
+  });
+});
+
+/**
+ * A row shows its title, its repository and its tags. Anything else it matched on is
+ * invisible, which is how a branch called `feature/npc-assist-traits` put three sessions
+ * under a search for "assist" with nothing on them to explain it.
+ */
+describe('why a row is in the list when the reason is not on it', () => {
+  const marks = (text: string) => text.replace(/\u0002|\u0003/g, '|');
+
+  it('says nothing when the title is the reason, which the row shows', () => {
+    const session = { sessionId: 'a', title: 'Assist with the form', cwd: null, repository: null, branch: null } as never;
+
+    expect(hiddenReason(session, parseQuery('assist'))).toBeNull();
+  });
+
+  it('names the branch, which the row does not show', () => {
+    const session = { sessionId: 'a', title: 'Nyx traits', cwd: null, repository: null, branch: 'feature/npc-assist-traits' } as never;
+
+    expect(marks(hiddenReason(session, parseQuery('assist')) ?? '')).toBe('feature/npc-|assist|-traits');
+  });
+
+  it('names the folder, which the row does not show either', () => {
+    const session = { sessionId: 'a', title: 'Something', cwd: 'C:\\work\\assistant', repository: null, branch: null } as never;
+
+    expect(marks(hiddenReason(session, parseQuery('assist')) ?? '')).toBe('C:\\work\\|assist|ant');
+  });
+
+  // An id is quoted by its first characters, so it matches from the start.
+  it('names the id when that is what was typed', () => {
+    const session = { sessionId: 'abc123', title: 'Something', cwd: null, repository: null, branch: null } as never;
+
+    expect(marks(hiddenReason(session, parseQuery('abc')) ?? '')).toBe('|abc|123');
+  });
+
+  it('says nothing for a query that asks only for tags', () => {
+    const session = { sessionId: 'a', title: 'x', cwd: null, repository: null, branch: 'assist' } as never;
+
+    expect(hiddenReason(session, parseQuery('tag:bug'))).toBeNull();
+  });
+
+  it('says nothing when nothing hidden matched', () => {
+    const session = { sessionId: 'a', title: 'x', cwd: 'C:\\work', repository: null, branch: 'main' } as never;
+
+    expect(hiddenReason(session, parseQuery('assist'))).toBeNull();
   });
 });

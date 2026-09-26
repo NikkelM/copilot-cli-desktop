@@ -1,15 +1,14 @@
 import { marked, unmarked } from '../lib/excerpt';
-import type { SessionMatch } from '../../shared/protocol';
 
 /**
- * The words around what a session said, under the row that said them.
+ * The words around what put a row in the list, under the row itself.
  *
- * Only for a row that would not be here otherwise. A session found by its title needs no
- * explaining, and an excerpt under every row would turn a list into a wall of prose.
+ * Only for a row that would not be here otherwise, or whose reason for being here is not on
+ * it. A session found by its title needs no explaining, and a line under every row would
+ * turn a list into a wall of prose.
  */
-export function Excerpt({ match }: { match: SessionMatch | undefined }) {
-  if (!match?.excerpt) return null;
-  const { excerpt } = match;
+export function Excerpt({ excerpt }: { excerpt: string | undefined }) {
+  if (!excerpt) return null;
 
   return (
     <p className="session-excerpt" title={unmarked(excerpt)}>
