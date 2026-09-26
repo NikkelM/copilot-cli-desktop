@@ -1676,3 +1676,70 @@ describe('coming back to a result a second time', () => {
     });
   });
 });
+
+/**
+ * Landing on a search result lands at the top of the page, and being at the top is what asks
+ * for the page before it. Arriving therefore fetched older history nobody wanted, prepended
+ * it above the match, and left the reader on a different day with nothing marked.
+ */
+describe('not mistaking where it put the reader for where they went', () => {
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  const show = (props: Partial<ComponentProps<typeof Transcript>> = {}) =>
+    render(
+      <Transcript
+        events={[said('the eviction rule was wrong', 'a'), said('and on we went', 'b')]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={true}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        {...props}
+      />,
+    );
+
+  const atTop = (list: HTMLElement) => {
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 4000 });
+    list.scrollTop = 0;
+    fireEvent.scroll(list);
+  };
+
+  /** The scroll this component caused is ignored, so let it pass before testing the rest. */
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  it('does not reach further back just because a result landed at the top', async () => {
+    const onLoadOlder = vi.fn();
+    show({ highlight: 'eviction', onLoadOlder });
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    await settled();
+
+    atTop(document.querySelector('.transcript') as HTMLElement);
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it('reaches back once the reader scrolls there themselves', async () => {
+    const onLoadOlder = vi.fn();
+    show({ highlight: 'eviction', onLoadOlder });
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    await settled();
+    const list = document.querySelector('.transcript') as HTMLElement;
+
+    fireEvent.wheel(list);
+    atTop(list);
+
+    expect(onLoadOlder).toHaveBeenCalled();
+  });
+
+  // Without a search sending them anywhere, the top means what it always meant.
+  it('reaches back from the top as it always did when nothing was searched for', () => {
+    const onLoadOlder = vi.fn();
+    show({ onLoadOlder });
+
+    atTop(document.querySelector('.transcript') as HTMLElement);
+
+    expect(onLoadOlder).toHaveBeenCalled();
+  });
+});

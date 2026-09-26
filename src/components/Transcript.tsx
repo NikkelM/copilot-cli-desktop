@@ -436,10 +436,15 @@ export function Transcript({
    * second visit to the same session with the same words was refused as already answered.
    */
   const lastSession = useRef(sessionId);
-  if (lastSession.current !== sessionId) {
-    lastSession.current = sessionId;
-    marked.current = null;
-  }
+  /**
+   * Whether the reader has moved the transcript themselves since arriving.
+   *
+   * Landing on a search result puts them at the top of the page, and being at the top is
+   * what asks for the page before it - so arriving fetched older history nobody wanted,
+   * prepended it above the match, and left them reading a different day. Where this app put
+   * somebody is not them asking to go further.
+   */
+  const tookOver = useRef(false);
   /**
    * Set while this component is doing the scrolling.
    *
@@ -463,10 +468,21 @@ export function Transcript({
    */
   const holding = useRef<{ row: HTMLElement; until: number } | null>(null);
 
-  /** Let go of the row, because the reader has taken over or the page has settled. */
+  /** Let go of the row, because the reader has taken over. */
   const release = useCallback(() => {
     holding.current = null;
+    tookOver.current = true;
   }, []);
+
+  // Arriving somewhere new is arriving: nothing has been pointed at here, nothing is being
+  // held, and the reader has not yet moved anything. Done while rendering rather than in an
+  // effect, which would run after the effect below and undo what it had just set.
+  if (lastSession.current !== sessionId) {
+    lastSession.current = sessionId;
+    marked.current = null;
+    holding.current = null;
+    tookOver.current = false;
+  }
 
   useEffect(() => {
     const list = listRef.current;
@@ -615,6 +631,11 @@ export function Transcript({
     } else {
       cancelDrop();
     }
+
+    // Where this app put somebody is not them asking to go further back: landing on a search
+    // result lands at the top, which would otherwise fetch the page before it and prepend a
+    // different day above the match.
+    if (highlight && !tookOver.current) return;
 
     if (list.scrollTop <= LOAD_OLDER_THRESHOLD_PX && more && !loadingOlder) {
       restoreFrom.current = list.scrollHeight;
