@@ -663,3 +663,33 @@ describe('room for a row to be drawn around', () => {
     expect(padding.right).toBeGreaterThanOrEqual(entry.right);
   });
 });
+
+/**
+ * A marked row reaches past its own text on every side, and is pulled back by what it
+ * reaches - so marking a row does not shift the conversation around it.
+ */
+describe('a marked row reaching past its text', () => {
+  const rule = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  const box = (selector: string, property: string) => {
+    const parts = new RegExp(`\\n\\s+${property}:\\s*([^;]+);`).exec(rule(selector))?.[1]?.trim().split(/\s+/);
+    expect(parts, `${selector} should set ${property}`).toBeTruthy();
+    const value = (at: number) => Number(parts![at]!.replace('px', ''));
+    return { vertical: value(0), horizontal: parts!.length > 1 ? value(1) : value(0) };
+  };
+
+  it('is padded further than an unmarked row, and pulled back by the difference', () => {
+    const plain = box('.entry', 'padding');
+    const marked = box('.entry.found', 'padding');
+    const pull = box('.entry.found', 'margin');
+
+    expect(marked.vertical, 'it reaches above and below the text').toBeGreaterThan(plain.vertical);
+    expect(pull.vertical, 'and gives back exactly what it reached').toBe(plain.vertical - marked.vertical);
+    expect(marked.horizontal, 'the sides are already padded by every row').toBe(plain.horizontal);
+    expect(pull.horizontal).toBe(-marked.horizontal);
+  });
+});
