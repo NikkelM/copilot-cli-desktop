@@ -321,6 +321,7 @@ const CATEGORIES = [
   { id: 'cli', label: 'Copilot CLI' },
   { id: 'sessions', label: 'New sessions' },
   { id: 'management', label: 'Session management' },
+  { id: 'transcript', label: 'Transcript' },
 ] as const satisfies readonly { id: string; label: string }[];
 
 type CategoryId = (typeof CATEGORIES)[number]['id'];
@@ -366,9 +367,11 @@ const INDEX: Record<CategoryId, Searchable[]> = {
   appearance: [
     { label: 'App scale', keywords: 'size zoom bigger smaller' },
     { label: 'Text size', keywords: 'font scale reading transcript' },
-    { label: 'Summarise what a turn changed', keywords: 'diff files changed turn summary edits hide' },
   ],
   cli: [{ label: 'Update the CLI when the app starts', keywords: 'upgrade version auto' }],
+  transcript: [
+    { label: 'Summarise what a turn changed', keywords: 'diff files changed turn summary edits hide' },
+  ],
 };
 
 /** What a reader was trying to do when they were stopped by unsaved changes. */
@@ -857,7 +860,7 @@ export function SettingsWindow({
                     onChange={(checked) => edit('allowAll', checked)}
                     // The same either way: the tick already says which it is, and what is
                     // worth knowing is the flag it maps to and that a session can override it.
-                    hint="Uses the CLI --allow-all flag. Can be changed per session."
+                    hint="Uses the CLI --allow-all flag. Applies to any session this app opens, and can be changed per session."
                   />
                 )}
 
@@ -982,7 +985,13 @@ export function SettingsWindow({
                     Reset to default sizes
                   </button>
                 )}
+              </>
+            )}
 
+            {/* What the transcript reports, rather than how large it is drawn: a reader who
+                turns this off is not changing how anything looks but what it says. */}
+            {shown.id === 'transcript' && (
+              <>
                 {shows('Summarise what a turn changed') && (
                   <ChoiceField
                     label="Summarise what a turn changed"

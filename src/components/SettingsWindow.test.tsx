@@ -1808,7 +1808,7 @@ describe('searching the settings', () => {
   it('lists every category before anything is typed', () => {
     show();
 
-    expect(categories()).toEqual(['Appearance', 'Copilot CLI', 'New sessions', 'Session management']);
+    expect(categories()).toEqual(['Appearance', 'Copilot CLI', 'New sessions', 'Session management', 'Transcript']);
   });
 
   /**
@@ -1878,7 +1878,7 @@ describe('searching the settings', () => {
 
     await userEvent.clear(search());
 
-    expect(categories()).toHaveLength(4);
+    expect(categories()).toHaveLength(5);
     expect(screen.getByLabelText('Sessions kept in memory')).toBeTruthy();
   });
 
@@ -1939,14 +1939,14 @@ describe('summarising what a turn changed', () => {
 
   it('shows which answer is in force', async () => {
     show({ turnSummary: 'multiple' });
-    await userEvent.click(tab('Appearance'));
+    await userEvent.click(tab('Transcript'));
 
     expect(choice().value).toBe('multiple');
   });
 
   it('offers turning it off, and saves that', async () => {
     const { onSave } = show({ turnSummary: 'always' });
-    await userEvent.click(tab('Appearance'));
+    await userEvent.click(tab('Transcript'));
 
     await userEvent.selectOptions(choice(), 'off');
     await userEvent.click(commit());
@@ -1957,10 +1957,21 @@ describe('summarising what a turn changed', () => {
   // Held as a draft like everything else in this window, rather than applied as it is picked.
   it('does not save an answer that was not confirmed', async () => {
     const { onSave } = show({ turnSummary: 'always' });
-    await userEvent.click(tab('Appearance'));
+    await userEvent.click(tab('Transcript'));
 
     await userEvent.selectOptions(choice(), 'multiple');
 
     expect(onSave).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Not under Appearance, which is where it started: that category is how things are drawn,
+   * and this changes what the transcript reports rather than how it looks.
+   */
+  it('is not among the appearance settings', async () => {
+    show();
+    await userEvent.click(tab('Appearance'));
+
+    expect(screen.queryByLabelText('Summarise what a turn changed')).toBeNull();
   });
 });
