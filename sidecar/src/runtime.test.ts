@@ -822,6 +822,107 @@ describe('permissions', () => {
     await expect(pending).resolves.toEqual({ kind: 'reject' });
   });
 
+  /**
+   * Approving for the session has to name what is being approved.
+   *
+   * Without a rule the runtime has nothing to write down, so the approval covers the one
+   * request and the next identical one asks again - which is what "Allow for session"
+   * looked like it was failing to do. Measured against the real runtime: a second write
+   * inside the working directory goes from asking every time to not asking at all.
+   */
+  describe('approving for the rest of the session', () => {
+    const answer = async (request: Record<string, unknown>) => {
+      const onPermissionRequest = vi.fn();
+      const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest });
+      await runtime.send('a', 'x');
+
+      const pending = permissionHandlers.get('a')?.(request);
+      runtime.resolvePermission(onPermissionRequest.mock.calls[0]?.[1] as string, 'approve-for-session');
+      return pending;
+    };
+
+    it('remembers writes as writes', async () => {
+      await expect(answer({ kind: 'write', fileName: 'a.ts' })).resolves.toEqual({
+        kind: 'approve-for-session',
+        approval: { kind: 'write' },
+      });
+    });
+
+    it('remembers reads as reads', async () => {
+      await expect(answer({ kind: 'read', fileName: 'a.ts' })).resolves.toEqual({
+        kind: 'approve-for-session',
+        approval: { kind: 'read' },
+      });
+    });
+
+    // The commands in front of the reader, rather than shell access at large.
+    it('remembers the commands that were shown, not the shell', async () => {
+      await expect(
+        answer({
+          kind: 'shell',
+          commands: [
+            { identifier: 'Write-Output hello', readOnly: false },
+            { identifier: 'Get-ChildItem', readOnly: true },
+          ],
+        }),
+      ).resolves.toEqual({
+        kind: 'approve-for-session',
+        approval: { kind: 'commands', commandIdentifiers: ['Write-Output hello', 'Get-ChildItem'] },
+      });
+    });
+
+    it('remembers an MCP tool by its server and name', async () => {
+      await expect(answer({ kind: 'mcp', serverName: 'github', toolName: 'search' })).resolves.toEqual({
+        kind: 'approve-for-session',
+        approval: { kind: 'mcp', serverName: 'github', toolName: 'search' },
+      });
+    });
+
+    /**
+     * A bare approval for a kind with no rule to give, which is what every kind did before
+     * this. It approves what was asked and asks again next time, rather than inventing a
+     * rule that might cover more than the reader saw.
+     */
+    it('approves without a rule when it has none to give', async () => {
+      await expect(answer({ kind: 'something-new' })).resolves.toEqual({ kind: 'approve-for-session' });
+    });
+
+    it('approves without a rule when a shell request names no commands', async () => {
+      await expect(answer({ kind: 'shell', commands: [] })).resolves.toEqual({
+        kind: 'approve-for-session',
+      });
+    });
+
+    /**
+     * Two requests can be outstanding at once, so the rule has to come from the one being
+     * answered rather than the one that arrived last.
+     */
+    it('builds the rule from the request that was answered', async () => {
+      const onPermissionRequest = vi.fn();
+      const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest });
+      await runtime.send('a', 'x');
+
+      const ask = permissionHandlers.get('a');
+      const write = ask?.({ kind: 'write', fileName: 'a.ts' });
+      const read = ask?.({ kind: 'read', fileName: 'b.ts' });
+
+      const first = onPermissionRequest.mock.calls[0]?.[1] as string;
+      const second = onPermissionRequest.mock.calls[1]?.[1] as string;
+
+      runtime.resolvePermission(second, 'approve-for-session');
+      runtime.resolvePermission(first, 'approve-for-session');
+
+      await expect(read).resolves.toEqual({
+        kind: 'approve-for-session',
+        approval: { kind: 'read' },
+      });
+      await expect(write).resolves.toEqual({
+        kind: 'approve-for-session',
+        approval: { kind: 'write' },
+      });
+    });
+  });
+
   // Without a UI listening there is genuinely nobody to ask, and saying so is more honest
   // than silently approving whatever the agent wanted to do.
   it('reports no user available when nothing can prompt', async () => {

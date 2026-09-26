@@ -11,8 +11,7 @@ import {
   type SessionEvent,
 } from '@github/copilot-sdk';
 
-import type {
-  McpServerState,
+import type {  McpServerState,
   Attachment,
   CommandOutcome,
   ContextTier,
@@ -105,6 +104,16 @@ async function defaultClientFactory(): Promise<CopilotClient> {
     connection: RuntimeConnection.forStdio(cliPath ? { path: cliPath } : {}),
   });
 }
+
+/**
+ * What an approval that outlives its request covers.
+ *
+ * Taken from the decision rather than written out again, so a rule the runtime stops
+ * accepting fails to compile here rather than being ignored at run time.
+ */
+type SessionApproval = NonNullable<
+  Extract<PermissionRequestResult, { kind: 'approve-for-session' }>['approval']
+>;
 
 /** A request waiting on the user, with the resolver that unblocks the agent. */
 interface LoadedSession {
@@ -263,6 +272,8 @@ export class SessionRuntime {
     expiresAt: string | null,
   ) => void;
   private readonly onPermissionResolved?: (sessionId: string, requestId: string) => void;
+  /** What each waiting permission request asked, so its answer can name what it approves. */
+  private readonly asked = new Map<string, PermissionRequest>();
   private readonly onElicitationRequest?: (
     sessionId: string,
     requestId: string,
@@ -303,8 +314,12 @@ export class SessionRuntime {
     this.onPlanResolved = options.onPlanResolved;
     this.createClient = options.createClient ?? defaultClientFactory;
 
-    const permissionResolved = (sessionId: string, requestId: string) =>
+    const permissionResolved = (sessionId: string, requestId: string) => {
+      // Every way a request stops waiting comes through here, including giving up on the
+      // reader and tearing the session down, so this is the one place it cannot be leaked.
+      this.asked.delete(requestId);
       this.onPermissionResolved?.(sessionId, requestId);
+    };
     const questionResolved = (_sessionId: string, requestId: string) => this.onElicitationResolved?.(requestId);
     // Read per request rather than captured, so a change of setting reaches the next
     // question rather than only the next sidecar.
@@ -595,17 +610,71 @@ export class SessionRuntime {
     }
 
     const { requestId, expiresAt, answered } = this.permissions.add(sessionId);
+    // Kept until the answer arrives: approving for the session means naming what is being
+    // approved, and only the request says that. Dropped again in `permissionResolved`, so
+    // giving up on the reader and tearing the session down both clear it too.
+    this.asked.set(requestId, request);
     this.onPermissionRequest(sessionId, requestId, request, expiresAt);
     return answered;
   }
 
+  /**
+   * What "for the rest of the session" should remember, read from what was asked.
+   *
+   * Without this the decision names no rule, and the runtime has nothing to write down: the
+   * approval covers the one request and the next identical write asks again, which is what
+   * "Allow for session" looked like it was failing to do. Measured rather than assumed - a
+   * second write inside the working directory goes from asking every time to not asking.
+   *
+   * A kind with no rule to give falls through to a bare approval, which is what every kind
+   * did before. That is the honest answer for one this does not understand: approve what
+   * was asked, and ask again next time.
+   */
+  private sessionApproval(request: PermissionRequest): SessionApproval | undefined {
+    switch (request.kind) {
+      case 'write':
+        return { kind: 'write' };
+      case 'read':
+        return { kind: 'read' };
+      case 'shell': {
+        // Each distinct command is its own identifier, so this approves the commands in
+        // front of the reader rather than shell access at large.
+        const commands = Array.isArray(request.commands) ? request.commands : [];
+        const commandIdentifiers = commands
+          .map((command) => (command as { identifier?: unknown }).identifier)
+          .filter((identifier): identifier is string => typeof identifier === 'string');
+
+        return commandIdentifiers.length > 0 ? { kind: 'commands', commandIdentifiers } : undefined;
+      }
+      case 'mcp':
+        return typeof request.serverName === 'string'
+          ? {
+              kind: 'mcp',
+              serverName: request.serverName,
+              toolName: typeof request.toolName === 'string' ? request.toolName : null,
+            }
+          : undefined;
+      case 'memory':
+        return { kind: 'memory' };
+      case 'custom-tool':
+        return typeof request.toolName === 'string'
+          ? { kind: 'custom-tool', toolName: request.toolName }
+          : undefined;
+      default:
+        return undefined;
+    }
+  }
+
   /** Apply the user's decision to a pending permission request. */
   resolvePermission(requestId: string, choice: PermissionChoice): void {
+    const asked = this.asked.get(requestId);
+    const approval = choice === 'approve-for-session' && asked ? this.sessionApproval(asked) : undefined;
+
     const result: PermissionRequestResult =
       choice === 'approve-once'
         ? { kind: 'approve-once' }
         : choice === 'approve-for-session'
-          ? { kind: 'approve-for-session' }
+          ? { kind: 'approve-for-session', ...(approval ? { approval } : {}) }
           : { kind: 'reject' };
 
     this.settlePermission(requestId, result);
