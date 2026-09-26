@@ -1421,3 +1421,83 @@ describe('what counts as having said it', () => {
     expect(document.querySelector('.entry.found')).toBeNull();
   });
 });
+
+/**
+ * The page a search result opens is 150 events, but only about 16 KB from its end is drawn
+ * before anybody asks for more. Measured on real sessions, five matches in ten sat above
+ * that window - one of them 39 KB behind it - so the row was not in the document at all and
+ * the page settled at its end with nothing marked (#30).
+ */
+describe('reaching a match that the drawn window stopped short of', () => {
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  /** The match first, then enough text after it to push it out of the budget. */
+  const buried = [
+    said('the eviction rule was wrong', 'match'),
+    ...Array.from({ length: 12 }, (_, index) => said('x'.repeat(4 * 1024), `bulk${index}`)),
+  ];
+
+  it('draws far enough back to reach it, and marks it', async () => {
+    render(
+      <Transcript
+        events={buried}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        highlight="eviction"
+      />,
+    );
+
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    expect(document.querySelector('.entry.found')?.textContent).toContain('eviction rule');
+  });
+
+  // Without a search asking for it, the budget still decides what a page opens with.
+  it('leaves the window alone when nothing was searched for', async () => {
+    render(
+      <Transcript
+        events={buried}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+
+    await new Promise((r) => setTimeout(r, 40));
+    expect(document.body.textContent).not.toContain('eviction rule');
+  });
+
+  /**
+   * The rows on the page are the end of the entry list, not all of it, so where a match sits
+   * among the entries is not where it sits among the rows. Without that difference accounted
+   * for, a match inside the window still points at the wrong row - or at no row at all.
+   */
+  it('points at the right row when the page is only part of the list', async () => {
+    render(
+      <Transcript
+        events={[
+          ...Array.from({ length: 12 }, (_, index) => said('y'.repeat(4 * 1024), `above${index}`)),
+          said('the eviction rule was wrong', 'match'),
+          said('a short word after', 'tail'),
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        highlight="eviction"
+      />,
+    );
+
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+    expect(document.querySelector('.entry.found')?.textContent).toContain('eviction rule');
+  });
+});

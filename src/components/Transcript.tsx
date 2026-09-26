@@ -432,9 +432,6 @@ export function Transcript({
     // that reapplied itself would flash again at each of those.
     if (!list || !wanted || marked.current === `${sessionId}:${wanted}`) return;
 
-    const rows = list.querySelectorAll<HTMLElement>('.entry');
-    if (rows.length === 0) return;
-
     /**
      * Looked for in what was said, rather than in what the page shows.
      *
@@ -443,22 +440,43 @@ export function Transcript({
      * searchable and looking through it here would point at something the search could not
      * have found.
      *
-     * Read from the entries rather than the rendered page because a row can be collapsed,
-     * and a reply that is scrolled past is still the reply that matched.
+     * Searched across the whole page rather than the part of it being drawn, because the
+     * drawn part is budgeted from the end and the match is often above it.
      *
      * The last one rather than the first: the page ends at the match, so anything earlier
      * is an older mention of the same thing.
      */
-    const at = shown.reduce(
+    const at = entries.reduce(
       (best, entry, index) =>
         entry.kind === 'message' && entry.body.toLowerCase().includes(wanted) ? index : best,
       -1,
     );
 
-    // The end of the page when it cannot be placed more precisely, because that is where
-    // the cursor put the matched turn. Leaving the reader at the top of a page they were
-    // sent into is the one outcome worth avoiding.
-    const found = rows[at >= 0 ? at : rows.length - 1];
+    /**
+     * Drawn far enough back to include it, when the budget stopped short of it.
+     *
+     * The window is measured in text from the end of the page, so on a page whose last
+     * entries are long the match can be outside it - measured on real sessions at five of
+     * ten matches, one of them 39 kB behind a 16 kB window. It is not in the document at
+     * all then, and the page settles at its end with nothing marked, which is exactly what
+     * being sent somewhere weird looks like.
+     *
+     * Asking for more re-runs this effect, so the next pass finds it drawn.
+     */
+    if (at >= 0 && at < entries.length - shown.length) {
+      budgeted.showAtLeast(entries.length - at);
+      return;
+    }
+
+    // Scoped to the list's own children, so a subagent's rows nested inside an open tool
+    // row cannot be mistaken for entries of this page.
+    const rows = list.querySelectorAll<HTMLElement>(':scope > li.entry');
+    if (rows.length === 0) return;
+
+    // The end of the page when the words are nowhere in it, because that is where the
+    // cursor put the matched turn. Leaving the reader at the top of a page they were sent
+    // into is the one outcome worth avoiding.
+    const found = at >= 0 ? rows[at - (entries.length - shown.length)] : rows[rows.length - 1];
     if (!found) return;
 
     marked.current = `${sessionId}:${wanted}`;
@@ -476,7 +494,7 @@ export function Transcript({
       clearTimeout(release);
       clearTimeout(clear);
     };
-  }, [highlight, sessionId, shown]);
+  }, [highlight, sessionId, entries, shown.length, budgeted]);
 
   // A row from the last session must not be looked for in this one.
   useEffect(() => {

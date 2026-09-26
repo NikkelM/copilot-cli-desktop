@@ -129,6 +129,22 @@ export function useBudgetedEntries(sessionId: string, entries: Entry[], budget =
   const showMore = useCallback(() => setShown((current) => current + MINIMUM_ENTRIES * 4), []);
 
   /**
+   * Draw at least this many entries from the end, for something that has to be on the page.
+   *
+   * The budget decides how much of a page is worth drawing before anybody asks for more,
+   * which is the right default and the wrong answer when the reader has already asked for a
+   * particular row: a search result landed on a page whose match was above the window, so it
+   * was not in the document to be found, and the page settled at its end instead (#30).
+   *
+   * Only ever grows, like `showMore`. Coming back down is `settle`'s job, and it happens
+   * when the reader returns to the bottom - so the extra rows are paid for while they are
+   * being read and given back afterwards.
+   */
+  const showAtLeast = useCallback((count: number) => {
+    setShown((current) => Math.max(current, count));
+  }, []);
+
+  /**
    * Come back down to what a session in use should hold.
    *
    * Called when the reader has settled at the bottom, which is the only time this is safe:
@@ -148,5 +164,5 @@ export function useBudgetedEntries(sessionId: string, entries: Entry[], budget =
   }, []);
 
   const from = Math.max(0, entries.length - shown);
-  return { entries: from === 0 ? entries : entries.slice(from), hasMore: from > 0, showMore, settle };
+  return { entries: from === 0 ? entries : entries.slice(from), hasMore: from > 0, showMore, showAtLeast, settle };
 }
