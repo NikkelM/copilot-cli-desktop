@@ -58,8 +58,24 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
    */
   const [held, setHeld] = useState(NO_PAGE);
   const history = held.of === sessionId ? held.events : NO_PAGE.events;
-  /** Everything since the session was selected, which no replay may overwrite. */
-  const [live, setLive] = useState<TimelineEvent[]>([]);
+  /**
+   * Everything since the session was selected, which no replay may overwrite.
+   *
+   * Tied to its session for the same reason the page is: cleared in an effect, it stayed on
+   * screen for the render after the session changed, and anything reading the transcript in
+   * that render read the conversation before this one.
+   */
+  const [liveHeld, setLiveHeld] = useState(NO_PAGE);
+  const live = liveHeld.of === sessionId ? liveHeld.events : NO_PAGE.events;
+  const setLive = useCallback(
+    (next: TimelineEvent[] | ((current: TimelineEvent[]) => TimelineEvent[])) => {
+      setLiveHeld((current) => {
+        const held = current.of === showing.current ? current.events : NO_PAGE.events;
+        return { of: showing.current, events: typeof next === 'function' ? next(held) : next };
+      });
+    },
+    [],
+  );
   /** Cursor for the page before the events held, or null at the start of the log. */
   const [olderCursor, setOlderCursor] = useState<number | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
