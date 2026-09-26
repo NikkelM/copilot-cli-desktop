@@ -353,6 +353,7 @@ const INDEX: Record<CategoryId, Searchable[]> = {
   management: [
     { label: 'Sessions kept in memory', keywords: 'limit cap resident loaded ram' },
     { label: 'Release an idle session after', keywords: 'timeout minutes evict unload memory' },
+    { label: 'Run tools without asking', keywords: 'allow all yolo permission approve' },
     { label: 'Answer a question for me after', keywords: 'permission timeout wait give up prompt' },
     { label: 'Ask before deleting a session', keywords: 'confirm delete warn' },
     { label: 'Keep a deleted session for', keywords: 'retention days recycle bin restore' },
@@ -360,7 +361,6 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Disk usage', keywords: 'disk usage size bytes storage space largest' },
   ],
   sessions: [
-    { label: 'Run tools without asking', keywords: 'allow all yolo permission approve' },
     { label: 'Model', keywords: 'effort reasoning context window default' },
     { label: 'Default working directory', keywords: 'folder path cwd start home' },
   ],
@@ -737,6 +737,17 @@ export function SettingsWindow({
 
                 <h4 className="settings-subhead">Waiting for you</h4>
 
+                {shows('Run tools without asking') && (
+                  <TickField
+                    label="Run tools without asking"
+                    checked={draft.allowAll}
+                    onChange={(checked) => edit('allowAll', checked)}
+                    // The same either way: the tick already says which it is, and what is
+                    // worth knowing is the reach of it and that a session can override it.
+                    hint="Applies to every session this app opens, including ones already open, and can be changed per session."
+                  />
+                )}
+
                 {shows('Answer a question for me after') && (
                   <NumberField
                     label="Answer a question for me after"
@@ -852,17 +863,6 @@ export function SettingsWindow({
                   </button>
                   .
                 </p>
-
-                {shows('Run tools without asking') && (
-                  <TickField
-                    label="Run tools without asking"
-                    checked={draft.allowAll}
-                    onChange={(checked) => edit('allowAll', checked)}
-                    // The same either way: the tick already says which it is, and what is
-                    // worth knowing is the flag it maps to and that a session can override it.
-                    hint="Uses the CLI --allow-all flag. Applies to any session this app opens, and can be changed per session."
-                  />
-                )}
 
                 <div className="settings-row">
                   <span className="settings-label">Model</span>

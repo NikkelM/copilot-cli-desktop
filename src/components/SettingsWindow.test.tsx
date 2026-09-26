@@ -61,11 +61,11 @@ describe('the settings window', () => {
     // The memory settings and the delete question are one category, so both are here.
     expect(kept()).toBeTruthy();
     expect(asks()).toBeTruthy();
-    expect(screen.queryByLabelText('Run tools without asking')).toBeNull();
+    expect(screen.queryByLabelText('Default working directory')).toBeNull();
 
     await userEvent.click(tab('New sessions'));
 
-    expect(screen.getByLabelText('Run tools without asking')).toBeTruthy();
+    expect(screen.getByLabelText('Default working directory')).toBeTruthy();
     expect(screen.queryByLabelText('Sessions kept in memory')).toBeNull();
     expect(screen.queryByLabelText('Ask before deleting a session')).toBeNull();
   });
@@ -383,32 +383,6 @@ describe('leaving with something unsaved', () => {
  */
 describe('the defaults a new session starts with', () => {
   const openSessions = () => userEvent.click(tab('New sessions'));
-
-  it('offers running tools without asking, off to begin with', async () => {
-    show();
-    await openSessions();
-
-    const box = screen.getByLabelText('Run tools without asking') as HTMLInputElement;
-    expect(box.checked).toBe(false);
-  });
-
-  it('saves it with everything else', async () => {
-    const { onSave } = show();
-    await openSessions();
-
-    await userEvent.click(screen.getByLabelText('Run tools without asking'));
-    await userEvent.click(commit());
-
-    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ allowAll: true }));
-  });
-
-  // The names are the CLI's own, and they are the same flag, so saying so saves looking.
-  it('says what it is the same as', async () => {
-    show({ allowAll: true });
-    await openSessions();
-
-    expect(screen.getByText(/Uses the CLI --allow-all flag/)).toBeTruthy();
-  });
 
   it('takes a directory to start sessions in', async () => {
     const { onSave } = show();
@@ -934,8 +908,10 @@ describe('the tick box', () => {
   it('keeps the tick beside the box it belongs to, so the styling can find it', async () => {
     show({ confirmDelete: true });
     // The rule that shows it is `input:checked + .tick`, which only holds while they are
-    // siblings in that order.
-    expect(asks().nextElementSibling).toBe(tick());
+    // siblings in that order. Scoped to this box's own row: the category holds more than
+    // one tick box, and the first in the document is not necessarily this one.
+    expect(asks().nextElementSibling).toBe(asks().parentElement?.querySelector('.tick'));
+    expect(asks().nextElementSibling).toBeTruthy();
   });
 
   it('ticks when its own text is clicked', async () => {
@@ -1295,6 +1271,46 @@ describe('the recycle bin', () => {
  * How long the agent waits for an answer before it answers for you. One number for all
  * four kinds of question, because they are one thing from here (#201).
  */
+/**
+ * Whether a session runs tools without asking.
+ *
+ * Under session management rather than with the defaults a new session starts with: the
+ * permission mode does not survive a session being released, so this is applied to every
+ * session the app opens and to those already open, not only to ones it creates (#199).
+ */
+describe('running tools without asking', () => {
+  const box = () => screen.getByLabelText('Run tools without asking') as HTMLInputElement;
+
+  it('is off to begin with', () => {
+    show();
+
+    expect(box().checked).toBe(false);
+  });
+
+  it('saves it with everything else', async () => {
+    const { onSave } = show();
+
+    await userEvent.click(box());
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ allowAll: true }));
+  });
+
+  // What is worth knowing is its reach, since it is not limited to sessions made from here.
+  it('says how far it reaches', () => {
+    show({ allowAll: true });
+
+    expect(screen.getByText(/every session this app opens, including ones already open/)).toBeTruthy();
+  });
+
+  it('is not among the defaults a new session starts with', async () => {
+    show();
+    await userEvent.click(tab('New sessions'));
+
+    expect(screen.queryByLabelText('Run tools without asking')).toBeNull();
+  });
+});
+
 describe('waiting for an answer', () => {
   const waits = () => screen.getByLabelText('Answer a question for me after') as HTMLInputElement;
 
@@ -1653,7 +1669,7 @@ describe("the CLI's own settings", () => {
     it('asks about unsaved changes on the way, like every other way out', async () => {
       show();
       await goToSessions();
-      await userEvent.click(screen.getByLabelText('Run tools without asking'));
+      await userEvent.type(screen.getByLabelText('Default working directory'), 'F:\\work');
 
       await userEvent.click(screen.getByRole('button', { name: 'Go to Copilot CLI settings' }));
 
