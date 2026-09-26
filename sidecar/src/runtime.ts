@@ -1019,10 +1019,18 @@ export class SessionRuntime {
     // already waiting keeps the deadline it was given: the prompt on screen says when it
     // lapses, and moving that under the reader would make the countdown a lie.
     if (permissionTimeoutMs !== undefined) this.permissionTimeoutMs = Math.max(0, Math.floor(permissionTimeoutMs));
-    // Applied to the next session opened rather than to those already running: a session
-    // that is loaded has already been told, and telling it again would not change what it
-    // has been asked so far.
-    if (allowAll !== undefined) this.allowAll = allowAll;
+    // Applied to what is already open as well as to what opens next: turning this on is a
+    // statement about the session being used now, not only about the one after it. Both
+    // directions, because a session already told to allow everything has to be told to stop.
+    if (allowAll !== undefined && allowAll !== this.allowAll) {
+      this.allowAll = allowAll;
+      const mode = allowAll ? 'allow-all' : 'manual';
+      await Promise.all(
+        [...this.loaded.values()].map((entry) =>
+          entry.session.rpc.permissions.setMode({ mode }).catch(() => undefined),
+        ),
+      );
+    }
 
     // Here rather than on a timer of its own: the app says what the retention is as it
     // starts and whenever it changes, which is exactly when the answer to what is past it

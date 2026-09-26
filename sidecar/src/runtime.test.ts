@@ -2987,6 +2987,57 @@ describe('SessionRuntime starting a session as it was asked to', () => {
     });
   });
 
+  /**
+   * Turning it on is a statement about the session being used now, not only about the one
+   * after it. Waiting for a session to be released and reopened would make the setting
+   * look like it had done nothing.
+   */
+  describe('changing it while a session is open', () => {
+    it('stops the open session asking', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.load('a');
+
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: true });
+
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenCalledExactlyOnceWith({
+        mode: 'allow-all',
+      });
+    });
+
+    // A session already told to allow everything has to be told to stop.
+    it('sets the open session back to asking when it is turned off', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: true });
+      await harness.runtime.load('a');
+
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: false });
+
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenLastCalledWith({
+        mode: 'manual',
+      });
+    });
+
+    // Nothing changed, so there is nothing to tell anybody.
+    it('says nothing to an open session when the answer is the same', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.load('a');
+
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: false });
+
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).not.toHaveBeenCalled();
+    });
+
+    it('still applies the change when one session refuses it', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.load('a');
+      harness.sessions.get('a')?.rpc.permissions.setMode.mockRejectedValue(new Error('no such mode'));
+
+      await expect(
+        harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: true }),
+      ).resolves.toBeUndefined();
+    });
+  });
+
   // A session that asks when it was meant not to is an annoyance; the reverse is not.
   it('still makes the session when the mode cannot be set', async () => {
     const harness = makeRuntime();
