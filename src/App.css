@@ -1313,7 +1313,17 @@ body {
   font-size: calc(var(--font-base) * var(--text-scale));
 
   margin: 0;
-  padding: 0 4px 0 0;
+  /**
+   * Room inside the list for a row to be drawn wider than its own text.
+   *
+   * The pulled-in margin puts the list back where it was, so nothing on the page moves: what
+   * changes is that the eight pixels either side now belong to the list rather than to the
+   * pane around it. A row marked by a search reaches into them, and cannot spill past them
+   * into a scrollbar the way a row overflowing the list itself would.
+   */
+  padding: 0 12px 0 8px;
+  margin-right: -8px;
+  margin-left: -8px;
   /* A grid item will not shrink below its content without this, which would push the
      footer off the bottom instead of scrolling. */
   min-height: 0;
@@ -1328,15 +1338,18 @@ body {
   text-align: center;
 }
 
+/* Padded and pulled back by the same amount, so the text sits where it always did and
+   anything drawn behind a row - a search mark - has somewhere to reach. */
 .entry {
-  padding: 6px 0;
+  padding: 6px 8px;
+  margin: 0 -8px;
 }
 
 /* A run of tool calls is scaffolding around the conversation rather than part of it, so it
    is set tight: at the spacing a message gets, half a dozen file edits fill the view. The
    break is kept where the run starts, so it still reads as separate from what was said. */
 .entry.tool-entry {
-  padding: 4px 0 0;
+  padding: 4px 8px 0;
 }
 
 .entry.tool-entry + .entry.tool-entry {

@@ -620,3 +620,46 @@ describe('the row a search landed on', () => {
     expect(rule(), 'a border would widen the row').not.toMatch(/\bborder:/);
   });
 });
+
+/**
+ * A marked row is drawn wider than its own text, which needs room inside the list. The room
+ * is made by padding the list and pulling it back by the same amount, so the text stays
+ * where it was and nothing can spill past it into a scrollbar.
+ */
+describe('room for a row to be drawn around', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  const sides = (rule: string, property: string) => {
+    const shorthand = new RegExp(`${property}:\\s*([^;]+);`).exec(rule)?.[1]?.trim().split(/\s+/) ?? [];
+    const left = new RegExp(`${property}-left:\\s*(-?[\\d.]+)px`).exec(rule)?.[1];
+    const right = new RegExp(`${property}-right:\\s*(-?[\\d.]+)px`).exec(rule)?.[1];
+    const fromShorthand = shorthand.length >= 2 ? shorthand[1] : shorthand[0];
+    return {
+      left: Number((left ?? (shorthand.length === 4 ? shorthand[3] : fromShorthand))?.replace('px', '')),
+      right: Number((right ?? fromShorthand)?.replace('px', '')),
+    };
+  };
+
+  it('pads a row and pulls it back by the same amount, so no text moves', () => {
+    const rule = block('.entry');
+    const padding = sides(rule, 'padding');
+    const margin = sides(rule, 'margin');
+
+    expect(padding.left, 'a row is padded').toBeGreaterThan(0);
+    expect(margin.left, 'and pulled back by what it was padded').toBe(-padding.left);
+    expect(margin.right).toBe(-padding.right);
+  });
+
+  it('gives the list the room the rows reach into', () => {
+    const rule = block('.transcript');
+    const padding = sides(rule, 'padding');
+    const entry = sides(block('.entry'), 'padding');
+
+    expect(padding.left, 'or a marked row would overflow the list').toBeGreaterThanOrEqual(entry.left);
+    expect(padding.right).toBeGreaterThanOrEqual(entry.right);
+  });
+});
