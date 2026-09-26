@@ -26,8 +26,20 @@ function nameOf(path: string): { name: string; within: string } {
  */
 export function TurnSummary({ changes }: { changes: TurnChanges }) {
   const [open, setOpen] = useState(false);
-  const [shown, setShown] = useState<string | null>(null);
+  /** Undefined until the reader picks one, which is what lets the lone file open itself. */
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
   const { files, added, removed } = changes;
+
+  /**
+   * One file needs no choosing, so it arrives open.
+   *
+   * Opening the line and then opening its only row is two clicks to reach the one thing
+   * behind them. Derived rather than held, so a turn still running that goes on to touch a
+   * second file closes again: with two there is a choice, and opening one of them for the
+   * reader would be making it for them.
+   */
+  const lone = files.length === 1 ? files[0]!.path : null;
+  const shown = picked === undefined ? lone : picked;
 
   return (
     <div className={open ? 'turn-changes open' : 'turn-changes'}>
@@ -49,7 +61,7 @@ export function TurnSummary({ changes }: { changes: TurnChanges }) {
               key={file.path}
               file={file}
               open={shown === file.path}
-              onToggle={() => setShown(shown === file.path ? null : file.path)}
+              onToggle={() => setPicked(shown === file.path ? null : file.path)}
             />
           ))}
         </ul>

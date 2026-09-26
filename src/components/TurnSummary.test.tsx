@@ -120,8 +120,7 @@ describe('what a turn changed', () => {
   });
 
   // Two diffs at once is the transcript problem again, one level down.
-  it('keeps one file open at a time', async () => {
-    const { container } = render(<TurnSummary changes={changes} />);
+  it('keeps one file open at a time', async () => {    const { container } = render(<TurnSummary changes={changes} />);
     await userEvent.click(head());
 
     await userEvent.click(screen.getByRole('button', { name: /patch\.ts/ }));
@@ -139,5 +138,38 @@ describe('what a turn changed', () => {
     await userEvent.click(screen.getByRole('button', { name: /patch\.ts/ }));
 
     expect(container.querySelector('.tool-diff')).toBeNull();
+  });
+
+  /**
+   * Opening the line and then opening its only row is two clicks to reach the one thing
+   * behind them, and nothing was being chosen between.
+   */
+  describe('a turn that changed one file', () => {
+    const alone = { files: [changes.files[0]!], added: 12, removed: 3 };
+
+    it('opens that file without being asked', async () => {
+      const { container } = render(<TurnSummary changes={alone} />);
+      await userEvent.click(head());
+
+      expect(container.querySelector('.tool-diff')).toBeTruthy();
+      expect(screen.getByText('the first thing')).toBeTruthy();
+    });
+
+    it('still closes when the reader asks it to', async () => {
+      const { container } = render(<TurnSummary changes={alone} />);
+      await userEvent.click(head());
+
+      await userEvent.click(screen.getByRole('button', { name: /patch\.ts/ }));
+
+      expect(container.querySelector('.tool-diff')).toBeNull();
+    });
+
+    // With two there is a choice, and opening one of them would be making it for the reader.
+    it('leaves them all closed once there is more than one', async () => {
+      const { container } = render(<TurnSummary changes={changes} />);
+      await userEvent.click(head());
+
+      expect(container.querySelector('.tool-diff')).toBeNull();
+    });
   });
 });
