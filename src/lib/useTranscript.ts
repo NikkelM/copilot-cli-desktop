@@ -43,9 +43,21 @@ const PAGE_EVENTS = 150;
  * Keeping them apart is the whole point, so they are kept apart here rather than in a
  * component with a dozen other things to think about.
  */
+/** A page that belongs to no session, so nothing is ever drawn under the wrong one. */
+const NO_PAGE: { of: string | null; events: TimelineEvent[] } = { of: null, events: [] };
+
 export function useTranscript(sessionId: string | null, onError: (message: string) => void, openAt?: number | null) {
-  /** Replayed from the log. Replaced wholesale by a fetch, so nothing live lives here. */
-  const [history, setHistory] = useState<TimelineEvent[]>([]);
+  /**
+   * The replayed page, and which session it is a page of.
+   *
+   * The two are held together rather than cleared by an effect, because an effect runs after
+   * the render that changed the session - so for one render the previous conversation was on
+   * screen under the new one's name. Everything downstream believed it: a search result
+   * looked for its words in the session before, found them or gave up there, and had already
+   * answered by the time the right page arrived.
+   */
+  const [held, setHeld] = useState(NO_PAGE);
+  const history = held.of === sessionId ? held.events : NO_PAGE.events;
   /** Everything since the session was selected, which no replay may overwrite. */
   const [live, setLive] = useState<TimelineEvent[]>([]);
   /** Cursor for the page before the events held, or null at the start of the log. */
@@ -87,7 +99,9 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
   // user sends a message, which is what keeps idle sessions free.
   useEffect(() => {
     if (!sessionId) return;
-    setHistory([]);
+    // The page itself is already disowned by the render that changed the session; this is
+    // what lets go of the memory it was holding.
+    setHeld(NO_PAGE);
     setLive([]);
     setOlderCursor(null);
     setOpening(null);
@@ -101,7 +115,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     getTranscript(sessionId, PAGE_EVENTS, openAt ?? undefined)
       .then((result) => {
         if (!current) return;
-        setHistory(result.events);
+        setHeld({ of: sessionId, events: result.events });
         setOlderCursor(result.nextBefore);
         setOpening({ count: result.events.length, cursor: result.nextBefore });
         // Absent means a sidecar that predates the question, which is not an answer of no.
@@ -123,7 +137,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
       .then((result) => {
         // A page fetched for one session must not be spliced into another's transcript.
         if (showing.current !== sessionId) return;
-        setHistory((current) => [...result.events, ...current]);
+        setHeld((current) => ({ of: sessionId, events: [...result.events, ...current.events] }));
         setOlderCursor(result.nextBefore);
       })
       .catch((e: unknown) => report.current(explain(e)))
@@ -150,7 +164,10 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     // would land as a run of events with a hole beneath it.
     if (!opening || loadingOlder) return;
 
-    setHistory((current) => (current.length > opening.count ? current.slice(-opening.count) : current));
+    setHeld((current) => ({
+      of: current.of,
+      events: current.events.length > opening.count ? current.events.slice(-opening.count) : current.events,
+    }));
     setOlderCursor(opening.cursor);
   }, [opening, loadingOlder]);
 

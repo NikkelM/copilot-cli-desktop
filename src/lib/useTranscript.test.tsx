@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 
 import { useTranscript } from './useTranscript';
 import { toEntries } from './transcriptEntries';
@@ -762,5 +762,62 @@ describe('opening at a turn somebody went looking for', () => {
     rerender({ at: 4096 });
 
     expect(getTranscript).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * Clearing the page in an effect leaves one render where the previous conversation is on
+ * screen under the new session's name. Everything downstream believed it: a search result
+ * looked for its words in the session before, and had answered by the time the right page
+ * arrived (#30).
+ */
+describe('whose conversation is on screen', () => {
+  beforeEach(() => {
+    getTranscript.mockReset();
+  });
+
+  it('shows nothing of the session just left, even before the next page arrives', async () => {
+    getTranscript.mockResolvedValue({
+      events: [reply('from the first session', 'a')],
+      truncated: false,
+      nextBefore: null,
+    });
+
+    /**
+     * What each render was handed, rather than what settled afterwards.
+     *
+     * The page used to be cleared by an effect, and effects run after the render that
+     * changed the session - so the wrong conversation was on screen for exactly one render,
+     * which is the one a child effect reads. Anything that waits for things to settle cannot
+     * see it.
+     */
+    const seen: string[][] = [];
+    const Probe = ({ id }: { id: string }) => {
+      const transcript = useTranscript(id, () => {});
+      seen.push(bodies(transcript.events) as string[]);
+      return null;
+    };
+
+    const { rerender } = render(<Probe id="one" />);
+    await waitFor(() => expect(seen[seen.length - 1]).toEqual(['from the first session']));
+
+    getTranscript.mockResolvedValue({ events: [reply('from the second', 'b')], truncated: false, nextBefore: null });
+    const before = seen.length;
+    rerender(<Probe id="two" />);
+
+    const renders = seen.slice(before);
+    expect(renders[0], 'the page belongs to the session it was read for').toEqual([]);
+    expect(renders.some((r) => r.includes('from the first session'))).toBe(false);
+  });
+
+  it('shows the new page once it arrives', async () => {
+    getTranscript.mockResolvedValue({ events: [reply('from the second', 'b')], truncated: false, nextBefore: null });
+    const { result, rerender } = renderHook(({ id }) => useTranscript(id, () => {}), {
+      initialProps: { id: 'one' },
+    });
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+
+    rerender({ id: 'two' });
+    await waitFor(() => expect(bodies(result.current.events)).toEqual(['from the second']));
   });
 });
