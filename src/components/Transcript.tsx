@@ -47,13 +47,12 @@ const AUTO_FILL_LIMIT = 4;
 const DROP_OLDER_AFTER_MS = 10_000;
 
 /**
- * How long a row reached by a search is held in view while the page settles around it.
+ * How long a scroll this component caused goes on being its own rather than the reader's.
  *
- * Reaching back to a match draws rows above it, and each one pushes it down as its markdown
- * lays out. Long enough to cover that; short enough that a page which has stopped moving is
- * not still being pulled at. It ends the moment the reader touches the transcript.
+ * A scroll event says nothing about who caused it, and `scrollIntoView` raises one like any
+ * other - so without this, putting the reader on a match reads as them having scrolled there.
  */
-const HOLD_MS = 1_200;
+const OWN_SCROLL_MS = 150;
 
 /** Why a skill arrived, for the rows where that is not the reader's own doing. */
 const SKILL_NOTE: Record<string, string> = {
@@ -367,6 +366,14 @@ export function Transcript({
   const dropAfter = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** How many times this session's page has already extended itself to fill the view. */
   const filled = useRef(0);
+  /**
+   * Until when a scroll event is this component's own doing rather than the reader's.
+   *
+   * A clock rather than a flag: the flag was cleared by a timer, and the effect that set it
+   * cancelled that timer on the very next render - so it stayed set for the rest of the run
+   * and every scroll after the first was ignored.
+   */
+  const ignoreScrollsUntil = useRef(0);
 
   const cancelDrop = () => {
     if (dropAfter.current === null) return;
@@ -421,141 +428,87 @@ export function Transcript({
    * would still be there, meaning nothing, on the next visit.
    */
   /**
-   * What has already been pointed at, as the words that asked for it.
+   * Which row answers the search that sent the reader here.
    *
-   * Once per arrival: the page goes on changing as rows stream, expand and are reached back
-   * through, and a mark that reapplied itself would flash again at every one of those.
-   */
-  const marked = useRef<string | null>(null);
-  /**
-   * Forgotten when the session changes, which makes leaving and coming back a new arrival.
+   * Worked out from the entries rather than hunted for in the document, and drawn as part of
+   * the row rather than pinned onto it afterwards. Everything before this was an effect that
+   * queried the page, added a class by hand, and set timers to undo both - which meant it
+   * had to be right about *when* it ran, against a page that is still arriving, a window
+   * that is still widening and markdown that is still laying out. It never reliably was.
    *
-   * Done while rendering rather than in an effect of its own. An effect runs after this
-   * render and after the effect that does the pointing, so it would wipe the guard it is
-   * meant to keep - and keying the guard on the session instead only moved the problem: a
-   * second visit to the same session with the same words was refused as already answered.
+   * Only questions and replies, which is what the index holds: it is built from each turn's
+   * `user_message` and `assistant_response`, so tool output was never searchable and
+   * pointing at it here would point at something the search could not have found.
+   *
+   * The last one rather than the first: the page ends at the matched turn, so anything
+   * earlier is an older mention of the same thing.
    */
-  const lastSession = useRef(sessionId);
+  const wanted = highlight?.trim().toLowerCase() ?? '';
+  const target = useMemo(() => {
+    if (!wanted) return -1;
+
+    let last = -1;
+    for (const [index, entry] of entries.entries()) {
+      if (entry.kind === 'message' && entry.body.toLowerCase().includes(wanted)) last = index;
+    }
+    return last;
+  }, [entries, wanted]);
+
   /**
    * Whether the reader has moved the transcript themselves since arriving.
    *
-   * Landing on a search result puts them at the top of the page, and being at the top is
-   * what asks for the page before it - so arriving fetched older history nobody wanted,
-   * prepended it above the match, and left them reading a different day. Where this app put
-   * somebody is not them asking to go further.
+   * Two things turn on it. Landing on a match puts them at the top of the page, and being at
+   * the top is what asks for the page before it - so arriving would otherwise fetch history
+   * nobody wanted and prepend it above the match. And the mark stays until they act rather
+   * than fading on a timer: a highlight they have to catch within two seconds is one they
+   * will miss, and this one has been missed.
    */
-  const tookOver = useRef(false);
-  /**
-   * Set while this component is doing the scrolling.
-   *
-   * A scroll event says nothing about who caused it. `scrollIntoView` raises one like any
-   * other, and the handler below reads the position it lands in as the reader's choice - so
-   * scrolling to a search result was immediately taken as the reader having scrolled to the
-   * bottom, and the next batch of rows threw the page there. Which is what it looked like:
-   * the right place for one frame, then somewhere else.
-   */
-  const scrollingSelf = useRef(false);
-  /**
-   * The row being pointed at and how long to keep hold of it.
-   *
-   * Reaching back to a match draws rows *above* it, and every one of them pushes it further
-   * down as its markdown lays out - so a page that arrived in the right place slid out of it
-   * a moment later. Holding it for a beat while the page settles is the difference between
-   * landing on the match and landing near where it used to be.
-   *
-   * Bounded rather than indefinite: once the page has stopped moving there is nothing to
-   * correct for, and a transcript that kept pulling itself back would be unreadable.
-   */
-  const holding = useRef<{ row: HTMLElement; until: number } | null>(null);
+  const [tookOver, setTookOver] = useState(false);
+  const release = useCallback(() => setTookOver(true), []);
 
-  /** Let go of the row, because the reader has taken over. */
-  const release = useCallback(() => {
-    holding.current = null;
-    tookOver.current = true;
-  }, []);
-
-  // Arriving somewhere new is arriving: nothing has been pointed at here, nothing is being
-  // held, and the reader has not yet moved anything. Done while rendering rather than in an
-  // effect, which would run after the effect below and undo what it had just set.
-  if (lastSession.current !== sessionId) {
-    lastSession.current = sessionId;
-    marked.current = null;
-    holding.current = null;
-    tookOver.current = false;
+  /**
+   * Arriving somewhere new is arriving.
+   *
+   * Done while rendering rather than in an effect, which runs after the effects that act on
+   * it and would undo what they had just done - a mistake this has already made twice.
+   */
+  const lastArrival = useRef<string | null>(null);
+  const arrival = `${sessionId}:${wanted}`;
+  if (lastArrival.current !== arrival) {
+    lastArrival.current = arrival;
+    if (tookOver) setTookOver(false);
   }
 
+  /** Where the drawn window starts, so an index into the entries can be found among the rows. */
+  const from = entries.length - shown.length;
+  const pointingAt = target >= 0 && !tookOver ? target - from : -1;
+
+  /**
+   * Drawn far enough back to include it, when the budget stopped short of it.
+   *
+   * The window is measured in text from the end of the page, so on a page whose last entries
+   * are long the match can be outside it - measured on real sessions at five of ten matches,
+   * one of them 39 kB behind a 16 kB window. A row that is not drawn cannot be pointed at.
+   */
   useEffect(() => {
-    const list = listRef.current;
-    const wanted = highlight?.trim().toLowerCase();
-    // Done once per arrival: the page also changes as rows stream and expand, and a mark
-    // that reapplied itself would flash again at each of those.
-    if (!list || !wanted || marked.current === wanted) return;
+    if (target >= 0 && target < from) budgeted.showAtLeast(entries.length - target);
+  }, [target, from, entries.length, budgeted]);
 
-    /**
-     * Looked for in what was said, rather than in what the page shows.
-     *
-     * Only questions and replies, which is exactly what the index holds: it is built from
-     * each turn's `user_message` and `assistant_response`, so tool output was never
-     * searchable and looking through it here would point at something the search could not
-     * have found.
-     *
-     * Searched across the whole page rather than the part of it being drawn, because the
-     * drawn part is budgeted from the end and the match is often above it.
-     *
-     * The last one rather than the first: the page ends at the match, so anything earlier
-     * is an older mention of the same thing.
-     */
-    const at = entries.reduce(
-      (best, entry, index) =>
-        entry.kind === 'message' && entry.body.toLowerCase().includes(wanted) ? index : best,
-      -1,
-    );
+  /**
+   * Put it in view, and again while the page around it is still arriving.
+   *
+   * Reaching back draws rows above it, and each one pushes it down as its markdown lays out,
+   * so once is not enough. Bounded by the reader rather than by a clock: as soon as they
+   * move the transcript themselves this stops, which is what `tookOver` is for.
+   */
+  useLayoutEffect(() => {
+    const row = listRef.current?.querySelector<HTMLElement>(':scope > li.entry.found');
+    if (!row) return;
 
-    /**
-     * Drawn far enough back to include it, when the budget stopped short of it.
-     *
-     * The window is measured in text from the end of the page, so on a page whose last
-     * entries are long the match can be outside it - measured on real sessions at five of
-     * ten matches, one of them 39 kB behind a 16 kB window. It is not in the document at
-     * all then, and the page settles at its end with nothing marked, which is exactly what
-     * being sent somewhere weird looks like.
-     *
-     * Asking for more re-runs this effect, so the next pass finds it drawn.
-     */
-    if (at >= 0 && at < entries.length - shown.length) {
-      budgeted.showAtLeast(entries.length - at);
-      return;
-    }
+    ignoreScrollsUntil.current = Date.now() + OWN_SCROLL_MS;
+    row.scrollIntoView({ block: 'center' });
+  }, [pointingAt, shown.length, entries.length]);
 
-    // Scoped to the list's own children, so a subagent's rows nested inside an open tool
-    // row cannot be mistaken for entries of this page.
-    const rows = list.querySelectorAll<HTMLElement>(':scope > li.entry');
-    if (rows.length === 0) return;
-
-    // The end of the page when the words are nowhere in it, because that is where the
-    // cursor put the matched turn. Leaving the reader at the top of a page they were sent
-    // into is the one outcome worth avoiding.
-    const found = at >= 0 ? rows[at - (entries.length - shown.length)] : rows[rows.length - 1];
-    if (!found) return;
-
-    marked.current = wanted;
-    if (at >= 0) found.classList.add('found');
-
-    scrollingSelf.current = true;
-    found.scrollIntoView({ block: 'center' });
-    // Kept in view while whatever is above it finishes arriving and laying out.
-    holding.current = { row: found, until: Date.now() + HOLD_MS };
-    // Cleared after the event this raised has been and gone, rather than at once.
-    const settling = setTimeout(() => {
-      scrollingSelf.current = false;
-    }, 0);
-
-    const clear = setTimeout(() => found.classList.remove('found'), 2600);
-    return () => {
-      clearTimeout(settling);
-      clearTimeout(clear);
-    };
-  }, [highlight, sessionId, entries, shown.length, budgeted]);
 
   /**
    * Keep up with a reply as it is written.
@@ -569,17 +522,6 @@ export function Transcript({
     if (!list) return;
 
     const follow = new MutationObserver(() => {
-      // A row being pointed at outranks following the end: the reader asked to be at one
-      // particular place, and the page moving underneath it is what this corrects for.
-      if (holding.current) {
-        if (Date.now() < holding.current.until) {
-          scrollingSelf.current = true;
-          holding.current.row.scrollIntoView({ block: 'center' });
-          scrollingSelf.current = false;
-          return;
-        }
-        holding.current = null;
-      }
       if (pinned.current && restoreFrom.current === null) list.scrollTop = list.scrollHeight;
     });
     follow.observe(list, { childList: true, subtree: true, characterData: true });
@@ -607,8 +549,10 @@ export function Transcript({
   function onScroll() {
     const list = listRef.current;
     if (!list) return;
-    // This component's own scrolling is not the reader saying where they want to be.
-    if (scrollingSelf.current) return;
+    // This component's own scrolling is not the reader saying where they want to be. Read
+    // from a clock rather than a flag cleared by a timer: the effect that set the flag also
+    // cancelled its own timer on the next render, and left it set for the rest of the run.
+    if (Date.now() < ignoreScrollsUntil.current) return;
 
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
     pinned.current = distance <= BOTTOM_TOLERANCE_PX;
@@ -635,7 +579,7 @@ export function Transcript({
     // Where this app put somebody is not them asking to go further back: landing on a search
     // result lands at the top, which would otherwise fetch the page before it and prepend a
     // different day above the match.
-    if (highlight && !tookOver.current) return;
+    if (highlight && !tookOver) return;
 
     if (list.scrollTop <= LOAD_OLDER_THRESHOLD_PX && more && !loadingOlder) {
       restoreFrom.current = list.scrollHeight;
@@ -661,8 +605,8 @@ export function Transcript({
         <li className="history-edge">
           {loadingOlder ? 'Loading earlier messages…' : more ? 'Scroll up for earlier messages' : 'Start of session'}
         </li>
-        {shown.map((entry) => (
-          <EntryRow key={entry.key} entry={entry} />
+        {shown.map((entry, index) => (
+          <EntryRow key={entry.key} entry={entry} found={index === pointingAt} />
         ))}
         {/* The bottom of this page is not the bottom of the conversation, which is the one
             thing a reader who followed a search result cannot tell by looking. */}
@@ -692,14 +636,17 @@ export function Transcript({
  * avoid.
  */
 const EntryRow = memo(
-  function EntryRow({ entry }: { entry: Entry }) {
+  function EntryRow({ entry, found }: { entry: Entry; found?: boolean }) {
+    const kind = entry.kind === 'tool' ? 'entry tool-entry' : 'entry';
     return (
-      <li className={entry.kind === 'tool' ? 'entry tool-entry' : 'entry'}>
+      <li className={found ? `${kind} found` : kind}>
         <EntryBody entry={entry} />
       </li>
     );
   },
-  (before, after) => sameEntry(before.entry, after.entry),
+  // The mark is part of the row, so a row that has just become the answer to a search is a
+  // row that changed. Left out, it would be skipped exactly when it needed redrawing.
+  (before, after) => before.found === after.found && sameEntry(before.entry, after.entry),
 );
 
 function EntryBody({ entry }: { entry: Entry }) {

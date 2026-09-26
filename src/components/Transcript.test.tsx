@@ -1261,19 +1261,21 @@ describe('pointing at what a search was looking for', () => {
     expect(document.querySelector('.entry.found')).toBeNull();
   });
 
-  // A mark that stayed would become part of how the session looks.
-  it('lets go of the row again', async () => {
-    vi.useFakeTimers();
-    try {
-      at({ highlight: 'eviction' });
-      await vi.advanceTimersByTimeAsync(20);
-      expect(document.querySelector('.entry.found')).toBeTruthy();
+  /**
+   * It stays until the reader moves the transcript themselves. A mark that faded on a timer
+   * was one they had to catch within two seconds, on a page that was often still arriving
+   * when those two seconds were up - and it was missed every time it was looked for.
+   */
+  it('stays until the reader takes over', async () => {
+    at({ highlight: 'eviction' });
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
 
-      await vi.advanceTimersByTimeAsync(3000);
-      expect(document.querySelector('.entry.found')).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(document.querySelector('.entry.found'), 'still there a moment later').toBeTruthy();
+
+    fireEvent.wheel(document.querySelector('.transcript') as HTMLElement);
+
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeNull());
   });
 });
 
@@ -1706,8 +1708,8 @@ describe('not mistaking where it put the reader for where they went', () => {
     fireEvent.scroll(list);
   };
 
-  /** The scroll this component caused is ignored, so let it pass before testing the rest. */
-  const settled = () => new Promise((resolve) => setTimeout(resolve, 20));
+  /** Scrolls this component caused are ignored for a moment, so let that pass first. */
+  const settled = () => new Promise((resolve) => setTimeout(resolve, 200));
 
   it('does not reach further back just because a result landed at the top', async () => {
     const onLoadOlder = vi.fn();
