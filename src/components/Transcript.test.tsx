@@ -1631,3 +1631,48 @@ describe('holding the reader still when the window widens', () => {
     expect(list.scrollTop, 'and the reader given back the height it added').toBe((rows() - before) * ROW);
   });
 });
+
+/**
+ * Coming back to a session is a new arrival. The guard that keeps a mark from reapplying as
+ * the page settles outlived the visit it belonged to, so a second look at the same result
+ * was refused as already answered - it opened, pointed at nothing, and sat at the end.
+ */
+describe('coming back to a result a second time', () => {
+  const said = (content: string, id: string) =>
+    ({ type: 'assistant.message', data: { content }, id }) as unknown as TranscriptEvent;
+
+  /** Distinct ids per session, so a row is never reused and a mark cannot be left on it. */
+  const page = (of: string, body: string) => [said(body, `${of}-a`), said('and on we went', `${of}-b`)];
+
+  const draw = (id: string, events: TranscriptEvent[]) => (
+    <Transcript
+      events={events}
+      sessionId={id}
+      cwd={null}
+      hasOlder={false}
+      loadingOlder={false}
+      onLoadOlder={() => {}}
+      display={ASSUMED_DISPLAY}
+      highlight="eviction"
+      onLatest={() => {}}
+    />
+  );
+
+  it('points at it again after going somewhere else and back', async () => {
+    const { rerender } = render(draw('one', page('one', 'the eviction rule was wrong')));
+    await vi.waitFor(() => expect(document.querySelector('.entry.found')).toBeTruthy());
+
+    // Somewhere else, then back. The page is read again, so it is a new arrival.
+    rerender(draw('two', page('two', 'a different conversation about eviction')));
+    await vi.waitFor(() =>
+      expect(document.querySelector('.entry.found')?.textContent).toContain('different conversation'),
+    );
+
+    rerender(draw('one', page('back', 'the eviction rule was wrong')));
+
+    await vi.waitFor(() => {
+      const found = document.querySelector('.entry.found');
+      expect(found?.textContent).toContain('eviction rule was wrong');
+    });
+  });
+});

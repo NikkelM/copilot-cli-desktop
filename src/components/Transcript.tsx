@@ -417,22 +417,29 @@ export function Transcript({
    * because the page ends at the match and anything earlier is an older mention of the same
    * thing.
    *
-   * The words are looked for in the rendered text rather than in the events, so this finds
-   * them wherever they ended up on screen - in a reply, in a question, in the output of a
-   * tool - without needing to know which.
-   *
    * It fades by itself. A mark that stayed would become part of how the session looks and
    * would still be there, meaning nothing, on the next visit.
    */
   /**
-   * What has already been pointed at, as the session and the words together.
+   * What has already been pointed at, as the words that asked for it.
    *
    * Once per arrival: the page goes on changing as rows stream, expand and are reached back
-   * through, and a mark that reapplied itself would flash again at every one of those. The
-   * session is part of the key rather than cleared by an effect of its own, which ran after
-   * this one on mount and wiped the guard it was meant to keep.
+   * through, and a mark that reapplied itself would flash again at every one of those.
    */
   const marked = useRef<string | null>(null);
+  /**
+   * Forgotten when the session changes, which makes leaving and coming back a new arrival.
+   *
+   * Done while rendering rather than in an effect of its own. An effect runs after this
+   * render and after the effect that does the pointing, so it would wipe the guard it is
+   * meant to keep - and keying the guard on the session instead only moved the problem: a
+   * second visit to the same session with the same words was refused as already answered.
+   */
+  const lastSession = useRef(sessionId);
+  if (lastSession.current !== sessionId) {
+    lastSession.current = sessionId;
+    marked.current = null;
+  }
   /**
    * Set while this component is doing the scrolling.
    *
@@ -466,7 +473,7 @@ export function Transcript({
     const wanted = highlight?.trim().toLowerCase();
     // Done once per arrival: the page also changes as rows stream and expand, and a mark
     // that reapplied itself would flash again at each of those.
-    if (!list || !wanted || marked.current === `${sessionId}:${wanted}`) return;
+    if (!list || !wanted || marked.current === wanted) return;
 
     /**
      * Looked for in what was said, rather than in what the page shows.
@@ -515,7 +522,7 @@ export function Transcript({
     const found = at >= 0 ? rows[at - (entries.length - shown.length)] : rows[rows.length - 1];
     if (!found) return;
 
-    marked.current = `${sessionId}:${wanted}`;
+    marked.current = wanted;
     if (at >= 0) found.classList.add('found');
 
     scrollingSelf.current = true;
