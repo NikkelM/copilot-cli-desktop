@@ -2913,6 +2913,80 @@ describe('SessionRuntime starting a session as it was asked to', () => {
     expect(madeSession(harness.sessions).rpc.permissions.setMode).not.toHaveBeenCalled();
   });
 
+  /**
+   * The mode does not survive a session being released, so it has to be set every time one
+   * is opened rather than once when it is made. Without this the setting only ever reached
+   * sessions this app had just created, and an older one went on asking (#199).
+   */
+  describe('a session that was resumed rather than made', () => {
+    it('runs tools without asking when that is the setting', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: true });
+
+      await harness.runtime.load('a');
+
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenCalledExactlyOnceWith({
+        mode: 'allow-all',
+      });
+    });
+
+    it('is left asking when that is the setting', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: false });
+
+      await harness.runtime.load('a');
+
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).not.toHaveBeenCalled();
+    });
+
+    // Nothing has been said about it, so nothing is imposed.
+    it('is left asking when the setting has never been given', async () => {
+      const harness = makeRuntime();
+
+      await harness.runtime.load('a');
+
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).not.toHaveBeenCalled();
+    });
+
+    // Opening the session matters more than the mode taking.
+    it('still opens when the mode cannot be set', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: true });
+      harness.sessions.get('a')?.rpc.permissions.setMode.mockRejectedValue(new Error('no such mode'));
+
+      await harness.runtime.load('a');
+
+      expect(harness.runtime.isActive('a')).toBe(true);
+    });
+
+    /**
+     * The limits are sent together whenever any of them changes, and this one is optional.
+     * A caller that says nothing about it has not changed it, so the answer already given
+     * stands - in either direction.
+     */
+    it('keeps running without asking when a later change says nothing about it', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: true });
+      await harness.runtime.setLimits({ maxLoadedSessions: 3, idleTimeoutMs: 0 });
+
+      await harness.runtime.load('a');
+
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenCalledExactlyOnceWith({
+        mode: 'allow-all',
+      });
+    });
+
+    it('keeps asking when a later change says nothing about it', async () => {
+      const harness = makeRuntime();
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: false });
+      await harness.runtime.setLimits({ maxLoadedSessions: 3, idleTimeoutMs: 0 });
+
+      await harness.runtime.load('a');
+
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).not.toHaveBeenCalled();
+    });
+  });
+
   // A session that asks when it was meant not to is an annoyance; the reverse is not.
   it('still makes the session when the mode cannot be set', async () => {
     const harness = makeRuntime();

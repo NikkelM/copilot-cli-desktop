@@ -12,6 +12,7 @@ const { setRuntimeLimits } = vi.hoisted(() => ({
       _idleTimeoutMs: number,
       _binRetentionDays?: number,
       _permissionTimeoutMs?: number,
+      _allowAll?: boolean,
     ) => undefined,
   ),
 }));
@@ -22,7 +23,8 @@ vi.mock('./sidecar', () => ({
     idleTimeoutMs: number,
     binRetentionDays?: number,
     permissionTimeoutMs?: number,
-  ) => setRuntimeLimits(maxLoadedSessions, idleTimeoutMs, binRetentionDays, permissionTimeoutMs),
+    allowAll?: boolean,
+  ) => setRuntimeLimits(maxLoadedSessions, idleTimeoutMs, binRetentionDays, permissionTimeoutMs, allowAll),
 }));
 
 async function load() {
@@ -178,7 +180,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     renderHook(() => useSettings());
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7, 5 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7, 5 * 60_000, false));
   });
 
   it('says so again when a limit changes', async () => {
@@ -188,7 +190,22 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ maxLoaded: 2 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 10 * 60_000, 7, 5 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 10 * 60_000, 7, 5 * 60_000, false));
+  });
+
+  /**
+   * Carried with the memory rules because the runtime needs it at the same moment: the
+   * permission mode does not survive a session being released, so it has to be known
+   * before the next one is opened rather than only when one is created (#199).
+   */
+  it('tells the runtime when tools may run without asking', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalled());
+
+    act(() => result.current.apply({ allowAll: true }));
+
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 7, 5 * 60_000, true));
   });
 
   /**
@@ -202,7 +219,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ maxLoaded: 2, idleMinutes: 25, confirmDelete: false }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 25 * 60_000, 7, 5 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 25 * 60_000, 7, 5 * 60_000, false));
     expect(setRuntimeLimits).toHaveBeenCalledTimes(2);
   });
 
@@ -213,7 +230,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ idleMinutes: 25 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 25 * 60_000, 7, 5 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 25 * 60_000, 7, 5 * 60_000, false));
   });
 
   it('says nothing again for a setting that is not the runtime business', async () => {
@@ -247,7 +264,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     renderHook(() => useSettings());
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7, 5 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledWith(0, 10 * 60_000, 7, 5 * 60_000, false));
   });
 
   it('says so again when the retention changes', async () => {
@@ -257,7 +274,7 @@ describe('telling the runtime what may stay in memory', () => {
 
     act(() => result.current.apply({ binRetentionDays: 30 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 30, 5 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 30, 5 * 60_000, false));
   });
 });
 
@@ -560,8 +577,7 @@ describe('a stored value written by something else', () => {
 });
 
 /**
- * Whether a turn ends with a line saying what it changed.
- *
+ * Whether a turn ends with a line saying what it changed. *
  * Only the two answers that withhold something are honoured from the file, so a key written
  * by a later version of this app shows what a turn did rather than quietly hiding it.
  */
@@ -620,7 +636,7 @@ describe('how long a question waits', () => {
 
     act(() => result.current.apply({ permissionMinutes: 15 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 7, 15 * 60_000));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 7, 15 * 60_000, false));
   });
 
   it('remembers what was chosen', async () => {
@@ -651,6 +667,6 @@ describe('how long a question waits', () => {
 
     act(() => result.current.apply({ permissionMinutes: 0 }));
 
-    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 7, 0));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 7, 0, false));
   });
 });

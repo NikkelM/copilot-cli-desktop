@@ -98,8 +98,15 @@ export function setRuntimeLimits(
   idleTimeoutMs: number,
   binRetentionDays?: number,
   permissionTimeoutMs?: number,
+  allowAll?: boolean,
 ): Promise<void> {
-  return request('runtime.limits', { maxLoadedSessions, idleTimeoutMs, binRetentionDays, permissionTimeoutMs });
+  return request('runtime.limits', {
+    maxLoadedSessions,
+    idleTimeoutMs,
+    binRetentionDays,
+    permissionTimeoutMs,
+    allowAll,
+  });
 }
 
 export function renameSession(sessionId: string, name: string): Promise<void> {

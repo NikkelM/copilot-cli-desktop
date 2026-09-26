@@ -1057,6 +1057,14 @@ export interface SidecarRequests {
       idleTimeoutMs: number;
       binRetentionDays?: number;
       permissionTimeoutMs?: number;
+      /**
+       * Whether a session this app opens runs tools without asking.
+       *
+       * Carried here rather than only at creation because the permission mode does not
+       * survive a session being released: a session resumed later starts asking again, so
+       * it has to be set every time one is opened, not once when it is made.
+       */
+      allowAll?: boolean;
     };
     result: void;
   };

@@ -254,6 +254,13 @@ export class SessionRuntime {
    */
   private permissionTimeoutMs: number;
   /**
+   * Whether a session this app opens runs tools without asking.
+   *
+   * Held rather than passed, because a resume happens when a session is next wanted rather
+   * than when anybody chose anything, so there is no call to carry it on.
+   */
+  private allowAll = false;
+  /**
    * Sessions this run has already tried to title, whether or not it managed to.
    *
    * A session that could not be titled after its first turn will be no easier after its
@@ -562,6 +569,14 @@ export class SessionRuntime {
       mcpOAuthTokenStorage: 'persistent',
       streaming: true,
     });
+
+    // Set here as well as at creation, because the mode does not survive a session being
+    // released: a session resumed later starts asking again, whatever it was told when it
+    // was made. Without this, "run tools without asking" only ever reached sessions this
+    // app had just created, and never an older one it opened.
+    if (this.allowAll) {
+      await session.rpc.permissions.setMode({ mode: 'allow-all' }).catch(() => undefined);
+    }
 
     this.adopt(sessionId, session);
     await this.enforceCap();
@@ -989,11 +1004,13 @@ export class SessionRuntime {
     idleTimeoutMs,
     binRetentionDays,
     permissionTimeoutMs,
+    allowAll,
   }: {
     maxLoadedSessions: number;
     idleTimeoutMs: number;
     binRetentionDays?: number;
     permissionTimeoutMs?: number;
+    allowAll?: boolean;
   }): Promise<void> {
     this.maxLoadedSessions = Math.max(0, Math.floor(maxLoadedSessions));
     this.idleTimeoutMs = Math.max(0, Math.floor(idleTimeoutMs));
@@ -1002,6 +1019,10 @@ export class SessionRuntime {
     // already waiting keeps the deadline it was given: the prompt on screen says when it
     // lapses, and moving that under the reader would make the countdown a lie.
     if (permissionTimeoutMs !== undefined) this.permissionTimeoutMs = Math.max(0, Math.floor(permissionTimeoutMs));
+    // Applied to the next session opened rather than to those already running: a session
+    // that is loaded has already been told, and telling it again would not change what it
+    // has been asked so far.
+    if (allowAll !== undefined) this.allowAll = allowAll;
 
     // Here rather than on a timer of its own: the app says what the retention is as it
     // starts and whenever it changes, which is exactly when the answer to what is past it

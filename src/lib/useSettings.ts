@@ -29,7 +29,7 @@ export const CONFIRM_DELETE = 'confirmDelete';
 export const PERMISSION_MINUTES = 'permissionMinutes';
 /** How many days a deleted session waits in the bin. Zero deletes it outright. */
 export const BIN_RETENTION_DAYS = 'binRetentionDays';
-/** Whether a session this app starts asks before running tools. */
+/** Whether a session this app opens asks before running tools. */
 export const ALLOW_ALL = 'allowAll';
 /** Where a session starts when none was chosen. Empty means the home directory. */
 export const WORKING_DIRECTORY = 'workingDirectory';
@@ -72,10 +72,13 @@ export interface Settings {
    */
   binRetentionDays: number;
   /**
-   * Whether new sessions run tools without asking.
+   * Whether a session this app opens runs tools without asking.
    *
-   * Applied per session after it is made, because that is the only thing that works:
-   * `--allow-all` given to the shared CLI leaves every session it creates asking (#199).
+   * Applied per session rather than as a CLI flag, because that is the only thing that
+   * works: `--allow-all` given to the shared CLI leaves every session it creates asking
+   * (#199). Applied on opening rather than only on creation, because the mode does not
+   * survive a session being released - so a session made before this was turned on, or
+   * made anywhere else, went on asking.
    */
   allowAll: boolean;
   /** Empty means the home directory, which is what the CLI does with no argument. */
@@ -184,14 +187,18 @@ export function useSettings() {
   // is drawn at the default and then jumps.
   useEffect(() => applyScale(settings.scale, settings.textScale), [settings.scale, settings.textScale]);
 
-  const { maxLoaded, idleMinutes, binRetentionDays, permissionMinutes } = settings;
+  const { maxLoaded, idleMinutes, binRetentionDays, permissionMinutes, allowAll } = settings;
   useEffect(() => {
     // Failure here is not worth interrupting anyone: the runtime keeps the rules it had,
     // which are the defaults, and the app is still usable.
-    void setRuntimeLimits(maxLoaded, idleMinutes * 60_000, binRetentionDays, permissionMinutes * 60_000).catch(
-      () => undefined,
-    );
-  }, [maxLoaded, idleMinutes, binRetentionDays, permissionMinutes]);
+    void setRuntimeLimits(
+      maxLoaded,
+      idleMinutes * 60_000,
+      binRetentionDays,
+      permissionMinutes * 60_000,
+      allowAll,
+    ).catch(() => undefined);
+  }, [maxLoaded, idleMinutes, binRetentionDays, permissionMinutes, allowAll]);
 
   /**
    * Bring the CLI up to date once, if that was asked for.
