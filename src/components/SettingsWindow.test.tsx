@@ -24,7 +24,8 @@ const SAVED: Settings = {
   defaultModel: '',
   defaultEffort: '',
   defaultContext: '',
-};
+    turnSummary: 'always',
+  };
 
 const show = (over: Partial<Settings> = {}) => {
   const onSave = vi.fn();
@@ -1924,5 +1925,42 @@ describe('what the search is told a category holds', () => {
       const listed = [...document.querySelectorAll('.settings-tab')].map((node) => node.textContent);
       expect(listed, `searching "${label}" should list ${name}`).toContain(name);
     }
+  });
+});
+
+/**
+ * When a turn ends with a line saying what it changed (#40).
+ *
+ * Three answers rather than a tick: the useful one is in the middle, where a turn that made
+ * a single edit is left to the row that made it.
+ */
+describe('summarising what a turn changed', () => {
+  const choice = () => screen.getByLabelText('Summarise what a turn changed') as HTMLSelectElement;
+
+  it('shows which answer is in force', async () => {
+    show({ turnSummary: 'multiple' });
+    await userEvent.click(tab('Appearance'));
+
+    expect(choice().value).toBe('multiple');
+  });
+
+  it('offers turning it off, and saves that', async () => {
+    const { onSave } = show({ turnSummary: 'always' });
+    await userEvent.click(tab('Appearance'));
+
+    await userEvent.selectOptions(choice(), 'off');
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ turnSummary: 'off' }));
+  });
+
+  // Held as a draft like everything else in this window, rather than applied as it is picked.
+  it('does not save an answer that was not confirmed', async () => {
+    const { onSave } = show({ turnSummary: 'always' });
+    await userEvent.click(tab('Appearance'));
+
+    await userEvent.selectOptions(choice(), 'multiple');
+
+    expect(onSave).not.toHaveBeenCalled();
   });
 });

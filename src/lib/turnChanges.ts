@@ -24,6 +24,15 @@ export interface TurnChanges {
 }
 
 /**
+ * When a turn should say what it changed.
+ *
+ * `multiple` was the only behaviour at first, on the reasoning that a lone edit's own row
+ * already names the file and opens onto the same diff. In use that reads as the summary
+ * being broken rather than withheld, so the choice is the reader's (#40).
+ */
+export type ShowTurnChanges = 'off' | 'multiple' | 'always';
+
+/**
  * What each turn changed, by the entry its turn ends on.
  *
  * A turn's edits are scattered through it, often with a long reply between them, so what a
@@ -34,25 +43,26 @@ export interface TurnChanges {
  * made, so the totals are a sum rather than a fetch. That also means a turn only partly
  * loaded is summarised from the part that is loaded - the alternative being to say nothing
  * until the whole of it has been read back, which for a long turn is most of a session.
- *
- * A turn with one edit in it gets no summary. Its own row already says the same thing, and a
- * line under every edit repeating the edit is noise rather than an answer.
  */
-export function changesByTurn(entries: Entry[]): Map<number, TurnChanges> {
+export function changesByTurn(entries: Entry[], show: ShowTurnChanges = 'always'): Map<number, TurnChanges> {
   const byTurn = new Map<number, TurnChanges>();
+  if (show === 'off') return byTurn;
+
+  /** How many real changes a turn needs before it is worth a line of its own. */
+  const least = show === 'multiple' ? 2 : 1;
 
   let edits: Entry[] = [];
   let startedAt = -1;
 
   const close = (endsAt: number) => {
-    // A cheap gate before parsing: a turn that called a file tool at most once can never
-    // have more than one change in it, whatever the patches turn out to say.
-    if (edits.length > 1) {
+    // A cheap gate before parsing: a turn cannot end up with more changes than it made
+    // calls, whatever the patches turn out to say.
+    if (edits.length >= least) {
       const summary = gather(edits);
       // Counted after parsing, because a call that wrote a file without changing it is not
-      // an edit, and a turn left with one real change is one its own row already reports.
+      // an edit, and a turn can be left with fewer real changes than it made calls.
       const made = summary.files.reduce((n, file) => n + file.patches.length, 0);
-      if (made > 1) byTurn.set(endsAt, summary);
+      if (made >= least) byTurn.set(endsAt, summary);
     }
     edits = [];
   };

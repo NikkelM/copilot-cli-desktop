@@ -1798,12 +1798,32 @@ describe('summarising what a turn changed', () => {
     await vi.waitFor(() => expect(screen.getByText('2 files changed')).toBeTruthy());
   });
 
-  // Its own row already says the same thing.
-  it('says nothing about a turn with one edit in it', async () => {
-    show([asked('change one thing', 'q'), ...edit('one.ts', 't1', 3), said('done', 'a')]);
+  it('says nothing at all when the reader has turned it off', async () => {
+    show(
+      [asked('change two things', 'q'), ...edit('one.ts', 't1', 3), ...edit('two.ts', 't2', 2), said('done', 'a')],
+      { turnSummary: 'off' },
+    );
 
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(document.querySelector('.turn-summary')).toBeNull();
+  });
+
+  it('leaves a single edit to its own row when only several are wanted', async () => {
+    show([asked('change one thing', 'q'), ...edit('one.ts', 't1', 3), said('done', 'a')], {
+      turnSummary: 'multiple',
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(document.querySelector('.turn-summary')).toBeNull();
+  });
+
+  // Its own row names the file, but not that the turn is over and this is all of it.
+  it('says what a single edit came to when any change is wanted', async () => {
+    show([asked('change one thing', 'q'), ...edit('one.ts', 't1', 3), said('done', 'a')], {
+      turnSummary: 'always',
+    });
+
+    await vi.waitFor(() => expect(screen.getByText('1 file changed')).toBeTruthy());
   });
 
   /**

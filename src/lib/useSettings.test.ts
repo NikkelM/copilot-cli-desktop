@@ -45,6 +45,7 @@ const SAVED_SHAPE = {
   defaultModel: '',
   defaultEffort: '',
   defaultContext: '',
+  turnSummary: 'always' as const,
 };
 
 beforeEach(() => {
@@ -105,6 +106,7 @@ describe('changing a setting', () => {
       defaultModel: '',
       defaultEffort: '',
       defaultContext: '',
+      turnSummary: 'always',
     });
   });
 
@@ -138,6 +140,7 @@ describe('changing a setting', () => {
       defaultModel: '',
       defaultEffort: '',
       defaultContext: '',
+      turnSummary: 'always',
     });
   });
 
@@ -553,6 +556,48 @@ describe('a stored value written by something else', () => {
     const { useSettings } = await load();
 
     expect(renderHook(() => useSettings()).result.current.settings.confirmDelete).toBe(true);
+  });
+});
+
+/**
+ * Whether a turn ends with a line saying what it changed.
+ *
+ * Only the two answers that withhold something are honoured from the file, so a key written
+ * by a later version of this app shows what a turn did rather than quietly hiding it.
+ */
+describe('summarising what a turn changed', () => {
+  it('shows it for any change when nobody has said otherwise', async () => {
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.turnSummary).toBe('always');
+  });
+
+  it.each([['off'], ['multiple']] as const)('keeps the stored answer %s', async (stored) => {
+    const { TURN_SUMMARY } = await load();
+    save('settings', TURN_SUMMARY, stored);
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.turnSummary).toBe(stored);
+  });
+
+  it.each([['sometimes'], ['true'], ['']])('shows everything for the unrecognised %s', async (stored) => {
+    const { TURN_SUMMARY } = await load();
+    save('settings', TURN_SUMMARY, stored);
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.turnSummary).toBe('always');
+  });
+
+  it('remembers a change to it', async () => {
+    const { useSettings, TURN_SUMMARY } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ turnSummary: 'off' }));
+
+    expect(result.current.settings.turnSummary).toBe('off');
+    expect(read('settings', TURN_SUMMARY)).toBe('off');
   });
 });
 

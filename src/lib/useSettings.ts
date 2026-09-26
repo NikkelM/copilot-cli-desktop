@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { read, save } from './store';
 import { setRuntimeLimits, updateCli } from './sidecar';
+import type { ShowTurnChanges } from './turnChanges';
 import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol';
 import { SCALE_KEY, TEXT_SCALE_KEY, applyScale, readScale, readTextScale } from './scale';
 
@@ -41,6 +42,9 @@ export const DEFAULT_CONTEXT = 'defaultContext';
 
 /** Whether to bring the Copilot CLI up to date when the app starts. */
 export const UPDATE_ON_START = 'updateOnStart';
+
+/** When a turn should end with a line saying what it changed. */
+export const TURN_SUMMARY = 'turnSummary';
 
 export interface Settings {
   /** Zero means no cap, which is what the runtime starts with. */
@@ -98,6 +102,14 @@ export interface Settings {
   defaultContext: string;
   updateOnStart: boolean;
   /**
+   * When a turn ends with a line saying what it changed.
+   *
+   * Three answers rather than a tick, because the interesting one is in the middle: a turn
+   * that made a single edit is already described by that edit's own row, so somebody who
+   * finds the line useful on a long turn may still not want it under every short one.
+   */
+  turnSummary: ShowTurnChanges;
+  /**
    * How large everything is drawn, as a multiple of the app's own size.
    *
    * Kept here rather than beside the gesture that used to own it, so there is one answer to
@@ -127,6 +139,8 @@ function number(key: string, fallback: number): number {
 }
 
 export function readSettings(): Settings {
+  const shown = read('settings', TURN_SUMMARY);
+
   return {
     maxLoaded: number(MAX_LOADED, 0),
     idleMinutes: number(IDLE_MINUTES, DEFAULT_IDLE_MINUTES),
@@ -143,6 +157,10 @@ export function readSettings(): Settings {
     defaultEffort: read('settings', DEFAULT_EFFORT) ?? '',
     defaultContext: read('settings', DEFAULT_CONTEXT) ?? '',
     updateOnStart: read('settings', UPDATE_ON_START) === 'true',
+    // Only the two answers that withhold something are honoured from the file. Anything
+    // else, including a key written by a later version, leaves the line showing rather
+    // than quietly hiding what a turn did.
+    turnSummary: shown === 'off' || shown === 'multiple' ? shown : 'always',
     // Its own reader: a scale is a fraction, and the one above floors what it is given.
     scale: readScale(),
     textScale: readTextScale(),
@@ -252,6 +270,7 @@ const KEYS: Record<keyof Settings, string> = {
   defaultEffort: DEFAULT_EFFORT,
   defaultContext: DEFAULT_CONTEXT,
   updateOnStart: UPDATE_ON_START,
+  turnSummary: TURN_SUMMARY,
   scale: SCALE_KEY,
   textScale: TEXT_SCALE_KEY,
 };

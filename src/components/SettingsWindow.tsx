@@ -10,6 +10,7 @@ import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES, DEFAULT_PERMISSION_MINUTES } from '../lib/useSettings';
 import { formatRelative } from '../lib/time';
+import type { ShowTurnChanges } from '../lib/turnChanges';
 import { anyMatch, matches, type Searchable } from '../lib/settingsSearch';
 import { groupCliSettings, leafName } from '../lib/cliGroups';
 import { bytes } from '../lib/units';
@@ -226,6 +227,40 @@ function CliField({
  * Shown as a percentage because that is how a size relative to another size reads, and it
  * moves in the same eighths the keyboard takes rather than letting any number be typed.
  */
+/** A setting with a handful of named answers, none of which is a number or a yes. */
+function ChoiceField<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+  hint,
+}: {
+  label: string;
+  value: T;
+  options: readonly { value: T; label: string }[];
+  onChange: (value: T) => void;
+  hint: string;
+}) {
+  return (
+    <label className="settings-row">
+      <span className="settings-label">{label}</span>
+      <select
+        className="settings-select"
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value as T)}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <span className="settings-hint">{hint}</span>
+    </label>
+  );
+}
+
 function ScaleField({
   label,
   value,
@@ -331,12 +366,20 @@ const INDEX: Record<CategoryId, Searchable[]> = {
   appearance: [
     { label: 'App scale', keywords: 'size zoom bigger smaller' },
     { label: 'Text size', keywords: 'font scale reading transcript' },
+    { label: 'Summarise what a turn changed', keywords: 'diff files changed turn summary edits hide' },
   ],
   cli: [{ label: 'Update the CLI when the app starts', keywords: 'upgrade version auto' }],
 };
 
 /** What a reader was trying to do when they were stopped by unsaved changes. */
 type Pending = { go: 'close' } | { go: 'category'; to: CategoryId };
+
+/** The three answers to when a turn should say what it changed, in order of how much. */
+const TURN_SUMMARY_CHOICES = [
+  { value: 'always', label: 'Whenever a turn changed a file' },
+  { value: 'multiple', label: 'Only when it changed more than one thing' },
+  { value: 'off', label: 'Never' },
+] as const satisfies readonly { value: ShowTurnChanges; label: string }[];
 
 /**
  * A place to change the choices this app would otherwise make for you (#100).
@@ -938,6 +981,16 @@ export function SettingsWindow({
                   >
                     Reset to default sizes
                   </button>
+                )}
+
+                {shows('Summarise what a turn changed') && (
+                  <ChoiceField
+                    label="Summarise what a turn changed"
+                    value={draft.turnSummary}
+                    options={TURN_SUMMARY_CHOICES}
+                    onChange={(value) => edit('turnSummary', value)}
+                    hint="A line at the end of a turn listing the files it changed, which opens onto each change."
+                  />
                 )}
               </>
             )}

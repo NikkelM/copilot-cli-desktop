@@ -1204,6 +1204,7 @@ export default function App() {
               cwd={selected?.cwd ?? null}
               ofAgent={subagents.open.agentId}
               display={display}
+              turnSummary={settings.turnSummary}
             />
 
             <div className="footer">
@@ -1296,6 +1297,7 @@ export default function App() {
               extraPages={transcript.extraPages}
               onDropOlder={transcript.dropOlder}
               display={display}
+              turnSummary={settings.turnSummary}
               // Set only while a search result is being read, which is the one time the
               // transcript is not showing the end of the conversation.
               onLatest={jump?.sessionId === selected.sessionId ? () => setJump(null) : undefined}

@@ -4,7 +4,7 @@ import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
 import { useBudgetedEntries } from '../lib/useBudgetedEntries';
 import { fileBadge } from '../lib/fileBadge';
-import { changesByTurn } from '../lib/turnChanges';
+import { changesByTurn, type ShowTurnChanges } from '../lib/turnChanges';
 import { TurnSummary } from './TurnSummary';
 import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
@@ -340,6 +340,8 @@ interface TranscriptProps {
    */
   ofAgent?: string;
   display: CliDisplay;
+  /** When a turn ends with a line saying what it changed. */
+  turnSummary?: ShowTurnChanges;
 }
 
 export function Transcript({
@@ -356,6 +358,7 @@ export function Transcript({
   onDropOlder,
   ofAgent,
   display,
+  turnSummary,
 }: TranscriptProps) {
   // Rebuilt only when the events are, rather than on every render: a streamed reply
   // re-renders this component once per chunk, and the walk costs more the more history is
@@ -508,7 +511,7 @@ export function Transcript({
    * Over the whole page rather than the drawn part of it, so a summary does not change as
    * the window widens - the totals are of the turn, not of how much of it is on screen.
    */
-  const turnChanges = useMemo(() => changesByTurn(entries), [entries]);
+  const turnChanges = useMemo(() => changesByTurn(entries, turnSummary), [entries, turnSummary]);
 
   /** Where the drawn window starts, so an index into the entries can be found among the rows. */
   const from = entries.length - shown.length;

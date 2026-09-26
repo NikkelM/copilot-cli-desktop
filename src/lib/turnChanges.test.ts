@@ -59,11 +59,11 @@ describe('what a turn changed', () => {
     expect(only?.added).toBe(7);
   });
 
-  /** Its own row says the same thing, and a line under every edit repeating it is noise. */
-  it('says nothing about a turn with one edit in it', () => {
+  /** Its own row says the same thing, for a reader who asked not to be told twice. */
+  it('says nothing about a turn with one edit in it, when only several are wanted', () => {
     const entries = [asked('a'), edited('b', 'one.ts', 3, 1), said('c')];
 
-    expect(changesByTurn(entries).size).toBe(0);
+    expect(changesByTurn(entries, 'multiple').size).toBe(0);
   });
 
   it('says nothing about a turn that changed nothing', () => {
@@ -79,9 +79,37 @@ describe('what a turn changed', () => {
   it('does not count writing a file without changing it', () => {
     const entries = [asked('a'), edited('b', 'one.ts', 2, 0), edited('c', 'one.ts', 0, 0), said('d')];
 
-    // Two file tools ran, but only one of them changed anything, so there is nothing the
-    // edit's own row does not already say.
-    expect(changesByTurn(entries).size).toBe(0);
+    const only = changesByTurn(entries, 'multiple').get(3);
+
+    expect(only).toBeUndefined();
+  });
+
+  /** The reader's choice, since a lone edit's own row already answers it (#40). */
+  describe('when a turn is worth a line of its own', () => {
+    const one = [asked('a'), edited('b', 'one.ts', 3, 1), said('c')];
+    const two = [asked('a'), edited('b', 'one.ts', 3, 1), edited('c', 'two.ts', 2, 0), said('d')];
+
+    it('says nothing at all when it is turned off', () => {
+      expect(changesByTurn(two, 'off').size).toBe(0);
+    });
+
+    it('withholds a single edit when only several are wanted', () => {
+      expect(changesByTurn(one, 'multiple').size).toBe(0);
+      expect(changesByTurn(two, 'multiple').size).toBe(1);
+    });
+
+    it('reports a single edit when any change is wanted', () => {
+      expect(changesByTurn(one, 'always').get(2)?.files.map((file) => file.path)).toEqual(['one.ts']);
+    });
+
+    // A turn that changed nothing has nothing to say, whatever was asked for.
+    it('still says nothing about a turn that changed nothing', () => {
+      expect(changesByTurn([asked('a'), ran('b'), said('c')], 'always').size).toBe(0);
+    });
+
+    it('shows what a turn changed when it is not told which to show', () => {
+      expect(changesByTurn(one).size).toBe(1);
+    });
   });
 
   it('leaves an unchanged write out of a turn that did change other things', () => {
