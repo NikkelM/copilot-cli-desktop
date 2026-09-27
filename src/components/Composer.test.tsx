@@ -500,6 +500,100 @@ describe('the slash command menu', () => {
     await user.keyboard('/mod{Escape}e');
     expect(rows()).toHaveLength(1);
   });
+
+  /**
+   * Both `/rewind` arguments are chosen here (#156): which turn, then what to take with
+   * it. That is what stops rewind needing a window of its own.
+   */
+  describe('the rewind command', () => {
+    const REWIND_COMMAND = {
+      name: 'rewind',
+      description: 'put this session back to an earlier turn',
+      aliases: [],
+      hint: 'turn',
+      allowDuringTurn: false,
+      choices: [
+        { name: '3', description: 'first thing (+1 −0)' },
+        { name: '2', description: 'second thing (+2 −1)' },
+        { name: '1', description: 'third thing (+3 −2)' },
+      ],
+    };
+
+    // Reading the turns resumes the session, so it is asked for once the command is named
+    // rather than on the first slash like the command list itself.
+    it('asks for the turns once the command is named', async () => {
+      const onRewindNeeded = vi.fn();
+      const { user } = menu({ commands: [REWIND_COMMAND], onRewindNeeded });
+
+      await user.keyboard('/rewind');
+
+      expect(onRewindNeeded).toHaveBeenCalled();
+    });
+
+    it('asks for nothing when another command is named', async () => {
+      const onRewindNeeded = vi.fn();
+      const { user } = menu({ onRewindNeeded });
+
+      await user.keyboard('/model');
+
+      expect(onRewindNeeded).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Oldest at the top and newest at the bottom, as the CLI draws them - so the numbers
+     * run downwards to 1, which is the turn most often wanted and the easiest to reach.
+     */
+    it('offers the turns with the newest last', async () => {
+      const { user } = menu({ commands: [REWIND_COMMAND] });
+
+      await user.keyboard('/rewind ');
+
+      expect(rows()).toHaveLength(3);
+      expect(rows()[0]).toContain('first thing');
+      expect(rows()[2]).toContain('third thing');
+    });
+
+    /**
+     * The turn has already been picked by the time the scope applies, so offering it again
+     * would be handing back what was just chosen.
+     */
+    it('offers what to take with it once a turn has been chosen', async () => {
+      const { user } = menu({ commands: [REWIND_COMMAND] });
+
+      await user.keyboard('/rewind 2 ');
+
+      expect(rows()).toHaveLength(2);
+      expect(rows()[0]).toContain('conversation');
+      expect(rows()[1]).toContain('files');
+    });
+
+    it('narrows the scope as it is typed', async () => {
+      const { user } = menu({ commands: [REWIND_COMMAND] });
+
+      await user.keyboard('/rewind 2 fi');
+
+      expect(rows()).toHaveLength(1);
+      expect(rows()[0]).toContain('files');
+    });
+
+    it('sends the turn and the scope together', async () => {
+      const { user, onSend } = menu({ commands: [REWIND_COMMAND] });
+
+      await user.keyboard('/rewind 2 files');
+      await user.keyboard('{Enter}');
+
+      expect(onSend).toHaveBeenCalledWith('/rewind 2 files');
+    });
+
+    // Still choosing the turn, so the scope would be offering an answer to the next question.
+    it('offers no scope before a turn has been finished', async () => {
+      const { user } = menu({ commands: [REWIND_COMMAND] });
+
+      await user.keyboard('/rewind 2');
+
+      expect(rows().join('\n')).not.toContain('conversation');
+    });
+  });
 });
 
 /**

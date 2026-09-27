@@ -16,7 +16,7 @@ import {
 import { cycled, erased, highlighted, opened, typed as searchTyped, type Search } from '../lib/reverseSearch';
 import { useDirectoryCompletion } from '../lib/useDirectoryCompletion';
 import { useMcpServers } from '../lib/useMcpServers';
-import { takesServerName, typedServerName } from '../lib/localCommands';
+import { REWIND, REWIND_SCOPES, takesServerName, typedRewindScope, typedServerName } from '../lib/localCommands';
 import { MODE_LABELS } from '../lib/useMode';
 import type { Attachment, SessionMode, SlashCommand } from '../../shared/protocol';
 
@@ -78,6 +78,8 @@ interface ComposerProps {
   cwd: string | null;
   /** Called once a slash is typed, so the list can be fetched if it is not known yet. */
   onCommandsNeeded: () => void;
+  /** Asked when /rewind is named, since reading the turns resumes the session. */
+  onRewindNeeded?: () => void;
   /** How the session is working, shown beside the box as the CLI shows it. */
   mode: SessionMode;
   /** Advance to the next mode, which Shift+Tab asks for. */
@@ -135,6 +137,7 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
   commands,
   cwd,
   onCommandsNeeded,
+  onRewindNeeded,
   mode,
   onCycleMode,
   intent,
@@ -212,6 +215,25 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
   const servers = useMcpServers(cwd, named !== undefined && takesServerName(named), onError);
 
   /**
+   * How much of the second `/rewind` argument has been typed, if that is where the line is.
+   *
+   * Null until a turn has been finished with a space, which is what says the reader has
+   * moved on from which turn to what to take with it.
+   */
+  const rewindScope = named ? typedRewindScope(named, typed?.input ?? '') : null;
+
+  /**
+   * Ask for the turns as soon as the command is named, rather than when they are reached.
+   *
+   * Reading them resumes the session, so this is the one menu in here that costs something
+   * - which is why it waits for the command to be named rather than for the first slash.
+   */
+  const needsRewind = named?.name === REWIND.name;
+  useEffect(() => {
+    if (needsRewind) onRewindNeeded?.();
+  }, [needsRewind, onRewindNeeded]);
+
+  /**
    * What the menu is offering, if anything.
    *
    * Before the space, the commands themselves. After it, the values the argument accepts,
@@ -252,9 +274,26 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
         }));
     }
 
+    /**
+     * A turn has been chosen and what follows says what to take with it.
+     *
+     * Offered instead of the turns rather than beside them, for the same reason the server
+     * names replace the subcommands: the turn has already been picked by the time this
+     * applies, and listing it again would be offering back what was just chosen.
+     */
+    if (rewindScope !== null) {
+      const partial = rewindScope.partial.toLowerCase();
+
+      return REWIND_SCOPES.filter((scope) => scope.name.startsWith(partial)).map((scope) => ({
+        id: `scope:${scope.name}`,
+        value: `${rewindScope.turn} ${scope.name}`,
+        label: scope.name,
+        description: scope.description,
+      }));
+    }
+
     const choices = (named?.choices ?? [])
-      .filter((choice) => choice.name.toLowerCase().startsWith(wanted))
-      .map((choice) => ({
+      .filter((choice) => choice.name.toLowerCase().startsWith(wanted))      .map((choice) => ({
         id: `choice:${choice.name}`,
         value: choice.name,
         label: choice.name,
@@ -269,7 +308,21 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
       separator: directory.separator,
     }));
     return [...choices, ...folders];
-  }, [typed?.name, typed?.input, value, dismissed, commands, named, directories, serverPrefix, servers]);
+  }, [
+    typed?.name,
+    typed?.input,
+    value,
+    dismissed,
+    commands,
+    named,
+    directories,
+    serverPrefix,
+    servers,
+    // Its parts rather than the object, which is built fresh every render and would make
+    // this rebuild every render with it.
+    rewindScope?.turn,
+    rewindScope?.partial,
+  ]);
 
   // A list that changes under the cursor leaves it on a row that has moved or gone.
   const itemIdentity = items.map((item) => item.id).join('\0');

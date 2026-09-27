@@ -3,15 +3,19 @@ import { describe, expect, it } from 'vitest';
 import {
   BROWSE,
   LOCAL_COMMANDS,
+  REWIND,
   TAG,
   isLocal,
   readMcpCommand,
+  readRewindCommand,
+  typedRewindScope,
   typedServerName,
   wantsDirectory,
   withLocalChoices,
+  withRewindChoices,
   withTagChoices,
 } from './localCommands';
-import type { SlashCommand } from '../../shared/protocol';
+import type { RewindPoint, SlashCommand } from '../../shared/protocol';
 
 const command = (over: Partial<SlashCommand> = {}): SlashCommand => ({
   name: 'session',
@@ -293,5 +297,124 @@ describe('readMcpCommand', () => {
   /** The CLI has both, and they mean the same thing. */
   it('reads list as the bare form written out', () => {
     expect(readMcpCommand('list')).toEqual({ kind: 'panel' });
+  });
+});
+/**
+ * Putting a session back to an earlier turn (#156).
+ *
+ * Both arguments are chosen from the composer's own menu, so neither is a word anybody has
+ * to know - but the line they produce still has to be read back.
+ */
+describe('the rewind command', () => {
+  const point = (eventId: string, message: string, over: Partial<RewindPoint> = {}): RewindPoint => ({
+    eventId,
+    message,
+    at: '2026-09-27T10:00:00.000Z',
+    canRestoreFiles: true,
+    fileCount: 1,
+    linesAdded: 3,
+    linesRemoved: 1,
+    ...over,
+  });
+
+  const points = [point('e1', 'first thing'), point('e2', 'second thing'), point('e3', 'third thing')];
+
+  describe('withRewindChoices', () => {
+    /** As the CLI numbers them: the turn wanted is usually recent, and that is how it is thought of. */
+    it('numbers the turns from the end', () => {
+      const [rewind] = withRewindChoices([REWIND], points).filter((c) => c.name === 'rewind');
+
+      expect(rewind?.choices?.map((choice) => choice.name)).toEqual(['3', '2', '1']);
+    });
+
+    it('says what each turn asked, since a number identifies nothing', () => {
+      const [rewind] = withRewindChoices([REWIND], points).filter((c) => c.name === 'rewind');
+
+      expect(rewind?.choices?.[0]?.description).toContain('first thing');
+      expect(rewind?.choices?.[2]?.description).toContain('third thing');
+    });
+
+    it('says what a turn came to when it changed something', () => {
+      const [rewind] = withRewindChoices([REWIND], points).filter((c) => c.name === 'rewind');
+
+      expect(rewind?.choices?.[0]?.description).toContain('+3 −1');
+    });
+
+    // Zeroes beside every turn that only talked would be noise.
+    it('says nothing about counts for a turn that changed nothing', () => {
+      const quiet = [point('e1', 'just talked', { fileCount: 0, linesAdded: 0, linesRemoved: 0 })];
+      const [rewind] = withRewindChoices([REWIND], quiet).filter((c) => c.name === 'rewind');
+
+      expect(rewind?.choices?.[0]?.description).toBe('just talked');
+    });
+
+    it('leaves the commands alone when there is nothing to go back to', () => {
+      expect(withRewindChoices([REWIND], [])).toEqual([REWIND]);
+    });
+
+    it('leaves the other commands alone', () => {
+      const [tag] = withRewindChoices([TAG, REWIND], points).filter((c) => c.name === 'tag');
+
+      expect(tag).toEqual(TAG);
+    });
+  });
+
+  describe('typedRewindScope', () => {
+    // Until a turn has been finished with a space, the reader is still choosing the turn.
+    it.each([[''], ['3'], ['  ']])('offers nothing for %s', (input) => {
+      expect(typedRewindScope(REWIND, input)).toBeNull();
+    });
+
+    it('offers both scopes once a turn has been finished', () => {
+      expect(typedRewindScope(REWIND, '3 ')).toEqual({ turn: 3, partial: '' });
+    });
+
+    it('carries what has been typed of the scope', () => {
+      expect(typedRewindScope(REWIND, '3 fi')).toEqual({ turn: 3, partial: 'fi' });
+    });
+
+    // `Number('')` is zero, so a line that named no turn would otherwise offer the scope.
+    it('offers nothing when what precedes the space is not a turn', () => {
+      expect(typedRewindScope(REWIND, ' files')).toBeNull();
+      expect(typedRewindScope(REWIND, 'x ')).toBeNull();
+    });
+
+    it('offers nothing for another command', () => {
+      expect(typedRewindScope(TAG, '3 ')).toBeNull();
+    });
+  });
+
+  describe('readRewindCommand', () => {
+    it('finds the turn the number counts back to', () => {
+      expect(readRewindCommand('1', points)?.point.eventId).toBe('e3');
+      expect(readRewindCommand('3', points)?.point.eventId).toBe('e1');
+    });
+
+    it('takes the files when they were asked for', () => {
+      expect(readRewindCommand('2 files', points)?.files).toBe(true);
+    });
+
+    /**
+     * The conversation alone is the smaller of the two and the only one that cannot lose
+     * work outside the session, so it is the safe reading of a line somebody cut short.
+     */
+    it.each([['2'], ['2 conversation'], ['2 something']])('leaves the files alone for %s', (input) => {
+      expect(readRewindCommand(input, points)?.files).toBe(false);
+    });
+
+    // The menu is what a bare `/rewind` asks for, and it is already open.
+    it('asks for nothing when no turn was named', () => {
+      expect(readRewindCommand('', points)).toBeNull();
+      expect(readRewindCommand('  ', points)).toBeNull();
+    });
+
+    it('asks for nothing when the turn is not one of them', () => {
+      expect(readRewindCommand('9', points)).toBeNull();
+      expect(readRewindCommand('0', points)).toBeNull();
+    });
+
+    it('asks for nothing when the turn is not a number', () => {
+      expect(readRewindCommand('files', points)).toBeNull();
+    });
   });
 });

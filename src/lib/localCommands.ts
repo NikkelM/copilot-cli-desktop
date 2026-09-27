@@ -1,4 +1,4 @@
-import type { CommandChoice, SlashCommand } from '../../shared/protocol';
+import type { CommandChoice, RewindPoint, SlashCommand } from '../../shared/protocol';
 
 /**
  * Show every key and every command, as the CLI's own `/help` does.
@@ -140,19 +140,106 @@ export const MCP: SlashCommand = {
 /**
  * Put this session back to an earlier turn (#156).
  *
- * The CLI's own name and its own two questions: which turn, then whether the files go back
- * with the conversation. A command rather than something always on offer, because reading
- * the turns resumes the session - asking for it is the moment somebody has decided that
- * is worth paying for.
+ * Two arguments, asked the way the CLI asks them: which turn, then whether the files go
+ * back with the conversation. Both are offered by the composer's own menu, so neither is a
+ * word anybody has to know.
+ *
+ * A command rather than something always on offer, because reading the turns resumes the
+ * session - asking for it is the moment somebody has decided that is worth paying for.
  */
 export const REWIND: SlashCommand = {
   name: 'rewind',
   description: 'put this session back to an earlier turn',
   aliases: [],
+  hint: 'turn',
   // The session is about to have its history discarded; doing that mid-turn would be
   // racing the thing writing it, and the runtime refuses it as busy anyway.
   allowDuringTurn: false,
 };
+
+/**
+ * What a rewind may take with it, as the second argument to `/rewind`.
+ *
+ * The conversation goes either way - that is what rewinding is - so the choice is only
+ * about the files, and both options say so rather than one of them being the absence of
+ * the other.
+ */
+export const REWIND_SCOPES: readonly CommandChoice[] = [
+  { name: 'conversation', description: 'discard the turns, leave the files untouched' },
+  { name: 'files', description: 'discard the turns and put the files back as they were' },
+];
+
+/**
+ * Offer the turns this session could go back to as arguments to `/rewind`.
+ *
+ * Numbered from the end, as the CLI numbers them and as the menu therefore reads: the turn
+ * somebody wants is almost always a recent one, and "three turns ago" is how they think of
+ * it rather than counting up from a session they opened days ago.
+ *
+ * The description carries what was asked, since a number alone identifies nothing.
+ */
+export function withRewindChoices(commands: SlashCommand[], points: readonly RewindPoint[]): SlashCommand[] {
+  if (points.length === 0) return commands;
+
+  const choices: CommandChoice[] = points.map((point, index) => ({
+    name: String(points.length - index),
+    description: said(point),
+  }));
+
+  return commands.map((command) => (command.name === REWIND.name ? { ...command, choices } : command));
+}
+
+/** A turn in one line: what was asked, and what it came to. */
+function said(point: RewindPoint): string {
+  const asked = point.message.trim().split('\n')[0] ?? '';
+  const counts = point.fileCount > 0 ? ` (+${point.linesAdded} −${point.linesRemoved})` : '';
+  const shown = asked.length > 70 ? `${asked.slice(0, 69)}…` : asked || 'No prompt text';
+  return `${shown}${counts}`;
+}
+
+/**
+ * Which turn a `/rewind` line names, and how much of the scope has been typed after it.
+ *
+ * Null until a turn has been finished with a space, which is what says the reader has
+ * moved on to the second question. The empty string is a real answer and means both scopes
+ * match: `/rewind 3 ` has chosen neither.
+ */
+export function typedRewindScope(command: SlashCommand, input: string): { turn: number; partial: string } | null {
+  if (command.name !== REWIND.name) return null;
+
+  const space = input.indexOf(' ');
+  if (space === -1) return null;
+
+  const turn = input.slice(0, space).trim();
+  // Digits rather than Number(), which reads the empty string as zero and would offer the
+  // scope for `/rewind  ` - a line that has named no turn at all.
+  if (!/^\d+$/.test(turn)) return null;
+
+  return { turn: Number(turn), partial: input.slice(space + 1) };
+}
+
+/**
+ * What a finished `/rewind` line asks for, or null when it does not ask for anything yet.
+ *
+ * The turn is counted from the end, as the menu offers it, so it is turned back into a
+ * position here rather than anywhere that would have to know about both orders.
+ *
+ * Naming no scope means the conversation alone. That is the smaller of the two and the
+ * only one that cannot lose work outside the session, so it is the safe reading of a line
+ * somebody cut short.
+ */
+export function readRewindCommand(
+  input: string,
+  points: readonly RewindPoint[],
+): { point: RewindPoint; files: boolean } | null {
+  const [first, second] = input.trim().split(/\s+/);
+  if (!first || !/^\d+$/.test(first)) return null;
+
+  const point = points[points.length - Number(first)];
+  if (!point) return null;
+
+  return { point, files: (second ?? '').toLowerCase() === 'files' };
+}
 
 /**
  * The commands this app answers itself.

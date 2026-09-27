@@ -3,8 +3,6 @@ import { open as pickFolder } from '@tauri-apps/plugin-dialog';
 
 import type {
   Attachment,
-  RewindPoint,
-  RewindPreview,
   RewindResult,
   SessionMatch,
   SessionSummary,
@@ -49,7 +47,7 @@ import {
   locateTurn,
   writeCliSettings,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, wantsDirectory, withTagChoices } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, readRewindCommand, wantsDirectory, withRewindChoices, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
@@ -79,7 +77,6 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useRewind } from './lib/useRewind';
-import { RewindMenu } from './components/RewindMenu';
 import { useEnvironment } from './lib/useEnvironment';
 import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
@@ -248,15 +245,6 @@ export default function App() {
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const rewind = useRewind(selectedId);
-  /**
-   * The turn being rewound to, with what it would put back once that has been read.
-   *
-   * Null while `/rewind` is still asking which turn, so the menu and the question that
-   * follows it are two states of one thing rather than two things that can both be open.
-   */
-  const [rewinding, setRewinding] = useState<{ point: RewindPoint; preview: RewindPreview | null } | null>(null);
-  /** Whether the menu of turns is open, which is the step before that question. */
-  const [pickingRewind, setPickingRewind] = useState(false);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');
   /**
    * Switching, then reading the tree again.
@@ -589,56 +577,28 @@ export default function App() {
   }
 
   /**
-   * Open the menu of turns this session could be put back to (#156).
+   * Act on a finished `/rewind` line (#156).
    *
-   * Reading them resumes the session, which is why it is a command rather than something
-   * always on offer: asking for it is the moment somebody has decided it is worth the cost.
+   * Which turn and what to take with it are both chosen from the composer's own menu, so
+   * by the time this runs the line says everything. A line that names no turn has asked
+   * for the menu rather than for a rewind, and the menu is already open - so it does
+   * nothing rather than complaining about an argument nobody was asked for yet.
    */
-  function openRewind() {
-    setRewinding(null);
-    setPickingRewind(true);
-    rewind.load();
+  function rewindFromCommand(input: string) {
+    const asked = readRewindCommand(input, [...rewind.points.values()]);
+    if (!asked) return;
+
+    void rewind
+      .rewind(asked.point.eventId, asked.files)
+      .then((result) => {
+        const trouble = rewindTrouble(result);
+        if (trouble) setError(trouble);
+        // The discarded turns are gone from the log, so what is on screen is no longer
+        // what the session holds. Reading it again is the only way to agree.
+        else transcript.reload();
+      })
+      .catch((e: unknown) => setError(explain(e)));
   }
-
-  /**
-   * Having picked a turn, ask what to put back, reading the files while the question sits.
-   *
-   * The question opens before that answer arrives, because reading it needs the session
-   * and a menu that appears only once that is done reads as the choice having missed.
-   */
-  const askRewind = useCallback(
-    (point: RewindPoint) => {
-      setPickingRewind(false);
-      setRewinding({ point, preview: null });
-      rewind
-        .preview(point.eventId)
-        .then((preview) =>
-          setRewinding((current) =>
-            current?.point.eventId === point.eventId ? { ...current, preview } : current,
-          ),
-        )
-        .catch((e: unknown) => setError(explain(e)));
-    },
-    [rewind],
-  );
-
-  /** Put the session back, and say so when it did not simply work. */
-  const doRewind = useCallback(
-    (point: RewindPoint, files: boolean) => {
-      setRewinding(null);
-      void rewind
-        .rewind(point.eventId, files)
-        .then((result) => {
-          const trouble = rewindTrouble(result);
-          if (trouble) setError(trouble);
-          // The discarded turns are gone from the log, so what is on screen is no longer
-          // what the session holds. Reading it again is the only way to agree.
-          else transcript.reload();
-        })
-        .catch((e: unknown) => setError(explain(e)));
-    },
-    [rewind, transcript],
-  );
 
   /**
    * Open the panel and read it again.
@@ -778,7 +738,7 @@ export default function App() {
       else if (what.command.name === WIKI.name) setShowWiki(true);
       else if (what.command.name === TAG.name) tagFromCommand(selectedId, what.input);
       else if (what.command.name === MCP.name) mcpFromCommand(what.input);
-      else if (what.command.name === REWIND.name) openRewind();
+      else if (what.command.name === REWIND.name) rewindFromCommand(what.input);
       else if (what.command.name === GIT.name) {
         panel.show('repository');
         repository.refresh();
@@ -1087,8 +1047,12 @@ export default function App() {
    * `/session id` is.
    */
   const commands = useMemo(
-    () => withTagChoices(slash.commands, knownTags, selectedId ? (tags[selectedId] ?? []) : []),
-    [slash.commands, knownTags, tags, selectedId],
+    () =>
+      withRewindChoices(
+        withTagChoices(slash.commands, knownTags, selectedId ? (tags[selectedId] ?? []) : []),
+        [...rewind.points.values()],
+      ),
+    [slash.commands, knownTags, tags, selectedId, rewind.points],
   );
 
   /**
@@ -1496,6 +1460,7 @@ export default function App() {
                 commands={commands}
                 cwd={selected.cwd}
                 onCommandsNeeded={slash.open}
+                onRewindNeeded={rewind.load}
                 mode={mode.mode}
                 onCycleMode={mode.cycle}
                 intent={intent}
@@ -1589,23 +1554,6 @@ export default function App() {
         />
       )}
 
-      {(pickingRewind || rewinding) && selected && (
-        <RewindMenu
-          points={[...rewind.points.values()]}
-          loading={rewind.loading}
-          failed={rewind.failed}
-          unavailable={rewind.unavailable}
-          picked={rewinding?.point ?? null}
-          preview={rewinding?.preview ?? null}
-          cwd={selected.cwd}
-          onPick={askRewind}
-          onRewind={doRewind}
-          onClose={() => {
-            setPickingRewind(false);
-            setRewinding(null);
-          }}
-        />
-      )}
       {settingsOpen && (
         <SettingsWindow
           settings={settings}
