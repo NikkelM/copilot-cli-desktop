@@ -49,7 +49,7 @@ import {
   locateTurn,
   writeCliSettings,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, GIT, MCP, TAG, USAGE, WIKI, readMcpCommand, wantsDirectory, withTagChoices } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, wantsDirectory, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
@@ -79,7 +79,7 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useRewind } from './lib/useRewind';
-import { relativise } from './lib/paths';
+import { RewindMenu } from './components/RewindMenu';
 import { useEnvironment } from './lib/useEnvironment';
 import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
@@ -249,16 +249,14 @@ export default function App() {
   const changes = useChanges(selectedId);
   const rewind = useRewind(selectedId);
   /**
-   * Whether the prompts are offering a way back (#156).
+   * The turn being rewound to, with what it would put back once that has been read.
    *
-   * Off until asked, because reading the points resumes the session - the same reason the
-   * changes panel waits to be opened. Turning it off forgets them rather than hiding them,
-   * so a session left with it on does not go on holding a list that has gone stale.
+   * Null while `/rewind` is still asking which turn, so the menu and the question that
+   * follows it are two states of one thing rather than two things that can both be open.
    */
-  const [offerRewind, setOfferRewind] = useState(false);
-  /** The turn being rewound to, with what it would put back once that has been read. */
   const [rewinding, setRewinding] = useState<{ point: RewindPoint; preview: RewindPreview | null } | null>(null);
-  const [restoreFiles, setRestoreFiles] = useState(false);
+  /** Whether the menu of turns is open, which is the step before that question. */
+  const [pickingRewind, setPickingRewind] = useState(false);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');
   /**
    * Switching, then reading the tree again.
@@ -591,33 +589,27 @@ export default function App() {
   }
 
   /**
-   * Offer a way back from each prompt, or stop offering (#156).
+   * Open the menu of turns this session could be put back to (#156).
    *
-   * Reading the points resumes the session, so it is asked for rather than kept ready.
-   * Turning it off forgets them: they stop being true the moment the session says anything
-   * more, and a stale list offers a way back to a turn that has moved.
+   * Reading them resumes the session, which is why it is a command rather than something
+   * always on offer: asking for it is the moment somebody has decided it is worth the cost.
    */
-  function toggleRewind() {
-    if (offerRewind) {
-      setOfferRewind(false);
-      return;
-    }
-    setOfferRewind(true);
+  function openRewind() {
+    setRewinding(null);
+    setPickingRewind(true);
     rewind.load();
   }
 
   /**
-   * Ask about going back to a turn, reading what it would put back while the question sits.
+   * Having picked a turn, ask what to put back, reading the files while the question sits.
    *
-   * The question opens before the answer arrives, because reading it needs the session and
-   * a dialog that appears only once that is done reads as the button having missed.
+   * The question opens before that answer arrives, because reading it needs the session
+   * and a menu that appears only once that is done reads as the choice having missed.
    */
   const askRewind = useCallback(
     (point: RewindPoint) => {
+      setPickingRewind(false);
       setRewinding({ point, preview: null });
-      // Unticked to begin with: discarding a conversation is one thing, and writing over
-      // files that may hold work nobody here did is another. It is asked for separately.
-      setRestoreFiles(false);
       rewind
         .preview(point.eventId)
         .then((preview) =>
@@ -630,15 +622,22 @@ export default function App() {
     [rewind],
   );
 
-  /**
-   * What the transcript is told about rewinding.
-   *
-   * Held together and remembered, because it reaches the rows through a context: a fresh
-   * object here would redraw every row in the transcript on every render.
-   */
-  const rewinds = useMemo(
-    () => ({ points: offerRewind ? rewind.points : NO_POINTS, onRewind: askRewind }),
-    [offerRewind, rewind.points, askRewind],
+  /** Put the session back, and say so when it did not simply work. */
+  const doRewind = useCallback(
+    (point: RewindPoint, files: boolean) => {
+      setRewinding(null);
+      void rewind
+        .rewind(point.eventId, files)
+        .then((result) => {
+          const trouble = rewindTrouble(result);
+          if (trouble) setError(trouble);
+          // The discarded turns are gone from the log, so what is on screen is no longer
+          // what the session holds. Reading it again is the only way to agree.
+          else transcript.reload();
+        })
+        .catch((e: unknown) => setError(explain(e)));
+    },
+    [rewind, transcript],
   );
 
   /**
@@ -779,6 +778,7 @@ export default function App() {
       else if (what.command.name === WIKI.name) setShowWiki(true);
       else if (what.command.name === TAG.name) tagFromCommand(selectedId, what.input);
       else if (what.command.name === MCP.name) mcpFromCommand(what.input);
+      else if (what.command.name === REWIND.name) openRewind();
       else if (what.command.name === GIT.name) {
         panel.show('repository');
         repository.refresh();
@@ -1320,17 +1320,6 @@ export default function App() {
                   >
                     Changes
                   </button>
-                  {/* Costs a resume to answer, like Changes beside it, so it waits to be
-                      asked rather than being ready in case. */}
-                  <button
-                    type="button"
-                    className={offerRewind ? 'header-button on' : 'header-button'}
-                    onClick={toggleRewind}
-                    aria-pressed={offerRewind}
-                    title="Offer a way back from each prompt"
-                  >
-                    Rewind
-                  </button>
                   <AgentPicker
                     current={agent.current}
                     agents={agent.agents}
@@ -1377,7 +1366,6 @@ export default function App() {
               onDropOlder={transcript.dropOlder}
               display={display}
               turnSummary={settings.turnSummary}
-              rewinds={rewinds}
               // Set only while a search result is being read, which is the one time the
               // transcript is not showing the end of the conversation.
               onLatest={jump?.sessionId === selected.sessionId ? () => setJump(null) : undefined}
@@ -1601,70 +1589,21 @@ export default function App() {
         />
       )}
 
-      {rewinding && (
-        <Confirm
-          title="Rewind to this prompt?"
-          body={
-            <>
-              <p>
-                Everything after <strong>{shorten(rewinding.point.message)}</strong> will be discarded: the rest
-                of the conversation, and what the agent said and did in it. That part of the session does not
-                come back.
-              </p>
-              {rewinding.preview === null ? (
-                <p className="changes-note">Reading what this would put back.</p>
-              ) : rewinding.preview.files.length === 0 ? (
-                <p>No files were changed after this point, so only the conversation is affected.</p>
-              ) : (
-                <>
-                  <label className="confirm-remember">
-                    <input
-                      type="checkbox"
-                      checked={restoreFiles}
-                      onChange={(event) => setRestoreFiles(event.target.checked)}
-                    />
-                    Also put back the {rewinding.preview.files.length === 1 ? 'file' : 'files'} it changed
-                  </label>
-                  <ul className="rewind-files">
-                    {rewinding.preview.files.map((file) => (
-                      <li key={file.path}>
-                        <span className={`changes-status ${file.status}`}>
-                          {file.status === 'created' ? '+' : file.status === 'deleted' ? '−' : '~'}
-                        </span>
-                        <span className="changes-path">{relativise(file.path, selected?.cwd ?? null)}</span>
-                        <span className="tool-counts">
-                          {file.linesAdded > 0 && <span className="added">+{file.linesAdded}</span>}
-                          {file.linesRemoved > 0 && <span className="removed">−{file.linesRemoved}</span>}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  {/* Unticked by default, and said out loud: putting files back overwrites
-                      whatever they hold now, including work nobody here did. */}
-                  {restoreFiles && (
-                    <p>Those files will be written back as they were, losing any later changes to them.</p>
-                  )}
-                </>
-              )}
-            </>
-          }
-          confirmLabel="Rewind"
-          onConfirm={() => {
-            const { point } = rewinding;
-            const files = restoreFiles;
+      {(pickingRewind || rewinding) && selected && (
+        <RewindMenu
+          points={[...rewind.points.values()]}
+          loading={rewind.loading}
+          failed={rewind.failed}
+          unavailable={rewind.unavailable}
+          picked={rewinding?.point ?? null}
+          preview={rewinding?.preview ?? null}
+          cwd={selected.cwd}
+          onPick={askRewind}
+          onRewind={doRewind}
+          onClose={() => {
+            setPickingRewind(false);
             setRewinding(null);
-            void rewind
-              .rewind(point.eventId, files)
-              .then((result) => {
-                const trouble = rewindTrouble(result);
-                if (trouble) setError(trouble);
-                // The discarded turns are gone from the log, so what is on screen is no
-                // longer what the session holds. Reading it again is the only way to agree.
-                else transcript.reload();
-              })
-              .catch((error: unknown) => setError(explain(error)));
           }}
-          onCancel={() => setRewinding(null)}
         />
       )}
       {settingsOpen && (
@@ -1711,15 +1650,6 @@ export default function App() {
       )}
     </div>
   );
-}
-
-/** One empty map, so a session not offering rewind does not make a new one every render. */
-const NO_POINTS = new Map<string, RewindPoint>();
-
-/** Enough of a prompt to recognise the turn, without putting a paragraph in a dialog. */
-function shorten(message: string): string {
-  const line = message.trim().split('\n')[0] ?? '';
-  return line.length > 80 ? `${line.slice(0, 79)}…` : line || 'this prompt';
 }
 
 /**

@@ -138,12 +138,39 @@ export const MCP: SlashCommand = {
 };
 
 /**
+ * Put this session back to an earlier turn (#156).
+ *
+ * The CLI's own name and its own two questions: which turn, then whether the files go back
+ * with the conversation. A command rather than something always on offer, because reading
+ * the turns resumes the session - asking for it is the moment somebody has decided that
+ * is worth paying for.
+ */
+export const REWIND: SlashCommand = {
+  name: 'rewind',
+  description: 'put this session back to an earlier turn',
+  aliases: [],
+  // The session is about to have its history discarded; doing that mid-turn would be
+  // racing the thing writing it, and the runtime refuses it as busy anyway.
+  allowDuringTurn: false,
+};
+
+/**
  * The commands this app answers itself.
  *
  * Folded into the runtime's list so they are offered by the menu alongside it - the reader
  * has no reason to care which side of the wire answers them.
  */
-export const LOCAL_COMMANDS: readonly SlashCommand[] = [HELP, CHANGES, ENVIRONMENT, USAGE, WIKI, GIT, TAG, MCP];
+export const LOCAL_COMMANDS: readonly SlashCommand[] = [
+  HELP,
+  CHANGES,
+  ENVIRONMENT,
+  USAGE,
+  WIKI,
+  GIT,
+  TAG,
+  MCP,
+  REWIND,
+];
 
 /** Whether a command is one of ours, and so must not be sent to the runtime. */
 export function isLocal(name: string): boolean {
