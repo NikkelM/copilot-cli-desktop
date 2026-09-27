@@ -95,7 +95,35 @@ function makeSession(id: string) {
     send: vi.fn(async (_options: { prompt: string; mode?: string }) => `msg-${id}`),
     setModel: vi.fn(async (_model: string, _options?: Record<string, unknown>) => undefined),
     rpc: {
-      history: { listRewindPoints: vi.fn(async () => ({ points: [] })) },
+      history: {
+        listRewindPoints: vi.fn(
+          async (): Promise<{
+            fileChangeTrackingEnabled: boolean;
+            unavailableReason?: string;
+            points: Record<string, unknown>[];
+          }> => ({ fileChangeTrackingEnabled: true, points: [] }),
+        ),
+        previewRewind: vi.fn(
+          async (
+            _params: { eventId: string },
+          ): Promise<{ available: boolean; reason?: string; fileCount: number; files: Record<string, unknown>[] }> => ({
+            available: true,
+            fileCount: 0,
+            files: [],
+          }),
+        ),
+        rewind: vi.fn(
+          async (
+            _params: { eventId: string; mode: string },
+          ): Promise<{
+            outcome: string;
+            eventsRemoved?: number;
+            restoredFiles: string[];
+            skippedFiles: { path: string; reason: string }[];
+            error?: string;
+          }> => ({ outcome: 'success', restoredFiles: [], skippedFiles: [] }),
+        ),
+      },
       shell: {
         executeUserRequested: vi.fn(async (_params: { requestId: string; command: string }) => ({
           toolCallId: 'call-1',
@@ -3659,5 +3687,204 @@ describe('signing in to an MCP server', () => {
     await harness.runtime.mcpLogin('cold', 'c7').catch(() => undefined);
 
     expect(harness.client.resumeSession).toHaveBeenCalled();
+  });
+});
+/**
+ * Putting a session back to an earlier turn (#156).
+ *
+ * The runtime answers all three of these from the live session, so each opens one - unlike
+ * the change list beside them, which reads the snapshots on disk.
+ */
+describe('rewinding a session', () => {
+  const pointsOf = (harness: ReturnType<typeof makeRuntime>) =>
+    harness.sessions.get('a')!.rpc.history.listRewindPoints;
+
+  it('opens the session to answer, since the runtime reads it from there', async () => {
+    const harness = makeRuntime();
+
+    await harness.runtime.rewindPoints('a');
+
+    expect(harness.client.resumeSession).toHaveBeenCalled();
+  });
+
+  it('gives back the turns, named by what was asked', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    pointsOf(harness).mockResolvedValue({
+      fileChangeTrackingEnabled: true,
+      points: [
+        {
+          eventId: 'e1',
+          userMessage: 'change two things',
+          timestamp: '2026-09-27T10:00:00.000Z',
+          canRestoreFiles: true,
+          fileCount: 2,
+          turnChangedFiles: true,
+          linesAdded: 9,
+          linesRemoved: 3,
+        },
+      ],
+    });
+
+    const { points, unavailable } = await harness.runtime.rewindPoints('a');
+
+    expect(unavailable).toBeUndefined();
+    expect(points).toEqual([
+      {
+        eventId: 'e1',
+        message: 'change two things',
+        at: '2026-09-27T10:00:00.000Z',
+        canRestoreFiles: true,
+        fileCount: 2,
+        linesAdded: 9,
+        linesRemoved: 3,
+      },
+    ]);
+  });
+
+  // A prompt written into a terminal can carry escapes, and they are not part of what was said.
+  it('strips the escapes out of what was asked', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    pointsOf(harness).mockResolvedValue({
+      fileChangeTrackingEnabled: true,
+      points: [
+        {
+          eventId: 'e1',
+          userMessage: 'make it \u001B[31mred\u001B[0m',
+          timestamp: '2026-09-27T10:00:00.000Z',
+          canRestoreFiles: true,
+          fileCount: 0,
+          turnChangedFiles: false,
+          linesAdded: 0,
+          linesRemoved: 0,
+        },
+      ],
+    });
+
+    const { points } = await harness.runtime.rewindPoints('a');
+
+    expect(points[0]?.message).toBe('make it red');
+  });
+
+  /**
+   * The runtime's names describe its own machinery. Only the transient one needs acting on,
+   * and it is the one worth calling busy.
+   */
+  it.each([
+    ['session-busy', 'busy'],
+    ['unsupported-remote-session', 'remote'],
+    ['file-change-tracking-disabled', 'untracked'],
+  ])('says %s is %s', async (given, expected) => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    pointsOf(harness).mockResolvedValue({
+      fileChangeTrackingEnabled: false,
+      unavailableReason: given,
+      points: [],
+    });
+
+    expect((await harness.runtime.rewindPoints('a')).unavailable).toBe(expected);
+  });
+
+  /**
+   * A session that never captured its changes cannot offer its files back, and the runtime
+   * says so in a field rather than as a reason. Saying nothing would offer a way back that
+   * silently did less than it promised.
+   */
+  it('reports tracking being off even when no reason is given', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    pointsOf(harness).mockResolvedValue({ fileChangeTrackingEnabled: false, points: [] });
+
+    expect((await harness.runtime.rewindPoints('a')).unavailable).toBe('untracked');
+  });
+
+  it('asks what a rewind would put back, before anything is done', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    harness.sessions.get('a')!.rpc.history.previewRewind.mockResolvedValue({
+      available: true,
+      fileCount: 1,
+      files: [{ path: 'F:\\work\\one.ts', changeType: 'modified', linesAdded: 4, linesRemoved: 1 }],
+    });
+
+    const preview = await harness.runtime.previewRewind('a', 'e1');
+
+    expect(preview).toEqual({
+      available: true,
+      files: [{ path: 'F:\\work\\one.ts', status: 'modified', linesAdded: 4, linesRemoved: 1 }],
+    });
+  });
+
+  it('asks the runtime for the files only when they were wanted', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    const rewind = harness.sessions.get('a')!.rpc.history.rewind;
+
+    await harness.runtime.rewind('a', 'e1', true);
+    expect(rewind).toHaveBeenLastCalledWith({ eventId: 'e1', mode: 'conversation-and-files' });
+
+    await harness.runtime.rewind('a', 'e1', false);
+    expect(rewind).toHaveBeenLastCalledWith({ eventId: 'e1', mode: 'conversation' });
+  });
+
+  it('says what was put back and what was left alone', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    harness.sessions.get('a')!.rpc.history.rewind.mockResolvedValue({
+      outcome: 'success',
+      eventsRemoved: 12,
+      restoredFiles: ['F:\\work\\one.ts'],
+      skippedFiles: [{ path: 'F:\\work\\two.ts', reason: 'changed since' }],
+    });
+
+    const result = await harness.runtime.rewind('a', 'e1', true);
+
+    expect(result.outcome).toBe('success');
+    expect(result.restoredFiles).toEqual(['F:\\work\\one.ts']);
+    expect(result.skippedFiles).toEqual([{ path: 'F:\\work\\two.ts', reason: 'changed since' }]);
+  });
+
+  /**
+   * The failures differ in what they left on disk, so they are not folded into one. The two
+   * tidying failures are the exception: both mean it worked and something the runtime keeps
+   * alongside it did not get cleaned up, which is the same thing to a reader.
+   */
+  it.each([
+    ['success', 'success'],
+    ['session-busy', 'busy'],
+    ['file-change-tracking-disabled', 'untracked'],
+    ['unsupported-remote-session', 'remote'],
+    ['files-rolled-back', 'rolled-back'],
+    ['rollback-incomplete', 'rollback-incomplete'],
+    ['truncation-failed', 'truncation-failed'],
+    ['checkpoint-cleanup-failed', 'partly-tidied'],
+    ['snapshot-prune-failed', 'partly-tidied'],
+  ])('reports %s as %s', async (given, expected) => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    harness.sessions.get('a')!.rpc.history.rewind.mockResolvedValue({
+      outcome: given,
+      restoredFiles: [],
+      skippedFiles: [],
+    });
+
+    expect((await harness.runtime.rewind('a', 'e1', true)).outcome).toBe(expected);
+  });
+
+  // What went wrong is the runtime's to say, and dropping it would leave a reader with
+  // "check the files" and nothing to check them against.
+  it('carries the failure detail through', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    harness.sessions.get('a')!.rpc.history.rewind.mockResolvedValue({
+      outcome: 'rollback-incomplete',
+      restoredFiles: [],
+      skippedFiles: [],
+      error: 'one.ts is read-only',
+    });
+
+    expect((await harness.runtime.rewind('a', 'e1', true)).error).toBe('one.ts is read-only');
   });
 });

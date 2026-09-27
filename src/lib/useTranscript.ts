@@ -111,6 +111,18 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
    */
   const abandoned = useRef(new Map<string, Map<string, string>>());
 
+  /**
+   * Bumped to read the log again from the start.
+   *
+   * A number rather than the caller holding a flag, because it goes in the effect's
+   * dependencies: anything with an identity would re-run it on every render.
+   *
+   * Wanted when the log stops being what this app last read - which a rewind does on
+   * purpose, discarding turns the transcript is still showing (#156).
+   */
+  const [reloads, setReloads] = useState(0);
+  const reload = useCallback(() => setReloads((count) => count + 1), []);
+
   // Selecting a session only replays its log from disk; nothing is resumed until the
   // user sends a message, which is what keeps idle sessions free.
   useEffect(() => {
@@ -142,7 +154,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     return () => {
       current = false;
     };
-  }, [sessionId, openAt]);
+  }, [sessionId, openAt, reloads]);
 
   /** Fetch the page before the events already held and prepend it. */
   const loadOlder = useCallback(() => {
@@ -304,6 +316,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
     showSent,
     showLocal,
     remove,
+    reload,
     reopenable,
     abandoned: abandoned.current.get(sessionId ?? ''),
   };

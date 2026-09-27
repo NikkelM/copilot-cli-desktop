@@ -1,6 +1,6 @@
 import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import type { TranscriptEvent } from '../../shared/protocol';
+import type { RewindPoint, TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
 import { useBudgetedEntries } from '../lib/useBudgetedEntries';
 import { fileBadge } from '../lib/fileBadge';
@@ -105,6 +105,26 @@ function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
  * and everything in between would be carrying an answer to a question it does not ask.
  */
 const Shows = createContext<CliDisplay>(ASSUMED_DISPLAY);
+
+/**
+ * Which turns can be put back to, and how to ask (#156).
+ *
+ * A context rather than a prop, because the row is memoised on its entry: a prop would
+ * have to join the comparator, and a map that changes identity on every read would then
+ * redraw every row in the transcript. Context reaches past the memo without that.
+ *
+ * Empty until somebody asks. Reading the points resumes the session, which is the opposite
+ * of what this app is for, so no row offers the button until the reader opens the menu.
+ */
+const Rewinds = createContext<{
+  points: Map<string, RewindPoint>;
+  onRewind?: (point: RewindPoint) => void;
+}>({ points: new Map() });
+
+/** One empty answer, so a transcript given none does not make a new one every render. */
+const NO_REWINDS: { points: Map<string, RewindPoint>; onRewind?: (point: RewindPoint) => void } = {
+  points: new Map(),
+};
 
 /**
  * When a message was said.
@@ -342,6 +362,14 @@ interface TranscriptProps {
   display: CliDisplay;
   /** When a turn ends with a line saying what it changed. */
   turnSummary?: ShowTurnChanges;
+  /**
+   * Which turns can be put back to, and how to ask (#156).
+   *
+   * Taken whole rather than as a map and a callback, so what reaches the context is the
+   * object the caller already holds. Built here it would be new on every render, which for
+   * a context means redrawing every row in the transcript.
+   */
+  rewinds?: { points: Map<string, RewindPoint>; onRewind?: (point: RewindPoint) => void };
 }
 
 export function Transcript({
@@ -359,6 +387,7 @@ export function Transcript({
   ofAgent,
   display,
   turnSummary,
+  rewinds = NO_REWINDS,
 }: TranscriptProps) {
   // Rebuilt only when the events are, rather than on every render: a streamed reply
   // re-renders this component once per chunk, and the walk costs more the more history is
@@ -628,6 +657,7 @@ export function Transcript({
 
   return (
     <Shows.Provider value={display}>
+      <Rewinds.Provider value={rewinds}>
       <ol
         className="transcript"
         ref={listRef}
@@ -665,6 +695,7 @@ export function Transcript({
           </li>
         )}
       </ol>
+      </Rewinds.Provider>
     </Shows.Provider>
   );
 }
@@ -697,6 +728,7 @@ const EntryRow = memo(
 
 function EntryBody({ entry }: { entry: Entry }) {
   const shows = useContext(Shows);
+  const rewinds = useContext(Rewinds);
 
   if (entry.kind === 'tool') return <ToolRow entry={entry} />;
   if (entry.kind === 'reasoning') return <ReasoningRow entry={entry} />;
@@ -704,11 +736,25 @@ function EntryBody({ entry }: { entry: Entry }) {
   // to anyone in the conversation.
   if (entry.variant === 'stopped') return <p className="message stopped">{entry.body}</p>;
 
+  // The row's key is the id of the event it was built from, which is the same id a rewind
+  // point is keyed by - so a prompt is rewindable exactly when its own key is in the map.
+  const point = entry.variant === 'user' ? rewinds.points.get(entry.key) : undefined;
+
   return (
     <div className={`message ${entry.variant}`}>
       <div className="message-meta">
         {/* The whole reply, since selecting a long one by hand is not really possible. */}
         {entry.variant === 'assistant' && <CopyButton text={entry.body} what="reply" />}
+        {point && rewinds.onRewind && (
+          <button
+            type="button"
+            className="message-rewind"
+            title="Put the session back to just before this"
+            onClick={() => rewinds.onRewind?.(point)}
+          >
+            Rewind to here
+          </button>
+        )}
         {/* Coarse on the face of it, exact on hover: "2h ago" covers an hour of moments. */}
         {entry.at && shows.showTimestamps && <Said at={entry.at} />}
       </div>

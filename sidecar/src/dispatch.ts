@@ -84,6 +84,12 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
       return sessionDiff(sessionId, path, since);
     },
 
+    'sessions.rewindPoints': ({ sessionId }) => runtime.rewindPoints(sessionId),
+
+    'sessions.previewRewind': ({ sessionId, eventId }) => runtime.previewRewind(sessionId, eventId),
+
+    'sessions.rewind': ({ sessionId, eventId, files }) => runtime.rewind(sessionId, eventId, files),
+
     'sessions.send': ({ sessionId, prompt, mode, attachments }) =>
       runtime.send(sessionId, prompt, mode, attachments),
 

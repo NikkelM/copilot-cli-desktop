@@ -1854,6 +1854,57 @@ body {
   border-color: var(--text-muted);
 }
 
+/*
+ * The way back from a prompt (#156).
+ *
+ * Drawn like the copy button beside it, and revealed the same way: shown on the row being
+ * read rather than on every row at once, since a column of buttons down the transcript
+ * would be louder than what it is offering.
+ */
+.message-rewind {
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 80ms linear;
+}
+
+.message:hover > .message-meta > .message-rewind,
+.message:focus-within > .message-meta > .message-rewind,
+.message-rewind:focus-visible {
+  opacity: 1;
+}
+
+.message-rewind:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+/* What putting the files back would touch, listed inside the question rather than after it. */
+.rewind-files {
+  max-height: 180px;
+  margin: 8px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.rewind-files li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: var(--font-sm);
+}
+
 /* What is going with the message, shown before it goes. */
 /* Above the box, so several files grow the composer upwards rather than sideways. */
 .attachments {

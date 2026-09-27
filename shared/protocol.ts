@@ -813,6 +813,69 @@ export interface SessionChange {
 }
 
 /**
+ * A turn a session can be put back to, as the runtime lists them.
+ *
+ * The counts cover this turn and every later one, since that is what going back to it
+ * would discard - not what the turn alone did.
+ */
+export interface RewindPoint {
+  /** The user message that begins what would be discarded, which is what rewind is keyed by. */
+  eventId: string;
+  /** What was asked, so a turn can be recognised without counting back through the log. */
+  message: string;
+  at: string;
+  /** Whether the files can be put back as well as the conversation. */
+  canRestoreFiles: boolean;
+  /** Unique files this turn and every later one changed. */
+  fileCount: number;
+  linesAdded: number;
+  linesRemoved: number;
+}
+
+/**
+ * Why a session cannot be rewound.
+ *
+ * `busy` is the one worth retrying: the session still holds work that could change files
+ * or history, so the same request answers differently once it settles.
+ */
+export type RewindUnavailable = 'untracked' | 'busy' | 'remote';
+
+/** What a rewind would put back, asked before anything is done. */
+export interface RewindPreview {
+  available: boolean;
+  reason?: RewindUnavailable;
+  files: { path: string; status: 'created' | 'modified' | 'deleted'; linesAdded: number; linesRemoved: number }[];
+}
+
+/**
+ * How a rewind went.
+ *
+ * Not collapsed to a boolean, because the failures differ in what they left on disk: files
+ * put back with the conversation intact is a different thing to tell somebody than nothing
+ * having happened at all.
+ */
+export interface RewindResult {
+  outcome:
+    | 'success'
+    | 'busy'
+    | 'untracked'
+    | 'remote'
+    /** Restoring failed and what it had done was undone. The session is as it was. */
+    | 'rolled-back'
+    /** Restoring failed and undoing that did not fully succeed. The files need looking at. */
+    | 'rollback-incomplete'
+    /** The files may have been put back, but the conversation was not. */
+    | 'truncation-failed'
+    /** Done, but something the runtime keeps alongside it was not tidied up. */
+    | 'partly-tidied';
+  /** Absolute paths put back, empty unless the files were in scope and it got that far. */
+  restoredFiles: string[];
+  /** Captured files deliberately left alone, with why. */
+  skippedFiles: { path: string; reason: string }[];
+  error?: string;
+}
+
+/**
  * One page of the local knowledge base, as the browser's tree lists it.
  *
  * The path is relative to the wiki root and always uses forward slashes, so it reads the
@@ -1213,6 +1276,29 @@ export interface SidecarRequests {
   'sessions.changes': { params: { sessionId: string; since?: string }; result: { changes: SessionChange[] } };
   /** The diff for one of those files, over the same span the list was built with. */
   'sessions.diff': { params: { sessionId: string; path: string; since?: string }; result: FileDiff };
+  /**
+   * The turns this session could be put back to (#156).
+   *
+   * Needs the session open, unlike the changes above: the runtime answers this from the
+   * live session rather than from the snapshots on disk. So asking costs a resume, and it
+   * is asked when somebody opens the panel rather than kept up to date.
+   */
+  'sessions.rewindPoints': {
+    params: { sessionId: string };
+    result: { points: RewindPoint[]; unavailable?: RewindUnavailable };
+  };
+  /** What going back to that turn would put back, before anything is done. */
+  'sessions.previewRewind': { params: { sessionId: string; eventId: string }; result: RewindPreview };
+  /**
+   * Put the session back to that turn.
+   *
+   * `files` says whether to restore what the discarded turns changed. The conversation is
+   * discarded either way - that is what rewinding is - and it does not come back.
+   */
+  'sessions.rewind': {
+    params: { sessionId: string; eventId: string; files: boolean };
+    result: RewindResult;
+  };
   'git.state': { params: { cwd: string }; result: { state: TreeState | null } };
   /**
    * The full state of a working tree: branch, upstream, and every path with a change.
@@ -1512,6 +1598,9 @@ export const SIDECAR_METHODS = [
   'sessions.create',
   'sessions.changes',
   'sessions.diff',
+  'sessions.rewindPoints',
+  'sessions.previewRewind',
+  'sessions.rewind',
   'git.state',
   'git.status',
   'git.diff',

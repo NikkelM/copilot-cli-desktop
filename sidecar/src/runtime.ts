@@ -22,6 +22,10 @@ import type {  McpServerState,
   ReasoningEffort,
   ShellResult,
   QueuedItem,
+  RewindPoint,
+  RewindPreview,
+  RewindResult,
+  RewindUnavailable,
   SessionContextUsage,
   SessionUsage,
   SessionMode,
@@ -114,6 +118,66 @@ async function defaultClientFactory(): Promise<CopilotClient> {
 type SessionApproval = NonNullable<
   Extract<PermissionRequestResult, { kind: 'approve-for-session' }>['approval']
 >;
+
+/**
+ * The runtime's own names for how a rewind went and why one cannot happen.
+ *
+ * Taken from the methods rather than imported, because the SDK does not export them from
+ * its root - and taking them from the call site means a name the runtime stops using fails
+ * to compile here rather than falling quietly into a default.
+ */
+type History = CopilotSession['rpc']['history'];
+type HistoryRewindOutcome = Awaited<ReturnType<History['rewind']>>['outcome'];
+type HistoryRewindUnavailableReason = NonNullable<
+  Awaited<ReturnType<History['listRewindPoints']>>['unavailableReason']
+>;
+
+/**
+ * Why a session cannot be rewound, in this app's words.
+ *
+ * Renamed rather than passed through: the runtime's names describe its own machinery, and
+ * the only one a reader needs to act on is the transient one, which is worth calling busy.
+ */
+function whyNot(reason: HistoryRewindUnavailableReason): RewindUnavailable {
+  switch (reason) {
+    case 'session-busy':
+      return 'busy';
+    case 'unsupported-remote-session':
+      return 'remote';
+    default:
+      return 'untracked';
+  }
+}
+
+/**
+ * How a rewind went, keeping apart the outcomes that differ on disk.
+ *
+ * The two tidying failures are folded together because they are the same thing to a
+ * reader: it worked, and something the runtime keeps alongside it did not get cleaned up.
+ * The rest are not folded - files put back with the conversation intact is a different
+ * thing to be told than nothing having happened.
+ */
+function wentHow(outcome: HistoryRewindOutcome): RewindResult['outcome'] {
+  switch (outcome) {
+    case 'success':
+      return 'success';
+    case 'session-busy':
+      return 'busy';
+    case 'unsupported-remote-session':
+      return 'remote';
+    case 'files-rolled-back':
+      return 'rolled-back';
+    case 'rollback-incomplete':
+      return 'rollback-incomplete';
+    case 'truncation-failed':
+      return 'truncation-failed';
+    case 'checkpoint-cleanup-failed':
+    case 'snapshot-prune-failed':
+      return 'partly-tidied';
+    default:
+      return 'untracked';
+  }
+}
 
 /** A request waiting on the user, with the resolver that unblocks the agent. */
 interface LoadedSession {
@@ -1213,6 +1277,80 @@ export class SessionRuntime {
    * sidebar asks about every session, and resuming each one to be told it has nothing
    * waiting is the cost this app exists to avoid.
    */
+  /**
+   * The turns this session could be put back to (#156).
+   *
+   * Opens the session, unlike the change list, which reads the snapshots on disk: the
+   * runtime answers this from the live session. So it costs a resume, which is why it is
+   * asked when somebody opens the panel rather than kept up to date.
+   *
+   * A session still working answers `busy` with no points rather than failing, and means
+   * it: the same request succeeds once it settles, so it is worth asking again.
+   */
+  async rewindPoints(sessionId: string): Promise<{ points: RewindPoint[]; unavailable?: RewindUnavailable }> {
+    const session = await this.ensureSession(sessionId);
+    const { points, unavailableReason, fileChangeTrackingEnabled } = await session.rpc.history.listRewindPoints();
+
+    // Tracking off is the one reason worth reporting even when the runtime does not: it
+    // means no session opened before this app started tracking can offer its files back.
+    const unavailable = unavailableReason
+      ? whyNot(unavailableReason)
+      : fileChangeTrackingEnabled
+        ? undefined
+        : 'untracked';
+
+    return {
+      points: points.map((point) => ({
+        eventId: point.eventId,
+        message: stripAnsi(point.userMessage),
+        at: point.timestamp,
+        canRestoreFiles: point.canRestoreFiles,
+        fileCount: point.fileCount,
+        linesAdded: point.linesAdded,
+        linesRemoved: point.linesRemoved,
+      })),
+      ...(unavailable ? { unavailable } : {}),
+    };
+  }
+
+  /** What going back to that turn would put back, asked before anything is done. */
+  async previewRewind(sessionId: string, eventId: string): Promise<RewindPreview> {
+    const session = await this.ensureSession(sessionId);
+    const preview = await session.rpc.history.previewRewind({ eventId });
+
+    return {
+      available: preview.available,
+      ...(preview.reason ? { reason: whyNot(preview.reason) } : {}),
+      files: preview.files.map((file) => ({
+        path: file.path,
+        status: file.changeType,
+        linesAdded: file.linesAdded,
+        linesRemoved: file.linesRemoved,
+      })),
+    };
+  }
+
+  /**
+   * Put the session back to that turn.
+   *
+   * The conversation goes either way - that is what rewinding is - and does not come back.
+   * `files` chooses whether what those turns wrote is put back with it.
+   */
+  async rewind(sessionId: string, eventId: string, files: boolean): Promise<RewindResult> {
+    const session = await this.ensureSession(sessionId);
+    const result = await session.rpc.history.rewind({
+      eventId,
+      mode: files ? 'conversation-and-files' : 'conversation',
+    });
+
+    return {
+      outcome: wentHow(result.outcome),
+      restoredFiles: result.restoredFiles,
+      skippedFiles: result.skippedFiles.map((file) => ({ path: file.path, reason: file.reason })),
+      ...(result.error ? { error: result.error } : {}),
+    };
+  }
+
   async queue(sessionId: string): Promise<QueuedItem[]> {
     const live = this.loaded.get(sessionId)?.session;
     if (!live) return [];

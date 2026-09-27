@@ -16,6 +16,10 @@ import type {
   SessionMatch,
   McpServerConfig,
   McpServerState,
+  RewindPoint,
+  RewindPreview,
+  RewindResult,
+  RewindUnavailable,
   McpServerSummary,
   MergeStrategy,  ModelChoice,
   RepoStatus,
@@ -595,10 +599,31 @@ export function getChanges(sessionId: string, since?: string): Promise<{ changes
   return request('sessions.changes', { sessionId, since });
 }
 
+/**
+ * The turns a session could be put back to (#156).
+ *
+ * Costs a resume, unlike the change list beside it: the runtime answers this from the live
+ * session rather than from the snapshots on disk.
+ */
+export function getRewindPoints(
+  sessionId: string,
+): Promise<{ points: RewindPoint[]; unavailable?: RewindUnavailable }> {
+  return request('sessions.rewindPoints', { sessionId });
+}
+
+/** What going back to that turn would put back, asked before anything is done. */
+export function previewRewind(sessionId: string, eventId: string): Promise<RewindPreview> {
+  return request('sessions.previewRewind', { sessionId, eventId });
+}
+
+/** Put the session back. The conversation goes either way; `files` chooses about the rest. */
+export function rewindSession(sessionId: string, eventId: string, files: boolean): Promise<RewindResult> {
+  return request('sessions.rewind', { sessionId, eventId, files });
+}
+
 /** The diff for one of those files, over the same span the list was built with. */
 export function getDiff(sessionId: string, path: string, since?: string): Promise<FileDiff> {
-  return request('sessions.diff', { sessionId, path, since });
-}
+  return request('sessions.diff', { sessionId, path, since });}
 
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */
 export function createSession(defaults: {

@@ -3,6 +3,9 @@ import { open as pickFolder } from '@tauri-apps/plugin-dialog';
 
 import type {
   Attachment,
+  RewindPoint,
+  RewindPreview,
+  RewindResult,
   SessionMatch,
   SessionSummary,
   SlashCommand,
@@ -75,6 +78,8 @@ import { clockFrom, intentOf, subagentNameIn } from './lib/timeline';
 import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
+import { useRewind } from './lib/useRewind';
+import { relativise } from './lib/paths';
 import { useEnvironment } from './lib/useEnvironment';
 import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
@@ -242,6 +247,18 @@ export default function App() {
 
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
+  const rewind = useRewind(selectedId);
+  /**
+   * Whether the prompts are offering a way back (#156).
+   *
+   * Off until asked, because reading the points resumes the session - the same reason the
+   * changes panel waits to be opened. Turning it off forgets them rather than hiding them,
+   * so a session left with it on does not go on holding a list that has gone stale.
+   */
+  const [offerRewind, setOfferRewind] = useState(false);
+  /** The turn being rewound to, with what it would put back once that has been read. */
+  const [rewinding, setRewinding] = useState<{ point: RewindPoint; preview: RewindPreview | null } | null>(null);
+  const [restoreFiles, setRestoreFiles] = useState(false);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');
   /**
    * Switching, then reading the tree again.
@@ -572,6 +589,57 @@ export default function App() {
     panel.hide();
     toComposer();
   }
+
+  /**
+   * Offer a way back from each prompt, or stop offering (#156).
+   *
+   * Reading the points resumes the session, so it is asked for rather than kept ready.
+   * Turning it off forgets them: they stop being true the moment the session says anything
+   * more, and a stale list offers a way back to a turn that has moved.
+   */
+  function toggleRewind() {
+    if (offerRewind) {
+      setOfferRewind(false);
+      return;
+    }
+    setOfferRewind(true);
+    rewind.load();
+  }
+
+  /**
+   * Ask about going back to a turn, reading what it would put back while the question sits.
+   *
+   * The question opens before the answer arrives, because reading it needs the session and
+   * a dialog that appears only once that is done reads as the button having missed.
+   */
+  const askRewind = useCallback(
+    (point: RewindPoint) => {
+      setRewinding({ point, preview: null });
+      // Unticked to begin with: discarding a conversation is one thing, and writing over
+      // files that may hold work nobody here did is another. It is asked for separately.
+      setRestoreFiles(false);
+      rewind
+        .preview(point.eventId)
+        .then((preview) =>
+          setRewinding((current) =>
+            current?.point.eventId === point.eventId ? { ...current, preview } : current,
+          ),
+        )
+        .catch((e: unknown) => setError(explain(e)));
+    },
+    [rewind],
+  );
+
+  /**
+   * What the transcript is told about rewinding.
+   *
+   * Held together and remembered, because it reaches the rows through a context: a fresh
+   * object here would redraw every row in the transcript on every render.
+   */
+  const rewinds = useMemo(
+    () => ({ points: offerRewind ? rewind.points : NO_POINTS, onRewind: askRewind }),
+    [offerRewind, rewind.points, askRewind],
+  );
 
   /**
    * Open the panel and read it again.
@@ -1252,6 +1320,17 @@ export default function App() {
                   >
                     Changes
                   </button>
+                  {/* Costs a resume to answer, like Changes beside it, so it waits to be
+                      asked rather than being ready in case. */}
+                  <button
+                    type="button"
+                    className={offerRewind ? 'header-button on' : 'header-button'}
+                    onClick={toggleRewind}
+                    aria-pressed={offerRewind}
+                    title="Offer a way back from each prompt"
+                  >
+                    Rewind
+                  </button>
                   <AgentPicker
                     current={agent.current}
                     agents={agent.agents}
@@ -1298,6 +1377,7 @@ export default function App() {
               onDropOlder={transcript.dropOlder}
               display={display}
               turnSummary={settings.turnSummary}
+              rewinds={rewinds}
               // Set only while a search result is being read, which is the one time the
               // transcript is not showing the end of the conversation.
               onLatest={jump?.sessionId === selected.sessionId ? () => setJump(null) : undefined}
@@ -1520,6 +1600,73 @@ export default function App() {
           onCancel={() => setDeleting(null)}
         />
       )}
+
+      {rewinding && (
+        <Confirm
+          title="Rewind to this prompt?"
+          body={
+            <>
+              <p>
+                Everything after <strong>{shorten(rewinding.point.message)}</strong> will be discarded: the rest
+                of the conversation, and what the agent said and did in it. That part of the session does not
+                come back.
+              </p>
+              {rewinding.preview === null ? (
+                <p className="changes-note">Reading what this would put back.</p>
+              ) : rewinding.preview.files.length === 0 ? (
+                <p>No files were changed after this point, so only the conversation is affected.</p>
+              ) : (
+                <>
+                  <label className="confirm-remember">
+                    <input
+                      type="checkbox"
+                      checked={restoreFiles}
+                      onChange={(event) => setRestoreFiles(event.target.checked)}
+                    />
+                    Also put back the {rewinding.preview.files.length === 1 ? 'file' : 'files'} it changed
+                  </label>
+                  <ul className="rewind-files">
+                    {rewinding.preview.files.map((file) => (
+                      <li key={file.path}>
+                        <span className={`changes-status ${file.status}`}>
+                          {file.status === 'created' ? '+' : file.status === 'deleted' ? '−' : '~'}
+                        </span>
+                        <span className="changes-path">{relativise(file.path, selected?.cwd ?? null)}</span>
+                        <span className="tool-counts">
+                          {file.linesAdded > 0 && <span className="added">+{file.linesAdded}</span>}
+                          {file.linesRemoved > 0 && <span className="removed">−{file.linesRemoved}</span>}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  {/* Unticked by default, and said out loud: putting files back overwrites
+                      whatever they hold now, including work nobody here did. */}
+                  {restoreFiles && (
+                    <p>Those files will be written back as they were, losing any later changes to them.</p>
+                  )}
+                </>
+              )}
+            </>
+          }
+          confirmLabel="Rewind"
+          onConfirm={() => {
+            const { point } = rewinding;
+            const files = restoreFiles;
+            setRewinding(null);
+            void rewind
+              .rewind(point.eventId, files)
+              .then((result) => {
+                const trouble = rewindTrouble(result);
+                if (trouble) setError(trouble);
+                // The discarded turns are gone from the log, so what is on screen is no
+                // longer what the session holds. Reading it again is the only way to agree.
+                else transcript.reload();
+              })
+              .catch((error: unknown) => setError(explain(error)));
+          }}
+          onCancel={() => setRewinding(null)}
+        />
+      )}
       {settingsOpen && (
         <SettingsWindow
           settings={settings}
@@ -1564,6 +1711,50 @@ export default function App() {
       )}
     </div>
   );
+}
+
+/** One empty map, so a session not offering rewind does not make a new one every render. */
+const NO_POINTS = new Map<string, RewindPoint>();
+
+/** Enough of a prompt to recognise the turn, without putting a paragraph in a dialog. */
+function shorten(message: string): string {
+  const line = message.trim().split('\n')[0] ?? '';
+  return line.length > 80 ? `${line.slice(0, 79)}…` : line || 'this prompt';
+}
+
+/**
+ * What to say when a rewind did not simply work.
+ *
+ * Null when there is nothing to report, so the caller can treat "no trouble" as the quiet
+ * case. The failures are kept apart because they differ in what they left on disk: a
+ * reader whose files were put back but whose conversation was not needs to know which way
+ * round it went, and "rewind failed" would tell them neither.
+ */
+function rewindTrouble(result: RewindResult): string | null {
+  switch (result.outcome) {
+    case 'success':
+      return null;
+    case 'busy':
+      return 'This session is still working. Rewinding needs it to settle first, so try again in a moment.';
+    case 'untracked':
+      return 'This session did not record what it changed, so its files cannot be put back.';
+    case 'remote':
+      return 'A session running elsewhere cannot be rewound from here.';
+    case 'rolled-back':
+      return 'The files could not be put back, so the session was left exactly as it was.';
+    case 'rollback-incomplete':
+      return `The files could not be put back, and undoing that did not fully succeed. Check them before carrying on.${
+        result.error ? ` ${result.error}` : ''
+      }`;
+    case 'truncation-failed':
+      return `The conversation could not be discarded${
+        result.restoredFiles.length > 0 ? ', but the files were put back' : ''
+      }. The session and its files may now disagree.`;
+    case 'partly-tidied':
+      // It worked. What is left behind is the runtime's own bookkeeping, which costs disk
+      // rather than correctness, so it is not worth stopping the reader over.
+      return null;
+  }
 }
 
 function describeError(event: TranscriptEvent): string {
