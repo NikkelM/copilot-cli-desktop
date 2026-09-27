@@ -9,13 +9,20 @@ interface PermissionPromptProps {
   /** Used to shorten file paths in the request summary. */
   cwd: string | null;
   onResolve: (choice: PermissionChoice) => void;
+  /**
+   * Allow the session to work in the offered directory, then approve this request.
+   *
+   * Absent when the window cannot act on it, which keeps the button from appearing where
+   * pressing it would do nothing.
+   */
+  onAllowFolder?: (path: string) => void;
 }
 
 /**
  * Blocks on a tool call until the user decides.
  * The agent is genuinely waiting on this, so it stays visible until answered.
  */
-export function PermissionPrompt({ pending, cwd, onResolve }: PermissionPromptProps) {
+export function PermissionPrompt({ pending, cwd, onResolve, onAllowFolder }: PermissionPromptProps) {
   const { request } = pending;
   const kind = typeof request.kind === 'string' ? request.kind : 'unknown';
   const canApproveForSession = request.canOfferSessionApproval !== false;
@@ -25,6 +32,9 @@ export function PermissionPrompt({ pending, cwd, onResolve }: PermissionPromptPr
   const intention = str(request, 'intention');
   const subject = subjectOf(request, kind, cwd);
   const warning = str(request, 'warning');
+  // Only where the sidecar found a directory outside what the session may already work in,
+  // which is the case that asks twice for one edit (#210).
+  const folder = pending.offerFolder;
 
   return (
     <section className="permission">
@@ -43,10 +53,31 @@ export function PermissionPrompt({ pending, cwd, onResolve }: PermissionPromptPr
 
       {warning && <p className="permission-warning">{warning}</p>}
 
+      {folder && onAllowFolder && (
+        /* Said rather than implied: allowing a directory also activates any skills and
+           agents defined under it, so it trusts what is configured there and not only what
+           is stored there. */
+        <p className="permission-folder-note">
+          This path is outside where the session may work, which is why it is being asked
+          twice. Allowing <code>{relativise(folder, cwd)}</code> also trusts any skills and
+          agents configured under it.
+        </p>
+      )}
+
       <div className="permission-actions">
         <button type="button" className="danger" onClick={() => onResolve('reject')}>
           Deny
         </button>
+        {folder && onAllowFolder && (
+          <button
+            type="button"
+            className="secondary"
+            title={`Let this session work in ${folder} without asking each time`}
+            onClick={() => onAllowFolder(folder)}
+          >
+            Always allow this folder
+          </button>
+        )}
         {canApproveForSession && (
           <button type="button" className="secondary" onClick={() => onResolve('approve-for-session')}>
             Allow for session

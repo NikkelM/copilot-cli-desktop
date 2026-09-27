@@ -152,6 +152,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.resolvePermission': ({ requestId, choice }) => runtime.resolvePermission(requestId, choice),
 
+    'sessions.allowFolder': ({ sessionId, path }) => runtime.allowFolder(sessionId, path),
+
     'sessions.resolveElicitation': ({ requestId, action, content }) =>
       runtime.resolveElicitation(requestId, action, content),
     'sessions.resolvePlan': ({ requestId, approved, selectedAction, feedback }) =>

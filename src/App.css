@@ -1200,6 +1200,26 @@ body {
   color: #e3b341;
   font-size: var(--font-md);
 }
+
+/*
+ * Why this is being asked twice, and what allowing the folder would also do (#210).
+ *
+ * Above the buttons rather than beside one, because it explains the situation rather than
+ * one of the answers to it - and because the trust it hands over is worth reading before
+ * the pointer is already on a button.
+ */
+.permission-folder-note {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}
+
+.permission-folder-note code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(110, 118, 129, 0.25);
+  font-family: ui-monospace, monospace;
+}
 .permission-actions {
   display: flex;
   justify-content: flex-end;

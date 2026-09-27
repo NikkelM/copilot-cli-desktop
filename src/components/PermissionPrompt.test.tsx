@@ -212,3 +212,111 @@ describe('showing a write as a diff', () => {
     expect(detail()).toBe('(no diff)');
   });
 });
+
+/**
+ * Offering to allow the directory, where the double ask is noticed (#210).
+ *
+ * Tool permission and path verification are separate gates, so a path outside the session's
+ * allowed directories is asked about twice. The prompt is where somebody is standing when
+ * they notice, and it already carries the path.
+ */
+describe('allowing the folder a write is outside of', () => {
+  const asking = (over: Partial<PendingPermission> = {}): PendingPermission => ({
+    sessionId: 's1',
+    requestId: 'r1',
+    request: { kind: 'write', intention: 'Create file', fileName: 'C:\\Users\\me\\Downloads\\a.txt', diff: '' },
+    expiresAt: null,
+    ...over,
+  });
+
+  const button = () => screen.queryByRole('button', { name: /always allow this folder/i });
+
+  it('offers nothing when there is no folder worth offering', () => {
+    render(<PermissionPrompt pending={asking()} cwd={null} onResolve={() => {}} onAllowFolder={() => {}} />);
+
+    expect(button()).toBeNull();
+  });
+
+  it('offers the folder the sidecar named', () => {
+    render(
+      <PermissionPrompt
+        pending={asking({ offerFolder: 'C:\\Users\\me\\Downloads' })}
+        cwd={null}
+        onResolve={() => {}}
+        onAllowFolder={() => {}}
+      />,
+    );
+
+    expect(button()).toBeTruthy();
+  });
+
+  // Pressing it would do nothing, so it is not there to press.
+  it('offers nothing when the window cannot act on it', () => {
+    render(
+      <PermissionPrompt pending={asking({ offerFolder: 'C:\\Users\\me\\Downloads' })} cwd={null} onResolve={() => {}} />,
+    );
+
+    expect(button()).toBeNull();
+  });
+
+  it('hands back the folder that was offered', async () => {
+    const onAllowFolder = vi.fn();
+    render(
+      <PermissionPrompt
+        pending={asking({ offerFolder: 'C:\\Users\\me\\Downloads' })}
+        cwd={null}
+        onResolve={() => {}}
+        onAllowFolder={onAllowFolder}
+      />,
+    );
+
+    await userEvent.click(button()!);
+
+    expect(onAllowFolder).toHaveBeenCalledWith('C:\\Users\\me\\Downloads');
+  });
+
+  /**
+   * Allowing a directory also activates skills and agents defined under it, so it hands
+   * over more than access. Saying so is the difference between a choice and a surprise.
+   */
+  it('says that allowing it trusts what is configured there', () => {
+    render(
+      <PermissionPrompt
+        pending={asking({ offerFolder: 'C:\\Users\\me\\Downloads' })}
+        cwd={null}
+        onResolve={() => {}}
+        onAllowFolder={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/trusts any skills and agents/)).toBeTruthy();
+  });
+
+  it('says why it is being asked twice', () => {
+    render(
+      <PermissionPrompt
+        pending={asking({ offerFolder: 'C:\\Users\\me\\Downloads' })}
+        cwd={null}
+        onResolve={() => {}}
+        onAllowFolder={() => {}}
+      />,
+    );
+
+    expect(screen.getByText(/asked\s+twice/)).toBeTruthy();
+  });
+
+  // The ordinary answers are still the ordinary answers.
+  it('leaves the other choices alone', () => {
+    render(
+      <PermissionPrompt
+        pending={asking({ offerFolder: 'C:\\Users\\me\\Downloads' })}
+        cwd={null}
+        onResolve={() => {}}
+        onAllowFolder={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Allow once' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeTruthy();
+  });
+});

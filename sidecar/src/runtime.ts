@@ -34,6 +34,7 @@ import type {  McpServerState,
 import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol.js';
 import type { BinnedSession } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 
 import { resolveCliPath } from './paths.js';
 import { stripAnsi } from '../../shared/ansi.js';
@@ -232,6 +233,8 @@ export interface RuntimeOptions {
     requestId: string,
     request: PermissionRequest,
     expiresAt: string | null,
+    /** A directory worth offering to allow outright, when the path is outside the list. */
+    offerFolder?: string,
   ) => void;
   /** Tells the UI a pending request is no longer awaiting an answer. */
   onPermissionResolved?: (sessionId: string, requestId: string) => void;
@@ -341,6 +344,8 @@ export class SessionRuntime {
     requestId: string,
     request: PermissionRequest,
     expiresAt: string | null,
+    /** A directory worth offering to allow outright, when the path is outside the list. */
+    offerFolder?: string,
   ) => void;
   private readonly onPermissionResolved?: (sessionId: string, requestId: string) => void;
   /** What each waiting permission request asked, so its answer can name what it approves. */
@@ -678,7 +683,7 @@ export class SessionRuntime {
    * The returned promise is what blocks the agent, so every path must settle it:
    * a user decision, the timeout, or the session being torn down.
    */
-  private decidePermission(
+  private async decidePermission(
     sessionId: string,
     request: PermissionRequest,
   ): Promise<PermissionRequestResult> {
@@ -693,8 +698,59 @@ export class SessionRuntime {
     // approved, and only the request says that. Dropped again in `permissionResolved`, so
     // giving up on the reader and tearing the session down both clear it too.
     this.asked.set(requestId, request);
-    this.onPermissionRequest(sessionId, requestId, request, expiresAt);
+
+    const offerFolder = await this.folderWorthOffering(sessionId, request);
+    this.onPermissionRequest(sessionId, requestId, request, expiresAt, offerFolder);
     return answered;
+  }
+
+  /**
+   * The directory this request could be allowed outright, if there is one worth offering.
+   *
+   * Only when the path is outside what the session may already work in, which is the case
+   * that asks twice: tool permission and path verification are separate gates, and a path
+   * outside the allow-list trips both with byte-identical requests (#210). Offering it for
+   * a path already allowed would be offering to do nothing.
+   *
+   * Asked of the runtime rather than worked out here. Whether a path lies inside a
+   * directory is a question with a different answer on every platform - case, separators,
+   * links, UNC roots - and the runtime's answer is the one the gate itself uses.
+   */
+  private async folderWorthOffering(
+    sessionId: string,
+    request: PermissionRequest,
+  ): Promise<string | undefined> {
+    const named = (request as { fileName?: unknown }).fileName;
+    if (typeof named !== 'string' || named.trim() === '') return undefined;
+
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return undefined;
+
+    const folder = dirname(named);
+    // Never the root of a drive: allowing that is allowing everything, which is what the
+    // setting beside this already offers to anybody who wants it.
+    if (folder === named || dirname(folder) === folder) return undefined;
+
+    try {
+      const { allowed } = await live.rpc.permissions.paths.isPathWithinAllowedDirectories({ path: folder });
+      return allowed ? undefined : folder;
+    } catch {
+      // The question could not be asked, so there is nothing to say about it. The prompt
+      // still works; it simply does not offer the extra.
+      return undefined;
+    }
+  }
+
+  /**
+   * Let this session work in a directory without being asked about it each time.
+   *
+   * Not only an access decision: the runtime also activates any skills and agents defined
+   * under it, so this trusts what is configured there as well as what is stored there.
+   */
+  async allowFolder(sessionId: string, path: string): Promise<{ allowed: boolean }> {
+    const session = await this.ensureSession(sessionId);
+    const { success } = await session.rpc.permissions.paths.add({ path });
+    return { allowed: success };
   }
 
   /**

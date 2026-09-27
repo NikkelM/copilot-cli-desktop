@@ -599,6 +599,11 @@ export function getChanges(sessionId: string, since?: string): Promise<{ changes
   return request('sessions.changes', { sessionId, since });
 }
 
+/** Let a session work in a directory without being asked about it each time (#210). */
+export function allowSessionFolder(sessionId: string, path: string): Promise<{ allowed: boolean }> {
+  return request('sessions.allowFolder', { sessionId, path });
+}
+
 /**
  * The turns a session could be put back to (#156).
  *

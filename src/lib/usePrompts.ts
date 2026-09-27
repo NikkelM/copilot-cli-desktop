@@ -19,6 +19,7 @@ import {
   onPlanResolved,
   resolveElicitation,
   resolvePermission,
+  allowSessionFolder,
   resolvePlan,
 } from './sidecar';
 import { explain } from './errors';
@@ -118,6 +119,23 @@ export function usePrompts(sessionId: string | null, onError: (message: string) 
     [claim],
   );
 
+  /**
+   * Let the session work in a directory, then approve the request that raised it (#210).
+   *
+   * Two things rather than one, and in that order: allowing the folder is what stops the
+   * second ask next time, and the request in front of the reader still has to be answered.
+   * Approved once rather than for the session, because what was chosen was the folder -
+   * whether every tool may run unasked is a different question, still there to answer.
+   */
+  const allowFolder = useCallback(
+    (pending: PendingPermission, path: string) => {
+      void allowSessionFolder(pending.sessionId, path)
+        .catch((e: unknown) => report.current(explain(e)))
+        .finally(() => answerPermission(pending, 'approve-once'));
+    },
+    [answerPermission],
+  );
+
   const answerElicitation = useCallback(
     (
       pending: PendingElicitation,
@@ -193,6 +211,7 @@ export function usePrompts(sessionId: string | null, onError: (message: string) 
     blocking,
     mine,
     answerPermission,
+    allowFolder,
     answerElicitation,
     answerPlan,
     clear,

@@ -1426,6 +1426,7 @@ export default function App() {
                   pending={pending}
                   cwd={selected.cwd}
                   onResolve={(choice) => prompts.answerPermission(pending, choice)}
+                  onAllowFolder={(path) => prompts.allowFolder(pending, path)}
                 />
               ))}
 

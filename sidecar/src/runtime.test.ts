@@ -158,6 +158,11 @@ function makeSession(id: string) {
       // answer as a name nobody chose (#197).
       permissions: {
         setMode: vi.fn(async (_params: { mode: string }) => undefined),
+        paths: {
+          list: vi.fn(async () => ({ directories: [] as string[], primary: 'C:\\repo' })),
+          add: vi.fn(async (_params: { path: string }) => ({ success: true })),
+          isPathWithinAllowedDirectories: vi.fn(async (_params: { path: string }) => ({ allowed: true })),
+        },
       },
       name: {
         setAuto: vi.fn(async (_params: { summary: string }) => ({ applied: true })),
@@ -827,12 +832,26 @@ describe('SessionRuntime', () => {
 });
 
 describe('permissions', () => {
+  /**
+   * Let the prompt reach the UI before reading what it was told.
+   *
+   * The prompt is raised after the runtime has been asked whether the path is already
+   * allowed (#210), so the call it makes lands a few microtasks after the request that
+   * caused it. Kept separate from the call rather than wrapping it: a helper that returned
+   * the pending answer would be awaited, and awaiting a promise that resolves to a promise
+   * waits for that one too - which is the answer nobody has given yet.
+   */
+  const prompted = async () => {
+    for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+  };
+
   it('asks the user rather than deciding on their behalf', async () => {
     const onPermissionRequest = vi.fn();
     const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest });
     await runtime.send('a', 'x');
 
     const pending = permissionHandlers.get('a')?.({ kind: 'shell' });
+    await prompted();
     expect(onPermissionRequest).toHaveBeenCalledOnce();
 
     const requestId = onPermissionRequest.mock.calls[0]?.[1] as string;
@@ -846,6 +865,7 @@ describe('permissions', () => {
     await runtime.send('a', 'x');
 
     const pending = permissionHandlers.get('a')?.({ kind: 'shell' });
+    await prompted();
     runtime.resolvePermission(onPermissionRequest.mock.calls[0]?.[1] as string, 'reject');
     await expect(pending).resolves.toEqual({ kind: 'reject' });
   });
@@ -865,6 +885,7 @@ describe('permissions', () => {
       await runtime.send('a', 'x');
 
       const pending = permissionHandlers.get('a')?.(request);
+      await prompted();
       runtime.resolvePermission(onPermissionRequest.mock.calls[0]?.[1] as string, 'approve-for-session');
       return pending;
     };
@@ -930,9 +951,10 @@ describe('permissions', () => {
       const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest });
       await runtime.send('a', 'x');
 
-      const ask = permissionHandlers.get('a');
-      const write = ask?.({ kind: 'write', fileName: 'a.ts' });
-      const read = ask?.({ kind: 'read', fileName: 'b.ts' });
+      const ask = permissionHandlers.get('a')!;
+      const write = ask({ kind: 'write', fileName: 'a.ts' });
+      const read = ask({ kind: 'read', fileName: 'b.ts' });
+      await prompted();
 
       const first = onPermissionRequest.mock.calls[0]?.[1] as string;
       const second = onPermissionRequest.mock.calls[1]?.[1] as string;
@@ -973,6 +995,7 @@ describe('permissions', () => {
     await runtime.send('a', 'x');
 
     void permissionHandlers.get('a')?.({ kind: 'shell' });
+    await prompted();
 
     expect(onPermissionRequest).toHaveBeenCalledTimes(1);
   });
@@ -984,6 +1007,7 @@ describe('permissions', () => {
     await runtime.send('a', 'x');
 
     const pending = permissionHandlers.get('a')?.({ kind: 'shell' });
+    await prompted();
     await runtime.abort('a');
     await expect(pending).resolves.toEqual({ kind: 'user-not-available' });
   });
@@ -994,6 +1018,7 @@ describe('permissions', () => {
     await runtime.send('a', 'x');
 
     const pending = permissionHandlers.get('a')?.({ kind: 'shell' });
+    await prompted();
     await runtime.evict('a');
     await expect(pending).resolves.toEqual({ kind: 'user-not-available' });
   });
@@ -1004,6 +1029,7 @@ describe('permissions', () => {
     await runtime.send('a', 'x');
 
     const pending = permissionHandlers.get('a')?.({ kind: 'shell' });
+    await prompted();
     await runtime.shutdown();
     await expect(pending).resolves.toEqual({ kind: 'user-not-available' });
   });
@@ -3171,7 +3197,8 @@ describe('how long a question waits', () => {
     void askAbout(runtime, permissionHandlers);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(onPermissionRequest).toHaveBeenCalledWith('a', expect.any(String), expect.anything(), expect.any(String));
+    // The fifth is the directory worth offering, absent for a request that names no path.
+    expect(onPermissionRequest).toHaveBeenCalledWith('a', expect.any(String), expect.anything(), expect.any(String), undefined);
   });
 
   describe('with no wait at all', () => {
@@ -3193,7 +3220,7 @@ describe('how long a question waits', () => {
       void askAbout(runtime, permissionHandlers);
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(onPermissionRequest).toHaveBeenCalledWith('a', expect.any(String), expect.anything(), null);
+      expect(onPermissionRequest).toHaveBeenCalledWith('a', expect.any(String), expect.anything(), null, undefined);
     });
   });
 
@@ -3886,5 +3913,105 @@ describe('rewinding a session', () => {
     });
 
     expect((await harness.runtime.rewind('a', 'e1', true)).error).toBe('one.ts is read-only');
+  });
+});
+
+/**
+ * Letting a session work in a directory, rather than asking about it twice each time (#210).
+ *
+ * Tool permission and path verification are separate gates. A path outside the session's
+ * allowed directories trips both, with byte-identical requests, which is why one edit is
+ * asked about twice. Allowing the directory closes the second without touching the first.
+ */
+describe('offering to allow a directory', () => {
+  const allowed = (harness: ReturnType<typeof makeRuntime>) =>
+    harness.sessions.get('a')!.rpc.permissions.paths.isPathWithinAllowedDirectories;
+
+  const ask = async (harness: ReturnType<typeof makeRuntime>, request: Record<string, unknown>) => {
+    void harness.permissionHandlers.get('a')?.(request);
+    for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+  };
+
+  it('offers the directory when the path is outside what is allowed', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+    allowed(harness).mockResolvedValue({ allowed: false });
+
+    await ask(harness, { kind: 'write', fileName: 'C:\\Users\\me\\Downloads\\a.txt' });
+
+    expect(onPermissionRequest.mock.calls[0]?.[4]).toBe('C:\\Users\\me\\Downloads');
+  });
+
+  // Offering it would be offering to do nothing, and the second ask is not happening anyway.
+  it('offers nothing when the path is already allowed', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+    allowed(harness).mockResolvedValue({ allowed: true });
+
+    await ask(harness, { kind: 'write', fileName: 'C:\\repo\\a.txt' });
+
+    expect(onPermissionRequest.mock.calls[0]?.[4]).toBeUndefined();
+  });
+
+  it('offers nothing for a request that names no path', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+    allowed(harness).mockResolvedValue({ allowed: false });
+
+    await ask(harness, { kind: 'shell', fullCommandText: 'ls' });
+
+    expect(onPermissionRequest.mock.calls[0]?.[4]).toBeUndefined();
+    expect(allowed(harness)).not.toHaveBeenCalled();
+  });
+
+  // Allowing a whole drive is allowing everything, which the setting beside this already does.
+  it('never offers the root of a drive', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+    allowed(harness).mockResolvedValue({ allowed: false });
+
+    await ask(harness, { kind: 'write', fileName: 'C:\\a.txt' });
+
+    expect(onPermissionRequest.mock.calls[0]?.[4]).toBeUndefined();
+  });
+
+  /**
+   * The prompt still has to be raised. A runtime that cannot answer whether a path is
+   * allowed has said nothing about the request itself, and swallowing it would leave the
+   * agent blocked on a question nobody was asked.
+   */
+  it('still asks when the runtime cannot say what is allowed', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+    allowed(harness).mockRejectedValue(new Error('no such method'));
+
+    await ask(harness, { kind: 'write', fileName: 'C:\\Users\\me\\Downloads\\a.txt' });
+
+    expect(onPermissionRequest).toHaveBeenCalledOnce();
+    expect(onPermissionRequest.mock.calls[0]?.[4]).toBeUndefined();
+  });
+
+  it('adds the directory when it is asked to', async () => {
+    const harness = makeRuntime();
+
+    await expect(harness.runtime.allowFolder('a', 'C:\\Users\\me\\Downloads')).resolves.toEqual({
+      allowed: true,
+    });
+    expect(harness.sessions.get('a')!.rpc.permissions.paths.add).toHaveBeenCalledWith({
+      path: 'C:\\Users\\me\\Downloads',
+    });
+  });
+
+  it('says so when the runtime refuses the directory', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.load('a');
+    harness.sessions.get('a')!.rpc.permissions.paths.add.mockResolvedValue({ success: false });
+
+    await expect(harness.runtime.allowFolder('a', 'C:\\nope')).resolves.toEqual({ allowed: false });
   });
 });

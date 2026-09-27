@@ -375,6 +375,17 @@ export interface PendingPermission {
   requestId: string;
   request: Record<string, unknown>;
   /**
+   * A directory that could be allowed outright, or absent when there is nothing to offer.
+   *
+   * Set only when the request names a path the session is not already allowed to work in,
+   * which is the case that asks twice: tool permission and path verification are separate
+   * gates, and a path outside the allow-list trips both with byte-identical requests (#210).
+   *
+   * Worked out here rather than in the window, so the question of what is already allowed
+   * is asked of the runtime once per request rather than guessed at from a path.
+   */
+  offerFolder?: string;
+  /**
    * When this lapses on its own, so the prompt can say how long is left (#70).
    *
    * A blocked agent is the one wait that ends badly if nobody notices it: the request is
@@ -1231,6 +1242,14 @@ export interface SidecarRequests {
    * created rather than when its server starts, so the next session gets them.
    */
   'cliSettings.write': { params: { changes: Record<string, unknown> }; result: void };
+  /**
+   * Let this session work in a directory without being asked about it each time (#210).
+   *
+   * Not only an access decision: the runtime also loads any `.github/skills/` and
+   * `.github/agents/` found under it, so allowing a directory trusts what is configured
+   * there. Whatever offers this has to say so.
+   */
+  'sessions.allowFolder': { params: { sessionId: string; path: string }; result: { allowed: boolean } };
   'sessions.resolvePermission': { params: ResolvePermissionParams; result: void };
   'sessions.resolveElicitation': { params: ResolveElicitationParams; result: void };
   'sessions.resolvePlan': { params: ResolvePlanParams; result: void };
@@ -1592,6 +1611,7 @@ export const SIDECAR_METHODS = [
   'cliSettings.list',
   'cliSettings.values',
   'cliSettings.write',
+  'sessions.allowFolder',
   'sessions.resolvePermission',
   'sessions.resolveElicitation',
   'sessions.resolvePlan',

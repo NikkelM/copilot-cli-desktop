@@ -23,14 +23,16 @@ const listeners = {
   planResolved: [] as ((p: unknown) => void)[],
 };
 
-const { resolvePermission, resolveElicitation, resolvePlan } = vi.hoisted(() => ({
+const { resolvePermission, resolveElicitation, resolvePlan, allowSessionFolder } = vi.hoisted(() => ({
   resolvePermission: vi.fn(),
+  allowSessionFolder: vi.fn(async () => ({ allowed: true })),
   resolveElicitation: vi.fn(),
   resolvePlan: vi.fn(),
 }));
 
 vi.mock('./sidecar', () => ({
   resolvePermission,
+  allowSessionFolder,
   resolveElicitation,
   resolvePlan,
   onPermissionRequested: (h: (p: unknown) => void) => {
@@ -349,5 +351,62 @@ describe('what has an agent stopped', () => {
 
     expect(result.current.blocking.map((p) => p.sessionId)).toEqual(['somewhere-else']);
     expect(result.current.blocked).toBe(false);
+  });
+});
+/**
+ * Allowing the directory a write is outside of (#210).
+ *
+ * Two things, in that order: allowing the folder is what stops the second ask next time,
+ * and the request in front of the reader still has to be answered.
+ */
+describe('allowing a folder from the prompt', () => {
+  const asking = () => ({
+    sessionId: 's1',
+    requestId: 'r1',
+    request: { kind: 'write', fileName: 'C:\\Users\\me\\Downloads\\a.txt' },
+    offerFolder: 'C:\\Users\\me\\Downloads',
+    expiresAt: null,
+  });
+
+  it('allows the folder and answers the request that raised it', async () => {
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+    await waitFor(() => expect(listeners.permissionRequested.length).toBeGreaterThan(0));
+    act(() => listeners.permissionRequested.forEach((h) => h(asking())));
+
+    await act(async () => {
+      result.current.allowFolder(result.current.permissions[0]!, 'C:\\Users\\me\\Downloads');
+    });
+
+    expect(allowSessionFolder).toHaveBeenCalledWith('s1', 'C:\\Users\\me\\Downloads');
+    expect(resolvePermission).toHaveBeenCalledWith('s1', 'r1', 'approve-once');
+  });
+
+  /**
+   * The agent is blocked on the request whatever happened to the folder, so a refusal that
+   * left it unanswered would be worse than one that answered it.
+   */
+  it('still answers the request when the folder could not be allowed', async () => {
+    allowSessionFolder.mockRejectedValueOnce(new Error('nope'));
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+    await waitFor(() => expect(listeners.permissionRequested.length).toBeGreaterThan(0));
+    act(() => listeners.permissionRequested.forEach((h) => h(asking())));
+
+    await act(async () => {
+      result.current.allowFolder(result.current.permissions[0]!, 'C:\\Users\\me\\Downloads');
+    });
+
+    expect(resolvePermission).toHaveBeenCalledWith('s1', 'r1', 'approve-once');
+  });
+
+  it('takes the prompt down once it has been answered', async () => {
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+    await waitFor(() => expect(listeners.permissionRequested.length).toBeGreaterThan(0));
+    act(() => listeners.permissionRequested.forEach((h) => h(asking())));
+
+    await act(async () => {
+      result.current.allowFolder(result.current.permissions[0]!, 'C:\\Users\\me\\Downloads');
+    });
+
+    expect(result.current.permissions).toHaveLength(0);
   });
 });

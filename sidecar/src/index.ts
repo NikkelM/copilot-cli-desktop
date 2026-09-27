@@ -72,8 +72,14 @@ const runtime = new SessionRuntime({
   onEvent: (sessionId, event) => notify(NOTIFY_SESSION_EVENT, { sessionId, event }),
   onLoadedChange: (sessionId, loaded, loading) => notify(NOTIFY_SESSION_LOADED, { sessionId, loaded, loading }),
   onChangesRecorded: (sessionId) => notify(NOTIFY_SESSION_CHANGES, { sessionId }),
-  onPermissionRequest: (sessionId, requestId, request, expiresAt) =>
-    notify(NOTIFY_PERMISSION_REQUESTED, { sessionId, requestId, request, expiresAt }),
+  onPermissionRequest: (sessionId, requestId, request, expiresAt, offerFolder) =>
+    notify(NOTIFY_PERMISSION_REQUESTED, {
+      sessionId,
+      requestId,
+      request,
+      expiresAt,
+      ...(offerFolder ? { offerFolder } : {}),
+    }),
   onPermissionResolved: (sessionId, requestId) =>
     notify(NOTIFY_PERMISSION_RESOLVED, { sessionId, requestId }),
   onElicitationRequest: (sessionId, requestId, context, expiresAt) =>
