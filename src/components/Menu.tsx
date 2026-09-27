@@ -8,8 +8,14 @@ export interface MenuItem {
   description: string;
   /** What selecting the row writes when its stable id is only an implementation detail. */
   value?: string;
-  /** Directory rows make Tab drill down rather than merely fill the argument. */
-  kind?: 'directory';
+  /**
+   * Directory rows make Tab drill down rather than merely fill the argument.
+   *
+   * `prompt` rows are something somebody said rather than a name and a note about it, so
+   * they are drawn as one field across the row: there is nothing to line up against, and
+   * the words are the whole point of the row (#156).
+   */
+  kind?: 'directory' | 'prompt';
   separator?: string;
 }
 
@@ -155,7 +161,11 @@ export function Menu({
             key={item.id}
             role="option"
             aria-selected={index === selected}
-            className={index === selected ? 'menu-row selected' : 'menu-row'}
+            className={
+              ['menu-row', index === selected ? 'selected' : '', item.kind === 'prompt' ? 'prompt' : '']
+                .filter(Boolean)
+                .join(' ')
+            }
             // Hovering moves the cursor rather than acting, so the pointer and the keyboard
             // agree about which row Enter would take.
             onMouseMove={() => index !== selected && onSelect(index)}

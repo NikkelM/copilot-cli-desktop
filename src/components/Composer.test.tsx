@@ -593,6 +593,37 @@ describe('the slash command menu', () => {
 
       expect(rows().join('\n')).not.toContain('conversation');
     });
+
+    /**
+     * What was said is the whole of what is being chosen between, so the rows are drawn as
+     * one field rather than a name beside a note about it.
+     */
+    it('draws the turns as what was said rather than as names', async () => {
+      const { user } = menu({ commands: [REWIND_COMMAND] });
+
+      await user.keyboard('/rewind ');
+
+      expect(document.querySelectorAll('.menu-row.prompt')).toHaveLength(3);
+    });
+
+    // The scopes are names with notes about them, which is what the ordinary row is for.
+    it('draws the scopes as ordinary rows', async () => {
+      const { user } = menu({ commands: [REWIND_COMMAND] });
+
+      await user.keyboard('/rewind 2 ');
+
+      expect(document.querySelector('.menu-row.prompt')).toBeNull();
+    });
+
+    // Every other command's choices are names, and naming them as prompts would widen them
+    // and strip the column they are meant to line up in.
+    it('leaves other commands choices as ordinary rows', async () => {
+      const { user } = menu();
+
+      await user.keyboard('/allow-all ');
+
+      expect(document.querySelector('.menu-row.prompt')).toBeNull();
+    });
   });
 });
 

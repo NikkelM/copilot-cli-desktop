@@ -1556,6 +1556,25 @@ body {
   font-size: var(--font-md);
 }
 
+/*
+ * A row that is something somebody said, rather than a name and a note about it (#156).
+ *
+ * The words are the whole of what is being chosen between, so they are read like the
+ * transcript rather than like a description: full strength, and starting where the eye
+ * already is. The number keeps only the room it needs, which gives the rest of the line
+ * back to the prompt - the reason the row is there at all.
+ */
+.menu-row.prompt .menu-label {
+  min-width: 2.2em;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.menu-row.prompt .menu-description {
+  color: var(--text);
+}
+
 .markdown code {
   padding: 1px 5px;
   border-radius: 4px;

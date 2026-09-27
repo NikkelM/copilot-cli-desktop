@@ -293,11 +293,15 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
     }
 
     const choices = (named?.choices ?? [])
-      .filter((choice) => choice.name.toLowerCase().startsWith(wanted))      .map((choice) => ({
+      .filter((choice) => choice.name.toLowerCase().startsWith(wanted))
+      .map((choice) => ({
         id: `choice:${choice.name}`,
         value: choice.name,
         label: choice.name,
         description: choice.description,
+        // What was said, rather than a name and a note about it: drawn as one field across
+        // the row, since the words are the whole of what is being chosen between (#156).
+        ...(needsRewind ? { kind: 'prompt' as const } : {}),
       }));
     const folders = directories.map((directory) => ({
       id: `directory:${directory.path}`,
