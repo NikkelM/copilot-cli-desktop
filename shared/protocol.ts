@@ -106,7 +106,8 @@ export interface CliSetting {
   options?: string[];
 }
 
-/** Lifecycle of a session inside the sidecar runtime. Only `active` holds meaningful memory. */export type SessionRuntimeState =
+/** Lifecycle of a session inside the sidecar runtime. Only `active` holds meaningful memory. */
+export type SessionRuntimeState =
   | 'cold' // never loaded in this app run; history is read straight from disk
   | 'loading' // resumeSession() in flight
   | 'active' // loaded in the shared CLI server process

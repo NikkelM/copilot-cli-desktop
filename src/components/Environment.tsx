@@ -524,7 +524,8 @@ const AGENT_SOURCE: Record<string, string> = {
   plugin: 'Plugin',
   builtin: 'Built in',
 };
-/** Where a hook came from, which is also where it would have to be turned off. */const HOOK_ORIGIN: Record<string, string> = {
+/** Where a hook came from, which is also where it would have to be turned off. */
+const HOOK_ORIGIN: Record<string, string> = {
   user: 'Yours',
   repository: 'This repository',
   plugin: 'Plugin',

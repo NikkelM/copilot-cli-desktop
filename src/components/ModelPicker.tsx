@@ -220,7 +220,8 @@ function Prices({ model }: { model: ModelChoice | undefined }) {
  * and the model name commits. A reader wanting a different effort usually wants to say
  * something about the context too, and committing on the first of those would send them
  * back into the menu to say the second.
- */function ModelRow({
+ */
+function ModelRow({
   model,
   current,
   onChoose,

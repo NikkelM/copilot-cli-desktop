@@ -73,7 +73,8 @@ interface HotChannel {
  * Reports the failure rather than swallowing it. A rebuild that failed and a rebuild that
  * worked must not look the same, or the restart afterwards quietly loads the old code again
  * and the reader is back where they started.
- */export function rebuildSidecar(
+ */
+export function rebuildSidecar(
   hot: HotChannel | undefined = import.meta.hot as HotChannel | undefined,
 ): Promise<void> {
   if (!hot) return Promise.reject(new Error('There is no dev server to rebuild anything.'));

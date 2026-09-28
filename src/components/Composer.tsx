@@ -118,7 +118,8 @@ function ghostFor(typed: Typed | null, item: MenuItem | undefined, commands: Sla
 /**
  * Sending is the only action that costs memory: it resumes the session in the shared
  * CLI server. Everything above this component is a pure disk read.
- */export function Composer({
+ */
+export function Composer({
   disabled,
   busy,
   busySince,
