@@ -42,6 +42,14 @@ interface ComposerProps {
    * message can carry it, and where it is saved is the session's business, not the box's.
    */
   onPasteFiles: (files: File[]) => void;
+  /**
+   * A paste too long for the box, answered with what should stand in its place.
+   *
+   * Null leaves the paste alone, which is the ordinary case: most are short enough to
+   * read where they land, and hiding one behind a placeholder would take it away for
+   * nothing (#55).
+   */
+  onPasteText?: (text: string) => string | null;
   onError: (message: string) => void;
   /**
    * Takes focus whenever this changes to something other than null, so a session opens
@@ -127,6 +135,7 @@ export function Composer({
   attached,
   onAttach,
   onPasteFiles,
+  onPasteText,
   onError,
   focusOn,
   value,
@@ -643,13 +652,36 @@ export function Composer({
             }}
             onKeyDown={onKeyDown}
             onPaste={(event) => {
-              // Text is by far the commonest paste, and the clipboard carries files only when
-              // files were copied, so an empty list means there is nothing to do here.
+              // Files first: the clipboard carries them only when files were copied, and a
+              // screenshot is a different thing to a wall of text.
               const files = Array.from(event.clipboardData?.files ?? []);
-              if (files.length === 0) return;
+              if (files.length > 0) {
+                event.preventDefault();
+                onPasteFiles(files);
+                return;
+              }
+
+              /*
+               * A browser hands over the whole paste in one event, so there is nothing to
+               * coalesce. The CLI debounces for 200ms before deciding, because a terminal
+               * receives a paste as a stream of input and would otherwise make a
+               * placeholder per chunk - a problem a textarea does not have.
+               */
+              const text = event.clipboardData?.getData('text/plain') ?? '';
+              if (!onPasteText || !text) return;
+
+              const stands = onPasteText(text);
+              if (!stands) return;
 
               event.preventDefault();
-              onPasteFiles(files);
+              // Put the placeholder where the paste would have gone, replacing whatever was
+              // selected, and leave the caret after it so typing carries on from there.
+              const box = event.currentTarget;
+              const from = box.selectionStart;
+              const to = box.selectionEnd;
+              write(value.slice(0, from) + stands + value.slice(to));
+              const caret = from + stands.length;
+              requestAnimationFrame(() => box.setSelectionRange(caret, caret));
             }}
             placeholder={
               shell

@@ -46,6 +46,7 @@ import {
   forkSession as fork,
   locateTurn,
   writeCliSettings,
+  stashPaste,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, readRewindCommand, wantsDirectory, withRewindChoices, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
@@ -77,6 +78,7 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useRewind } from './lib/useRewind';
+import { countLines, humanSize, placeholder, worthCollapsing, worthWriting } from './lib/longPaste';
 import { useEnvironment } from './lib/useEnvironment';
 import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
@@ -306,6 +308,35 @@ export default function App() {
    * pasting and then moving to another session would otherwise attach the screenshot to
    * whichever one happened to be open when the bytes finished landing.
    */
+  /**
+   * Decide what a pasted block leaves in the box (#55).
+   *
+   * Three answers, and the placeholder is the same for the last two. Most pastes are short
+   * and are left exactly where they land. A long one is held, so what is being written stays
+   * readable. One too large to be a message is also written to a file, because past a point
+   * it is a document - and the agent is better given the path than the wall.
+   *
+   * The write is started here and not waited for. The box cannot wait, and it does not need
+   * to: a message sent before it lands carries the text, which is what it would have carried
+   * anyway. Nothing is ever a reference to a file that is not there yet.
+   */
+  function holdPaste(sessionId: string, text: string): string | null {
+    if (!worthCollapsing(text)) return null;
+
+    const lines = countLines(text);
+    const id = drafts.hold(sessionId, text, lines);
+
+    if (worthWriting(text)) {
+      const size = humanSize(new TextEncoder().encode(text).length);
+      void stashPaste({ sessionId, name: `pasted-${lines}-lines.txt`, data: btoa(unescape(encodeURIComponent(text))) })
+        .then((path) => drafts.wroteTo(sessionId, id, path, size))
+        // The paste is still held, so this costs the file rather than the text.
+        .catch(() => undefined);
+    }
+
+    return placeholder(id, lines);
+  }
+
   async function handlePaste(sessionId: string, files: File[]) {
     try {
       const { attached, tooLarge } = await stashFiles(sessionId, files);
@@ -936,6 +967,10 @@ export default function App() {
   async function send(sessionId: string, prompt: string, display: string | null) {
     setError(null);
     drafts.clear(sessionId);
+    // What the agent is given, with every held paste put back (#55). The transcript keeps
+    // showing what was typed: the placeholder is the reader's shorthand for the paste, and
+    // the paste itself is what was actually asked about.
+    const whole = drafts.expand(sessionId, prompt);
     // Taken before the send so a file picked while it is in flight belongs to the next
     // message rather than this one.
     const sent = attachments[sessionId] ?? [];
@@ -953,7 +988,11 @@ export default function App() {
     setBusy(true);
 
     try {
-      const { queued } = await sendMessage({ sessionId, prompt, attachments: sent });
+      const { queued } = await sendMessage({ sessionId, prompt: whole, attachments: sent });
+
+      // The pastes it carried are gone for good only now. Until the send came back this
+      // message could still have been handed to the box to try again (#55).
+      drafts.release(sessionId, prompt);
 
       // The runtime decides, and a turn can end while the message is on its way, so the
       // guess above is reconciled with what actually happened. Nothing is recorded for a
@@ -1450,6 +1489,7 @@ export default function App() {
                 attached={attachments[selected.sessionId] ?? []}
                 onAttach={(files) => setAttachments((current) => ({ ...current, [selected.sessionId]: files }))}
                 onPasteFiles={(files) => void handlePaste(selected.sessionId, files)}
+                onPasteText={(text) => holdPaste(selected.sessionId, text)}
                 onError={setError}
                 // A question or a permission request blocks the agent until answered, so
                 // it keeps the keyboard; the composer takes it back once nothing is waiting.

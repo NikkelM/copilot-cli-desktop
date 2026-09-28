@@ -131,3 +131,132 @@ describe('reading the box from a handler registered once', () => {
     expect(result.current.written(null)).toBe('');
   });
 });
+
+/**
+ * Pastes held out of the box (#55).
+ *
+ * The box shows a placeholder; the message carries the paste. These two only agree because
+ * the same session holds both, so what is tested here is mostly that pairing.
+ */
+describe('holding a paste out of the box', () => {
+  it('gives every paste an id of its own, so one placeholder cannot claim another', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const first = result.current.hold('s1', 'a', 1);
+    const second = result.current.hold('s1', 'b', 1);
+
+    expect(second).not.toBe(first);
+  });
+
+  it('puts the paste back into the message it was taken out of', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'four\nhundred\nlines', 3);
+
+    expect(result.current.expand('s1', `look at [Paste #${id} - 3 lines] please`)).toBe(
+      'look at four\nhundred\nlines please',
+    );
+  });
+
+  /** The whole point of the split: one session's paste cannot be sent from another. */
+  it('holds each session\u2019s pastes apart, even where their ids agree', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const mine = result.current.hold('s1', 'belongs to one', 1);
+    const theirs = result.current.hold('s2', 'belongs to two', 1);
+
+    // Ids count from one in every session, so the same number is two different pastes.
+    expect(theirs).toBe(mine);
+    expect(result.current.expand('s1', `[Paste #${mine} - 1 lines]`)).toBe('belongs to one');
+    expect(result.current.expand('s2', `[Paste #${theirs} - 1 lines]`)).toBe('belongs to two');
+  });
+
+  it('has nothing to put back for a session that never held anything', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    expect(result.current.expand('never', 'plain text')).toBe('plain text');
+  });
+
+  // Once written, the agent is better off reading the file than being handed the text.
+  it('names the file instead of the text once the paste has been written down', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'a\nb', 2);
+    result.current.wroteTo('s1', id, 'C:\\tmp\\p.txt', '300 KB');
+
+    expect(result.current.expand('s1', `[Paste #${id} - 2 lines]`)).toBe(
+      '<pasted_content file="C:\\tmp\\p.txt" size="300 KB" lines="2" />',
+    );
+  });
+
+  it('ignores a write landing for a paste that is no longer held', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    expect(() => result.current.wroteTo('s1', 99, 'gone.txt', '1 KB')).not.toThrow();
+  });
+
+  /**
+   * Bounded, so one message never sent cannot hold every paste piled into it. The oldest
+   * goes first, and its placeholder is sent as written rather than as an empty gap.
+   */
+  it('drops the oldest once it is holding more than it keeps', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const first = result.current.hold('s1', 'oldest', 1);
+    let last = first;
+    for (let i = 0; i < 32; i++) last = result.current.hold('s1', `paste ${i}`, 1);
+
+    expect(result.current.expand('s1', `[Paste #${first} - 1 lines]`)).toBe(`[Paste #${first} - 1 lines]`);
+    expect(result.current.expand('s1', `[Paste #${last} - 1 lines]`)).toBe('paste 31');
+  });
+});
+
+/**
+ * When a held paste is let go of.
+ *
+ * Held text is the largest thing this app keeps in memory, so the question is not only
+ * whether it is freed but when: too early and a send that failed cannot be recovered.
+ */
+describe('letting go of a paste', () => {
+  it('forgets what a sent message carried', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'a\nb', 2);
+    const typed = `look at [Paste #${id} - 2 lines]`;
+
+    act(() => result.current.release('s1', typed));
+
+    expect(result.current.expand('s1', typed)).toBe(typed);
+  });
+
+  it('keeps a paste whose placeholder was not in the message', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const sent = result.current.hold('s1', 'went', 1);
+    const kept = result.current.hold('s1', 'stayed', 1);
+
+    act(() => result.current.release('s1', `[Paste #${sent} - 1 lines]`));
+
+    expect(result.current.expand('s1', `[Paste #${kept} - 1 lines]`)).toBe('stayed');
+  });
+
+  /**
+   * The recovery path a failed send depends on. The message goes back to the box exactly as
+   * it was typed, so the paste behind it has to still be there to put back.
+   */
+  it('still holds the paste until the message is let go of', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'four hundred lines', 1);
+    const typed = `[Paste #${id} - 1 lines]`;
+
+    expect(result.current.expand('s1', typed)).toBe('four hundred lines');
+    expect(result.current.expand('s1', typed)).toBe('four hundred lines');
+  });
+
+  it('lets go of nothing for a session that never held anything', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    expect(() => result.current.release('never', '[Paste #1 - 1 lines]')).not.toThrow();
+  });
+});

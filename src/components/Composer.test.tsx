@@ -1028,6 +1028,89 @@ describe('pasting into the box', () => {
   });
 });
 
+/**
+ * A paste too long to sit in the box (#55).
+ *
+ * Pasting four hundred lines leaves what is being written somewhere inside four hundred
+ * lines. What stands in its place is decided above this - the box only asks, puts the
+ * answer where the paste would have gone, and leaves the caret after it.
+ */
+describe('pasting something long', () => {
+  const paste = (text: string) =>
+    fireEvent.paste(box(), { clipboardData: { files: [], getData: () => text } });
+
+  it('asks what should stand in its place', () => {
+    const onPasteText = vi.fn(() => null);
+    bare({ onPasteText });
+
+    paste('four hundred lines');
+
+    expect(onPasteText).toHaveBeenCalledWith('four hundred lines');
+  });
+
+  // Most pastes are short, and hiding one behind a placeholder takes it away for nothing.
+  it('lets the browser paste it when nothing stands in its place', () => {
+    const onChange = vi.fn();
+    bare({ onPasteText: () => null, onChange });
+
+    const event = paste('short');
+
+    expect(event).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('puts the placeholder in instead of the paste', () => {
+    const onChange = vi.fn();
+    bare({ onPasteText: () => '[Paste #1 - 400 lines]', onChange, value: '' });
+
+    const event = paste('four hundred lines');
+
+    expect(event).toBe(false);
+    expect(onChange).toHaveBeenCalledWith('[Paste #1 - 400 lines]');
+  });
+
+  it('puts it where the caret was, rather than at the end', () => {
+    const onChange = vi.fn();
+    bare({ onPasteText: () => '[P]', onChange, value: 'before after' });
+    box().setSelectionRange(7, 7);
+
+    paste('long');
+
+    expect(onChange).toHaveBeenCalledWith('before [P]after');
+  });
+
+  it('replaces what was selected, as a paste does', () => {
+    const onChange = vi.fn();
+    bare({ onPasteText: () => '[P]', onChange, value: 'keep THIS end' });
+    box().setSelectionRange(5, 9);
+
+    paste('long');
+
+    expect(onChange).toHaveBeenCalledWith('keep [P] end');
+  });
+
+  // A file paste is a screenshot, which is a different thing to a wall of text.
+  it('leaves a file paste to the file handler', () => {
+    const onPasteText = vi.fn(() => '[P]');
+    const onPasteFiles = vi.fn();
+    bare({ onPasteText, onPasteFiles });
+
+    fireEvent.paste(box(), { clipboardData: { files: [new File(['x'], 'a.png')], getData: () => 'text too' } });
+
+    expect(onPasteFiles).toHaveBeenCalled();
+    expect(onPasteText).not.toHaveBeenCalled();
+  });
+
+  it('asks nothing about an empty paste', () => {
+    const onPasteText = vi.fn(() => '[P]');
+    bare({ onPasteText });
+
+    paste('');
+
+    expect(onPasteText).not.toHaveBeenCalled();
+  });
+});
+
 describe('a stashed prompt', () => {
   /** A stash leaves no other mark, and the box it was taken from is where it is missed. */
   it('says so in the empty box', () => {
