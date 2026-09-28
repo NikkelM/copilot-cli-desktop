@@ -51,7 +51,14 @@ describe('the recycle bin', () => {
     await waitFor(() => expect(result.current.binned).toEqual([]));
   });
 
-  it('goes back to not knowing while it reads again', async () => {
+  /**
+   * What is drawn stays true until the answer arrives (#217).
+   *
+   * Emptying it first collapses the settings panel, which clamps its scroll to the top and
+   * then drops it back when the rows return - a jump for every delete. The first read has
+   * nothing on screen to keep, and says it is reading because `binned` starts null anyway.
+   */
+  it('keeps what is on screen while it reads again', async () => {
     const { result } = renderHook(() => useRecycleBin());
     act(() => result.current.refresh());
     await waitFor(() => expect(result.current.binned).toEqual(waiting));
@@ -60,8 +67,16 @@ describe('the recycle bin', () => {
     binnedSessions.mockReturnValue(new Promise<BinnedSession[]>((resolve) => (settle = resolve)));
     act(() => result.current.refresh());
 
-    expect(result.current.binned).toBeNull();
+    expect(result.current.binned).toEqual(waiting);
     await act(async () => settle([]));
+    expect(result.current.binned).toEqual([]);
+  });
+
+  // Nothing has been read yet, so there is nothing to keep and nothing to say but that.
+  it('says it is reading before anything has been read', () => {
+    const { result } = renderHook(() => useRecycleBin());
+
+    expect(result.current.binned).toBeNull();
   });
 
   describe('putting one back', () => {

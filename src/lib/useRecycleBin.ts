@@ -23,10 +23,16 @@ export function useRecycleBin(onRestored?: () => void, onError?: (message: strin
   const wentBack = useRef(onRestored);
   wentBack.current = onRestored;
 
+  /**
+   * Read the bin, leaving whatever is on screen until the answer arrives.
+   *
+   * Nothing is blanked first. `binned` starts null, which is what draws "Reading the bin.",
+   * so the first read says so without being told to. A re-read after an action has a list
+   * on screen already, and emptying it collapses the panel - which clamps its scroll to the
+   * top and then drops it back when the rows return (#217). What is drawn stays true right
+   * up to the moment it is replaced.
+   */
   const refresh = useCallback(() => {
-    // Null while it is read, so the window can say it is reading rather than say the bin
-    // is empty and then fill it.
-    setBinned(null);
     void binnedSessions()
       .then(setBinned)
       // An empty list rather than nothing at all: a bin that cannot be read has nothing to
