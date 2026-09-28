@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import type { CopilotSession, ExitPlanModeRequest, ExitPlanModeResult } from '@github/copilot-sdk';
 
 import { copilotHome } from './paths.js';
@@ -2984,22 +2984,28 @@ describe('SessionRuntime starting a session as it was asked to', () => {
       });
     });
 
-    it('is left asking when that is the setting', async () => {
+    /**
+     * Told to ask, rather than left alone. The mode is kept with the session and survives
+     * being released, so one that was ever permissive stays permissive unless it is told
+     * otherwise - which is how turning the setting off came to do nothing at all.
+     */
+    it('is put back to asking when that is the setting', async () => {
       const harness = makeRuntime();
       await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: false });
 
       await harness.runtime.load('a');
 
-      expect(harness.sessions.get('a')?.rpc.permissions.setMode).not.toHaveBeenCalled();
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenCalledWith({ mode: 'manual' });
     });
 
-    // Nothing has been said about it, so nothing is imposed.
-    it('is left asking when the setting has never been given', async () => {
+    // Nothing has been said about it, so the session is told to ask - which is where one
+    // starts, and the safe answer for one that may have been told otherwise before.
+    it('is put back to asking when the setting has never been given', async () => {
       const harness = makeRuntime();
 
       await harness.runtime.load('a');
 
-      expect(harness.sessions.get('a')?.rpc.permissions.setMode).not.toHaveBeenCalled();
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenCalledWith({ mode: 'manual' });
     });
 
     // Opening the session matters more than the mode taking.
@@ -3030,14 +3036,23 @@ describe('SessionRuntime starting a session as it was asked to', () => {
       });
     });
 
-    it('keeps asking when a later change says nothing about it', async () => {
+    /**
+     * The bug this was written for: the mode is kept with the session, so one told once to
+     * allow everything comes back allowing everything. Only ever saying `allow-all` meant
+     * turning the setting off reached a session while it was open and never again.
+     */
+    it('puts a session that was once permissive back to asking', async () => {
       const harness = makeRuntime();
-      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: false });
-      await harness.runtime.setLimits({ maxLoadedSessions: 3, idleTimeoutMs: 0 });
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: true });
+      await harness.runtime.load('a');
+      await harness.runtime.evict('a');
 
+      await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: false });
       await harness.runtime.load('a');
 
-      expect(harness.sessions.get('a')?.rpc.permissions.setMode).not.toHaveBeenCalled();
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenLastCalledWith({
+        mode: 'manual',
+      });
     });
   });
 
@@ -3053,7 +3068,7 @@ describe('SessionRuntime starting a session as it was asked to', () => {
 
       await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: true });
 
-      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenCalledExactlyOnceWith({
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode).toHaveBeenLastCalledWith({
         mode: 'allow-all',
       });
     });
@@ -3071,14 +3086,15 @@ describe('SessionRuntime starting a session as it was asked to', () => {
       });
     });
 
-    // Nothing changed, so there is nothing to tell anybody.
-    it('says nothing to an open session when the answer is the same', async () => {
+    // Nothing changed, so there is nothing to tell anybody beyond what opening it said.
+    it('says nothing further to an open session when the answer is the same', async () => {
       const harness = makeRuntime();
       await harness.runtime.load('a');
+      const said = harness.sessions.get('a')!.rpc.permissions.setMode.mock.calls.length;
 
       await harness.runtime.setLimits({ maxLoadedSessions: 0, idleTimeoutMs: 0, allowAll: false });
 
-      expect(harness.sessions.get('a')?.rpc.permissions.setMode).not.toHaveBeenCalled();
+      expect(harness.sessions.get('a')?.rpc.permissions.setMode.mock.calls.length).toBe(said);
     });
 
     it('still applies the change when one session refuses it', async () => {
@@ -3924,6 +3940,16 @@ describe('rewinding a session', () => {
  * asked about twice. Allowing the directory closes the second without touching the first.
  */
 describe('offering to allow a directory', () => {
+  /**
+   * Built with the platform's own separator rather than written out.
+   *
+   * `dirname` answers for the platform it runs on: given a Windows path on Linux it finds
+   * no separator and says `.`, so a test with `C:\...` written into it passes on Windows
+   * and fails in CI. The paths a session actually names are always the host's own.
+   */
+  const outside = join(sep === '\\' ? 'C:\\Users\\me' : '/home/me', 'Downloads');
+  const inside = join(sep === '\\' ? 'C:\\repo' : '/repo', 'src');
+
   const allowed = (harness: ReturnType<typeof makeRuntime>) =>
     harness.sessions.get('a')!.rpc.permissions.paths.isPathWithinAllowedDirectories;
 
@@ -3938,9 +3964,9 @@ describe('offering to allow a directory', () => {
     await harness.runtime.send('a', 'x');
     allowed(harness).mockResolvedValue({ allowed: false });
 
-    await ask(harness, { kind: 'write', fileName: 'C:\\Users\\me\\Downloads\\a.txt' });
+    await ask(harness, { kind: 'write', fileName: join(outside, 'a.txt') });
 
-    expect(onPermissionRequest.mock.calls[0]?.[4]).toBe('C:\\Users\\me\\Downloads');
+    expect(onPermissionRequest.mock.calls[0]?.[4]).toBe(outside);
   });
 
   // Offering it would be offering to do nothing, and the second ask is not happening anyway.
@@ -3950,7 +3976,7 @@ describe('offering to allow a directory', () => {
     await harness.runtime.send('a', 'x');
     allowed(harness).mockResolvedValue({ allowed: true });
 
-    await ask(harness, { kind: 'write', fileName: 'C:\\repo\\a.txt' });
+    await ask(harness, { kind: 'write', fileName: join(inside, 'a.txt') });
 
     expect(onPermissionRequest.mock.calls[0]?.[4]).toBeUndefined();
   });
@@ -3968,13 +3994,13 @@ describe('offering to allow a directory', () => {
   });
 
   // Allowing a whole drive is allowing everything, which the setting beside this already does.
-  it('never offers the root of a drive', async () => {
+  it('never offers the root of the filesystem', async () => {
     const onPermissionRequest = vi.fn();
     const harness = makeRuntime({ onPermissionRequest });
     await harness.runtime.send('a', 'x');
     allowed(harness).mockResolvedValue({ allowed: false });
 
-    await ask(harness, { kind: 'write', fileName: 'C:\\a.txt' });
+    await ask(harness, { kind: 'write', fileName: join(sep === '\\' ? 'C:\\' : '/', 'a.txt') });
 
     expect(onPermissionRequest.mock.calls[0]?.[4]).toBeUndefined();
   });
@@ -3990,7 +4016,7 @@ describe('offering to allow a directory', () => {
     await harness.runtime.send('a', 'x');
     allowed(harness).mockRejectedValue(new Error('no such method'));
 
-    await ask(harness, { kind: 'write', fileName: 'C:\\Users\\me\\Downloads\\a.txt' });
+    await ask(harness, { kind: 'write', fileName: join(outside, 'a.txt') });
 
     expect(onPermissionRequest).toHaveBeenCalledOnce();
     expect(onPermissionRequest.mock.calls[0]?.[4]).toBeUndefined();
@@ -3999,12 +4025,8 @@ describe('offering to allow a directory', () => {
   it('adds the directory when it is asked to', async () => {
     const harness = makeRuntime();
 
-    await expect(harness.runtime.allowFolder('a', 'C:\\Users\\me\\Downloads')).resolves.toEqual({
-      allowed: true,
-    });
-    expect(harness.sessions.get('a')!.rpc.permissions.paths.add).toHaveBeenCalledWith({
-      path: 'C:\\Users\\me\\Downloads',
-    });
+    await expect(harness.runtime.allowFolder('a', outside)).resolves.toEqual({ allowed: true });
+    expect(harness.sessions.get('a')!.rpc.permissions.paths.add).toHaveBeenCalledWith({ path: outside });
   });
 
   it('says so when the runtime refuses the directory', async () => {
@@ -4012,6 +4034,6 @@ describe('offering to allow a directory', () => {
     await harness.runtime.load('a');
     harness.sessions.get('a')!.rpc.permissions.paths.add.mockResolvedValue({ success: false });
 
-    await expect(harness.runtime.allowFolder('a', 'C:\\nope')).resolves.toEqual({ allowed: false });
+    await expect(harness.runtime.allowFolder('a', outside)).resolves.toEqual({ allowed: false });
   });
 });
