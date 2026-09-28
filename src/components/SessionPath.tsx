@@ -39,6 +39,7 @@ export function SessionPath({
   cwd,
   state,
   branches,
+  readingBranches,
   switching,
   busy,
   onBranches,
@@ -47,6 +48,8 @@ export function SessionPath({
   cwd: string | null;
   state: TreeState | null;
   branches: { name: string; current: boolean }[];
+  /** Whether that read is in flight, so the picker can say so rather than look empty. */
+  readingBranches?: boolean;
   switching: boolean;
   /** Whether a turn is running, which is the one time a switch is refused. */
   busy: boolean;
@@ -99,6 +102,7 @@ export function SessionPath({
             title={meaning ?? undefined}
             note={marks.length > 0 ? 'Changed files carry over' : null}
             branches={branches}
+            reading={readingBranches}
             switching={switching}
             disabled={busy}
             disabledReason="Cannot switch branch while the agent is working"

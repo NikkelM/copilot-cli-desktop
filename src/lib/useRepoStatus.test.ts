@@ -528,6 +528,42 @@ describe('branches', () => {
   });
 
   /**
+   * An empty list means two things, and the picker draws them differently: not read yet,
+   * and read and found nothing (#224).
+   */
+  it('says the read is in flight while it is', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+    expect(result.current.readingBranches).toBe(false);
+
+    let settle: (found: { name: string; current: boolean }[]) => void = () => {};
+    gitBranches.mockReturnValue(new Promise((resolve) => (settle = resolve)));
+
+    let reading: Promise<void> = Promise.resolve();
+    act(() => {
+      reading = result.current.readBranches();
+    });
+    expect(result.current.readingBranches).toBe(true);
+
+    await act(async () => {
+      settle([{ name: 'main', current: true }]);
+      await reading;
+    });
+    expect(result.current.readingBranches).toBe(false);
+  });
+
+  // A menu that says it is still reading a list that failed would wait for ever.
+  it('stops saying so when the read fails', async () => {
+    const { result } = renderHook(() => useRepoStatus('C:\\repo', true));
+    await waitFor(() => expect(result.current.status).toEqual(clean));
+    gitBranches.mockRejectedValueOnce(new Error('not a repository'));
+
+    await act(async () => void (await result.current.readBranches()));
+
+    expect(result.current.readingBranches).toBe(false);
+  });
+
+  /**
    * The header picker can be opened without the panel ever having been, so a list left from
    * the session before would offer to check out branches of a different repository.
    */

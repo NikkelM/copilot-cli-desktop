@@ -42,6 +42,14 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
   const [diverged, setDiverged] = useState(false);
   /** The local branches, read only when the picker is opened. */
   const [branches, setBranches] = useState<{ name: string; current: boolean }[]>([]);
+  /**
+   * Whether that read is in flight, so the picker can say so rather than look empty.
+   *
+   * An empty list means two different things - not read yet, and read and found nothing -
+   * and only one of them is worth drawing a menu about. Git makes the second nearly
+   * impossible anyway: a repository always has the branch you are standing on (#224).
+   */
+  const [readingBranches, setReadingBranches] = useState(false);
   /** Whether a checkout is in flight, so two cannot race each other. */
   const [switching, setSwitching] = useState(false);
   /** Which directory is being shown, so a slow reply for another cannot land here. */
@@ -113,6 +121,9 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     setStatus(null);
     setDiffs({});
     setBranches([]);
+    // A read in flight belongs to the directory being left, and `readBranches` will not
+    // file its answer here - so nothing is going to take this down but this.
+    setReadingBranches(false);
     if (open && cwd) load();
   }, [cwd, open, load]);
 
@@ -219,11 +230,16 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     const directory = showing.current;
     if (!directory) return;
 
+    setReadingBranches(true);
     try {
       const found = await gitBranches(directory);
       if (showing.current === directory) setBranches(found);
     } catch {
       // A branch list nobody can read is not worth an error line over the file list.
+    } finally {
+      // Whether it arrived or not: the picker has stopped waiting either way, and a menu
+      // that says it is still reading a list that failed would wait for ever.
+      if (showing.current === directory) setReadingBranches(false);
     }
   }, []);
 
@@ -279,6 +295,7 @@ export function useRepoStatus(cwd: string | null, open: boolean) {
     diverged,
     dismissDiverged,
     branches,
+    readingBranches,
     readBranches,
     switching,
     switchTo,

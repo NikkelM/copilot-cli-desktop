@@ -31,6 +31,7 @@ export function Branches({
   title,
   note,
   branches,
+  reading = false,
   switching,
   disabled,
   disabledReason,
@@ -46,6 +47,8 @@ export function Branches({
   /** What a switch would carry across, or null when there is nothing to carry. */
   note?: string | null;
   branches: { name: string; current: boolean }[];
+  /** Whether that list is still being read, so an empty menu can say which empty it is. */
+  reading?: boolean;
   switching: boolean;
   /** Set while the agent is working, when switching underneath it would produce a diff nobody could explain. */
   disabled?: boolean;
@@ -110,22 +113,29 @@ export function Branches({
         <div className="repo-branch-menu">
           {note && <p className="repo-branch-note">{note}</p>}
 
-          <ul>
-            {branches.map((each) => (
-              <li key={each.name}>
-                <button
-                  type="button"
-                  className={each.current ? 'repo-branch-item current' : 'repo-branch-item'}
-                  onClick={() => {
-                    if (!each.current) onSwitch(each.name, false);
-                    close();
-                  }}
-                >
-                  {each.name}
-                </button>
-              </li>
-            ))}
-          </ul>
+          {/* An empty list means two things and only one is worth a menu: not read yet, and
+              read and found nothing. The second barely happens - a repository always has the
+              branch you are standing on - so an empty gap is nearly always the first (#224). */}
+          {reading && branches.length === 0 ? (
+            <p className="repo-branch-note">Reading the branches.</p>
+          ) : (
+            <ul>
+              {branches.map((each) => (
+                <li key={each.name}>
+                  <button
+                    type="button"
+                    className={each.current ? 'repo-branch-item current' : 'repo-branch-item'}
+                    onClick={() => {
+                      if (!each.current) onSwitch(each.name, false);
+                      close();
+                    }}
+                  >
+                    {each.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
 
           <form
             className="repo-branch-new"

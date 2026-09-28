@@ -120,3 +120,49 @@ describe('Branches', () => {
     expect(screen.queryByLabelText('New branch name')).toBeNull();
   });
 });
+
+/**
+ * Which empty a menu is showing (#224).
+ *
+ * The list is read only when the picker opens, so there is a moment with nothing in it. An
+ * empty list means two things - not read yet, and read and found nothing - and drawing both
+ * the same way says the repository has no branches, which on any repository is wrong.
+ */
+describe('a picker with nothing in it yet', () => {
+  const open = async (props: Partial<Parameters<typeof Branches>[0]> = {}) => {
+    const user = userEvent.setup();
+    render(<Picker {...props} />);
+    await user.click(screen.getByRole('button', { name: /Switch branch/ }));
+  };
+
+  it('says it is reading while the list is on its way', async () => {
+    await open({ branches: [], reading: true });
+
+    expect(screen.getByText('Reading the branches.')).toBeTruthy();
+  });
+
+  // Read and genuinely empty, which git makes nearly impossible but the menu should survive.
+  it('says nothing about reading once the read is done', async () => {
+    await open({ branches: [], reading: false });
+
+    expect(screen.queryByText('Reading the branches.')).toBeNull();
+  });
+
+  // The answer arrived, so the branches are what to look at rather than a note about them.
+  it('shows the branches rather than the note once they are there', async () => {
+    await open({ reading: true });
+
+    expect(screen.queryByText('Reading the branches.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'main' })).toBeTruthy();
+  });
+
+  /**
+   * Making one is the way out of an empty picker, so it stays reachable: a reader whose
+   * branches cannot be read can still start the branch they came to start.
+   */
+  it('still offers to make a branch while it reads', async () => {
+    await open({ branches: [], reading: true });
+
+    expect(screen.getByPlaceholderText(/new branch/i)).toBeTruthy();
+  });
+});

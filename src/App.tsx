@@ -1256,6 +1256,7 @@ export default function App() {
           cwd={selected.cwd}
           state={tree.state}
           branches={repository.branches}
+          readingBranches={repository.readingBranches}
           switching={repository.switching}
           busy={busy}
           onBranches={() => void repository.readBranches()}
@@ -1379,6 +1380,7 @@ export default function App() {
                     void writeCliSettings({ mergeStrategy: strategy }).catch(() => undefined);
                   }}
                   branches={repository.branches}
+                  readingBranches={repository.readingBranches}
                   onBranches={() => void repository.readBranches()}
                   onSwitch={(name, create) => void switchBranch(name, create)}
                   switching={repository.switching}

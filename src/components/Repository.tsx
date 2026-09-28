@@ -38,6 +38,8 @@ interface RepositoryProps {
   onRememberStrategy: (strategy: MergeStrategy) => void;
   /** The local branches, and reading them when the picker opens. */
   branches: { name: string; current: boolean }[];
+  /** Whether that read is in flight, so the picker can say so rather than look empty. */
+  readingBranches?: boolean;
   onBranches: () => void;
   /** Check a branch out, or make one and check it out. */
   onSwitch: (name: string, create: boolean) => void;
@@ -299,6 +301,7 @@ export function Repository({
   onDismissDiverged,
   onRememberStrategy,
   branches,
+  readingBranches,
   onBranches,
   onSwitch,
   switching,
@@ -358,6 +361,7 @@ export function Repository({
                   branch={status.branch}
                   note={carryNote(status.files.length)}
                   branches={branches}
+                  reading={readingBranches}
                   switching={switching}
                   onOpen={onBranches}
                   onSwitch={onSwitch}
