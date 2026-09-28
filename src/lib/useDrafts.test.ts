@@ -153,7 +153,7 @@ describe('holding a paste out of the box', () => {
 
     const id = result.current.hold('s1', 'four\nhundred\nlines', 3);
 
-    expect(result.current.expand('s1', `look at [Paste #${id} - 3 lines] please`)).toBe(
+    expect(result.current.expand('s1', `look at [Paste #${id} - 3 lines] please`, 'sent')).toBe(
       'look at four\nhundred\nlines please',
     );
   });
@@ -167,14 +167,14 @@ describe('holding a paste out of the box', () => {
 
     // Ids count from one in every session, so the same number is two different pastes.
     expect(theirs).toBe(mine);
-    expect(result.current.expand('s1', `[Paste #${mine} - 1 lines]`)).toBe('belongs to one');
-    expect(result.current.expand('s2', `[Paste #${theirs} - 1 lines]`)).toBe('belongs to two');
+    expect(result.current.expand('s1', `[Paste #${mine} - 1 lines]`, 'sent')).toBe('belongs to one');
+    expect(result.current.expand('s2', `[Paste #${theirs} - 1 lines]`, 'sent')).toBe('belongs to two');
   });
 
   it('has nothing to put back for a session that never held anything', () => {
     const { result } = renderHook(() => useDrafts());
 
-    expect(result.current.expand('never', 'plain text')).toBe('plain text');
+    expect(result.current.expand('never', 'plain text', 'sent')).toBe('plain text');
   });
 
   // Once written, the agent is better off reading the file than being handed the text.
@@ -184,7 +184,7 @@ describe('holding a paste out of the box', () => {
     const id = result.current.hold('s1', 'a\nb', 2);
     result.current.wroteTo('s1', id, 'C:\\tmp\\p.txt', '300 KB');
 
-    expect(result.current.expand('s1', `[Paste #${id} - 2 lines]`)).toBe(
+    expect(result.current.expand('s1', `[Paste #${id} - 2 lines]`, 'sent')).toBe(
       '<pasted_content file="C:\\tmp\\p.txt" size="300 KB" lines="2" />',
     );
   });
@@ -206,8 +206,8 @@ describe('holding a paste out of the box', () => {
     let last = first;
     for (let i = 0; i < 32; i++) last = result.current.hold('s1', `paste ${i}`, 1);
 
-    expect(result.current.expand('s1', `[Paste #${first} - 1 lines]`)).toBe(`[Paste #${first} - 1 lines]`);
-    expect(result.current.expand('s1', `[Paste #${last} - 1 lines]`)).toBe('paste 31');
+    expect(result.current.expand('s1', `[Paste #${first} - 1 lines]`, 'sent')).toBe(`[Paste #${first} - 1 lines]`);
+    expect(result.current.expand('s1', `[Paste #${last} - 1 lines]`, 'sent')).toBe('paste 31');
   });
 });
 
@@ -226,7 +226,7 @@ describe('letting go of a paste', () => {
 
     act(() => result.current.release('s1', typed));
 
-    expect(result.current.expand('s1', typed)).toBe(typed);
+    expect(result.current.expand('s1', typed, 'sent')).toBe(typed);
   });
 
   it('keeps a paste whose placeholder was not in the message', () => {
@@ -237,7 +237,7 @@ describe('letting go of a paste', () => {
 
     act(() => result.current.release('s1', `[Paste #${sent} - 1 lines]`));
 
-    expect(result.current.expand('s1', `[Paste #${kept} - 1 lines]`)).toBe('stayed');
+    expect(result.current.expand('s1', `[Paste #${kept} - 1 lines]`, 'sent')).toBe('stayed');
   });
 
   /**
@@ -250,8 +250,8 @@ describe('letting go of a paste', () => {
     const id = result.current.hold('s1', 'four hundred lines', 1);
     const typed = `[Paste #${id} - 1 lines]`;
 
-    expect(result.current.expand('s1', typed)).toBe('four hundred lines');
-    expect(result.current.expand('s1', typed)).toBe('four hundred lines');
+    expect(result.current.expand('s1', typed, 'sent')).toBe('four hundred lines');
+    expect(result.current.expand('s1', typed, 'sent')).toBe('four hundred lines');
   });
 
   it('lets go of nothing for a session that never held anything', () => {

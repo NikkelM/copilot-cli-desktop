@@ -61,6 +61,14 @@ export function placeholder(id: number, lines: number): string {
  */
 const HELD = /\[Paste #(\d+)(?: - \d+ lines)?\]/g;
 
+/**
+ * Who a restored paste is for.
+ *
+ * Only matters for one written to a file: 'sent' names the file so the agent can read it,
+ * 'shown' says one is there without dragging it into the conversation.
+ */
+export type PasteForm = 'sent' | 'shown';
+
 /** Whether a paste is long enough to be worth collapsing. */
 export function worthCollapsing(text: string): boolean {
   return countLines(text) > COLLAPSE_OVER_LINES;
@@ -81,20 +89,30 @@ export function countLines(text: string): number {
 /**
  * Put every held paste back into the text that stands for it.
  *
- * A paste written to a file is named rather than quoted: the point of writing it down was
- * not to send it. One still being written puts its text back, since a reference to a file
- * that does not exist yet would be worse than the paste itself.
+ * Two forms, because the agent and the reader want opposite things from a paste written to
+ * a file. The agent gets a reference naming the file, which is the point of having written
+ * it. The reader gets a label saying one is there: the file was written because it is too
+ * big to read in a message, and it is no smaller in the conversation.
+ *
+ * A reader's form must also survive being rendered. The reference is a tag, and an unknown
+ * tag is not merely dropped by the sanitiser - it swallows everything after it, so showing
+ * one would cut the message off at the paste.
+ *
+ * One still being written puts its text back whichever form is asked for, since a reference
+ * to a file that does not exist yet would be worse than the paste itself.
  *
  * A placeholder nobody is holding is left exactly as it was. That covers two cases at once:
  * text somebody typed that happens to look like one, and a placeholder surviving from a
  * session whose pastes this no longer has - and leaving it alone is right for both, since
  * inventing a paste would be worse than sending the line as written.
  */
-export function restore(text: string, held: ReadonlyMap<number, HeldPaste>): string {
+export function restore(text: string, held: ReadonlyMap<number, HeldPaste>, as: PasteForm): string {
   return text.replace(HELD, (whole, id: string) => {
     const paste = held.get(Number(id));
     if (!paste) return whole;
-    return paste.file ? reference(paste.file, paste.size ?? '', paste.lines) : paste.text;
+    if (!paste.file) return paste.text;
+
+    return as === 'sent' ? reference(paste.file, paste.size ?? '', paste.lines) : written(Number(id), paste.size ?? '');
   });
 }
 
@@ -117,6 +135,16 @@ export function idsIn(text: string): number[] {
  */
 export function reference(file: string, size: string, lines: number): string {
   return `<pasted_content file="${escape(file)}" size="${escape(size)}" lines="${lines}" />`;
+}
+
+/**
+ * What the conversation shows in place of a paste that was written to a file.
+ *
+ * The CLI's wording, and deliberately not a tag: this goes through a markdown renderer that
+ * drops tags it does not know along with everything following them.
+ */
+export function written(id: number, size: string): string {
+  return `[Saved pasted content to workspace (${size}) id=${id}]`;
 }
 
 /** The attribute-safe form of a value going into the reference tag. */

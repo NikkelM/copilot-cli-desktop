@@ -967,10 +967,21 @@ export default function App() {
   async function send(sessionId: string, prompt: string, display: string | null) {
     setError(null);
     drafts.clear(sessionId);
-    // What the agent is given, with every held paste put back (#55). The transcript keeps
-    // showing what was typed: the placeholder is the reader's shorthand for the paste, and
-    // the paste itself is what was actually asked about.
-    const whole = drafts.expand(sessionId, prompt);
+    // What the agent is given, with every held paste put back (#55).
+    const whole = drafts.expand(sessionId, prompt, 'sent');
+    /*
+     * What the conversation shows, which is the message as it was sent rather than as it
+     * was typed. The placeholder keeps the box usable while writing; once the message has
+     * gone it would only hide what was asked, and a session read back from disk shows the
+     * text anyway, so leaving it in would make the same message look like two.
+     *
+     * A paste written to a file is named rather than shown, since it was written precisely
+     * because it is too big to read in a message.
+     *
+     * Expanded now rather than where it is shown, because one of those places is past the
+     * point where the pastes behind it have been let go of.
+     */
+    const shownText = display === null ? null : drafts.expand(sessionId, display, 'shown');
     // Taken before the send so a file picked while it is in flight belongs to the next
     // message rather than this one.
     const sent = attachments[sessionId] ?? [];
@@ -984,7 +995,7 @@ export default function App() {
     // a turn is running the message will queue, and showing it in the conversation would
     // claim the agent had already been given it.
     const expectQueued = busy;
-    const shown = !expectQueued && display !== null ? transcript.showSent(display) : null;
+    const shown = !expectQueued && shownText !== null ? transcript.showSent(shownText) : null;
     setBusy(true);
 
     try {
@@ -997,7 +1008,7 @@ export default function App() {
       // The runtime decides, and a turn can end while the message is on its way, so the
       // guess above is reconciled with what actually happened. Nothing is recorded for a
       // queued message: the runtime announces its own queue, and this app reads it.
-      if (!queued && expectQueued && display !== null) transcript.showSent(display);
+      if (!queued && expectQueued && shownText !== null) transcript.showSent(shownText);
     } catch (e: unknown) {
       setError(explain(e));
       setBusy(false);
@@ -1006,6 +1017,9 @@ export default function App() {
       // is the reader's: it goes back to the composer with its attachments rather than
       // being lost to an error they may want to read first. Anything typed in the meantime
       // wins, since taking that away to restore an older draft would be the worse theft.
+      //
+      // As it was typed, placeholders and all - not as it was shown. The pastes behind them
+      // are still held, so the box gets back exactly what it had (#55).
       if (shown) transcript.remove(shown);
       if (display !== null) {
         drafts.suggest(sessionId, display);

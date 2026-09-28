@@ -67,13 +67,13 @@ describe('the placeholder that stands in the box', () => {
 
 describe('putting the text back', () => {
   it('replaces a placeholder with what it stood for', () => {
-    const text = restore('look at [Paste #1 - 2 lines] please', held([[1, 'a\nb']]));
+    const text = restore('look at [Paste #1 - 2 lines] please', held([[1, 'a\nb']]), 'sent');
 
     expect(text).toBe('look at a\nb please');
   });
 
   it('replaces several at once, each with its own', () => {
-    const text = restore('[Paste #1 - 1 lines] and [Paste #2 - 1 lines]', held([[1, 'first'], [2, 'second']]));
+    const text = restore('[Paste #1 - 1 lines] and [Paste #2 - 1 lines]', held([[1, 'first'], [2, 'second']]), 'sent');
 
     expect(text).toBe('first and second');
   });
@@ -84,18 +84,18 @@ describe('putting the text back', () => {
    * written, so an unheld placeholder is left exactly as it is.
    */
   it('leaves a placeholder nothing is holding exactly as it is', () => {
-    const text = restore('see [Paste #9 - 3 lines]', held([[1, 'a']]));
+    const text = restore('see [Paste #9 - 3 lines]', held([[1, 'a']]), 'sent');
 
     expect(text).toBe('see [Paste #9 - 3 lines]');
   });
 
   // The CLI's own pattern allows one without a count, so ours has to find one too.
   it('finds a placeholder written without a count', () => {
-    expect(restore('[Paste #1]', held([[1, 'text']]))).toBe('text');
+    expect(restore('[Paste #1]', held([[1, 'text']]), 'sent')).toBe('text');
   });
 
   it('leaves text with no placeholder in it untouched', () => {
-    expect(restore('an ordinary message', held([[1, 'a']]))).toBe('an ordinary message');
+    expect(restore('an ordinary message', held([[1, 'a']]), 'sent')).toBe('an ordinary message');
   });
 
   /**
@@ -105,14 +105,53 @@ describe('putting the text back', () => {
   it('names the file for a paste that was written down', () => {
     const written = new Map([[1, { text: 'a\nb', lines: 2, file: 'C:\\p\\a.txt', size: '300 KB' }]]);
 
-    expect(restore('[Paste #1 - 2 lines]', written)).toBe(
+    expect(restore('[Paste #1 - 2 lines]', written, 'sent')).toBe(
       '<pasted_content file="C:\\p\\a.txt" size="300 KB" lines="2" />',
     );
   });
 
   // Sent before the write landed, which carries what it would have carried anyway.
   it('puts the text back while the file is still being written', () => {
-    expect(restore('[Paste #1 - 2 lines]', held([[1, 'a\nb']]))).toBe('a\nb');
+    expect(restore('[Paste #1 - 2 lines]', held([[1, 'a\nb']]), 'sent')).toBe('a\nb');
+  });
+});
+
+/**
+ * What the conversation shows once the message has gone (#55).
+ *
+ * Held text is put back, so the reader sees what was asked rather than a placeholder. A
+ * paste written to a file is only named: it went to a file because it was too big to read
+ * in a message, and it is no smaller in the conversation.
+ */
+describe('putting a paste back for the reader', () => {
+  it('shows the text of a paste small enough to have been held', () => {
+    expect(restore('look at [Paste #1 - 2 lines]', held([[1, 'a\nb']]), 'shown')).toBe('look at a\nb');
+  });
+
+  it('names a written paste instead of showing it', () => {
+    const big = new Map([[1, { text: '', lines: 9000, file: 'C:\\p\\a.txt', size: '412 KB' }]]);
+
+    expect(restore('[Paste #1 - 9000 lines]', big, 'shown')).toBe(
+      '[Saved pasted content to workspace (412 KB) id=1]',
+    );
+  });
+
+  /**
+   * The conversation renders markdown, and an unknown tag is not simply dropped there: it
+   * swallows everything after it, so showing the agent's reference would cut the message
+   * off at the paste. Measured, not assumed.
+   */
+  it('shows a written paste as something a renderer cannot swallow', () => {
+    const big = new Map([[1, { text: '', lines: 9, file: 'C:\\p\\a.txt', size: '1 KB' }]]);
+
+    const shown = restore('before [Paste #1 - 9 lines] after', big, 'shown');
+
+    expect(shown).not.toContain('<');
+    expect(shown).toContain('after');
+  });
+
+  it('still shows the text of a paste whose file has not landed yet', () => {
+    expect(restore('[Paste #1 - 2 lines]', held([[1, 'a\nb']]), 'shown')).toBe('a\nb');
   });
 });
 

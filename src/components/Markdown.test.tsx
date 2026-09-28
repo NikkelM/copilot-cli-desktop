@@ -72,6 +72,19 @@ describe('Markdown', () => {
     expect(container.textContent).toContain('after');
   });
 
+  /**
+   * A tag this does not know is not merely dropped: it swallows everything after it, so a
+   * message naming a pasted file has to say so without markup (#55).
+   */
+  it('shows a message whole when it names a pasted file', () => {
+    const { container } = render(
+      <Markdown body={'before\n\n[Saved pasted content to workspace (412 KB) id=1]\n\nafter'} />,
+    );
+
+    expect(container.textContent).toContain('412 KB');
+    expect(container.textContent).toContain('after');
+  });
+
   it('offers a remote image as a link rather than fetching it', async () => {
     const { container } = render(<Markdown body="![a diagram](https://example.com/d.png)" />);
 

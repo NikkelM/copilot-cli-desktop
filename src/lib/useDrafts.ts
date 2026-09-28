@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { type HeldPaste, idsIn, restore } from './longPaste';
+import { type HeldPaste, idsIn, type PasteForm, restore } from './longPaste';
 
 /**
  * How many pastes one session may hold behind placeholders at once.
@@ -115,10 +115,10 @@ export function useDrafts() {
     }
   }, []);
 
-  /** Put every paste this session is holding back into a message about to be sent. */
-  const expand = useCallback((sessionId: string, text: string): string => {
+  /** Put every paste this session is holding back into a message, for the agent or the reader. */
+  const expand = useCallback((sessionId: string, text: string, as: PasteForm): string => {
     const mine = pastes.current[sessionId];
-    return mine ? restore(text, mine.held) : text;
+    return mine ? restore(text, mine.held, as) : text;
   }, []);
 
   /**
