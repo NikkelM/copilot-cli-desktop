@@ -26,10 +26,12 @@ export const COLLAPSE_OVER_LINES = 10;
  * what it stands for. Past a certain size that is no longer a message - it is a document,
  * and a document is better as a file the agent can read than as a wall of prompt.
  *
- * The CLI asks its runtime for this number. We have no way to ask, so this is our own, and
- * deliberately generous: the cost of being wrong is a long message rather than a lost one.
+ * The CLI's own number, read from the runtime it asks rather than guessed: the native
+ * module exports `largeOutputDefaultThreshold()`, which returns 20480, and the CLI writes a
+ * paste to a file when its UTF-8 length is over that. Bytes rather than lines, so what
+ * counts is what the message would carry.
  */
-export const WRITE_TO_FILE_OVER_BYTES = 256 * 1024;
+export const WRITE_TO_FILE_OVER_BYTES = 20 * 1024;
 
 /** A paste being held out of the box, and what it would read as if put back. */
 export interface HeldPaste {

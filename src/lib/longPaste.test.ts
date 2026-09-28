@@ -9,6 +9,7 @@ import {
   restore,
   worthCollapsing,
   worthWriting,
+  WRITE_TO_FILE_OVER_BYTES,
 } from './longPaste';
 
 const lines = (count: number) => Array.from({ length: count }, (_, at) => `line ${at + 1}`).join('\n');
@@ -42,7 +43,22 @@ describe('what belongs in a file', () => {
   });
 
   it('writes down one too large to be a message', () => {
-    expect(worthWriting('x'.repeat(300 * 1024))).toBe(true);
+    expect(worthWriting('x'.repeat(30 * 1024))).toBe(true);
+  });
+
+  /** The CLI's own threshold, which it reads from its runtime as 20480 bytes. */
+  it('draws the line where the CLI draws it', () => {
+    expect(WRITE_TO_FILE_OVER_BYTES).toBe(20480);
+    expect(worthWriting('x'.repeat(20480))).toBe(false);
+    expect(worthWriting('x'.repeat(20481))).toBe(true);
+  });
+
+  /**
+   * Sixty-five thousand lines is a document however short the lines are, and the shortest
+   * possible ones still weigh more than the threshold.
+   */
+  it('writes down a paste of very many very short lines', () => {
+    expect(worthWriting(Array.from({ length: 65000 }, () => 'a').join('\n'))).toBe(true);
   });
 
   /**
@@ -52,9 +68,9 @@ describe('what belongs in a file', () => {
    */
   it('measures what it will weigh, not how many characters it has', () => {
     // Three bytes each in UTF-8, so a third as many characters reaches the same size.
-    const wide = '✓'.repeat(100 * 1024);
+    const wide = '✓'.repeat(8 * 1024);
 
-    expect(wide.length).toBeLessThan(256 * 1024);
+    expect(wide.length).toBeLessThan(WRITE_TO_FILE_OVER_BYTES);
     expect(worthWriting(wide)).toBe(true);
   });
 });
