@@ -560,6 +560,28 @@ export class SessionRuntime {
   }
 
   /**
+   * Put a session in the mode the reader asked for, either way.
+   *
+   * Both directions, because the mode is kept with the session: one told to allow
+   * everything stays that way through being released and reopened, so saying nothing when
+   * the setting is off leaves it permissive for ever. Measured rather than assumed - a
+   * session set to `allow-all`, released, and resumed without a word came back `allow-all`.
+   *
+   * This does mean the setting wins over a mode chosen inside the session with
+   * `/allow-all`, once that session is reopened. That is the lesser surprise: a setting
+   * that visibly does nothing is worse than one that is obeyed, and the direction it
+   * overrides in is the one that asks more rather than less.
+   *
+   * Failure leaves the session as it was, which for a session being opened means asking -
+   * the safe direction, since a session that asks when it was meant not to is an
+   * annoyance and the reverse is not.
+   */
+  private async applyPermissionMode(session: CopilotSession): Promise<void> {
+    const mode = this.allowAll ? 'allow-all' : 'manual';
+    await session.rpc.permissions.setMode({ mode }).catch(() => undefined);
+  }
+
+  /**
    * Bring a session into memory now, rather than on the next send.
    *
    * The opposite of `evict`, and the reason it exists: this app resumes nothing until
@@ -639,13 +661,12 @@ export class SessionRuntime {
       streaming: true,
     });
 
-    // Set here as well as at creation, because the mode does not survive a session being
-    // released: a session resumed later starts asking again, whatever it was told when it
-    // was made. Without this, "run tools without asking" only ever reached sessions this
-    // app had just created, and never an older one it opened.
-    if (this.allowAll) {
-      await session.rpc.permissions.setMode({ mode: 'allow-all' }).catch(() => undefined);
-    }
+    // Said on the way in, in whichever direction the setting points. The mode is kept with
+    // the session and survives being released - measured, against an earlier comment here
+    // that said the opposite - so a session told once to allow everything goes on allowing
+    // it for ever unless something says otherwise. Only ever setting it one way meant
+    // turning the setting off never reached a session that had already been told (#199).
+    await this.applyPermissionMode(session);
 
     this.adopt(sessionId, session);
     await this.enforceCap();
