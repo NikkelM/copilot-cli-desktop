@@ -133,6 +133,21 @@ type HistoryRewindUnavailableReason = NonNullable<
   Awaited<ReturnType<History['listRewindPoints']>>['unavailableReason']
 >;
 
+/** The tool call a permission request is about, when it names one. */
+function toolCallOf(request: PermissionRequest): string | null {
+  const id = (request as { toolCallId?: unknown }).toolCallId;
+  return typeof id === 'string' && id !== '' ? id : null;
+}
+
+/**
+ * How many answered tool calls to remember.
+ *
+ * Only ever read moments after the answer, by a duplicate of the request that was just
+ * answered, so this needs to cover the calls in flight at once rather than a session's
+ * history. Generous for that, and small enough to be beneath noticing.
+ */
+const ANSWERS_KEPT = 64;
+
 /**
  * Why a session cannot be rewound, in this app's words.
  *
@@ -350,6 +365,8 @@ export class SessionRuntime {
   private readonly onPermissionResolved?: (sessionId: string, requestId: string) => void;
   /** What each waiting permission request asked, so its answer can name what it approves. */
   private readonly asked = new Map<string, PermissionRequest>();
+  /** What the reader decided about a tool call, so the same one is not asked about twice. */
+  private readonly answeredCalls = new Map<string, PermissionRequestResult>();
   private readonly onElicitationRequest?: (
     sessionId: string,
     requestId: string,
@@ -714,6 +731,12 @@ export class SessionRuntime {
       return Promise.resolve({ kind: 'user-not-available' });
     }
 
+    // Asked and answered already, for this very tool call. Putting it again would be
+    // asking the reader to repeat themselves, not checking with them a second time.
+    const callId = toolCallOf(request);
+    const already = callId ? this.answeredCalls.get(`${sessionId}:${callId}`) : undefined;
+    if (already) return already;
+
     const { requestId, expiresAt, answered } = this.permissions.add(sessionId);
     // Kept until the answer arrives: approving for the session means naming what is being
     // approved, and only the request says that. Dropped again in `permissionResolved`, so
@@ -723,6 +746,34 @@ export class SessionRuntime {
     const offerFolder = await this.folderWorthOffering(sessionId, request);
     this.onPermissionRequest(sessionId, requestId, request, expiresAt, offerFolder);
     return answered;
+  }
+
+  /**
+   * Remember what the reader decided about a tool call, so it is not asked about twice.
+   *
+   * One tool call can raise two requests. A write to a path outside the session's allowed
+   * directories trips both tool permission and path verification, which arrive as separate
+   * requests carrying byte-identical payloads milliseconds apart - measured, along with
+   * their sharing one `toolCallId` (#210). Nothing in the second differs from the first, so
+   * there is nothing in it for a reader to decide differently.
+   *
+   * Only what the reader actually answered. A request that lapsed was decided by a clock
+   * rather than a person, and standing in for somebody who never answered is the one thing
+   * this must not do.
+   *
+   * Bounded, and keyed by the call rather than the session: several tool calls can be
+   * waiting at once, so the most recent answer is not always the right one to reuse.
+   */
+  private rememberAnswer(sessionId: string, request: PermissionRequest, result: PermissionRequestResult): void {
+    const callId = toolCallOf(request);
+    if (!callId) return;
+
+    if (this.answeredCalls.size >= ANSWERS_KEPT) {
+      // Insertion order, so this is the least recently added rather than an arbitrary one.
+      const oldest = this.answeredCalls.keys().next().value;
+      if (oldest !== undefined) this.answeredCalls.delete(oldest);
+    }
+    this.answeredCalls.set(`${sessionId}:${callId}`, result);
   }
 
   /**
@@ -833,11 +884,13 @@ export class SessionRuntime {
           ? { kind: 'approve-for-session', ...(approval ? { approval } : {}) }
           : { kind: 'reject' };
 
-    this.settlePermission(requestId, result);
+    // Read before settling, which is what forgets the request this was about.
+    const sessionId = this.settlePermission(requestId, result);
+    if (sessionId && asked) this.rememberAnswer(sessionId, asked, result);
   }
 
-  private settlePermission(requestId: string, result: PermissionRequestResult): void {
-    this.permissions.settle(requestId, result);
+  private settlePermission(requestId: string, result: PermissionRequestResult): string | null {
+    return this.permissions.settle(requestId, result);
   }
 
   /**

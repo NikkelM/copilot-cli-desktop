@@ -3933,11 +3933,138 @@ describe('rewinding a session', () => {
 });
 
 /**
- * Letting a session work in a directory, rather than asking about it twice each time (#210).
+ * Asking once about one tool call (#210).
+ *
+ * A write to a path outside the session's allowed directories raises two requests for a
+ * single tool call - tool permission and path verification are separate gates - carrying
+ * byte-identical payloads and the same `toolCallId` milliseconds apart. Nothing in the
+ * second differs, so there is nothing in it to decide differently.
+ */
+describe('not asking twice about one tool call', () => {
+  /**
+   * Put the request without waiting on its answer.
+   *
+   * Returned unawaited on purpose: awaiting a call that answers with a promise flattens
+   * the two, so `await ask(...)` would wait for the decision nobody has made yet.
+   */
+  const ask = (harness: ReturnType<typeof makeRuntime>, request: Record<string, unknown>, of = 'a') =>
+    harness.permissionHandlers.get(of)?.(request);
+
+  /** Let the prompt reach the UI, which happens a few microtasks after the request. */
+  const prompted = async () => {
+    for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
+  };
+
+  const write = (over: Record<string, unknown> = {}) => ({
+    kind: 'write',
+    toolCallId: 'call-1',
+    fileName: join(sep === '\\' ? 'C:\\repo' : '/repo', 'a.ts'),
+    ...over,
+  });
+
+  it.each([
+    ['approve-for-session', { kind: 'approve-for-session', approval: { kind: 'write' } }],
+    ['approve-once', { kind: 'approve-once' }],
+    ['reject', { kind: 'reject' }],
+  ] as const)('answers the repeat the way %s answered the first', async (choice, expected) => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+
+    const first = ask(harness, write());
+    await prompted();
+    harness.runtime.resolvePermission(onPermissionRequest.mock.calls[0]?.[1] as string, choice);
+    await expect(first).resolves.toEqual(expected);
+
+    // The same tool call again, which is the duplicate the two gates produce.
+    const second = ask(harness, write());
+    await prompted();
+
+    await expect(second).resolves.toEqual(expected);
+    expect(onPermissionRequest).toHaveBeenCalledOnce();
+  });
+
+  // A different call is a different decision, however alike the two look.
+  it('asks again about a different tool call', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+
+    void ask(harness, write());
+    await prompted();
+    harness.runtime.resolvePermission(onPermissionRequest.mock.calls[0]?.[1] as string, 'approve-once');
+    void ask(harness, write({ toolCallId: 'call-2' }));
+    await prompted();
+
+    expect(onPermissionRequest).toHaveBeenCalledTimes(2);
+  });
+
+  // Two sessions can be running the same tool call id without having agreed about anything.
+  it('asks again in another session', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+    await harness.runtime.send('b', 'y');
+
+    void ask(harness, write());
+    await prompted();
+    harness.runtime.resolvePermission(onPermissionRequest.mock.calls[0]?.[1] as string, 'approve-once');
+    void ask(harness, write(), 'b');
+    await prompted();
+
+    expect(onPermissionRequest).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * The one thing this must not do. A request that lapsed was decided by a clock rather
+   * than by anybody, and standing in for somebody who never answered would turn one
+   * unanswered question into a standing answer.
+   */
+  it('asks again after a question nobody answered', async () => {
+    vi.useFakeTimers();
+    try {
+      const onPermissionRequest = vi.fn();
+      const harness = makeRuntime({ onPermissionRequest, permissionTimeoutMs: 1000 });
+      await harness.runtime.send('a', 'x');
+
+      const first = ask(harness, write());
+      await prompted();
+      await vi.advanceTimersByTimeAsync(1500);
+      await expect(first).resolves.toEqual({ kind: 'user-not-available' });
+
+      void ask(harness, write());
+      await prompted();
+
+      expect(onPermissionRequest).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Nothing to key the answer by, so nothing is remembered and nothing is skipped.
+  it('asks every time about a request naming no tool call', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await harness.runtime.send('a', 'x');
+
+    void ask(harness, { kind: 'shell', fullCommandText: 'ls' });
+    await prompted();
+    harness.runtime.resolvePermission(onPermissionRequest.mock.calls[0]?.[1] as string, 'approve-once');
+    void ask(harness, { kind: 'shell', fullCommandText: 'ls' });
+    await prompted();
+
+    expect(onPermissionRequest).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * Letting a session work in a directory, so it stops being asked about (#210).
  *
  * Tool permission and path verification are separate gates. A path outside the session's
- * allowed directories trips both, with byte-identical requests, which is why one edit is
- * asked about twice. Allowing the directory closes the second without touching the first.
+ * allowed directories trips both, which is what raises two requests for one edit. Allowing
+ * the directory stops the path gate firing for what comes after it - not for the call in
+ * flight, whose second request has already been raised by the time anybody can answer the
+ * first. That one is handled by not asking twice about a tool call at all.
  */
 describe('offering to allow a directory', () => {
   /**
