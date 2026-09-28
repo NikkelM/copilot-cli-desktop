@@ -359,32 +359,6 @@ body {
   margin-right: 8px;
 }
 
-/* In the header with the other two, and quieter than them: it changes how the list is
-   drawn rather than doing anything to a session. */
-.sidebar-compact {
-  flex-shrink: 0;
-  padding: 2px 6px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: none;
-  color: var(--text-muted);
-  font-size: var(--font-lg);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.sidebar-compact:hover {
-  border-color: var(--border);
-  color: var(--text);
-}
-
-.sidebar-compact.on {
-  border-color: var(--border);
-  background: var(--bg);
-  color: var(--text);
-}
-
-
 .session {
   display: flex;
   flex-direction: column;
@@ -2100,14 +2074,6 @@ button.group:hover {
   font-family: ui-monospace, monospace;
   font-size: var(--font-sm);
   font-weight: 600;
-}
-
-/* Said before the turn was stopped, and no more than that. */
-.message-partial {
-  margin: 2px 0 0;
-  color: var(--text-muted);
-  font-size: var(--font-sm);
-  font-style: italic;
 }
 
 .message.failed {
