@@ -703,3 +703,62 @@ describe('a marked row reaching past its text', () => {
     expect(pull.horizontal).toBe(-marked.horizontal);
   });
 });
+
+/**
+ * A name somebody else chose, kept to its row (#221).
+ *
+ * The app draws a lot of names it did not pick: session titles, plugin and server names,
+ * page titles, file paths. Every one of them is as long as somebody else decided, and one
+ * long enough pushes whatever shares its row - a status, a toggle, a Remove button - out of
+ * a panel that is already narrow.
+ *
+ * Nearly all of them were already held. Two were not, and nothing said so: `.environment-name`
+ * had no rule at all and `.wiki-result-title` had one that said nothing about width.
+ */
+describe('names the app did not choose the length of', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    if (at === -1) throw new Error(`no rule for ${selector}`);
+    return css.slice(at, css.indexOf('}', at));
+  };
+
+  /**
+   * Held to one line, or allowed to wrap onto more.
+   *
+   * Two answers rather than one: a sidebar row has the height to wrap into and a title reads
+   * better whole, while a row of chips and buttons has only its width. What is not an answer
+   * is neither, which is the row growing until something falls off the end of it.
+   */
+  const held = (selector: string) => {
+    const rule = block(selector);
+    return /text-overflow:\s*ellipsis/.test(rule) || /overflow-wrap|word-break|white-space:\s*pre-wrap/.test(rule);
+  };
+
+  it.each([
+    ['.session-title'],
+    ['.subagent-name'],
+    ['.environment-name'],
+    ['.environment-description'],
+    ['.wiki-folder-name'],
+    ['.wiki-result-title'],
+    ['.queue-text'],
+    ['.bin-title'],
+    ['.changes-path'],
+  ])('%s is held to its row', (selector) => {
+    expect(held(selector), 'so a long one cannot push its row around').toBe(true);
+  });
+
+  /**
+   * Ellipsis needs somewhere to happen.
+   *
+   * A flex child will not shrink below its content without being told to, so `overflow:
+   * hidden` on its own does nothing and the row grows anyway. This is the half that is easy
+   * to leave out, because the rule looks complete without it.
+   */
+  it.each([['.environment-name'], ['.environment-description'], ['.wiki-result-title']])(
+    '%s may shrink, so the ellipsis it asks for can happen',
+    (selector) => {
+      expect(block(selector)).toMatch(/min-width:\s*0/);
+    },
+  );
+});

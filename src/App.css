@@ -3478,6 +3478,21 @@ pre.fatal,
   text-overflow: ellipsis;
 }
 
+/*
+ * A name somebody else chose, kept to its row.
+ *
+ * Plugins, MCP servers, skills, agents, hooks and language servers all arrive here, and how
+ * long any of them is was decided elsewhere. Without this a long one pushes the status, the
+ * toggle and the buttons along the narrowest panel the app has. The whole of it stays
+ * readable on hover, which is what the `title` beside this is for.
+ */
+.environment-name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .environment-toggle {
   flex: none;
   margin-left: auto;
@@ -3890,7 +3905,13 @@ pre.fatal,
   background: var(--bg-raised);
 }
 
+/* A page title from the reader's own files, so how long it runs is not ours to assume. */
 .wiki-result-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--text);
   font-size: var(--font-md);
 }

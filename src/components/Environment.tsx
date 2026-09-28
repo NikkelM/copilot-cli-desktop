@@ -138,8 +138,14 @@ export function Environment({
             : 'Environment'}
         </span>
         <div className="changes-actions">
-          <button type="button" className="changes-action" onClick={onReload} disabled={loading}>
-            {loading ? 'Reading' : 'Reread'}
+          <button
+            type="button"
+            className="changes-action"
+            onClick={onReload}
+            disabled={loading}
+            title="Read what this session would load again"
+          >
+            {loading ? 'Reading…' : 'Refresh'}
           </button>
           <button type="button" className="changes-close" onClick={onClose} aria-label="Close environment">
             ✕
@@ -193,7 +199,7 @@ export function Environment({
                 {plugins.map((plugin) => (
                   <li key={`${plugin.marketplace}/${plugin.name}`} className="environment-item">
                     <span className={plugin.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                    <span>{plugin.name}</span>
+                    <span className="environment-name" title={plugin.name}>{plugin.name}</span>
                     <span className="environment-meta">{plugin.marketplace}</span>
                     {plugin.version && <span className="environment-meta">{plugin.version}</span>}
                     {!plugin.enabled && <span className="environment-off">off</span>}
@@ -222,7 +228,7 @@ export function Environment({
                           className={server.enabled ? 'environment-dot on' : 'environment-dot off'}
                           aria-hidden
                         />
-                        <span>{server.name}</span>
+                        <span className="environment-name" title={server.name}>{server.name}</span>
                         {server.type && <span className="environment-meta">{server.type}</span>}
                         {/* What it actually is, which is the thing a reader came to check and
                             the only part the list could not say before (#24). */}
@@ -425,7 +431,7 @@ export function Environment({
                 {hooks.map((hook) => (
                   <li key={hook.id} className="environment-item">
                     <span className={hook.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                    <span>{hook.event}</span>
+                    <span className="environment-name" title={hook.event}>{hook.event}</span>
                     <span className="environment-meta environment-description" title={hook.source}>
                       {hook.source ? fileName(hook.source) : ''}
                     </span>
@@ -458,7 +464,7 @@ export function Environment({
                 {lsps.map((lsp) => (
                   <li key={lsp.name} className="environment-item">
                     <span className={lsp.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                    <span>{lsp.name}</span>
+                    <span className="environment-name" title={lsp.name}>{lsp.name}</span>
                     {/* What it runs and what it is for, which is the whole of what a
                         language server's config says. */}
                     <span className="environment-meta environment-description" title={lsp.command}>
@@ -483,7 +489,7 @@ export function Environment({
                 {extensions.map((extension) => (
                   <li key={extension.id} className="environment-item">
                     <span className={extension.enabled ? 'environment-dot on' : 'environment-dot off'} aria-hidden />
-                    <span>{extension.name}</span>
+                    <span className="environment-name" title={extension.name}>{extension.name}</span>
                     <span className="environment-meta">{source(extension)}</span>
                     {!extension.enabled && <span className="environment-off">off</span>}
                   </li>

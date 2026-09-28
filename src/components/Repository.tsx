@@ -401,7 +401,13 @@ export function Repository({
               </button>
             </>
           )}
-          <button type="button" className="changes-action" onClick={onRefresh} disabled={loading}>
+          <button
+            type="button"
+            className="changes-action"
+            onClick={onRefresh}
+            disabled={loading}
+            title="Read the working tree again. Talks to no remote."
+          >
             {loading ? 'Reading…' : 'Refresh'}
           </button>
           <button type="button" className="changes-close" onClick={onClose} aria-label="Close source control">

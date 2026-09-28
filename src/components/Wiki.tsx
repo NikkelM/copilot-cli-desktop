@@ -317,7 +317,9 @@ function Results({
             className={result.path === openPath ? 'wiki-result on' : 'wiki-result'}
             onClick={() => onOpen(result.path)}
           >
-            <span className="wiki-result-title">{result.title}</span>
+            <span className="wiki-result-title" title={result.title}>
+              {result.title}
+            </span>
             {/* A sentence somebody wrote, preferred in this order: the prose around the
                 match, then the page's own description, then - for a page found by its
                 keywords with nothing to quote - the strongest reason it ranked. Listing all

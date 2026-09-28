@@ -162,7 +162,7 @@ describe('Environment', () => {
     const onReload = vi.fn();
     render(<Environment {...props} environment={environment()} onReload={onReload} />);
 
-    fireEvent.click(screen.getByText('Reread'));
+    fireEvent.click(screen.getByText('Refresh'));
 
     expect(onReload).toHaveBeenCalled();
   });
@@ -447,7 +447,7 @@ describe('Environment, switching an MCP server', () => {
 
   it('says which state it is in', () => {
     const { rerender } = shown({}, vi.fn());
-    expect(screen.getByTitle(/context7/).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTitle(/context7 in new sessions/).getAttribute('aria-pressed')).toBe('true');
 
     rerender(
       <Environment
@@ -459,7 +459,7 @@ describe('Environment, switching an MCP server', () => {
         onToggleMcp={vi.fn()}
       />,
     );
-    expect(screen.getByTitle(/context7/).getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByTitle(/context7 in new sessions/).getAttribute('aria-pressed')).toBe('false');
   });
 
   /**
@@ -475,7 +475,7 @@ describe('Environment, switching an MCP server', () => {
   it('offers no control when the caller cannot write the configuration', () => {
     shown({ enabled: false }, undefined);
 
-    expect(screen.queryByTitle(/context7/)).toBeNull();
+    expect(screen.queryByTitle(/context7 in new sessions/)).toBeNull();
     expect(screen.getByText('off')).toBeTruthy();
   });
 });
