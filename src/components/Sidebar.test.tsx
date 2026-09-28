@@ -343,6 +343,25 @@ describe('folding a group', () => {
     expect(screen.getByText('Cold one')).toBeTruthy();
   });
 
+  /** A group of one is a group, and "1 sessions" reads as a bug in the thing that wrote it. */
+  it('counts one session as one session', async () => {
+    show();
+    const loaded = screen.getByText('In memory').closest('button')!;
+
+    await userEvent.click(loaded);
+
+    expect(loaded.getAttribute('title')).toBe('Show the 1 session in this group');
+  });
+
+  it('counts several as several', async () => {
+    show();
+    const cold = screen.getByText('Not loaded').closest('button')!;
+
+    await userEvent.click(cold);
+
+    expect(cold.getAttribute('title')).toBe('Show the 2 sessions in this group');
+  });
+
   /** Folded, the count is the only thing left saying the sessions are still there. */
   it('says how many are folded away', async () => {
     show();

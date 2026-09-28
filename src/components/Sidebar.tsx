@@ -405,7 +405,11 @@ export function Sidebar({
                     className="group"
                     aria-expanded={!shut}
                     onClick={() => toggle(group.key, shut)}
-                    title={shut ? `Show the ${group.sessions.length} sessions in this group` : 'Collapse this group'}
+                    title={
+                      shut
+                        ? `Show the ${group.sessions.length} ${group.sessions.length === 1 ? 'session' : 'sessions'} in this group`
+                        : 'Collapse this group'
+                    }
                   >
                     <ChevronIcon open={!shut} />
                     {group.label}
