@@ -52,6 +52,11 @@ interface SidebarProps {
   onSelectSubagent?: (agentId: string) => void;
   /** Take one off the list before it ages out on its own. */
   onDismissSubagent?: (agentId: string) => void;
+  /** Ask for one to be kept, or let a kept one go (#180). */
+  onKeepSubagent?: (agentId: string) => void;
+  /** Whether a task can be kept, which is true once the log has been shown to hold it. */
+  keepableSubagent?: (agentId: string) => boolean;
+  isKeptSubagent?: (agentId: string) => boolean;
   /** Folds the sidebar away. Absent leaves the header without the control. */
   onToggle?: () => void;
   /** What right-clicking a session offers. Absent leaves the rows with no menu at all. */
@@ -183,6 +188,9 @@ export function Sidebar({
   selectedSubagentId,
   onSelectSubagent,
   onDismissSubagent,
+  onKeepSubagent,
+  keepableSubagent,
+  isKeptSubagent,
   favourites = [],
   archived = [],
   tags = {},
@@ -489,6 +497,9 @@ export function Sidebar({
                           selectedSubagentId={selectedSubagentId}
                           onSelectSubagent={onSelectSubagent}
                           onDismissSubagent={onDismissSubagent}
+                          onKeepSubagent={onKeepSubagent}
+                          keepable={keepableSubagent}
+                          isKept={isKeptSubagent}
                         />
                       </li>
                     ))}
@@ -550,12 +561,19 @@ function Delegated({
   selectedSubagentId,
   onSelectSubagent,
   onDismissSubagent,
+  onKeepSubagent,
+  keepable,
+  isKept,
 }: {
   subagents?: WatchedSubagent[];
   sessionId: string;
   selectedSubagentId?: string | null;
   onSelectSubagent?: (agentId: string) => void;
   onDismissSubagent?: (agentId: string) => void;
+  onKeepSubagent?: (agentId: string) => void;
+  /** Whether a task can be kept, which is true once the log has been shown to hold it. */
+  keepable?: (agentId: string) => boolean;
+  isKept?: (agentId: string) => boolean;
 }) {
   const mine = subagents?.filter((entry) => entry.sessionId === sessionId) ?? [];
   if (mine.length === 0 || !onSelectSubagent) return null;
@@ -576,6 +594,22 @@ function Delegated({
             <span className="subagent-name">{entry.name}</span>
             {entry.outcome === 'failed' && <span className="subagent-failed">failed</span>}
           </button>
+          {/* Kept tasks stop ageing out, which is the whole point: the long audit worth
+              coming back to is the first one the conversation leaves behind (#180). Only
+              offered once the log holds its work, since that is what makes keeping it cost
+              a name rather than its megabytes. */}
+          {onKeepSubagent && keepable?.(entry.agentId) && (
+            <button
+              type="button"
+              className={`subagent-keep${isKept?.(entry.agentId) ? ' kept' : ''}`}
+              onClick={() => onKeepSubagent(entry.agentId)}
+              title={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
+              aria-label={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
+              aria-pressed={isKept?.(entry.agentId) ?? false}
+            >
+              ★
+            </button>
+          )}
           {onDismissSubagent && (
             <button
               type="button"

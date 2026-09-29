@@ -5757,3 +5757,26 @@ pre.fatal,
   color: var(--text-muted);
   font-size: var(--font-md);
 }
+
+/* Keeping a delegated task, which stops it ageing out of the list. Drawn like the dismiss
+   beside it - both are things done to a row rather than parts of it. */
+.subagent-keep {
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.35;
+}
+
+.subagent-keep:hover,
+.subagent-keep:focus-visible {
+  opacity: 1;
+}
+
+.subagent-keep.kept {
+  color: var(--accent);
+  opacity: 1;
+}

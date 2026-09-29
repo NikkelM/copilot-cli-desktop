@@ -1242,6 +1242,9 @@ export default function App() {
         onDismissSubagent={(agentId) => {
           subagents.dismiss(agentId);
         }}
+        onKeepSubagent={subagents.keep}
+        keepableSubagent={subagents.keepable}
+        isKeptSubagent={subagents.isKept}
       />
 
       <SidebarGrip

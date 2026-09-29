@@ -554,3 +554,134 @@ describe('a session being let go', () => {
     expect(result.current.openId).toBeNull();
   });
 });
+
+/**
+ * Keeping a delegated task, so it stops ageing out (#180).
+ *
+ * The list lets a task go a few prompts after it finishes, which is right for the common
+ * case and wrong for the one that matters most: a long audit is exactly the task worth
+ * returning to an hour later, and it is the first to go.
+ */
+describe('keeping a delegated task', () => {
+  const settle = async (result: { current: ReturnType<typeof useSubagents> }, agentId: string) => {
+    await act(async () => {
+      result.current.observe('s1', finished(agentId));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+
+  const handedOver = (agentId: string) => {
+    getAgentTranscript.mockResolvedValue({ events: [started(agentId), working(agentId, 'one')] });
+  };
+
+  it('offers nothing to keep while this app is the only copy', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+
+    expect(result.current.keepable('a1')).toBe(false);
+  });
+
+  it('offers to keep one the log was shown to hold', async () => {
+    handedOver('a1');
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    await settle(result, 'a1');
+
+    expect(result.current.keepable('a1')).toBe(true);
+  });
+
+  it('keeps nothing it could not offer to keep', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+
+    act(() => result.current.keep('a1'));
+
+    expect(result.current.isKept('a1')).toBe(false);
+  });
+
+  it('keeps one, and lets it go when asked again', async () => {
+    handedOver('a1');
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    await settle(result, 'a1');
+
+    act(() => result.current.keep('a1'));
+    expect(result.current.isKept('a1')).toBe(true);
+
+    act(() => result.current.keep('a1'));
+    expect(result.current.isKept('a1')).toBe(false);
+  });
+
+  /** The point of keeping one: the prompts that age the others leave it alone. */
+  it('stays through the prompts that age the rest out', async () => {
+    handedOver('a1');
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s1', started('a2')));
+    await settle(result, 'a1');
+    act(() => result.current.observe('s1', finished('a2')));
+    act(() => result.current.keep('a1'));
+
+    for (let at = 0; at < 6; at++) act(() => result.current.observe('s1', prompt()));
+
+    expect(result.current.watched.map((entry) => entry.agentId)).toEqual(['a1']);
+  });
+
+  it('stays when its session is let go', async () => {
+    handedOver('a1');
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    await settle(result, 'a1');
+    act(() => result.current.keep('a1'));
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.watched).toHaveLength(1);
+  });
+
+  // Dismissing one is the plainest way of saying to stop keeping it.
+  it('stops keeping one that is dismissed', async () => {
+    handedOver('a1');
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    await settle(result, 'a1');
+    act(() => result.current.keep('a1'));
+
+    act(() => result.current.dismiss('a1'));
+
+    expect(result.current.isKept('a1')).toBe(false);
+    expect(result.current.watched).toEqual([]);
+  });
+
+  /**
+   * A task worth keeping for an hour is worth keeping over lunch. It comes back from what
+   * was written down about it, with its work left in the log to be read when it is opened.
+   */
+  it('is offered again after a restart', async () => {
+    handedOver('a1');
+    const first = renderHook(() => useSubagents());
+    act(() => first.result.current.observe('s1', started('a1', 'deep-audit')));
+    await settle(first.result, 'a1');
+    act(() => first.result.current.keep('a1'));
+    first.unmount();
+
+    const { result } = renderHook(() => useSubagents());
+
+    expect(result.current.watched).toMatchObject([
+      { agentId: 'a1', sessionId: 's1', name: 'deep-audit', onDisk: true, events: [] },
+    ]);
+  });
+
+  it('is not offered again once it has been let go', async () => {
+    handedOver('a1');
+    const first = renderHook(() => useSubagents());
+    act(() => first.result.current.observe('s1', started('a1')));
+    await settle(first.result, 'a1');
+    act(() => first.result.current.keep('a1'));
+    act(() => first.result.current.keep('a1'));
+    first.unmount();
+
+    expect(renderHook(() => useSubagents()).result.current.watched).toEqual([]);
+  });
+});

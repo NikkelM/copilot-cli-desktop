@@ -576,6 +576,46 @@ describe('Sidebar subagents', () => {
     shown({ subagents: [watched()], onSelectSubagent: undefined });
     expect(screen.queryByText('deep-audit')).toBeNull();
   });
+
+  /**
+   * Keeping a task stops it ageing out (#180). Only offered once the log holds its work,
+   * since a kept row that opens onto nothing would be worse than no row.
+   */
+  describe('keeping one', () => {
+    const keepable = () => true;
+
+    it('offers nothing while this app is the only copy of the work', () => {
+      shown({ subagents: [watched()], onKeepSubagent: () => {}, keepableSubagent: () => false });
+      expect(screen.queryByRole('button', { name: /^Keep / })).toBeNull();
+    });
+
+    it('offers to keep one the log holds', () => {
+      shown({ subagents: [watched()], onKeepSubagent: () => {}, keepableSubagent: keepable });
+      expect(screen.getByRole('button', { name: 'Keep deep-audit' })).toBeTruthy();
+    });
+
+    it('asks for it to be kept', async () => {
+      const onKeepSubagent = vi.fn();
+      shown({ subagents: [watched()], onKeepSubagent, keepableSubagent: keepable });
+
+      await userEvent.click(screen.getByRole('button', { name: 'Keep deep-audit' }));
+
+      expect(onKeepSubagent).toHaveBeenCalledWith('a1');
+    });
+
+    /** A kept row says so, and offers the way back out rather than the way in again. */
+    it('says when one is kept', () => {
+      shown({
+        subagents: [watched()],
+        onKeepSubagent: () => {},
+        keepableSubagent: keepable,
+        isKeptSubagent: () => true,
+      });
+
+      const button = screen.getByRole('button', { name: 'Stop keeping deep-audit' });
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+    });
+  });
 });
 
 

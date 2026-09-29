@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 
 import { getAgentTranscript } from './sidecar';
+import { useKeptSubagents } from './useKeptSubagents';
 import { subagentNameIn } from './timeline';
 import { appendLive } from './timeline';
 import type { TranscriptEvent } from '../../shared/protocol';
@@ -56,7 +57,17 @@ export interface WatchedSubagent {
  * costs its entry rather than a second copy of its work.
  */
 export function useSubagents() {
-  const [watched, setWatched] = useState<WatchedSubagent[]>([]);
+  const keeping = useKeptSubagents();
+  /**
+   * What is watched, seeded with what was kept (#180).
+   *
+   * A kept task is offered again from what was written down about it rather than from what
+   * this app saw happen, which is how one survives a restart at all. Its work is not here:
+   * that is read from the log when the task is opened, and is why keeping one is cheap.
+   */
+  const [watched, setWatched] = useState<WatchedSubagent[]>(() =>
+    keeping.kept.map((entry) => ({ ...entry, events: [], onDisk: true })),
+  );
   /** Which delegated task is being read in place of its session, if any. */
   const [openId, setOpenId] = useState<string | null>(null);
   /** Each watched task's session, for the handlers that run outside a render. */
@@ -82,6 +93,8 @@ export function useSubagents() {
   const settled = useRef(new Set<string>());
   /** The list as it is now, for the handlers and reads that run outside a render. */
   const watchedNow = useRef<WatchedSubagent[]>([]);
+  /** Which tasks were asked for, readable from the handlers that run outside a render. */
+  const keptNow = useRef(new Set<string>());
 
   /**
    * Hand a finished run over to the log, once the log can be shown to have it (#178).
@@ -117,6 +130,7 @@ export function useSubagents() {
   }, []);
 
   watchedNow.current = watched;
+  keptNow.current = new Set(keeping.kept.map((entry) => entry.agentId));
 
   /** Take a session event, and keep whatever it says about a subagent. */
   const observe = useCallback((sessionId: string, event: TranscriptEvent) => {
@@ -159,6 +173,8 @@ export function useSubagents() {
 
       setWatched((current) => {
         const kept = current.filter((entry) => {
+          // Asked for, so it stays until it is explicitly let go (#180).
+          if (keptNow.current.has(entry.agentId)) return true;
           if (entry.sessionId !== sessionId || !entry.outcome) return true;
           return seen - (finishedAt.current.get(entry.agentId)?.at ?? seen) < PROMPTS_BEFORE_STALE;
         });
@@ -216,7 +232,7 @@ export function useSubagents() {
     // over a render ago, and computed outside the updater because React runs updaters twice
     // under StrictMode.
     const gone = [...ofSession.current]
-      .filter(([agentId, of]) => of === sessionId && !settled.current.has(agentId))
+      .filter(([agentId, of]) => of === sessionId && !settled.current.has(agentId) && !keptNow.current.has(agentId))
       .map(([agentId]) => agentId);
 
     for (const agentId of gone) {
@@ -231,10 +247,43 @@ export function useSubagents() {
   }, []);
 
   /** Take one off the list, for a reader who is done with it before this app decides. */
-  const dismiss = useCallback((agentId: string) => {
-    finishedAt.current.delete(agentId);
-    setOpenId((current) => (current === agentId ? null : current));
-    setWatched((current) => current.filter((entry) => entry.agentId !== agentId));
+  const dismiss = useCallback(
+    (agentId: string) => {
+      finishedAt.current.delete(agentId);
+      setOpenId((current) => (current === agentId ? null : current));
+      setWatched((current) => current.filter((entry) => entry.agentId !== agentId));
+      // Dismissing one that was being kept is the plainest way of saying to stop keeping it.
+      keeping.drop(agentId);
+    },
+    [keeping],
+  );
+
+  /**
+   * Ask for a task to be kept, or let a kept one go (#180).
+   *
+   * Only once the log has been shown to hold its work. Before that this app is the task's
+   * only copy, so keeping it would mean keeping its events in memory indefinitely and
+   * coming back after a restart to a row that opens onto nothing.
+   */
+  const keep = useCallback(
+    (agentId: string) => {
+      const entry = watchedNow.current.find((each) => each.agentId === agentId);
+      if (!entry || !entry.onDisk) return;
+
+      keeping.toggle({
+        agentId,
+        sessionId: entry.sessionId,
+        name: entry.name,
+        ...(entry.outcome ? { outcome: entry.outcome } : {}),
+      });
+    },
+    [keeping],
+  );
+
+  /** Whether a task can be asked for, which is what the sidebar offers the button on. */
+  const keepable = useCallback((agentId: string) => {
+    const entry = watchedNow.current.find((each) => each.agentId === agentId);
+    return Boolean(entry?.onDisk);
   }, []);
 
   const find = useCallback(
@@ -253,5 +302,18 @@ export function useSubagents() {
    */
   ofSession.current = new Map(watched.map((entry) => [entry.agentId, entry.sessionId]));
 
-  return { watched, observe, forget, dismiss, find, open, openId, setOpenId, close };
+  return {
+    watched,
+    observe,
+    forget,
+    dismiss,
+    find,
+    open,
+    openId,
+    setOpenId,
+    close,
+    keep,
+    keepable,
+    isKept: keeping.isKept,
+  };
 }
