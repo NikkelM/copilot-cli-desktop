@@ -78,7 +78,7 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useRewind } from './lib/useRewind';
-import { countLines, humanSize, placeholder, worthCollapsing, worthWriting } from './lib/longPaste';
+import { countLines, humanSize, placeholder, worthCollapsing, worthWriting, written } from './lib/longPaste';
 import { useEnvironment } from './lib/useEnvironment';
 import { useDisabledSkills } from './lib/useDisabledSkills';
 import { useDrafts } from './lib/useDrafts';
@@ -311,30 +311,35 @@ export default function App() {
   /**
    * Decide what a pasted block leaves in the box (#55).
    *
-   * Three answers, and the placeholder is the same for the last two. Most pastes are short
-   * and are left exactly where they land. A long one is held, so what is being written stays
-   * readable. One too large to be a message is also written to a file, because past a point
-   * it is a document - and the agent is better given the path than the wall.
+   * Three answers. Most pastes are short and are left exactly where they land. A long one is
+   * held, so what is being written stays readable. One too large to be a message is also
+   * written to a file, because past a point it is a document - and the agent is better given
+   * the path than the wall.
    *
-   * The write is started here and not waited for. The box cannot wait, and it does not need
-   * to: a message sent before it lands carries the text, which is what it would have carried
-   * anyway. Nothing is ever a reference to a file that is not there yet.
+   * A paste going to a file says so from the start rather than being renamed once the write
+   * lands. Everything the box needs to say it - the size and which paste it is - is known
+   * here, and only the path is not, so naming it by its length first would put a label in
+   * the box for long enough to read and then take it away.
+   *
+   * The write itself is not waited for. A message sent before it lands carries the text,
+   * which is what it would have carried anyway, so nothing is ever a reference to a file
+   * that is not there yet. If the write fails the box is told, and says what it should have
+   * said all along.
    */
   function holdPaste(sessionId: string, text: string): string | null {
     if (!worthCollapsing(text)) return null;
 
     const lines = countLines(text);
-    const id = drafts.hold(sessionId, text, lines);
+    if (!worthWriting(text)) return placeholder(drafts.hold(sessionId, text, lines), lines);
 
-    if (worthWriting(text)) {
-      const size = humanSize(new TextEncoder().encode(text).length);
-      void stashPaste({ sessionId, name: `pasted-${lines}-lines.txt`, data: btoa(unescape(encodeURIComponent(text))) })
-        .then((path) => drafts.wroteTo(sessionId, id, path, size))
-        // The paste is still held, so this costs the file rather than the text.
-        .catch(() => undefined);
-    }
+    const size = humanSize(new TextEncoder().encode(text).length);
+    const id = drafts.hold(sessionId, text, lines, size);
+    void stashPaste({ sessionId, name: `pasted-${lines}-lines.txt`, data: btoa(unescape(encodeURIComponent(text))) })
+      .then((path) => drafts.wroteTo(sessionId, id, path, size))
+      // The paste is still held, so this costs the file rather than the text.
+      .catch(() => drafts.writeFailed(sessionId, id));
 
-    return placeholder(id, lines);
+    return written(id, size);
   }
 
   async function handlePaste(sessionId: string, files: File[]) {

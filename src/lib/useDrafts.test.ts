@@ -2,6 +2,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
+import { placeholder, written } from './longPaste';
 import { useDrafts } from './useDrafts';
 
 describe('writing that has not been sent', () => {
@@ -258,5 +259,142 @@ describe('letting go of a paste', () => {
     const { result } = renderHook(() => useDrafts());
 
     expect(() => result.current.release('never', '[Paste #1 - 1 lines]')).not.toThrow();
+  });
+
+  it('forgets a paste the message named by its file', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'a'.repeat(40), 1, '40 KB');
+    const typed = written(id, '40 KB');
+    act(() => result.current.write('s1', typed));
+    act(() => result.current.wroteTo('s1', id, 'C:\\p.txt', '40 KB'));
+
+    act(() => result.current.release('s1', typed));
+
+    expect(result.current.expand('s1', typed, 'sent')).toBe(typed);
+  });
+});
+
+/**
+ * A paste that goes to a file (#55).
+ *
+ * The box names it as saved the moment it lands, rather than naming it by its length and
+ * correcting itself once the write returns: the size and the id are both known straight
+ * away, and only the path is not. Naming it twice would put a label on screen for just long
+ * enough to read and then take it away.
+ */
+describe('naming a paste that went to a file', () => {
+  /** The path is for the agent, so nothing the reader can see changes when it arrives. */
+  it('leaves the box alone when the write lands', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'x', 65185, '6.2 MB');
+    const typed = `look at ${written(id, '6.2 MB')} please`;
+    act(() => result.current.write('s1', typed));
+
+    act(() => result.current.wroteTo('s1', id, 'C:\\p\\big.txt', '6.2 MB'));
+
+    expect(result.current.textOf('s1')).toBe(typed);
+  });
+
+  it('sends the saved paste as the reference to its file', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'x', 9, '1 KB');
+    act(() => result.current.write('s1', written(id, '1 KB')));
+    act(() => result.current.wroteTo('s1', id, 'C:\\p\\big.txt', '1 KB'));
+
+    expect(result.current.expand('s1', result.current.textOf('s1'), 'sent')).toBe(
+      '<pasted_content file="C:\\p\\big.txt" size="1 KB" lines="9" />',
+    );
+  });
+
+  /** Already the reader's form, so the conversation shows it as the box had it. */
+  it('shows the saved paste as it stands', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'x', 9, '1 KB');
+    const typed = written(id, '1 KB');
+    act(() => result.current.write('s1', typed));
+    act(() => result.current.wroteTo('s1', id, 'C:\\p\\big.txt', '1 KB'));
+
+    expect(result.current.expand('s1', typed, 'shown')).toBe(typed);
+  });
+
+  /**
+   * The label is a promise made before the write, so a message sent while it is in flight
+   * has to carry what the paste was rather than a reference to a file that is not there.
+   */
+  it('sends the text while the file is still being written', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'four hundred lines', 9, '1 KB');
+
+    expect(result.current.expand('s1', written(id, '1 KB'), 'sent')).toBe('four hundred lines');
+  });
+});
+
+/**
+ * When the promise the box made turns out to be wrong.
+ *
+ * Naming a paste as saved on the way in is the price of not renaming it afterwards, and
+ * this is the rare case where it was not true. The paste is still held, so the message
+ * still carries it - only the label was mistaken.
+ */
+describe('a paste that never reached its file', () => {
+  it('names it by its length after all', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'x', 9, '1 KB');
+    act(() => result.current.write('s1', `look at ${written(id, '1 KB')} please`));
+
+    act(() => result.current.writeFailed('s1', id));
+
+    expect(result.current.textOf('s1')).toBe(`look at ${placeholder(id, 9)} please`);
+  });
+
+  it('still carries the paste it was holding', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'four hundred lines', 9, '1 KB');
+    act(() => result.current.write('s1', written(id, '1 KB')));
+    act(() => result.current.writeFailed('s1', id));
+
+    expect(result.current.expand('s1', result.current.textOf('s1'), 'sent')).toBe('four hundred lines');
+  });
+
+  // Writing carries on while the file is being written, and it is not the paste.
+  it('leaves what was typed in the meantime', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'x', 9, '1 KB');
+    act(() => result.current.write('s1', `${written(id, '1 KB')} and a question`));
+    act(() => result.current.writeFailed('s1', id));
+
+    expect(result.current.textOf('s1')).toContain('and a question');
+  });
+
+  it('says nothing about a paste whose label was deleted', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'x', 9, '1 KB');
+    act(() => result.current.write('s1', 'changed my mind'));
+    act(() => result.current.writeFailed('s1', id));
+
+    expect(result.current.textOf('s1')).toBe('changed my mind');
+  });
+
+  /** A write that lands after all is the one that was right, so the label stands. */
+  it('leaves a label alone once the file is there', () => {
+    const { result } = renderHook(() => useDrafts());
+
+    const id = result.current.hold('s1', 'x', 9, '1 KB');
+    const typed = written(id, '1 KB');
+    act(() => result.current.write('s1', typed));
+    act(() => result.current.wroteTo('s1', id, 'C:\\p\\big.txt', '1 KB'));
+
+    act(() => result.current.writeFailed('s1', id));
+
+    expect(result.current.textOf('s1')).toBe(typed);
   });
 });

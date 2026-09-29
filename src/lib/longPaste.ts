@@ -64,6 +64,15 @@ export function placeholder(id: number, lines: number): string {
 const HELD = /\[Paste #(\d+)(?: - \d+ lines)?\]/g;
 
 /**
+ * The placeholder for a paste that went to a file, which is the CLI's pattern exactly.
+ *
+ * A second form rather than a flag on the first, because the box says which one a paste is:
+ * naming it by its length once it has a file would describe it as the thing it stopped
+ * being.
+ */
+const SAVED = /\[Saved pasted content to workspace \([^)]+\) id=(\d+)\]/g;
+
+/**
  * Who a restored paste is for.
  *
  * Only matters for one written to a file: 'sent' names the file so the agent can read it,
@@ -109,12 +118,25 @@ export function countLines(text: string): number {
  * inventing a paste would be worse than sending the line as written.
  */
 export function restore(text: string, held: ReadonlyMap<number, HeldPaste>, as: PasteForm): string {
-  return text.replace(HELD, (whole, id: string) => {
+  const named = text.replace(HELD, (whole, id: string) => {
     const paste = held.get(Number(id));
     if (!paste) return whole;
     if (!paste.file) return paste.text;
 
     return as === 'sent' ? reference(paste.file, paste.size ?? '', paste.lines) : written(Number(id), paste.size ?? '');
+  });
+
+  // The box says a paste went to a file, so this is already the reader's form and only the
+  // agent's has to be made.
+  if (as === 'shown') return named;
+
+  return named.replace(SAVED, (whole, id: string) => {
+    const paste = held.get(Number(id));
+    if (!paste) return whole;
+
+    // The label goes into the box as the paste lands, so it can be sent before the file
+    // exists. The text is what it stood for until then.
+    return paste.file ? reference(paste.file, paste.size ?? '', paste.lines) : paste.text;
   });
 }
 
@@ -124,9 +146,12 @@ export function restore(text: string, held: ReadonlyMap<number, HeldPaste>, as: 
  * Read from the text rather than tracked alongside it, because the text is what the reader
  * edited: a placeholder they deleted before sending is no longer carried by the message,
  * and one they never typed is not either.
+ *
+ * Both forms, since a paste that went to a file is named by the file from then on and would
+ * otherwise be held for as long as the session lasted.
  */
 export function idsIn(text: string): number[] {
-  return [...text.matchAll(HELD)].map(([, id]) => Number(id));
+  return [...text.matchAll(HELD), ...text.matchAll(SAVED)].map(([, id]) => Number(id));
 }
 
 /**

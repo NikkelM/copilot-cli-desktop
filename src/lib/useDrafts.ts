@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-import { type HeldPaste, idsIn, type PasteForm, restore } from './longPaste';
+import { type HeldPaste, idsIn, type PasteForm, placeholder, restore, written } from './longPaste';
 
 /**
  * How many pastes one session may hold behind placeholders at once.
@@ -83,11 +83,11 @@ export function useDrafts() {
    * the draft, which is state already. Putting them in state as well would redraw the
    * composer for a change nothing can see.
    */
-  const hold = useCallback((sessionId: string, text: string, lines: number): number => {
+  const hold = useCallback((sessionId: string, text: string, lines: number, size?: string): number => {
     const mine = (pastes.current[sessionId] ??= nothing());
     const id = mine.next++;
 
-    mine.held.set(id, { text, lines });
+    mine.held.set(id, { text, lines, size });
     drop(mine);
     return id;
   }, []);
@@ -95,25 +95,46 @@ export function useDrafts() {
   /**
    * Say where a held paste was written, once it has been.
    *
-   * Mutated in place rather than replaced: the id was handed out when the paste arrived and
-   * the placeholder carrying it is already in the box, so what changes is only what putting
-   * it back will produce.
+   * The box already says a file is where this went - it said so as the paste landed, since
+   * everything it needed to say it was known then. What arrives here is the path, which is
+   * for the agent rather than the reader, so nothing on screen changes.
    *
    * The text goes as the file arrives. Putting the paste back names the file from here on,
    * so keeping the text would hold megabytes nothing can reach - and the file outlives this
    * app, which the text does not, so a send that fails can still be retried from it.
-   *
-   * No behaviour reads it, which is the point: this frees memory and nothing else, so there
-   * is nothing here for a test to see.
    */
   const wroteTo = useCallback((sessionId: string, id: number, file: string, size: string) => {
     const paste = pastes.current[sessionId]?.held.get(id);
-    if (paste) {
-      paste.file = file;
-      paste.size = size;
-      paste.text = '';
-    }
+    if (!paste) return;
+
+    paste.file = file;
+    paste.size = size;
+    paste.text = '';
   }, []);
+
+  /**
+   * Take back what the box said about a paste that never reached a file.
+   *
+   * The box named it as saved on the way in, which is a promise rather than a report, and
+   * this is the rare case where it turns out to have been wrong. The paste is still held, so
+   * the message still carries it - only the label was mistaken, and it goes back to naming
+   * the paste by its length.
+   *
+   * Only the label, and only if it is still there: anything typed since is somebody's.
+   */
+  const writeFailed = useCallback(
+    (sessionId: string, id: number) => {
+      const paste = pastes.current[sessionId]?.held.get(id);
+      if (!paste || paste.file) return;
+
+      const claimed = written(id, paste.size ?? '');
+      const draft = draftsNow.current[sessionId] ?? '';
+      // Split rather than replace: the label is full of characters a pattern would read as
+      // instructions.
+      if (draft.includes(claimed)) write(sessionId, draft.split(claimed).join(placeholder(id, paste.lines)));
+    },
+    [write],
+  );
 
   /** Put every paste this session is holding back into a message, for the agent or the reader. */
   const expand = useCallback((sessionId: string, text: string, as: PasteForm): string => {
@@ -148,6 +169,7 @@ export function useDrafts() {
     swap,
     hold,
     wroteTo,
+    writeFailed,
     expand,
     release,
   };
