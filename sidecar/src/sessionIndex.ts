@@ -214,6 +214,30 @@ function summarise(row: SessionRow, log: Stats | undefined): SessionSummary {
 }
 
 /**
+ * A session the database has never heard of, described from what the CLI wrote for it.
+ *
+ * Only ever used for a session the runtime is holding, which is what makes the absence of a
+ * row mean "too new to have one" rather than "deleted". The times come from the file itself
+ * because the row that would have carried them does not exist; it was written as the
+ * session was made, so it says when that was.
+ */
+function fromWorkspace(sessionId: string, workspace: Workspace): SessionSummary {
+  const info = statSync(join(sessionStateDir(sessionId), 'workspace.yaml'), { throwIfNoEntry: false });
+  const at = (info?.mtime ?? new Date()).toISOString();
+
+  return {
+    sessionId,
+    title: workspace.name,
+    cwd: workspace.cwd,
+    repository: workspace.repository,
+    branch: workspace.branch,
+    createdAt: at,
+    updatedAt: at,
+    loaded: false,
+  };
+}
+
+/**
  * Read the sidebar model straight out of the CLI's own history database.
  *
  * This is the core of the app's resource story: listing every session
@@ -276,8 +300,25 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
       )
       .map(({ row, log }) => summarise(row, log));
 
+    // A session the runtime is holding that the database has never heard of.
+    //
+    // `keep` above can only rescue a row that exists, and since CLI 1.0.89 a session gets
+    // no row until it has something to say - so one just created has none at all, and the
+    // list that should have shown it came back without it. The window then selected a
+    // session it could not find and fell back to the empty pane, which looked exactly like
+    // the button having done nothing.
+    //
+    // Described from `workspace.yaml`, which the CLI writes as the session is made. That is
+    // the same file the rows above prefer for a name and a directory anyway, so this says
+    // no less about a new session than a row would have.
+    const missing = keep
+      .filter((sessionId) => !rows.some((row) => row.id === sessionId))
+      .map((sessionId) => ({ sessionId, workspace: readWorkspace(sessionId) }))
+      .filter((entry) => entry.workspace !== null)
+      .map(({ sessionId, workspace }) => fromWorkspace(sessionId, workspace as Workspace));
+
     // The SQL ordering used the turn timestamp, which lastActivity may have superseded.
-    return sessions.sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
+    return [...sessions, ...missing].sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
   } finally {
     db.close();
   }

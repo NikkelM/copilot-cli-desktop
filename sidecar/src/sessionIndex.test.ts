@@ -202,9 +202,74 @@ describe('listSessions', () => {
   it('does not list a held session twice', async () => {
     store.addSession('used', { summary: 'Has a name' });
     store.addTurn('used', 0, 'hi', 'hello', '2026-09-05 10:00:00');
+    // With its own workspace file too, which is the other place a session can be described
+    // from: one that can be built twice has to be listed once.
+    store.addState('used', { cwd: 'C:\\work\\thing' });
 
     const { listSessions } = await loadIndex();
     expect(listSessions(['used']).map((s) => s.sessionId)).toEqual(['used']);
+  });
+
+  /**
+   * Since CLI 1.0.89 a session gets no database row until it has something to say, so one
+   * just created has none at all - and a clause that rescues rows cannot rescue a session
+   * that has none. The list came back without it, the window selected a session it could
+   * not find, and the button looked as though it had done nothing.
+   */
+  describe('a held session the database has never heard of', () => {
+    it('lists it from what the CLI wrote when it was made', async () => {
+      store.addState('rowless', { cwd: 'C:\\work\\thing' });
+
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions(['rowless']).map((s) => s.sessionId)).toEqual(['rowless']);
+      expect(listSessions(['rowless'])[0]?.cwd).toBe('C:\\work\\thing');
+    });
+
+    it('carries the name the session was given', async () => {
+      store.addState('rowless', { name: 'What I called it', userNamed: true });
+
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions(['rowless'])[0]?.title).toBe('What I called it');
+    });
+
+    /** Without a row it cannot be told from a session that was deleted. */
+    it('says nothing about one whose directory is not there', async () => {
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions(['never'])).toEqual([]);
+    });
+
+    // Only sessions the runtime is holding, or every abandoned directory would be a row.
+    it('says nothing about one nobody is holding', async () => {
+      store.addState('rowless', { cwd: 'C:\\work\\thing' });
+
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions()).toEqual([]);
+    });
+
+    it('lists it beside the sessions that do have rows', async () => {
+      store.addSession('old', { summary: 'Has a name' });
+      store.addTurn('old', 0, 'hi', 'hello', '2020-01-01 10:00:00');
+      store.addState('rowless', { cwd: 'C:\\work\\thing' });
+
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions(['rowless']).map((s) => s.sessionId).sort()).toEqual(['old', 'rowless']);
+    });
+
+    /** Newest first, as the rest of the list is, and a new session is the newest there is. */
+    it('puts it above sessions last used long ago', async () => {
+      store.addSession('old', { summary: 'Has a name' });
+      store.addTurn('old', 0, 'hi', 'hello', '2020-01-01 10:00:00');
+      store.addState('rowless', { cwd: 'C:\\work\\thing' });
+
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions(['rowless'])[0]?.sessionId).toBe('rowless');
+    });
   });
 
   /**
