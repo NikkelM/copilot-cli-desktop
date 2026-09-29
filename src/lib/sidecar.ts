@@ -12,6 +12,7 @@ import type {
   ElicitationResolvedNotification,
   FileDiff,
   GetTranscriptResult,
+  TranscriptEvent,
   ListSessionsResult,
   SessionMatch,
   McpServerConfig,
@@ -585,6 +586,16 @@ export function getTranscript(
   before?: number,
 ): Promise<GetTranscriptResult> {
   return request('sessions.transcript', { sessionId, limit, before });
+}
+
+/**
+ * Replays one subagent's own transcript from its session's log (#178).
+ *
+ * Read rather than remembered, so a delegating session is not holding every agent's work
+ * for as long as it is open.
+ */
+export function getAgentTranscript(sessionId: string, agentId: string): Promise<{ events: TranscriptEvent[] }> {
+  return request('sessions.agentTranscript', { sessionId, agentId });
 }
 
 /**

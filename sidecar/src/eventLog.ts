@@ -171,6 +171,58 @@ export async function readTranscript(
 }
 
 /**
+ * One subagent's own transcript, read from its session's log (#178).
+ *
+ * The parent holds a subagent's events in memory so the row that delegated it can draw
+ * them, which is a commitment that grows with every delegation a session makes - one run
+ * here comes to 3.3 MB. Reading them back instead means the parent need only remember that
+ * the agent existed.
+ *
+ * Backwards from the end, in the same growing window the transcript pages with, and stops
+ * at the `subagent.started` that opened the run. That is what makes this affordable: a run
+ * is contiguous, so the work is proportional to how recently it happened rather than to the
+ * log. Measured against the largest log on this machine, 697 MB: the newest run began 0.54
+ * MB from the end, and reading it whole took 5 ms.
+ *
+ * A run still in flight has no `subagent.started` behind it only if the window ran out
+ * first, so what comes back is what the log has - the caller decides whether that is
+ * enough, since it is the one holding the live events this may be behind.
+ */
+export async function readAgentTranscript(sessionId: string, agentId: string): Promise<TranscriptEvent[]> {
+  const path = sessionEventLog(sessionId);
+  if (!existsSync(path)) return [];
+
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    if (size === 0) return [];
+
+    let window = Math.min(INITIAL_WINDOW, size);
+
+    for (;;) {
+      const start = Math.max(0, size - window);
+      const reachedStart = start === 0;
+
+      const buffer = Buffer.alloc(size - start);
+      await file.read(buffer, 0, buffer.length, start);
+
+      const mine = locateEvents(buffer, start, reachedStart)
+        .map((entry) => entry.event)
+        .filter((event) => event.agentId === agentId);
+
+      // The announcement that opened the run, so everything it did is behind us.
+      const whole = mine.some((event) => event.type === 'subagent.started');
+
+      if (whole || reachedStart || window >= MAX_WINDOW) return mine;
+
+      window = Math.min(window * GROWTH_FACTOR, size, MAX_WINDOW);
+    }
+  } finally {
+    await file.close();
+  }
+}
+
+/**
  * The model a session was last using, read from its log.
  *
  * Read from both ends, because neither alone is enough. A change is recorded wherever it

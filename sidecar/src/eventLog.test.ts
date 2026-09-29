@@ -913,3 +913,105 @@ describe('finding a turn in a log', () => {
     expect(page.events[0]?.timestamp).toBe('2026-01-01T00:00:05.000Z');
   });
 });
+
+/**
+ * One agent's work, read back rather than remembered (#178).
+ *
+ * The delegating session holds a subagent's events so the row that delegated it can draw
+ * them, which grows with every delegation a session makes. The log already has all of it.
+ */
+describe('readAgentTranscript', () => {
+  const agent = (agentId: string, type: string, content = '') =>
+    JSON.stringify({ type, agentId, data: { content } });
+
+  it('returns nothing when the session has no log', async () => {
+    const { readAgentTranscript } = await loadEventLog();
+    expect(await readAgentTranscript('missing', 'a1')).toEqual([]);
+  });
+
+  it('returns nothing for a log with nothing in it', async () => {
+    const { readAgentTranscript } = await loadEventLog();
+    writeLog('s', []);
+    expect(await readAgentTranscript('s', 'a1')).toEqual([]);
+  });
+
+  it('gathers one agent own work in the order it happened', async () => {
+    const { readAgentTranscript } = await loadEventLog();
+    writeLog('s', [
+      line(1),
+      agent('a1', 'subagent.started'),
+      agent('a1', 'user.message', 'go'),
+      agent('a1', 'assistant.message', 'done'),
+      line(2),
+    ]);
+
+    const events = await readAgentTranscript('s', 'a1');
+
+    expect(events.map((event) => event.type)).toEqual([
+      'subagent.started',
+      'user.message',
+      'assistant.message',
+    ]);
+  });
+
+  /** The whole point of the id: two runs in one log are two different transcripts. */
+  it('tells one agent work from another', async () => {
+    const { readAgentTranscript } = await loadEventLog();
+    writeLog('s', [
+      agent('a1', 'subagent.started'),
+      agent('a1', 'assistant.message', 'mine'),
+      agent('a2', 'subagent.started'),
+      agent('a2', 'assistant.message', 'theirs'),
+    ]);
+
+    const events = await readAgentTranscript('s', 'a1');
+
+    expect(events).toHaveLength(2);
+    expect(events.every((event) => event.agentId === 'a1')).toBe(true);
+  });
+
+  // The session's own conversation is the parent's, and is not this agent's work.
+  it('leaves the session own events out of it', async () => {
+    const { readAgentTranscript } = await loadEventLog();
+    writeLog('s', [line(1), agent('a1', 'subagent.started'), line(2), agent('a1', 'assistant.message', 'x'), line(3)]);
+
+    expect(await readAgentTranscript('s', 'a1')).toHaveLength(2);
+  });
+
+  it('has nothing to say about an agent that never ran here', async () => {
+    const { readAgentTranscript } = await loadEventLog();
+    writeLog('s', [line(1), agent('a1', 'subagent.started')]);
+
+    expect(await readAgentTranscript('s', 'other')).toEqual([]);
+  });
+
+  /**
+   * A run is contiguous, so reaching the announcement that opened it means everything it
+   * did is already behind us - which is what keeps this proportional to the run rather
+   * than to a log that reaches hundreds of megabytes.
+   */
+  it('reaches back past a window full of somebody else conversation', async () => {
+    const { readAgentTranscript } = await loadEventLog();
+    // Comfortably past the first window, so the read has to grow to find the run at all.
+    const filler = Array.from({ length: 4000 }, (_, at) =>
+      JSON.stringify({ type: 'user.message', data: { content: `m${at} ${'.'.repeat(200)}` } }),
+    );
+    writeLog('s', [
+      agent('a1', 'subagent.started'),
+      agent('a1', 'assistant.message', 'x'.repeat(200)),
+      ...filler,
+    ]);
+
+    const events = await readAgentTranscript('s', 'a1');
+
+    expect(events.map((event) => event.type)).toEqual(['subagent.started', 'assistant.message']);
+  });
+
+  /** A run still being written has no start behind it yet, and what it has is still worth having. */
+  it('returns what the log has for a run that has not been opened in it', async () => {
+    const { readAgentTranscript } = await loadEventLog();
+    writeLog('s', [agent('a1', 'assistant.message', 'mid-run')]);
+
+    expect(await readAgentTranscript('s', 'a1')).toHaveLength(1);
+  });
+});

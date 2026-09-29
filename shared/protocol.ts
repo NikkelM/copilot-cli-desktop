@@ -1094,6 +1094,14 @@ export interface SidecarRequests {
   /** Which of the given sessions still exist on disk, so what the app remembers can be pruned. */
   'sessions.exist': { params: { sessionIds: string[] }; result: { sessionIds: string[] } };
   'sessions.transcript': { params: GetTranscriptParams; result: GetTranscriptResult };
+  /**
+   * One subagent's own transcript, read from the session's log rather than held (#178).
+   *
+   * Separate from `sessions.transcript` because it answers a different question: not what
+   * this conversation says, but what one agent it delegated to did. The events are the same
+   * shape, so the same renderer draws them.
+   */
+  'sessions.agentTranscript': { params: { sessionId: string; agentId: string }; result: { events: TranscriptEvent[] } };
   'sessions.send': { params: SendParams; result: SendResult };
   'sessions.abort': { params: { sessionId: string }; result: void };
   /**
@@ -1599,6 +1607,7 @@ export const SIDECAR_METHODS = [
   'sessions.find',
   'sessions.exist',
   'sessions.transcript',
+  'sessions.agentTranscript',
   'sessions.send',
   'sessions.abort',
   'sessions.shell',

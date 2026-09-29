@@ -77,6 +77,7 @@ import { clockFrom, intentOf, subagentNameIn } from './lib/timeline';
 import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
+import { useAgentEvents } from './lib/useAgentEvents';
 import { useRewind } from './lib/useRewind';
 import { countLines, humanSize, placeholder, worthCollapsing, worthWriting, written } from './lib/longPaste';
 import { useEnvironment } from './lib/useEnvironment';
@@ -105,6 +106,9 @@ import { useTauriEvent } from './lib/useTauriEvent';
 import './App.css';
 
 /** Where showing the model's thinking is remembered, so ctrl+t survives a restart. */
+
+/** One array, so a render with no subagent open does not look like a change. */
+const EMPTY_EVENTS: TranscriptEvent[] = [];
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1130,6 +1134,18 @@ export default function App() {
         : null;
 
   /**
+   * The open subagent's own events, read from the log where the log has them (#178).
+   *
+   * A hook, so it is asked unconditionally rather than only in the branch that draws the
+   * subagent view - which is also why it takes the ids as null when none is open.
+   */
+  const agentEvents = useAgentEvents(
+    subagents.open?.sessionId ?? null,
+    subagents.open?.agentId ?? null,
+    subagents.open?.events ?? EMPTY_EVENTS,
+  );
+
+  /**
    * Copy a session into a new one and go to the copy.
    *
    * The sidecar opens the source before copying it, and refuses when it cannot: forking a
@@ -1301,11 +1317,11 @@ export default function App() {
                 nothing draws it - it is the space itself that matters. */}
             <div />
 
-            {/* Paged like any other transcript, by what a screenful costs to draw. Nothing
-                to fetch behind it - a watched task's events are all already held - so it
-                needs no older page, only the window the transcript keeps for itself. */}
+            {/* Paged like any other transcript, by what a screenful costs to draw. Read
+                back from the log where it can be, so a delegating session is not holding
+                every agent's work for as long as it stays open (#178). */}
             <Transcript
-              events={subagents.open.events}
+              events={agentEvents}
               sessionId={subagents.open.agentId}
               cwd={selected?.cwd ?? null}
               ofAgent={subagents.open.agentId}
