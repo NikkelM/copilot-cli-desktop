@@ -4,7 +4,7 @@ import { getAgentTranscript } from './sidecar';
 import { useKeptSubagents } from './useKeptSubagents';
 import { subagentNameIn } from './timeline';
 import { appendLive } from './timeline';
-import type { TranscriptEvent } from '../../shared/protocol';
+import { showsInTranscript, type TranscriptEvent } from '../../shared/protocol';
 
 /**
  * How many prompts a finished subagent survives before it stops being offered.
@@ -121,7 +121,17 @@ export function useSubagents() {
 
     const held = watchedNow.current.find((entry) => entry.agentId === agentId);
     if (!held || !stored.some((event) => event.type === 'subagent.started')) return;
-    if (stored.length < held.events.length) return;
+
+    /*
+     * Counted against what the log is able to hold, not against everything watched.
+     *
+     * The live stream carries the run's whole machinery - how it was configured, when each
+     * turn began and ended - and the log carries only what a transcript draws. Comparing
+     * one to the other asked whether ten was at least twenty-two, so the answer was always
+     * no and a finished run could never be handed over (#180).
+     */
+    const drawable = held.events.filter((event) => showsInTranscript(event.type)).length;
+    if (stored.length < drawable) return;
 
     settled.current.add(agentId);
     setWatched((current) =>

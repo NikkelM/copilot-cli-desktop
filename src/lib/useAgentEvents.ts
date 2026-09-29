@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import type { TranscriptEvent } from '../../shared/protocol';
+import { showsInTranscript, type TranscriptEvent } from '../../shared/protocol';
 import { getAgentTranscript } from './sidecar';
 
 /**
@@ -48,5 +48,7 @@ export function useAgentEvents(
 
   if (!agentId || read?.agentId !== agentId) return held;
 
-  return read.events.length >= held.length ? read.events : held;
+  // What the log can hold against what it holds, rather than against every event watched:
+  // the live stream carries a run's machinery too, and the log carries only what is drawn.
+  return read.events.length >= held.filter((event) => showsInTranscript(event.type)).length ? read.events : held;
 }

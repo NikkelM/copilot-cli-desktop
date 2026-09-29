@@ -22,6 +22,8 @@ const finished = (agentId: string, type: 'subagent.completed' | 'subagent.failed
 
 const prompt = () => ({ type: 'user.message', data: { content: 'next please' } }) as TranscriptEvent;
 
+/** An event a run produces that no transcript draws, so no log keeps it. */
+const machinery = (agentId: string, type: string) => ({ type, agentId, data: {} }) as TranscriptEvent;
 const working = (agentId: string, content: string) =>
   ({ type: 'assistant.message', agentId, data: { content } }) as TranscriptEvent;
 
@@ -481,6 +483,41 @@ describe('letting the log keep a finished run', () => {
     await settle(result, 'a1');
 
     expect(result.current.watched[0]?.events.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * What the user hit: a completed task that could never be kept, because the guard
+   * compared everything watched against only what a log holds (#180).
+   *
+   * The live stream carries a run's machinery - how it was configured, when each turn began
+   * and ended - and none of that is drawn, so none of it is read back. One real run watched
+   * twenty-two events and the log offered ten of them.
+   */
+  it('hands over a run whose machinery the log does not keep', async () => {
+    getAgentTranscript.mockResolvedValue({ events: [started('a1'), working('a1', 'one')] });
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s1', working('a1', 'one')));
+    // Watched and never drawn, so the log has nothing to say about them.
+    act(() => result.current.observe('s1', machinery('a1', 'subagent.configured')));
+    act(() => result.current.observe('s1', machinery('a1', 'assistant.turn_start')));
+    act(() => result.current.observe('s1', machinery('a1', 'assistant.turn_end')));
+
+    await settle(result, 'a1');
+
+    expect(result.current.watched[0]?.onDisk).toBe(true);
+  });
+
+  it('keeps holding when the log is short of what it should be drawing', async () => {
+    getAgentTranscript.mockResolvedValue({ events: [started('a1')] });
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s1', working('a1', 'one')));
+    act(() => result.current.observe('s1', working('a1', 'two')));
+
+    await settle(result, 'a1');
+
+    expect(result.current.watched[0]?.onDisk).toBeUndefined();
   });
 });
 
