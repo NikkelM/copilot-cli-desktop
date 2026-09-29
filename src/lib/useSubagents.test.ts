@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { act, renderHook } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
+
+const getAgentTranscript = vi.fn();
+vi.mock('./sidecar', () => ({ getAgentTranscript: (...args: unknown[]) => getAgentTranscript(...args) }));
 
 import { useSubagents } from './useSubagents';
 import type { TranscriptEvent } from '../../shared/protocol';
@@ -21,6 +24,11 @@ const prompt = () => ({ type: 'user.message', data: { content: 'next please' } }
 
 const working = (agentId: string, content: string) =>
   ({ type: 'assistant.message', agentId, data: { content } }) as TranscriptEvent;
+
+beforeEach(() => {
+  // Nothing settles unless a test says so, which keeps the ageing tests about ageing.
+  getAgentTranscript.mockReset().mockRejectedValue(new Error('no log'));
+});
 
 describe('the subagents this app watched start', () => {
   it('holds nothing until one starts', () => {
@@ -398,5 +406,151 @@ describe('reading one of them instead of its session', () => {
     act(() => result.current.observe('s1', working('a1', 'found it')));
 
     expect(result.current.open?.events.length).toBe(before + 1);
+  });
+});
+
+/**
+ * Handing a finished run over to the log (#178).
+ *
+ * A subagent's work is the largest thing this list holds, and none of it is this app's to
+ * keep - the log has it. What matters is that letting go is never a guess: the read has to
+ * come back with the run in it first.
+ */
+describe('letting the log keep a finished run', () => {
+  const settle = async (result: { current: ReturnType<typeof useSubagents> }, agentId: string) => {
+    await act(async () => {
+      result.current.observe('s1', finished(agentId));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  };
+
+  it('lets go of the events once the log is shown to have them', async () => {
+    getAgentTranscript.mockResolvedValue({ events: [started('a1'), working('a1', 'one'), working('a1', 'two')] });
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s1', working('a1', 'one')));
+
+    await settle(result, 'a1');
+
+    expect(result.current.watched[0]?.events).toEqual([]);
+    expect(result.current.watched[0]?.onDisk).toBe(true);
+  });
+
+  it('asks the log for the run that just finished', async () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+
+    await settle(result, 'a1');
+
+    expect(getAgentTranscript).toHaveBeenCalledWith('s1', 'a1');
+  });
+
+  /** Without the announcement that opened it, the log has only part of the run. */
+  it('keeps holding when the log does not have the whole run', async () => {
+    getAgentTranscript.mockResolvedValue({ events: [working('a1', 'one')] });
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s1', working('a1', 'one')));
+
+    await settle(result, 'a1');
+
+    expect(result.current.watched[0]?.events.length).toBeGreaterThan(0);
+    expect(result.current.watched[0]?.onDisk).toBeUndefined();
+  });
+
+  // Behind by design while the writing lands, and what is held is the only complete copy.
+  it('keeps holding when the log has less than is held', async () => {
+    getAgentTranscript.mockResolvedValue({ events: [started('a1')] });
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s1', working('a1', 'one')));
+    act(() => result.current.observe('s1', working('a1', 'two')));
+
+    await settle(result, 'a1');
+
+    expect(result.current.watched[0]?.events.length).toBeGreaterThan(0);
+  });
+
+  it('keeps holding when the log cannot be read at all', async () => {
+    getAgentTranscript.mockRejectedValue(new Error('gone'));
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s1', working('a1', 'one')));
+
+    await settle(result, 'a1');
+
+    expect(result.current.watched[0]?.events.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Which entries survive their session being let go (#178).
+ *
+ * A run the log holds can be shown again from disk, so the entry is worth keeping. One this
+ * app is still the only copy of cannot, and an entry offering a transcript that cannot be
+ * produced is worse than no entry.
+ */
+describe('a session being let go', () => {
+  it('keeps a run the log was shown to hold', async () => {
+    getAgentTranscript.mockResolvedValue({ events: [started('a1'), working('a1', 'one')] });
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    await act(async () => {
+      result.current.observe('s1', finished('a1'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.watched).toHaveLength(1);
+  });
+
+  it('lets go of one it is still the only copy of', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s1', working('a1', 'one')));
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.watched).toEqual([]);
+  });
+
+  it('leaves another session alone', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.observe('s2', started('a2')));
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.watched.map((entry) => entry.agentId)).toEqual(['a2']);
+  });
+
+  /** Reading a kept one is the point of keeping it, so the view stays open. */
+  it('leaves the open view alone when what it shows survives', async () => {
+    getAgentTranscript.mockResolvedValue({ events: [started('a1')] });
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    await act(async () => {
+      result.current.observe('s1', finished('a1'));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    act(() => result.current.setOpenId('a1'));
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.openId).toBe('a1');
+  });
+
+  it('closes the open view when what it shows goes', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+    act(() => result.current.setOpenId('a1'));
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.openId).toBeNull();
   });
 });

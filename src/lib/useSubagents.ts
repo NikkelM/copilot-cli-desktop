@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
+import { getAgentTranscript } from './sidecar';
 import { subagentNameIn } from './timeline';
 import { appendLive } from './timeline';
 import type { TranscriptEvent } from '../../shared/protocol';
@@ -30,6 +31,13 @@ export interface WatchedSubagent {
   outcome?: 'completed' | 'failed';
   /** Its own events, by reference: the same objects the transcript holds, not copies. */
   events: TranscriptEvent[];
+  /**
+   * Whether the log has been shown to hold this run, so the events above were let go.
+   *
+   * What makes an entry survive its session. Until this is true the entry is the only
+   * copy of its work; after it, the entry is a name and two ids.
+   */
+  onDisk?: boolean;
 }
 
 /**
@@ -70,6 +78,45 @@ export function useSubagents() {
    */
   const promptsIn = useRef(new Map<string, number>());
   const finishedAt = useRef(new Map<string, { sessionId: string; at: number }>());
+  /** Whose work the log has been shown to hold, readable outside a render like the rest. */
+  const settled = useRef(new Set<string>());
+  /** The list as it is now, for the handlers and reads that run outside a render. */
+  const watchedNow = useRef<WatchedSubagent[]>([]);
+
+  /**
+   * Hand a finished run over to the log, once the log can be shown to have it (#178).
+   *
+   * A subagent's work is the largest thing this list holds - one real run comes to 3.3 MB -
+   * and a session that delegates all day holds every one of them. None of it is this app's
+   * to keep: the log has it, and reading a run back takes about five milliseconds because a
+   * run is contiguous and near the end of the file.
+   *
+   * Only against proof. The read has to come back with the announcement that opened the run
+   * and with at least as much as is being held, so letting go is never a guess about
+   * whether the writing has landed. Anything short of that keeps what it has and tries
+   * again the next time the run finishes, which for a run that finishes once is never - the
+   * cost of being wrong here is memory, and the cost of being wrong the other way is a
+   * transcript nobody can read.
+   */
+  const settle = useCallback(async (sessionId: string, agentId: string) => {
+    let stored: TranscriptEvent[];
+    try {
+      stored = (await getAgentTranscript(sessionId, agentId)).events;
+    } catch {
+      return;
+    }
+
+    const held = watchedNow.current.find((entry) => entry.agentId === agentId);
+    if (!held || !stored.some((event) => event.type === 'subagent.started')) return;
+    if (stored.length < held.events.length) return;
+
+    settled.current.add(agentId);
+    setWatched((current) =>
+      current.map((entry) => (entry.agentId === agentId ? { ...entry, events: [], onDisk: true } : entry)),
+    );
+  }, []);
+
+  watchedNow.current = watched;
 
   /** Take a session event, and keep whatever it says about a subagent. */
   const observe = useCallback((sessionId: string, event: TranscriptEvent) => {
@@ -94,6 +141,9 @@ export function useSubagents() {
       setWatched((current) =>
         current.map((entry) => (entry.agentId === agentId ? { ...entry, outcome } : entry)),
       );
+      // A finished run is not going to change, so the log is free to be the one that keeps
+      // it (#178).
+      void settle(sessionId, agentId);
       return;
     }
 
@@ -146,14 +196,36 @@ export function useSubagents() {
    * on any unload shut the transcript someone was reading because an unrelated session
    * aged out, which is the bug this pair of concerns produced while they lived apart.
    */
+  /**
+   * Let a session's subagents go when the session itself is let go.
+   *
+   * Only the ones this app is still the only copy of. A run the log has been shown to hold
+   * outlives its session, because the transcript it offers can be produced again from disk
+   * (#178) - which is the difference between a list of what is happening and a list of what
+   * happened.
+   *
+   * Closes the open view only when the session that goes is the one it belongs to, and only
+   * when what it was reading went with it. Closing on any unload shut the transcript
+   * someone was reading because an unrelated session aged out, which is the bug this pair
+   * of concerns produced while they lived apart.
+   */
   const forget = useCallback((sessionId: string) => {
     promptsIn.current.delete(sessionId);
-    for (const [agentId, finished] of finishedAt.current) {
-      if (finished.sessionId === sessionId) finishedAt.current.delete(agentId);
+
+    // Decided from the refs rather than from `watched`, which this handler may have closed
+    // over a render ago, and computed outside the updater because React runs updaters twice
+    // under StrictMode.
+    const gone = [...ofSession.current]
+      .filter(([agentId, of]) => of === sessionId && !settled.current.has(agentId))
+      .map(([agentId]) => agentId);
+
+    for (const agentId of gone) {
+      finishedAt.current.delete(agentId);
+      ofSession.current.delete(agentId);
     }
-    setOpenId((current) => (current && ofSession.current.get(current) === sessionId ? null : current));
+    setOpenId((open) => (open && gone.includes(open) ? null : open));
     setWatched((current) => {
-      const kept = current.filter((entry) => entry.sessionId !== sessionId);
+      const kept = current.filter((entry) => !gone.includes(entry.agentId));
       return kept.length === current.length ? current : kept;
     });
   }, []);

@@ -208,7 +208,7 @@ export async function readAgentTranscript(sessionId: string, agentId: string): P
 
       const mine = locateEvents(buffer, start, reachedStart)
         .map((entry) => entry.event)
-        .filter((event) => event.agentId === agentId);
+        .filter((event) => event.agentId === agentId && showsInTranscript(event.type));
 
       // The announcement that opened the run, so everything it did is behind us.
       const whole = mine.some((event) => event.type === 'subagent.started');
