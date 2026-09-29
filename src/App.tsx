@@ -78,6 +78,7 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useAgentEvents } from './lib/useAgentEvents';
+import { useNativeMenu } from './lib/useNativeMenu';
 import { useRewind } from './lib/useRewind';
 import { countLines, humanSize, placeholder, worthCollapsing, worthWriting, written } from './lib/longPaste';
 import { useEnvironment } from './lib/useEnvironment';
@@ -111,6 +112,10 @@ import './App.css';
 const EMPTY_EVENTS: TranscriptEvent[] = [];
 
 export default function App() {
+  // The webview's own menu belongs to text and nowhere else, and nothing has to opt out of
+  // it because nothing is opted in (#226).
+  useNativeMenu();
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /**
    * Whether the knowledge base is being read instead of a session.
