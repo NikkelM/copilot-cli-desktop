@@ -1263,6 +1263,32 @@ export default function App() {
         onKeepSubagent={subagents.keep}
         keepableSubagent={subagents.keepable}
         isKeptSubagent={subagents.isKept}
+        subagentActionsFor={(entry) => [
+          {
+            id: 'keep',
+            label: subagents.isKept(entry.agentId) ? 'Stop keeping' : 'Keep',
+            // Only once the log holds the work. Keeping one before that would mean holding
+            // its events for ever and finding nothing behind it after a restart (#180).
+            refused: subagents.keepable(entry.agentId)
+              ? undefined
+              : 'Not yet: this app is still the only copy of what it did',
+            run: () => subagents.keep(entry.agentId),
+          },
+          {
+            id: 'copy-id',
+            label: 'Copy agent ID',
+            run: () => void copyText(entry.agentId),
+          },
+          {
+            id: 'dismiss',
+            label: 'Take off the list',
+            // Its work is in the session's log either way, so this loses nothing but the row.
+            run: () => {
+              subagents.dismiss(entry.agentId);
+              if (subagents.openId === entry.agentId) subagents.close();
+            },
+          },
+        ]}
       />
 
       <SidebarGrip

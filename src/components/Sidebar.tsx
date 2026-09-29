@@ -57,6 +57,8 @@ interface SidebarProps {
   /** Whether a task can be kept, which is true once the log has been shown to hold it. */
   keepableSubagent?: (agentId: string) => boolean;
   isKeptSubagent?: (agentId: string) => boolean;
+  /** What right-clicking a delegated task offers. Absent leaves those rows with no menu. */
+  subagentActionsFor?: (entry: WatchedSubagent) => SessionAction[];
   /** Folds the sidebar away. Absent leaves the header without the control. */
   onToggle?: () => void;
   /** What right-clicking a session offers. Absent leaves the rows with no menu at all. */
@@ -191,6 +193,7 @@ export function Sidebar({
   onKeepSubagent,
   keepableSubagent,
   isKeptSubagent,
+  subagentActionsFor,
   favourites = [],
   archived = [],
   tags = {},
@@ -277,6 +280,22 @@ export function Sidebar({
   const menuSession = menu
     ? [...sessions, ...hidden].find((s) => s.sessionId === menu.sessionId)
     : undefined;
+
+  /** The delegated task a menu is open on, which is a different list from the sessions (#225). */
+  const [agentMenu, setAgentMenu] = useState<{ agentId: string; at: { x: number; y: number } } | null>(null);
+  const openAgentMenu = useCallback(
+    (agentId: string) => (event: ReactMouseEvent) => {
+      event.preventDefault();
+      // Stops the session row underneath opening its own menu for the session this belongs
+      // to, which is a different thing being right-clicked.
+      event.stopPropagation();
+      setAgentMenu({ agentId, at: { x: event.clientX, y: event.clientY } });
+    },
+    [],
+  );
+  // Read from the list as it is now, for the same reason the session above is: a task can
+  // finish, be kept, or age out while its menu is open.
+  const menuAgent = agentMenu ? subagents?.find((entry) => entry.agentId === agentMenu.agentId) : undefined;
 
   /**
    * The list, split into the groups the sidebar draws.
@@ -500,6 +519,7 @@ export function Sidebar({
                           onKeepSubagent={onKeepSubagent}
                           keepable={keepableSubagent}
                           isKept={isKeptSubagent}
+                          onMenu={openAgentMenu}
                         />
                       </li>
                     ))}
@@ -544,6 +564,14 @@ export function Sidebar({
           onClose={() => setMenu(null)}
         />
       )}
+
+      {agentMenu && menuAgent && subagentActionsFor && (
+        <SessionMenu
+          at={agentMenu.at}
+          actions={subagentActionsFor(menuAgent)}
+          onClose={() => setAgentMenu(null)}
+        />
+      )}
     </nav>
   );
 }
@@ -564,6 +592,7 @@ function Delegated({
   onKeepSubagent,
   keepable,
   isKept,
+  onMenu,
 }: {
   subagents?: WatchedSubagent[];
   sessionId: string;
@@ -574,6 +603,8 @@ function Delegated({
   /** Whether a task can be kept, which is true once the log has been shown to hold it. */
   keepable?: (agentId: string) => boolean;
   isKept?: (agentId: string) => boolean;
+  /** Opens this row's own menu, so a right-click is answered by the app rather than the webview. */
+  onMenu?: (agentId: string) => (event: ReactMouseEvent) => void;
 }) {
   const mine = subagents?.filter((entry) => entry.sessionId === sessionId) ?? [];
   if (mine.length === 0 || !onSelectSubagent) return null;
@@ -581,7 +612,7 @@ function Delegated({
   return (
     <ul className="subagent-list">
       {mine.map((entry) => (
-        <li key={entry.agentId} className="subagent-item">
+        <li key={entry.agentId} className="subagent-item" onContextMenu={onMenu?.(entry.agentId)}>
           <button
             type="button"
             className={`subagent${entry.agentId === selectedSubagentId ? ' selected' : ''}`}

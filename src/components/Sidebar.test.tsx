@@ -616,6 +616,59 @@ describe('Sidebar subagents', () => {
       expect(button.getAttribute('aria-pressed')).toBe('true');
     });
   });
+
+  /**
+   * Right-clicking a delegated task showed the webview's own menu - Back, Refresh, Print -
+   * because only session rows had one of their own (#225).
+   */
+  describe('its menu', () => {
+    const actions = [{ id: 'keep', label: 'Keep', run: () => {} }];
+
+    it('offers the actions belonging to the task', () => {
+      shown({ subagents: [watched()], subagentActionsFor: () => actions });
+
+      fireEvent.contextMenu(screen.getByText('deep-audit'));
+
+      expect(screen.getByText('Keep')).toBeTruthy();
+    });
+
+    it('is offered for the task that was right-clicked', () => {
+      const subagentActionsFor = vi.fn(() => actions);
+      shown({ subagents: [watched()], subagentActionsFor });
+
+      fireEvent.contextMenu(screen.getByText('deep-audit'));
+
+      expect(subagentActionsFor).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a1' }));
+    });
+
+    /** The webview would otherwise draw its own, which is the whole point of having one. */
+    it('takes the right-click for itself', () => {
+      shown({ subagents: [watched()], subagentActionsFor: () => actions });
+
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+      screen.getByText('deep-audit').dispatchEvent(event);
+
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    // The task's row sits inside the session's, and they are two different things to act on.
+    it('does not open the session menu underneath it', () => {
+      const actionsFor = vi.fn(() => []);
+      shown({ subagents: [watched()], subagentActionsFor: () => actions, actionsFor });
+
+      fireEvent.contextMenu(screen.getByText('deep-audit'));
+
+      expect(actionsFor).not.toHaveBeenCalled();
+    });
+
+    it('draws nothing when there are no actions to offer', () => {
+      shown({ subagents: [watched()], subagentActionsFor: undefined });
+
+      fireEvent.contextMenu(screen.getByText('deep-audit'));
+
+      expect(screen.queryByText('Keep')).toBeNull();
+    });
+  });
 });
 
 
