@@ -88,6 +88,14 @@ interface ComposerProps {
   onCommandsNeeded: () => void;
   /** Asked when /rewind is named, since reading the turns resumes the session. */
   onRewindNeeded?: () => void;
+  /**
+   * Why the rewind menu is empty, when it is.
+   *
+   * Reading the turns resumes a session, so there is a wait before the menu has anything in
+   * it - and a wait that draws nothing looks exactly like a session with nowhere to go back
+   * to. Null once there is something to show, which is the menu's job rather than this one's.
+   */
+  rewindNotice?: string | null;
   /** How the session is working, shown beside the box as the CLI shows it. */
   mode: SessionMode;
   /** Advance to the next mode, which Shift+Tab asks for. */
@@ -148,6 +156,7 @@ export function Composer({
   cwd,
   onCommandsNeeded,
   onRewindNeeded,
+  rewindNotice,
   mode,
   onCycleMode,
   intent,
@@ -603,6 +612,14 @@ export function Composer({
           onDismiss={() => setDismissed(value)}
           label="Slash commands"
         />
+      )}
+
+      {/* An empty rewind menu, saying which kind of empty it is. Drawn where the menu would
+          have been, so the answer arrives where the reader is already looking. */}
+      {needsRewind && items.length === 0 && rewindNotice && !search && (
+        <div className="menu-notice" role="status">
+          {rewindNotice}
+        </div>
       )}
 
       {/* Above the box rather than in it, because the box still holds what the search

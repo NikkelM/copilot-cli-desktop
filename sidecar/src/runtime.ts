@@ -149,6 +149,27 @@ function toolCallOf(request: PermissionRequest): string | null {
 const ANSWERS_KEPT = 64;
 
 /**
+ * How much of a prompt travels with a rewind point.
+ *
+ * The menu draws one line of about seventy characters, so the rest is read from disk, sent
+ * over a socket and parsed to be thrown away. A prompt can carry a pasted document - which
+ * is the whole of what `/rewind` would otherwise ship, once per turn, to label a row.
+ *
+ * Several times what is drawn rather than exactly it, because where to cut a line for
+ * display is the reader's end of this and may change without the sidecar hearing about it.
+ */
+const PROMPT_SHOWN_CHARS = 300;
+
+/** The opening line of a prompt, short enough to label a row with. */
+function firstLine(message: string): string {
+  // Cut to length before looking for the line break, so none of this is proportional to a
+  // prompt that carries a pasted document.
+  const head = message.trimStart().slice(0, PROMPT_SHOWN_CHARS);
+  const breaks = head.indexOf('\n');
+  return breaks === -1 ? head : head.slice(0, breaks);
+}
+
+/**
  * Why a session cannot be rewound, in this app's words.
  *
  * Renamed rather than passed through: the runtime's names describe its own machinery, and
@@ -1432,7 +1453,7 @@ export class SessionRuntime {
     return {
       points: points.map((point) => ({
         eventId: point.eventId,
-        message: stripAnsi(point.userMessage),
+        message: stripAnsi(firstLine(point.userMessage)),
         at: point.timestamp,
         canRestoreFiles: point.canRestoreFiles,
         fileCount: point.fileCount,

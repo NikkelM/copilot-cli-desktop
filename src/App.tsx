@@ -1114,6 +1114,22 @@ export default function App() {
   );
 
   /**
+   * Why the rewind menu has nothing in it, when it has nothing in it.
+   *
+   * Three ways to be empty, and they mean opposite things. Reading the turns resumes the
+   * session, so there is a wait before there is a list; a read that failed has no list to
+   * offer; a session whose first turn is still running has nowhere to go back to. Drawn
+   * apart because a menu that says nothing lets the reader believe whichever they fear.
+   */
+  const rewindNotice = rewind.loading
+    ? 'Reading the conversation.'
+    : rewind.failed
+      ? `Could not read the turns: ${rewind.failed}`
+      : rewind.points.size === 0
+        ? 'No turn to go back to yet.'
+        : null;
+
+  /**
    * Copy a session into a new one and go to the copy.
    *
    * The sidecar opens the source before copying it, and refuses when it cannot: forking a
@@ -1523,6 +1539,7 @@ export default function App() {
                 cwd={selected.cwd}
                 onCommandsNeeded={slash.open}
                 onRewindNeeded={rewind.load}
+                rewindNotice={rewindNotice}
                 mode={mode.mode}
                 onCycleMode={mode.cycle}
                 intent={intent}

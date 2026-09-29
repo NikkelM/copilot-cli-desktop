@@ -833,7 +833,14 @@ export interface SessionChange {
 export interface RewindPoint {
   /** The user message that begins what would be discarded, which is what rewind is keyed by. */
   eventId: string;
-  /** What was asked, so a turn can be recognised without counting back through the log. */
+  /**
+   * The opening line of what was asked, so a turn can be recognised without counting back
+   * through the log.
+   *
+   * A label rather than the prompt. The menu draws one line of it, and a prompt can carry a
+   * pasted document, so sending the whole of every one would ship a session's worth of text
+   * to write a list of rows.
+   */
   message: string;
   at: string;
   /** Whether the files can be put back as well as the conversation. */

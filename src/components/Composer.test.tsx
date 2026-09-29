@@ -540,6 +540,50 @@ describe('the slash command menu', () => {
     });
 
     /**
+     * An empty menu with nothing to say looks like a session with nowhere to go back to,
+     * whatever the reason. Reading the turns resumes a session, so the wait is real and
+     * worth naming; so is a read that failed.
+     */
+    describe('a rewind menu with nothing in it', () => {
+      const bare = { name: 'rewind', description: 'put it back', aliases: [], allowDuringTurn: false, choices: [] };
+
+      it('says it is reading while the turns are on their way', async () => {
+        const { user } = menu({ commands: [bare], rewindNotice: 'Reading the conversation.' });
+
+        await user.keyboard('/rewind ');
+
+        expect(screen.getByText('Reading the conversation.')).toBeTruthy();
+      });
+
+      it('says why the turns could not be read', async () => {
+        const { user } = menu({ commands: [bare], rewindNotice: 'Could not read the turns: no session' });
+
+        await user.keyboard('/rewind ');
+
+        expect(screen.getByText('Could not read the turns: no session')).toBeTruthy();
+      });
+
+      /** The turns arrived, so the menu speaks for itself and a notice would talk over it. */
+      it('says nothing once there are turns to offer', async () => {
+        const { user } = menu({ commands: [REWIND_COMMAND], rewindNotice: null });
+
+        await user.keyboard('/rewind ');
+
+        expect(rows()).toHaveLength(3);
+        expect(screen.queryByText('Reading the conversation.')).toBeNull();
+      });
+
+      // Every other command has its own empty menu, and this is not an answer about them.
+      it('says nothing about a different command', async () => {
+        const { user } = menu({ rewindNotice: 'Reading the conversation.' });
+
+        await user.keyboard('/model zzz');
+
+        expect(screen.queryByText('Reading the conversation.')).toBeNull();
+      });
+    });
+
+    /**
      * Oldest at the top and newest at the bottom, as the CLI draws them - so the numbers
      * run downwards to 1, which is the turn most often wanted and the easiest to reach.
      */

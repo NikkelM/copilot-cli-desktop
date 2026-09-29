@@ -5745,3 +5745,15 @@ pre.fatal,
   font-size: var(--font-xs);
   white-space: nowrap;
 }
+
+/* The rewind menu when it has nothing in it, which is a sentence rather than a list. Drawn
+   as the menu is so the two read as the same thing in two states. */
+.menu-notice {
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}

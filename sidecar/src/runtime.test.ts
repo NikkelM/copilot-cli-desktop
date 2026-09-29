@@ -3811,6 +3811,63 @@ describe('rewinding a session', () => {
   });
 
   /**
+   * A prompt can carry a pasted document, and the menu draws one line of it. Sending the
+   * rest would read it off disk, push it through a socket and parse it to throw it away -
+   * once per turn, to write a list of rows.
+   */
+  describe('what a point says was asked', () => {
+    const asking = async (userMessage: string) => {
+      const harness = makeRuntime();
+      await harness.runtime.load('a');
+      pointsOf(harness).mockResolvedValue({
+        fileChangeTrackingEnabled: true,
+        points: [
+          {
+            eventId: 'e1',
+            userMessage,
+            timestamp: '2026-09-27T10:00:00.000Z',
+            canRestoreFiles: true,
+            fileCount: 0,
+            turnChangedFiles: false,
+            linesAdded: 0,
+            linesRemoved: 0,
+          },
+        ],
+      });
+
+      return (await harness.runtime.rewindPoints('a')).points[0]?.message ?? '';
+    };
+
+    it('sends a short prompt whole', async () => {
+      expect(await asking('count to twenty')).toBe('count to twenty');
+    });
+
+    it('sends the opening line rather than the rest of the prompt', async () => {
+      expect(await asking('fix the parser\nhere is the file\nand more')).toBe('fix the parser');
+    });
+
+    it('carries none of a pasted document', async () => {
+      const pasted = `look at this\n${'x'.repeat(5 * 1024 * 1024)}`;
+
+      const said = await asking(pasted);
+
+      expect(said).toBe('look at this');
+    });
+
+    /** A prompt with no line break at all is still only a row's worth of text. */
+    it('cuts a single enormous line down to a label', async () => {
+      const said = await asking('y'.repeat(5 * 1024 * 1024));
+
+      expect(said.length).toBeLessThanOrEqual(300);
+      expect(said.startsWith('yyy')).toBe(true);
+    });
+
+    it('says nothing for a turn that asked nothing', async () => {
+      expect(await asking('')).toBe('');
+    });
+  });
+
+  /**
    * The runtime's names describe its own machinery. Only the transient one needs acting on,
    * and it is the one worth calling busy.
    */
