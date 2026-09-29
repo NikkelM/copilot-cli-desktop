@@ -301,8 +301,21 @@ export default function App() {
       const { sessionId } = await createSession(sessionDefaults(settings));
       // Selected only once the list holds it, or the pane has nothing to show and the
       // button looks as though it did nothing.
-      await sessions.refresh();
+      const listed = await sessions.refresh();
       setSelectedId(sessionId);
+
+      /*
+       * A session was made and the list does not have it, which used to be entirely silent:
+       * the pane fell back to the empty placeholder and the button returned to what it said
+       * before, so making a session looked exactly like making nothing (#227).
+       *
+       * Said rather than thrown, because the session does exist - it is this window that
+       * cannot show it. Null means the list could not be read at all, which has already
+       * been reported as itself.
+       */
+      if (listed && !listed.some((session) => session.sessionId === sessionId)) {
+        setError('A session was started, but it is not in the list, so there is nothing to show for it yet.');
+      }
     } catch (e: unknown) {
       setError(explain(e));
     } finally {

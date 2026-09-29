@@ -41,7 +41,12 @@ export function useSessions(onError: (message: string) => void) {
   const [dropped, setDropped] = useState<ReadonlySet<string>>(() => new Set());
 
   const refresh = useCallback(() => {
-    // Returned so a caller that needs the list to contain something can wait for it.
+    /*
+     * The list itself, so a caller that needs it to contain something can look rather than
+     * guess. Null when the fetch failed, which is not the same as a list without what was
+     * asked about: the failure has already been reported, and treating it as an answer
+     * would have the caller report it a second time as something else (#227).
+     */
     return listSessions()
       // A fetch that lands between a reply and the write that announces it would otherwise
       // show the session a turn behind, so what the app has already heard wins.
@@ -55,8 +60,12 @@ export function useSessions(onError: (message: string) => void) {
           const next = new Set([...current].filter((id) => listed.has(id)));
           return next.size === current.size ? current : next;
         });
+        return result.sessions;
       })
-      .catch((e: unknown) => onError(String(e)));
+      .catch((e: unknown) => {
+        onError(String(e));
+        return null;
+      });
   }, [onError]);
 
   /** Take a session out of the list now, without waiting to be told it has gone. */

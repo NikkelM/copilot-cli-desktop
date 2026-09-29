@@ -278,3 +278,51 @@ describe('a session being resumed', () => {
     expect([...result.current.loading]).toEqual(['s2']);
   });
 });
+/**
+ * What a refresh hands back (#227).
+ *
+ * A caller that has just made a session needs to know whether the list has it, because a
+ * session the list does not have is one the window cannot show - and used to be shown as
+ * nothing at all, which looked like the button having failed.
+ */
+describe('what a refresh answers with', () => {
+  it('hands back the list it just read', async () => {
+    const { result } = await listed();
+
+    let answered: unknown;
+    await act(async () => {
+      answered = await result.current.refresh();
+    });
+
+    expect((answered as { sessionId: string }[]).map((s) => s.sessionId)).toEqual(['s1', 's2']);
+  });
+
+  it('answers with what a caller is looking for', async () => {
+    listSessions.mockResolvedValue({ sessions: [summary('fresh')] });
+    const { result } = await listed();
+
+    let answered: unknown;
+    await act(async () => {
+      answered = await result.current.refresh();
+    });
+
+    expect((answered as { sessionId: string }[] | null)?.some((s) => s.sessionId === 'fresh')).toBe(true);
+  });
+
+  /**
+   * A list that could not be read is not a list without the session in it. The failure has
+   * already been reported as itself, and answering with an empty list would have the caller
+   * report it again as something else.
+   */
+  it('answers with nothing at all when the list cannot be read', async () => {
+    const { result } = await listed();
+    listSessions.mockRejectedValue(new Error('no store'));
+
+    let answered: unknown = 'unset';
+    await act(async () => {
+      answered = await result.current.refresh();
+    });
+
+    expect(answered).toBeNull();
+  });
+});
