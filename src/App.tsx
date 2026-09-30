@@ -1584,27 +1584,6 @@ export default function App() {
                 />
               )}
 
-              {panel.open === 'subagents' && (
-                <Subagents
-                  sessionId={selected.sessionId}
-                  isShown={subagents.isShown}
-                  isKept={subagents.isKept}
-                  onToggleShown={(task) => subagents.toggleShown(task, selected.sessionId)}
-                  onKeep={(task) => subagents.keepFound(task, selected.sessionId)}
-                  onOpen={(task) => {
-                    // Showing it first, or the sidebar would have nothing to go back to
-                    // once the reader closes what they opened.
-                    if (!subagents.isShown(task.agentId)) subagents.toggleShown(task, selected.sessionId);
-                    subagents.setOpenId(task.agentId);
-                    panel.hide();
-                  }}
-                  onClose={() => {
-                    panel.hide();
-                    toComposer();
-                  }}
-                />
-              )}
-
               {panel.open === 'environment' && (
                 <Environment
                   environment={environment.environment}
@@ -1768,6 +1747,30 @@ export default function App() {
             setDeleting(null);
           }}
           onCancel={() => setDeleting(null)}
+        />
+      )}
+
+      {/* A window over the app rather than a panel inside the session: it is about the
+          session rather than part of its conversation, and .main assigns its rows by
+          position so a child that comes and goes moves the transcript into another row. */}
+      {panel.open === 'subagents' && selected && (
+        <Subagents
+          sessionId={selected.sessionId}
+          isShown={subagents.isShown}
+          isKept={subagents.isKept}
+          onToggleShown={(task) => subagents.toggleShown(task, selected.sessionId)}
+          onKeep={(task) => subagents.keepFound(task, selected.sessionId)}
+          onOpen={(task) => {
+            // Showing it first, or the sidebar would have nothing to go back to once the
+            // reader closes what they opened.
+            if (!subagents.isShown(task.agentId)) subagents.toggleShown(task, selected.sessionId);
+            subagents.setOpenId(task.agentId);
+            panel.hide();
+          }}
+          onClose={() => {
+            panel.hide();
+            toComposer();
+          }}
         />
       )}
 

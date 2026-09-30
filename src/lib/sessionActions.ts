@@ -91,7 +91,7 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
     },
     {
       id: 'subagents',
-      label: 'Delegated tasks',
+      label: 'Subagents',
       run: () => deps.showSubagents(session.sessionId),
     },
     {

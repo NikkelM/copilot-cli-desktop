@@ -218,4 +218,44 @@ describe('finding the tasks a session delegated', () => {
 
     expect(onClose).toHaveBeenCalled();
   });
+
+  /** The key a reader reaches for, and the one every other panel already answers. */
+  it('closes on escape', async () => {
+    const onClose = vi.fn();
+    shown({ onClose });
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  /** A window over the app closes by clicking away from it, as the settings window does. */
+  it('closes when the backdrop is clicked', async () => {
+    const onClose = vi.fn();
+    const { container } = shown({ onClose });
+
+    await userEvent.click(container.querySelector('.confirm-backdrop')!);
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('stays open when the panel itself is clicked', async () => {
+    const onClose = vi.fn();
+    shown({ onClose });
+    await screen.findByText('deep-audit');
+
+    await userEvent.click(screen.getByRole('dialog'));
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('stops answering escape once it is gone', async () => {
+    const onClose = vi.fn();
+    const { unmount } = shown({ onClose });
+    unmount();
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

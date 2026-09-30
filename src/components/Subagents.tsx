@@ -64,6 +64,13 @@ export function Subagents({
   /** Which session the answer on its way belongs to, so a late one cannot land on another. */
   const asked = useRef(0);
 
+  // Closed the way every other panel is closed, which is the key a reader reaches for.
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
+    document.addEventListener('keydown', escape);
+    return () => document.removeEventListener('keydown', escape);
+  }, [onClose]);
+
   useEffect(() => {
     asked.current += 1;
     const mine = asked.current;
@@ -104,75 +111,84 @@ export function Subagents({
   }, [more, sessionId]);
 
   return (
-    <div className="subagents">
-      <header className="subagents-header">
-        <h2>Delegated tasks</h2>
-        <button type="button" className="subagents-close" onClick={onClose} aria-label="Close">
-          ×
-        </button>
-      </header>
+    <div className="confirm-backdrop" onMouseDown={onClose}>
+      {/* Stops a click inside the panel reaching the backdrop, which would close it. */}
+      <div
+        className="subagents"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Subagents"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="subagents-header">
+          <h2>Subagents</h2>
+          <button type="button" className="subagents-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
 
-      {failed && <p className="error">{failed}</p>}
+        {failed && <p className="error">{failed}</p>}
 
-      {/* Said rather than left blank, because reading a large log takes a moment and a
-          panel with nothing in it looks like a session that delegated nothing. */}
-      {reading && tasks.length === 0 && <p className="subagents-note">Reading the conversation.</p>}
+        {/* Said rather than left blank, because reading a large log takes a moment and a
+            panel with nothing in it looks like a session that delegated nothing. */}
+        {reading && tasks.length === 0 && <p className="subagents-note">Reading the conversation.</p>}
 
-      {!reading && !failed && tasks.length === 0 && (
-        <p className="subagents-note">This session has not delegated anything.</p>
-      )}
+        {!reading && !failed && tasks.length === 0 && (
+          <p className="subagents-note">This session has not delegated anything.</p>
+        )}
 
-      {tasks.length > 0 && (
-        <ul className="subagents-list">
-          {tasks.map((task) => (
-            <li key={task.agentId} className="subagents-row">
-              {/* Shown is about the sidebar now, kept is about surviving a restart. A kept
-                  task cannot be un-shown, since keeping something unreachable means nothing. */}
-              <label className="subagents-show">
-                <input
-                  type="checkbox"
-                  checked={isShown(task.agentId)}
-                  disabled={isKept(task.agentId)}
-                  onChange={() => onToggleShown(task)}
-                />
-                <span className="subagents-name">{task.name}</span>
-              </label>
+        {tasks.length > 0 && (
+          <ul className="subagents-list">
+            {tasks.map((task) => (
+              <li key={task.agentId} className="subagents-row">
+                {/* Shown is about the sidebar now, kept is about surviving a restart. A kept
+                    task cannot be un-shown, since keeping something unreachable means nothing. */}
+                <label className="subagents-show">
+                  <input
+                    type="checkbox"
+                    checked={isShown(task.agentId)}
+                    disabled={isKept(task.agentId)}
+                    onChange={() => onToggleShown(task)}
+                  />
+                  <span className="subagents-name">{task.name}</span>
+                </label>
 
-              <button
-                type="button"
-                className="subagents-open"
-                onClick={() => onOpen(task)}
-                aria-label={`Read what ${task.name} did`}
-                title={`Read what ${task.name} did`}
-              >
-                <span className="subagents-when">{since(task.startedAt)}</span>
-                {task.outcome === 'failed' && <span className="subagents-failed">failed</span>}
-                {task.outcome === undefined && <span className="subagents-running">working</span>}
-                <span className="subagents-cost">{cost(task)}</span>
-              </button>
+                <button
+                  type="button"
+                  className="subagents-open"
+                  onClick={() => onOpen(task)}
+                  aria-label={`Read what ${task.name} did`}
+                  title={`Read what ${task.name} did`}
+                >
+                  <span className="subagents-when">{since(task.startedAt)}</span>
+                  {task.outcome === 'failed' && <span className="subagents-failed">failed</span>}
+                  {task.outcome === undefined && <span className="subagents-running">working</span>}
+                  <span className="subagents-cost">{cost(task)}</span>
+                </button>
 
-              <button
-                type="button"
-                className={`subagents-keep${isKept(task.agentId) ? ' kept' : ''}`}
-                onClick={() => onKeep(task)}
-                title={isKept(task.agentId) ? `Stop keeping ${task.name}` : `Keep ${task.name}`}
-                aria-label={isKept(task.agentId) ? `Stop keeping ${task.name}` : `Keep ${task.name}`}
-                aria-pressed={isKept(task.agentId)}
-              >
-                ★
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+                <button
+                  type="button"
+                  className={`subagents-keep${isKept(task.agentId) ? ' kept' : ''}`}
+                  onClick={() => onKeep(task)}
+                  title={isKept(task.agentId) ? `Stop keeping ${task.name}` : `Keep ${task.name}`}
+                  aria-label={isKept(task.agentId) ? `Stop keeping ${task.name}` : `Keep ${task.name}`}
+                  aria-pressed={isKept(task.agentId)}
+                >
+                  ★
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {/* Offered rather than read, because the rest of a large log is seconds of reading
-          and the task somebody is looking for is usually a recent one. */}
-      {more !== null && (
-        <button type="button" className="subagents-more" onClick={readMore} disabled={reading}>
-          {reading ? 'Reading…' : 'Look further back'}
-        </button>
-      )}
+        {/* Offered rather than read, because the rest of a large log is seconds of reading
+            and the task somebody is looking for is usually a recent one. */}
+        {more !== null && (
+          <button type="button" className="subagents-more" onClick={readMore} disabled={reading}>
+            {reading ? 'Reading…' : 'Look further back'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
