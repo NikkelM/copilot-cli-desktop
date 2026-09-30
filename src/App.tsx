@@ -15,6 +15,7 @@ import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { Environment } from './components/Environment';
 import { Repository } from './components/Repository';
+import { Subagents } from './components/Subagents';
 import { Wiki } from './components/Wiki';
 import { AgentPicker } from './components/AgentPicker';
 import { ModelPicker } from './components/ModelPicker';
@@ -49,7 +50,7 @@ import {
   writeCliSettings,
   stashPaste,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, readRewindCommand, wantsDirectory, withRewindChoices, withTagChoices } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, readRewindCommand, SUBAGENTS, wantsDirectory, withRewindChoices, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
@@ -835,6 +836,7 @@ export default function App() {
       else if (what.command.name === TAG.name) tagFromCommand(selectedId, what.input);
       else if (what.command.name === MCP.name) mcpFromCommand(what.input);
       else if (what.command.name === REWIND.name) rewindFromCommand(what.input);
+      else if (what.command.name === SUBAGENTS.name) panel.show('subagents');
       else if (what.command.name === GIT.name) {
         panel.show('repository');
         repository.refresh();
@@ -1238,6 +1240,12 @@ export default function App() {
           if (putting) evictSession(sessionId).then(() => sessions.refresh()).catch(() => undefined);
         },
         working: sessions.working,
+        // Opening the panel means opening the session it is about: the tasks belong to that
+        // conversation, and the panel sits inside it.
+        showSubagents: (sessionId) => {
+          setSelectedId(sessionId);
+          panel.show('subagents');
+        },
         load: (sessionId) => {
           loadSession(sessionId)
             .then(() => sessions.refresh())
@@ -1569,6 +1577,27 @@ export default function App() {
                   switching={repository.switching}
                   failed={repository.failed}
                   onRefresh={repository.refresh}
+                  onClose={() => {
+                    panel.hide();
+                    toComposer();
+                  }}
+                />
+              )}
+
+              {panel.open === 'subagents' && (
+                <Subagents
+                  sessionId={selected.sessionId}
+                  isShown={subagents.isShown}
+                  isKept={subagents.isKept}
+                  onToggleShown={(task) => subagents.toggleShown(task, selected.sessionId)}
+                  onKeep={(task) => subagents.keepFound(task, selected.sessionId)}
+                  onOpen={(task) => {
+                    // Showing it first, or the sidebar would have nothing to go back to
+                    // once the reader closes what they opened.
+                    if (!subagents.isShown(task.agentId)) subagents.toggleShown(task, selected.sessionId);
+                    subagents.setOpenId(task.agentId);
+                    panel.hide();
+                  }}
                   onClose={() => {
                     panel.hide();
                     toComposer();

@@ -45,6 +45,29 @@ export interface SessionSummary {
 }
 
 /**
+ * A task a session delegated, as its log records it (#228).
+ *
+ * Read from the log rather than remembered, so this covers the ones the app never watched:
+ * a task from a previous run, from a session used in a terminal, or one hidden from the
+ * sidebar and wanted back.
+ */
+export interface DelegatedTask {
+  agentId: string;
+  /** What the agent is called, preferring the display name the announcement carries. */
+  name: string;
+  /** ISO-8601, from the announcement that started it. */
+  startedAt: string;
+  /** Absent for one still running, and for one whose end is past the page that found it. */
+  outcome?: 'completed' | 'failed';
+  /** What it cost, from the announcement that ended it. Absent for the same reasons. */
+  toolCalls?: number;
+  tokens?: number;
+  durationMs?: number;
+  /** Where its announcement sits in the log, which is how a page says where it stopped. */
+  offset: number;
+}
+
+/**
  * A session waiting in the recycle bin.
  *
  * Remembered beside the directory that was moved rather than inside it, so a restored
@@ -1102,6 +1125,18 @@ export interface SidecarRequests {
    * shape, so the same renderer draws them.
    */
   'sessions.agentTranscript': { params: { sessionId: string; agentId: string }; result: { events: TranscriptEvent[] } };
+  /**
+   * The delegated tasks in a session's log, newest first (#228).
+   *
+   * Read on demand and a page at a time, because finding every one means reading the whole
+   * log: 1.9 seconds for the largest here, against milliseconds for a median one. Paying
+   * that when somebody asks about one session is affordable in a way that paying it to draw
+   * a sidebar was not (#178).
+   */
+  'sessions.agents': {
+    params: { sessionId: string; limit?: number; before?: number };
+    result: { agents: DelegatedTask[]; truncated: boolean; nextBefore: number | null };
+  };
   'sessions.send': { params: SendParams; result: SendResult };
   'sessions.abort': { params: { sessionId: string }; result: void };
   /**
@@ -1623,6 +1658,7 @@ export const SIDECAR_METHODS = [
   'sessions.exist',
   'sessions.transcript',
   'sessions.agentTranscript',
+  'sessions.agents',
   'sessions.send',
   'sessions.abort',
   'sessions.shell',

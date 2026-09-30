@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
  * reader's own edits, and `environment` is what the session can reach. Deliberately three
  * things rather than one, since acting on one must never be mistaken for acting on another.
  */
-export type Panel = 'changes' | 'environment' | 'repository';
+export type Panel = 'changes' | 'environment' | 'repository' | 'subagents';
 
 /**
  * Which panel is open, as one answer rather than one flag each.

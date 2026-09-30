@@ -247,6 +247,22 @@ export function readRewindCommand(
  * Folded into the runtime's list so they are offered by the menu alongside it - the reader
  * has no reason to care which side of the wire answers them.
  */
+/**
+ * Every task a session delegated, read from its log rather than from what was watched (#228).
+ *
+ * The sidebar lists only the tasks this app saw start, which leaves a hidden one, one from
+ * a previous run, and one from a session used in a terminal all unreachable. This is where
+ * they are found again, and where a task is chosen to show or to keep.
+ *
+ * Free, like `/help`: the log is a file, so nothing has to be running to read it.
+ */
+export const SUBAGENTS: SlashCommand = {
+  name: 'subagents',
+  description: 'find the tasks this session delegated',
+  aliases: ['agents', 'tasks'],
+  allowDuringTurn: true,
+};
+
 export const LOCAL_COMMANDS: readonly SlashCommand[] = [
   HELP,
   CHANGES,
@@ -257,6 +273,7 @@ export const LOCAL_COMMANDS: readonly SlashCommand[] = [
   TAG,
   MCP,
   REWIND,
+  SUBAGENTS,
 ];
 
 /** Whether a command is one of ours, and so must not be sent to the runtime. */

@@ -4,7 +4,7 @@ import { getAgentTranscript } from './sidecar';
 import { useKeptSubagents } from './useKeptSubagents';
 import { subagentNameIn } from './timeline';
 import { appendLive } from './timeline';
-import { showsInTranscript, type TranscriptEvent } from '../../shared/protocol';
+import { showsInTranscript, type DelegatedTask, type TranscriptEvent } from '../../shared/protocol';
 
 /**
  * How many prompts a finished subagent survives before it stops being offered.
@@ -302,6 +302,68 @@ export function useSubagents() {
     return Boolean(entry?.onDisk);
   }, []);
 
+  /**
+   * Put a task from the log into the list, or take it out again (#228).
+   *
+   * What the picker's checkbox does. A task found in a log was not watched - it may be from
+   * a previous run, from a session used in a terminal, or one hidden from here - so nothing
+   * about it is held, and nothing needs to be: its work is read back when it is opened.
+   *
+   * Starred tasks cannot be hidden this way. Keeping one and not showing it would leave a
+   * thing kept where it cannot be reached, so unstarring is how a kept task goes.
+   */
+  const toggleShown = useCallback(
+    (task: DelegatedTask, sessionId: string) => {
+      if (watchedNow.current.some((entry) => entry.agentId === task.agentId)) {
+        if (keptNow.current.has(task.agentId)) return;
+        settled.current.delete(task.agentId);
+        dismiss(task.agentId);
+        return;
+      }
+
+      // The log is where it was found, so the log demonstrably holds it - which is what
+      // lets its entry outlive the session, exactly as a handed-over one does.
+      settled.current.add(task.agentId);
+      ofSession.current.set(task.agentId, sessionId);
+
+      setWatched((current) => [
+        ...current,
+        {
+          agentId: task.agentId,
+          sessionId,
+          name: task.name,
+          startedAt: task.startedAt,
+          ...(task.outcome ? { outcome: task.outcome } : {}),
+          events: [],
+          onDisk: true,
+        },
+      ]);
+    },
+    [dismiss],
+  );
+
+  /**
+   * Keep a task found in the log, showing it first if it is not already (#228).
+   *
+   * Keeping is about surviving a restart and showing is about being on the list now, and a
+   * task kept but not shown is kept where nobody can reach it.
+   */
+  const keepFound = useCallback(
+    (task: DelegatedTask, sessionId: string) => {
+      if (!watchedNow.current.some((entry) => entry.agentId === task.agentId)) {
+        toggleShown(task, sessionId);
+      }
+
+      keeping.toggle({
+        agentId: task.agentId,
+        sessionId,
+        name: task.name,
+        ...(task.outcome ? { outcome: task.outcome } : {}),
+      });
+    },
+    [keeping, toggleShown],
+  );
+
   const find = useCallback(
     (agentId: string | null) => (agentId ? (watched.find((entry) => entry.agentId === agentId) ?? null) : null),
     [watched],
@@ -331,5 +393,8 @@ export function useSubagents() {
     keep,
     keepable,
     isKept: keeping.isKept,
+    toggleShown,
+    keepFound,
+    isShown: (agentId: string) => watched.some((entry) => entry.agentId === agentId),
   };
 }

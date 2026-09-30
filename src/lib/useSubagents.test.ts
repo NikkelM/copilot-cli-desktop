@@ -722,3 +722,92 @@ describe('keeping a delegated task', () => {
     expect(renderHook(() => useSubagents()).result.current.watched).toEqual([]);
   });
 });
+
+/**
+ * Showing a task found in a log rather than watched starting (#228).
+ *
+ * The picker reads every task a session delegated, including ones this app never saw: from
+ * a previous run, from a session used in a terminal, or hidden from here.
+ */
+describe('a task found in the log', () => {
+  const found = (over: Record<string, unknown> = {}) => ({
+    agentId: 'f1',
+    name: 'deep-audit',
+    startedAt: '2026-09-30T10:00:00.000Z',
+    outcome: 'completed' as const,
+    offset: 400,
+    ...over,
+  });
+
+  it('is not on the list until it is asked for', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    expect(result.current.isShown('f1')).toBe(false);
+  });
+
+  it('goes on the list when it is asked for', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.toggleShown(found(), 's1'));
+
+    expect(result.current.watched).toMatchObject([
+      { agentId: 'f1', sessionId: 's1', name: 'deep-audit', onDisk: true, events: [] },
+    ]);
+  });
+
+  /** Its work is read from the log, so the entry is a name and two ids rather than events. */
+  it('holds none of its work', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.toggleShown(found(), 's1'));
+
+    expect(result.current.watched[0]?.events).toEqual([]);
+  });
+
+  it('comes off the list when it is asked for again', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.toggleShown(found(), 's1'));
+
+    act(() => result.current.toggleShown(found(), 's1'));
+
+    expect(result.current.watched).toEqual([]);
+  });
+
+  /** Keeping something that cannot be reached means nothing, so a kept task stays shown. */
+  it('cannot be hidden while it is being kept', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.keepFound(found(), 's1'));
+
+    act(() => result.current.toggleShown(found(), 's1'));
+
+    expect(result.current.isShown('f1')).toBe(true);
+  });
+
+  it('is shown as well as kept when it is kept', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.keepFound(found(), 's1'));
+
+    expect(result.current.isKept('f1')).toBe(true);
+    expect(result.current.isShown('f1')).toBe(true);
+  });
+
+  it('stops being kept when it is asked again', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.keepFound(found(), 's1'));
+
+    act(() => result.current.keepFound(found(), 's1'));
+
+    expect(result.current.isKept('f1')).toBe(false);
+  });
+
+  // A task read from a log was never watched, so nothing is waiting to be handed over.
+  it('survives its session being let go, since the log holds it', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.toggleShown(found(), 's1'));
+
+    act(() => result.current.forget('s1'));
+
+    expect(result.current.watched).toHaveLength(1);
+  });
+});

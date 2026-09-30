@@ -9,7 +9,14 @@ import type { JsonRpcRequest, SidecarHandlers } from '../../shared/protocol.js';
 import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
 import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
-import { lastAgent, lastModel, locateTurn, readAgentTranscript, readTranscript } from './eventLog.js';
+import {
+  lastAgent,
+  lastModel,
+  locateTurn,
+  readAgentTranscript,
+  readDelegatedTasks,
+  readTranscript,
+} from './eventLog.js';
 import { updateCli } from './updateCli.js';
 import {
   commitStaged,
@@ -77,6 +84,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'sessions.agentTranscript': async ({ sessionId, agentId }) => ({
       events: await readAgentTranscript(sessionId, agentId),
     }),
+
+    'sessions.agents': ({ sessionId, limit, before }) => readDelegatedTasks(sessionId, limit, before),
 
     'sessions.changes': async ({ sessionId, since }) => {
       await runtime.flushChanges(sessionId);

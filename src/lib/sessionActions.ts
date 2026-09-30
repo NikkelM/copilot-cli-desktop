@@ -13,6 +13,8 @@ export interface SessionActionDeps {
   /** Which sessions are put away, and how to change that. */
   archived: readonly string[];
   toggleArchived: (sessionId: string) => void;
+  /** Open the tasks this session delegated, read from its log rather than from memory (#228). */
+  showSubagents: (sessionId: string) => void;
   /** Which sessions are mid-turn. Read live: a session can start working while a menu is open. */
   working: ReadonlySet<string>;
   unload: (sessionId: string) => void;
@@ -86,6 +88,11 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
         ? 'Still working. Archive once the turn finishes.'
         : undefined,
       run: () => deps.toggleArchived(session.sessionId),
+    },
+    {
+      id: 'subagents',
+      label: 'Delegated tasks',
+      run: () => deps.showSubagents(session.sessionId),
     },
     {
       id: 'copy-id',

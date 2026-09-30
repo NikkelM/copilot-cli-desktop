@@ -10,6 +10,7 @@ import type {
   ElicitationAction,
   ElicitationFieldValue,
   ElicitationResolvedNotification,
+  DelegatedTask,
   FileDiff,
   GetTranscriptResult,
   TranscriptEvent,
@@ -187,6 +188,21 @@ export async function locateTurn(sessionId: string, source: string): Promise<num
 export async function locateMoment(sessionId: string, at: string): Promise<number | null> {
   const { cursor } = await request('sessions.locate', { sessionId, at });
   return cursor;
+}
+
+/**
+ * The tasks a session delegated, newest first, a page at a time (#228).
+ *
+ * Costs no session: the log is read from disk. Paged because finding every one means
+ * reading the whole log, which is seconds on the largest here and milliseconds on a
+ * typical one.
+ */
+export function sessionAgents(
+  sessionId: string,
+  limit?: number,
+  before?: number,
+): Promise<{ agents: DelegatedTask[]; truncated: boolean; nextBefore: number | null }> {
+  return request('sessions.agents', { sessionId, limit, before });
 }
 
 /** What is waiting in the recycle bin, newest first. Costs no session: it is read from disk. */

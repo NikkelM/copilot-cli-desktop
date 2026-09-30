@@ -1015,3 +1015,153 @@ describe('readAgentTranscript', () => {
     expect(await readAgentTranscript('s', 'a1')).toHaveLength(1);
   });
 });
+
+/**
+ * Finding the tasks a session delegated, when the sidebar cannot (#228).
+ *
+ * The sidebar lists what this app watched start, which leaves a hidden task, one from a
+ * previous run, and one from a session used in a terminal all unreachable. The log has
+ * every one of them.
+ */
+describe('readDelegatedTasks', () => {
+  const started = (agentId: string, name: string, at: string) =>
+    JSON.stringify({
+      type: 'subagent.started',
+      agentId,
+      timestamp: at,
+      data: { agentName: 'general-purpose', agentDisplayName: name },
+    });
+
+  const ended = (agentId: string, type = 'subagent.completed', data: Record<string, unknown> = {}) =>
+    JSON.stringify({ type, agentId, data: { totalToolCalls: 3, totalTokens: 900, durationMs: 42, ...data } });
+
+  it('says nothing about a session with no log', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    expect(await readDelegatedTasks('missing')).toEqual({ agents: [], truncated: false, nextBefore: null });
+  });
+
+  it('says nothing about a session that delegated nothing', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [line(1), line(2)]);
+
+    expect((await readDelegatedTasks('s')).agents).toEqual([]);
+  });
+
+  it('names a task by the announcement that started it', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [line(1), started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z')]);
+
+    const [task] = (await readDelegatedTasks('s')).agents;
+
+    expect(task).toMatchObject({ agentId: 'a1', name: 'deep-audit', startedAt: '2026-09-30T10:00:00.000Z' });
+  });
+
+  it('reports what a finished task came to', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z'), ended('a1')]);
+
+    const [task] = (await readDelegatedTasks('s')).agents;
+
+    expect(task).toMatchObject({ outcome: 'completed', toolCalls: 3, tokens: 900, durationMs: 42 });
+  });
+
+  it('says when one failed', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z'), ended('a1', 'subagent.failed')]);
+
+    expect((await readDelegatedTasks('s')).agents[0]?.outcome).toBe('failed');
+  });
+
+  /** Nothing has ended it, so there is nothing to report rather than something to guess. */
+  it('claims no outcome for one still running', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z')]);
+
+    expect((await readDelegatedTasks('s')).agents[0]?.outcome).toBeUndefined();
+  });
+
+  /** A reader looking for a task they remember is looking for a recent one. */
+  it('puts the newest first', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [
+      started('old', 'first', '2026-09-30T09:00:00.000Z'),
+      started('new', 'second', '2026-09-30T11:00:00.000Z'),
+    ]);
+
+    expect((await readDelegatedTasks('s')).agents.map((a) => a.agentId)).toEqual(['new', 'old']);
+  });
+
+  it('tells two tasks apart', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [
+      started('a1', 'one', '2026-09-30T09:00:00.000Z'),
+      ended('a1'),
+      started('a2', 'two', '2026-09-30T10:00:00.000Z'),
+      ended('a2', 'subagent.failed'),
+    ]);
+
+    const outcomes = Object.fromEntries((await readDelegatedTasks('s')).agents.map((a) => [a.agentId, a.outcome]));
+
+    expect(outcomes).toEqual({ a1: 'completed', a2: 'failed' });
+  });
+
+  /**
+   * An ending with no beginning in the window belongs to a task older than the page, which
+   * the page before it will find. Inventing one here would list a task with no name.
+   */
+  it('does not invent a task from an ending alone', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [ended('ghost')]);
+
+    expect((await readDelegatedTasks('s')).agents).toEqual([]);
+  });
+
+  describe('a page of them', () => {
+    const many = (count: number) =>
+      Array.from({ length: count }, (_, at) => [
+        started(`a${at}`, `agent ${at}`, `2026-09-30T10:${String(at).padStart(2, '0')}:00.000Z`),
+        ended(`a${at}`),
+      ]).flat();
+
+    it('stops at the page it was asked for', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', many(12));
+
+      const page = await readDelegatedTasks('s', 5);
+
+      expect(page.agents).toHaveLength(5);
+      expect(page.truncated).toBe(true);
+      expect(page.nextBefore).not.toBeNull();
+    });
+
+    it('takes the newest into the first page', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', many(12));
+
+      expect((await readDelegatedTasks('s', 3)).agents.map((a) => a.agentId)).toEqual(['a11', 'a10', 'a9']);
+    });
+
+    /** The two have to meet without overlapping, or a task is offered twice. */
+    it('carries on where the page before it stopped', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', many(12));
+      const first = await readDelegatedTasks('s', 5);
+
+      const second = await readDelegatedTasks('s', 5, first.nextBefore ?? undefined);
+
+      const seen = new Set(first.agents.map((a) => a.agentId));
+      expect(second.agents.some((a) => seen.has(a.agentId))).toBe(false);
+      expect(second.agents[0]?.agentId).toBe('a6');
+    });
+
+    it('says there is no more once the log is exhausted', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', many(3));
+
+      const page = await readDelegatedTasks('s', 10);
+
+      expect(page.truncated).toBe(false);
+      expect(page.nextBefore).toBeNull();
+    });
+  });
+});

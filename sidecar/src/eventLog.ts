@@ -10,6 +10,7 @@ import { existsSync } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
 
 import type {
+  DelegatedTask,
   GetTranscriptResult,
   SessionAgent,
   SessionModel,
@@ -22,6 +23,14 @@ import { sessionEventLog } from './paths.js';
 
 /** Default cap on events per read; logs reach hundreds of thousands of entries. */
 const DEFAULT_LIMIT = 500;
+
+/**
+ * How many delegated tasks a page carries.
+ *
+ * A screenful and then some. The point of paging is that a reader looking for a task they
+ * remember wants a recent one, so the first page is nearly always the only one read.
+ */
+const DEFAULT_TASKS = 30;
 
 /** First slice read from the end of the range. Comfortably covers a typical 500 events. */
 const INITIAL_WINDOW = 256 * 1024;
@@ -220,6 +229,110 @@ export async function readAgentTranscript(sessionId: string, agentId: string): P
   } finally {
     await file.close();
   }
+}
+
+/**
+ * The tasks a session delegated, newest first, a page at a time (#228).
+ *
+ * The sidebar lists only what this app watched start, which leaves three kinds of task
+ * unreachable: one hidden, one from a previous run, and one from a session used in a
+ * terminal. All of them are in the log, and this is how they are found again.
+ *
+ * Paged rather than scanned whole. Finding every task means reading the whole log - 1.9
+ * seconds for the largest here, against milliseconds for a median one - and a reader
+ * looking for a task they remember almost always wants a recent one. So a page is read
+ * backwards from the end and the rest is offered rather than paid for.
+ *
+ * A task's end sits beside its beginning, because a run is contiguous, so a page normally
+ * carries both. One whose end falls past the page reports no outcome rather than a guessed
+ * one: on the first page that means it is still running, and further back it means the page
+ * boundary fell inside it.
+ */
+export async function readDelegatedTasks(
+  sessionId: string,
+  limit = DEFAULT_TASKS,
+  before?: number,
+): Promise<{ agents: DelegatedTask[]; truncated: boolean; nextBefore: number | null }> {
+  const path = sessionEventLog(sessionId);
+  const empty = { agents: [], truncated: false, nextBefore: null };
+  if (!existsSync(path)) return empty;
+
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    const end = before === undefined ? size : Math.max(0, Math.min(before, size));
+    if (end === 0) return empty;
+
+    let window = Math.min(INITIAL_WINDOW, end);
+
+    for (;;) {
+      const start = Math.max(0, end - window);
+      const reachedStart = start === 0;
+
+      const buffer = Buffer.alloc(end - start);
+      await file.read(buffer, 0, buffer.length, start);
+
+      const found = tasksIn(locateEvents(buffer, start, reachedStart));
+
+      if (found.length >= limit || reachedStart || window >= MAX_WINDOW) {
+        // Newest first, which is the order a reader looking for one they remember wants.
+        const newest = found.slice(-limit).reverse();
+        const more = !reachedStart || newest.length < found.length;
+
+        return {
+          agents: newest,
+          truncated: more,
+          // Where the next page should stop reading: the oldest task this one returned, so
+          // the two meet without overlapping.
+          nextBefore: more ? (newest[newest.length - 1]?.offset ?? null) : null,
+        };
+      }
+
+      window = Math.min(window * GROWTH_FACTOR, end, MAX_WINDOW);
+    }
+  } finally {
+    await file.close();
+  }
+}
+
+/**
+ * The delegated tasks a window of events describes, oldest first.
+ *
+ * A task is its announcement. An ending with no beginning in the window belongs to a task
+ * older than the window, which the page before this one will find, so it is left alone
+ * rather than turned into a task with no name.
+ */
+function tasksIn(events: readonly LocatedEvent[]): DelegatedTask[] {
+  const started = new Map<string, DelegatedTask>();
+
+  for (const { event, offset } of events) {
+    const agentId = event.agentId;
+    if (!agentId) continue;
+
+    const data = (event.data ?? {}) as Record<string, unknown>;
+
+    if (event.type === 'subagent.started') {
+      started.set(agentId, {
+        agentId,
+        name: String(data.agentDisplayName ?? data.agentName ?? 'agent'),
+        startedAt: String(event.timestamp ?? ''),
+        offset,
+      });
+      continue;
+    }
+
+    if (event.type !== 'subagent.completed' && event.type !== 'subagent.failed') continue;
+
+    const task = started.get(agentId);
+    if (!task) continue;
+
+    task.outcome = event.type === 'subagent.completed' ? 'completed' : 'failed';
+    if (typeof data.totalToolCalls === 'number') task.toolCalls = data.totalToolCalls;
+    if (typeof data.totalTokens === 'number') task.tokens = data.totalTokens;
+    if (typeof data.durationMs === 'number') task.durationMs = data.durationMs;
+  }
+
+  return [...started.values()];
 }
 
 /**

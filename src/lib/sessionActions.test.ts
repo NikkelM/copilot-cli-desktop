@@ -27,6 +27,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   load: vi.fn(),
   copy: vi.fn(),
   openDirectory: vi.fn(),
+  showSubagents: vi.fn(),
   fork: vi.fn(),
   remove: vi.fn(),
   ...over,
@@ -44,6 +45,7 @@ describe('sessionActions', () => {
       'tag',
       'fork',
       'archive',
+      'subagents',
       'copy-id',
       'directory',
       'delete',
@@ -116,6 +118,15 @@ describe('sessionActions', () => {
     it('is not confused by a different session working', () => {
       const action = byId(session({ loaded: true }), deps({ working: new Set(['other']) })).memory;
       expect(action.refused).toBeUndefined();
+    });
+  });
+
+  /** The tasks a session delegated, which the sidebar cannot reach on its own (#228). */
+  describe('delegated tasks', () => {
+    it('opens them for the session it was asked about', () => {
+      const showSubagents = vi.fn();
+      byId(session({ sessionId: 's7' }), deps({ showSubagents })).subagents.run();
+      expect(showSubagents).toHaveBeenCalledWith('s7');
     });
   });
 
