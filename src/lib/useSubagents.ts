@@ -30,6 +30,8 @@ export interface WatchedSubagent {
   startedAt?: string;
   /** Absent while it is still working. */
   outcome?: 'completed' | 'failed';
+  /** Why it failed, when the announcement that ended it said. */
+  error?: string;
   /** Its own events, by reference: the same objects the transcript holds, not copies. */
   events: TranscriptEvent[];
   /**
@@ -164,10 +166,14 @@ export function useSubagents() {
       const agentId = event.agentId;
       if (!agentId) return;
       const outcome = event.type === 'subagent.completed' ? 'completed' : 'failed';
+      // Why, when there is a why. "failed" on its own sends the reader to the log for what
+      // the event already said.
+      const error = (event.data as { error?: unknown } | undefined)?.error;
+      const said = typeof error === 'string' && error ? { error } : {};
       // The prompt it finished on, so the prompts after it can be counted by subtraction.
       finishedAt.current.set(agentId, { sessionId, at: promptsIn.current.get(sessionId) ?? 0 });
       setWatched((current) =>
-        current.map((entry) => (entry.agentId === agentId ? { ...entry, outcome } : entry)),
+        current.map((entry) => (entry.agentId === agentId ? { ...entry, outcome, ...said } : entry)),
       );
       // A finished run is not going to change, so the log is free to be the one that keeps
       // it (#178).

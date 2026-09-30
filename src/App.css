@@ -5892,7 +5892,13 @@ pre.fatal,
 }
 
 .subagents-failed {
+  overflow: hidden;
+  min-width: 0;
+  /* Gives way before the cost beside it, which is short and always the same shape. */
+  flex-shrink: 4;
   color: var(--danger);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .subagents-running {

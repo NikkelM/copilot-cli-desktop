@@ -1072,6 +1072,38 @@ describe('readDelegatedTasks', () => {
     expect((await readDelegatedTasks('s')).agents[0]?.outcome).toBe('failed');
   });
 
+  /**
+   * Every failure in this machine's logs carries a reason, and "failed" on its own sends
+   * the reader to the log for what the event already said.
+   */
+  it('says why it failed', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [
+      started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z'),
+      ended('a1', 'subagent.failed', { error: 'No response generated' }),
+    ]);
+
+    expect((await readDelegatedTasks('s')).agents[0]?.error).toBe('No response generated');
+  });
+
+  it('says nothing about why a finished task finished', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z'), ended('a1')]);
+
+    expect((await readDelegatedTasks('s')).agents[0]?.error).toBeUndefined();
+  });
+
+  // An empty reason is no reason, and would draw an empty space where "failed" belongs.
+  it('says nothing where the reason is empty', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [
+      started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z'),
+      ended('a1', 'subagent.failed', { error: '' }),
+    ]);
+
+    expect((await readDelegatedTasks('s')).agents[0]?.error).toBeUndefined();
+  });
+
   /** Nothing has ended it, so there is nothing to report rather than something to guess. */
   it('claims no outcome for one still running', async () => {
     const { readDelegatedTasks } = await loadEventLog();

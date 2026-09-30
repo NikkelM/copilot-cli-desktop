@@ -629,7 +629,11 @@ function Delegated({
                 the same question - a reader who can read one can read the other. */}
             <span className={`activity activity-${entry.outcome === undefined ? 'working' : 'idle'}`} aria-hidden />
             <span className="subagent-name">{entry.name}</span>
-            {entry.outcome === 'failed' && <span className="subagent-failed">failed</span>}
+            {entry.outcome === 'failed' && (
+              <span className="subagent-failed" title={entry.error}>
+                failed
+              </span>
+            )}
           </button>
           {/* Kept tasks stop ageing out, which is the whole point: the long audit worth
               coming back to is the first one the conversation leaves behind (#180). Only

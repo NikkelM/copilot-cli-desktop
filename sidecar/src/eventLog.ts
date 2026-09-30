@@ -329,6 +329,7 @@ function tasksIn(events: readonly LocatedEvent[]): DelegatedTask[] {
     if (!task) continue;
 
     task.outcome = event.type === 'subagent.completed' ? 'completed' : 'failed';
+    if (typeof data.error === 'string' && data.error) task.error = data.error;
     if (typeof data.totalToolCalls === 'number') task.toolCalls = data.totalToolCalls;
     if (typeof data.totalTokens === 'number') task.tokens = data.totalTokens;
     if (typeof data.durationMs === 'number') task.durationMs = data.durationMs;

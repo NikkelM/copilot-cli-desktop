@@ -860,3 +860,51 @@ describe('the runtime own background agents', () => {
     expect(result.current.watched.map((entry) => entry.agentId)).toEqual(['a1']);
   });
 });
+
+/**
+ * Why a task failed, which the announcement that ended it carries (#228).
+ *
+ * "failed" on its own sends the reader to the log for what the event already said.
+ */
+describe('why a task failed', () => {
+  const failedWith = (error: unknown) =>
+    ({ type: 'subagent.failed', agentId: 'a1', data: { toolCallId: 'c1', error } }) as TranscriptEvent;
+
+  it('keeps what the announcement said', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+
+    act(() => result.current.observe('s1', failedWith('No response generated')));
+
+    expect(result.current.watched[0]?.error).toBe('No response generated');
+  });
+
+  it('keeps nothing where nothing was said', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+
+    act(() => result.current.observe('s1', failedWith(undefined)));
+
+    expect(result.current.watched[0]?.error).toBeUndefined();
+    expect(result.current.watched[0]?.outcome).toBe('failed');
+  });
+
+  // An empty reason is no reason, and would draw a blank where "failed" belongs.
+  it('keeps nothing where the reason is empty', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+
+    act(() => result.current.observe('s1', failedWith('')));
+
+    expect(result.current.watched[0]?.error).toBeUndefined();
+  });
+
+  it('says nothing about why a finished task finished', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', started('a1')));
+
+    act(() => result.current.observe('s1', finished('a1')));
+
+    expect(result.current.watched[0]?.error).toBeUndefined();
+  });
+});

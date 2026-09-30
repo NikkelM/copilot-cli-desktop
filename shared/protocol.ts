@@ -59,6 +59,13 @@ export interface DelegatedTask {
   startedAt: string;
   /** Absent for one still running, and for one whose end is past the page that found it. */
   outcome?: 'completed' | 'failed';
+  /**
+   * Why it failed, when it did.
+   *
+   * Every failure in this machine's logs carries one, and "failed" on its own sends the
+   * reader to the log to find out what the event already said.
+   */
+  error?: string;
   /** What it cost, from the announcement that ended it. Absent for the same reasons. */
   toolCalls?: number;
   tokens?: number;

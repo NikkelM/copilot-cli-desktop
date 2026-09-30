@@ -108,6 +108,33 @@ describe('finding the tasks a session delegated', () => {
     expect(await screen.findByText('failed')).toBeTruthy();
   });
 
+  /**
+   * Why it failed rather than only that it did. Two failed sidekicks reading "failed" sent
+   * a reader to the log to find "No response generated", which the event had said all along.
+   */
+  it('says why it failed, where the log said', async () => {
+    sessionAgents.mockResolvedValue(page([task({ outcome: 'failed', error: 'No response generated' })]));
+    shown();
+
+    expect(await screen.findByText('No response generated')).toBeTruthy();
+  });
+
+  it('says only that it failed when nothing said why', async () => {
+    sessionAgents.mockResolvedValue(page([task({ outcome: 'failed', error: undefined })]));
+    shown();
+
+    expect(await screen.findByText('failed')).toBeTruthy();
+  });
+
+  /** A reason runs to 220 characters in these logs, so the row shows what fits and keeps the rest. */
+  it('keeps the whole reason for a reader who wants it', async () => {
+    const long = 'Error: Failed to get response from the AI model; retried 5 times. Last error: CAPIError.';
+    sessionAgents.mockResolvedValue(page([task({ outcome: 'failed', error: long })]));
+    shown();
+
+    expect((await screen.findByText(long)).getAttribute('title')).toBe(long);
+  });
+
   describe('choosing what the sidebar shows', () => {
     it('asks for a task to be shown', async () => {
       const onToggleShown = vi.fn();

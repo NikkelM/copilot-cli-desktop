@@ -161,7 +161,13 @@ export function Subagents({
                   title={`Read what ${task.name} did`}
                 >
                   <span className="subagents-when">{since(task.startedAt)}</span>
-                  {task.outcome === 'failed' && <span className="subagents-failed">failed</span>}
+                  {/* Why it failed rather than only that it did, which is what sent a
+                      reader to the log to find out what the event already said. */}
+                  {task.outcome === 'failed' && (
+                    <span className="subagents-failed" title={task.error}>
+                      {task.error ?? 'failed'}
+                    </span>
+                  )}
                   {task.outcome === undefined && <span className="subagents-running">working</span>}
                   <span className="subagents-cost">{cost(task)}</span>
                 </button>
