@@ -6009,6 +6009,22 @@ pre.fatal,
  * Shaped like the changes panel, since it is the same kind of thing: a tall list that opens
  * under the transcript and describes the session rather than being part of it.
  */
+/*
+ * Two of these can be open at once, so the height is a share of the space rather than a
+ * fixed slice of the window: two at 55vh each would leave no transcript at all. The basis
+ * is what the content wants, and the cap is what the pair may take between them (#87).
+ */
+.changes,
+.todos {
+  min-height: 0;
+  max-height: 55vh;
+}
+
+.footer:has(.changes):has(.todos) .changes,
+.footer:has(.changes):has(.todos) .todos {
+  max-height: 32vh;
+}
+
 .todos {
   display: flex;
   flex-direction: column;

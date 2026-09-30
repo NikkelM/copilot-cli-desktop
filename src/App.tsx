@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { open as pickFolder } from '@tauri-apps/plugin-dialog';
 
 import type {
@@ -301,7 +301,7 @@ export default function App() {
   const wiki = useWiki(showWiki);
   const changes = useChanges(selectedId);
   const rewind = useRewind(selectedId);
-  const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');
+  const repository = useRepoStatus(selected?.cwd ?? null, panel.showing('repository'));
   /**
    * What the agent says it is doing, for the session on screen (#172).
    *
@@ -633,10 +633,10 @@ export default function App() {
   useTauriEvent(
     () =>
       onSessionChanges(({ sessionId }) => {
-        if (panel.open === 'changes' && sessionId === selectedId) changes.load();
+        if (panel.showing('changes') && sessionId === selectedId) changes.load();
         // The agent editing files is the main thing that changes what git would say, and
         // the app already knows when it happened - so the panel does not need a timer.
-        if (panel.open === 'repository' && sessionId === selectedId) repository.refresh();
+        if (panel.showing('repository') && sessionId === selectedId) repository.refresh();
       }),
     [panel.open, selectedId, changes.load, repository.refresh],
   );
@@ -736,7 +736,7 @@ export default function App() {
   }
 
   function closeChanges() {
-    panel.hide();
+    panel.hide('changes');
     toComposer();
   }
 
@@ -778,7 +778,7 @@ export default function App() {
   }
 
   function closeEnvironment() {
-    panel.hide();
+    panel.hide('environment');
     toComposer();
   }
 
@@ -1027,7 +1027,7 @@ export default function App() {
        * Only while it is open: it re-reads on every open anyway, so refreshing a panel
        * nobody is looking at would be work for an answer that is thrown away.
        */
-      if (outcome.settingsChanged && panel.open === 'environment') void environment.load();
+      if (outcome.settingsChanged && panel.showing('environment')) void environment.load();
 
       switch (outcome.kind) {
         case 'text':
@@ -1524,7 +1524,7 @@ export default function App() {
           onBranches={() => void repository.readBranches()}
           onSwitch={(name, create) => {
             void switchBranch(name, create).then((failure) => {
-              if (failure && panel.open !== 'repository') setError(failure);
+              if (failure && !panel.showing('repository')) setError(failure);
             });
           }}
         />
@@ -1540,9 +1540,9 @@ export default function App() {
                       it is asked for - and then costs enough to be worth asking for. */}
                   <button
                     type="button"
-                    className={panel.open === 'changes' ? 'header-button on' : 'header-button'}
-                    onClick={() => (panel.open === 'changes' ? closeChanges() : openChanges())}
-                    aria-pressed={panel.open === 'changes'}
+                    className={panel.showing('changes') ? 'header-button on' : 'header-button'}
+                    onClick={() => (panel.showing('changes') ? closeChanges() : openChanges())}
+                    aria-pressed={panel.showing('changes')}
                     title="Show what this session changed"
                   >
                     Changes
@@ -1552,9 +1552,9 @@ export default function App() {
                   {todos.todos.length > 0 && (
                     <button
                       type="button"
-                      className={panel.open === 'todos' ? 'header-button on' : 'header-button'}
-                      onClick={() => (panel.open === 'todos' ? panel.hide() : panel.show('todos'))}
-                      aria-pressed={panel.open === 'todos'}
+                      className={panel.showing('todos') ? 'header-button on' : 'header-button'}
+                      onClick={() => (panel.showing('todos') ? panel.hide('todos') : panel.show('todos'))}
+                      aria-pressed={panel.showing('todos')}
                       title="Show what the agent says it is doing"
                     >
                       Todos
@@ -1620,25 +1620,29 @@ export default function App() {
                 <Shortcuts commands={help === 'full' ? commands : undefined} onClose={() => setHelp(null)} />
               )}
 
-              {panel.open === 'changes' && (
-                <Changes
-                  changes={changes.changes}
-                  loading={changes.loading}
-                  failed={changes.failed}
-                  diffs={changes.diffs}
-                  onDiff={changes.diff}
-                  cwd={selected.cwd}
-                  onClose={closeChanges}
-                  onReview={changes.review}
-                  reviewedAt={changes.reviewedAt}
-                  showAll={changes.showAll}
-                  onSpan={changes.setSpan}
-                />
-              )}
+              {/* In the order they were opened, so the newest is nearest the composer -
+                  which is where somebody who has just opened one is already looking. */}
+              {panel.open.map((which) => (
+                <Fragment key={which}>
+                  {which === 'changes' && (
+                    <Changes
+                      changes={changes.changes}
+                      loading={changes.loading}
+                      failed={changes.failed}
+                      diffs={changes.diffs}
+                      onDiff={changes.diff}
+                      cwd={selected.cwd}
+                      onClose={closeChanges}
+                      onReview={changes.review}
+                      reviewedAt={changes.reviewedAt}
+                      showAll={changes.showAll}
+                      onSpan={changes.setSpan}
+                    />
+                  )}
 
-              {panel.open === 'todos' && <Todos todos={todos.todos} onClose={panel.hide} />}
+                  {which === 'todos' && <Todos todos={todos.todos} onClose={() => panel.hide('todos')} />}
 
-              {panel.open === 'repository' && (
+                  {which === 'repository' && (
                 <Repository
                   status={repository.status}
                   loading={repository.loading}
@@ -1665,30 +1669,32 @@ export default function App() {
                   failed={repository.failed}
                   onRefresh={repository.refresh}
                   onClose={() => {
-                    panel.hide();
+                    panel.hide('repository');
                     toComposer();
                   }}
                 />
               )}
 
-              {panel.open === 'environment' && (
-                <Environment
-                  environment={environment.environment}
-                  loading={environment.loading}
-                  failed={environment.failed ?? skills.failed}
-                  onReload={() => void environment.load()}
-                  onClose={closeEnvironment}
-                  disabledSkills={skills.disabled}
-                  onToggleSkill={selectedId ? (name, enabled) => void skills.toggle(name, enabled) : undefined}
-                  onToggleMcp={(name, enabled) => void mcp.toggle(name, enabled)}
-                  onSaveMcp={(name, config) => void mcp.save(name, config)}
-                  onRemoveMcp={(name) => void mcp.remove(name)}
-                  mcpState={mcp.status}
-                  onLoginMcp={(name) => void mcp.signIn(selected.sessionId, name)}
-                  editingMcp={mcp.editing}
-                  onEditMcp={mcp.edit}
-                />
-              )}
+                  {which === 'environment' && (
+                    <Environment
+                      environment={environment.environment}
+                      loading={environment.loading}
+                      failed={environment.failed ?? skills.failed}
+                      onReload={() => void environment.load()}
+                      onClose={closeEnvironment}
+                      disabledSkills={skills.disabled}
+                      onToggleSkill={selectedId ? (name, enabled) => void skills.toggle(name, enabled) : undefined}
+                      onToggleMcp={(name, enabled) => void mcp.toggle(name, enabled)}
+                      onSaveMcp={(name, config) => void mcp.save(name, config)}
+                      onRemoveMcp={(name) => void mcp.remove(name)}
+                      mcpState={mcp.status}
+                      onLoginMcp={(name) => void mcp.signIn(selected.sessionId, name)}
+                      editingMcp={mcp.editing}
+                      onEditMcp={mcp.edit}
+                    />
+                  )}
+                </Fragment>
+              ))}
 
               <Queue items={queue.queues[selected.sessionId] ?? []} />
 
