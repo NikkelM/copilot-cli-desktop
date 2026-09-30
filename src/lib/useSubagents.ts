@@ -4,7 +4,7 @@ import { getAgentTranscript } from './sidecar';
 import { useKeptSubagents } from './useKeptSubagents';
 import { subagentNameIn } from './timeline';
 import { appendLive } from './timeline';
-import { showsInTranscript, type DelegatedTask, type TranscriptEvent } from '../../shared/protocol';
+import { isSidekick, showsInTranscript, type DelegatedTask, type TranscriptEvent } from '../../shared/protocol';
 
 /**
  * How many prompts a finished subagent survives before it stops being offered.
@@ -144,6 +144,10 @@ export function useSubagents() {
 
   /** Take a session event, and keep whatever it says about a subagent. */
   const observe = useCallback((sessionId: string, event: TranscriptEvent) => {
+    // The runtime's own background agents announce themselves the same way a delegated task
+    // does, and are nobody's work to look through.
+    if (event.agentId && isSidekick(event.agentId)) return;
+
     const name = subagentNameIn(event);
     if (name && event.agentId) {
       const agentId = event.agentId;

@@ -1116,6 +1116,54 @@ describe('readDelegatedTasks', () => {
     expect((await readDelegatedTasks('s')).agents).toEqual([]);
   });
 
+  /**
+   * The CLI runs background agents of its own - one fetches memories for the main agent -
+   * and they announce themselves exactly as a delegated task does. They are the runtime's
+   * housekeeping rather than work this session asked for.
+   */
+  describe('the runtime own background agents', () => {
+    const sidekick = (at: string) =>
+      JSON.stringify({
+        type: 'subagent.started',
+        agentId: `sidekick-github-context-memory-${at}`,
+        timestamp: '2026-09-30T10:00:00.000Z',
+        data: { agentName: 'github-context-memory', agentDisplayName: 'GitHub Context (Memory)' },
+      });
+
+    it('leaves them out', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', [sidekick('1785833048401'), sidekick('1785861232700')]);
+
+      expect((await readDelegatedTasks('s')).agents).toEqual([]);
+    });
+
+    it('leaves the tasks beside them alone', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', [sidekick('1785833048401'), started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z')]);
+
+      expect((await readDelegatedTasks('s')).agents.map((a) => a.agentId)).toEqual(['a1']);
+    });
+
+    /**
+     * The tempting rule is that a sidekick's agent id equals the call that spawned it. So
+     * does a genuine subagent's, in 1389 of 1890 real announcements, because older CLI
+     * versions identified one by its spawning call - so only the prefix can be trusted.
+     */
+    it('keeps a task whose id is its own tool call, as older ones are', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', [
+        JSON.stringify({
+          type: 'subagent.started',
+          agentId: 'toolu_01Sxma',
+          timestamp: '2026-09-30T10:00:00.000Z',
+          data: { toolCallId: 'toolu_01Sxma', agentName: 'explore', agentDisplayName: 'explore' },
+        }),
+      ]);
+
+      expect((await readDelegatedTasks('s')).agents.map((a) => a.name)).toEqual(['explore']);
+    });
+  });
+
   describe('a page of them', () => {
     const many = (count: number) =>
       Array.from({ length: count }, (_, at) => [

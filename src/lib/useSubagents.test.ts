@@ -811,3 +811,52 @@ describe('a task found in the log', () => {
     expect(result.current.watched).toHaveLength(1);
   });
 });
+
+/**
+ * The runtime's own background agents (#228).
+ *
+ * The CLI runs one that fetches memories for the main agent, and it announces itself
+ * exactly as a delegated task does. It is the runtime's housekeeping rather than work this
+ * session asked for, so it does not belong on a list of what the session delegated.
+ */
+describe('the runtime own background agents', () => {
+  const sidekickStart = () =>
+    ({
+      type: 'subagent.started',
+      agentId: 'sidekick-github-context-memory-1785833048401',
+      timestamp: '2026-09-30T10:00:00.000Z',
+      data: { agentName: 'github-context-memory', agentDisplayName: 'GitHub Context (Memory)' },
+    }) as TranscriptEvent;
+
+  it('keeps them off the list', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.observe('s1', sidekickStart()));
+
+    expect(result.current.watched).toEqual([]);
+  });
+
+  it('keeps their work out of what is held', () => {
+    const { result } = renderHook(() => useSubagents());
+    act(() => result.current.observe('s1', sidekickStart()));
+
+    act(() =>
+      result.current.observe('s1', {
+        type: 'assistant.message',
+        agentId: 'sidekick-github-context-memory-1785833048401',
+        data: { content: 'a memory' },
+      } as TranscriptEvent),
+    );
+
+    expect(result.current.watched).toEqual([]);
+  });
+
+  it('leaves a delegated task beside them alone', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.observe('s1', sidekickStart()));
+    act(() => result.current.observe('s1', started('a1', 'deep-audit')));
+
+    expect(result.current.watched.map((entry) => entry.agentId)).toEqual(['a1']);
+  });
+});

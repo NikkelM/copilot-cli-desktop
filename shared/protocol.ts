@@ -68,6 +68,23 @@ export interface DelegatedTask {
 }
 
 /**
+ * Whether an agent id belongs to the runtime rather than to work somebody asked for.
+ *
+ * The CLI runs background agents of its own - one retrieves memories and publishes them to
+ * the main agent's inbox - and they arrive on the same events as a delegated task. They are
+ * its housekeeping rather than a session's work, so a list of what a session delegated
+ * should not include them.
+ *
+ * Told apart by the prefix on the id, which is the only signal that holds. Across 1890 real
+ * announcements the 63 sidekicks all carry it and nothing else does; the tempting rule that
+ * a sidekick's agent id equals its tool call id is true of 1389 genuine subagents too,
+ * because older CLI versions identified a subagent by the call that spawned it.
+ */
+export function isSidekick(agentId: string): boolean {
+  return agentId.startsWith('sidekick-');
+}
+
+/**
  * A session waiting in the recycle bin.
  *
  * Remembered beside the directory that was moved rather than inside it, so a restored

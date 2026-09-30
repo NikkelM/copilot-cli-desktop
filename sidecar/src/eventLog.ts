@@ -18,7 +18,7 @@ import type {
   SessionUsage,
   TranscriptEvent,
 } from '../../shared/protocol.js';
-import { showsInTranscript } from '../../shared/protocol.js';
+import { isSidekick, showsInTranscript } from '../../shared/protocol.js';
 import { sessionEventLog } from './paths.js';
 
 /** Default cap on events per read; logs reach hundreds of thousands of entries. */
@@ -307,7 +307,9 @@ function tasksIn(events: readonly LocatedEvent[]): DelegatedTask[] {
 
   for (const { event, offset } of events) {
     const agentId = event.agentId;
-    if (!agentId) continue;
+    // The runtime's own background agents, which are its housekeeping rather than work this
+    // session asked for.
+    if (!agentId || isSidekick(agentId)) continue;
 
     const data = (event.data ?? {}) as Record<string, unknown>;
 
