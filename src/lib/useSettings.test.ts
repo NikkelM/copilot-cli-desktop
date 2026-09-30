@@ -345,6 +345,37 @@ describe('telling a replacement runtime the same things', () => {
 
     expect(setRuntimeLimits).toHaveBeenCalledOnce();
   });
+
+  /**
+   * Subscribing again on every settings change would drop the listener and take out
+   * another, and a replacement arriving in that gap is the event this exists to catch.
+   */
+  it('keeps one listener however often the settings change', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(onSidecarRestarted).toHaveBeenCalled());
+
+    act(() => result.current.apply({ maxLoaded: 2 }));
+    act(() => result.current.apply({ allowAll: true }));
+
+    expect(onSidecarRestarted).toHaveBeenCalledOnce();
+  });
+
+  /** Subscribed once, so the one listener has to answer with what is true now. */
+  it('tells a replacement what was chosen after it subscribed', async () => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(onSidecarRestarted).toHaveBeenCalled());
+
+    act(() => result.current.apply({ allowAll: true, maxLoaded: 3 }));
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledTimes(2));
+    setRuntimeLimits.mockClear();
+    act(() => fireRestarted());
+
+    await waitFor(() =>
+      expect(setRuntimeLimits).toHaveBeenLastCalledWith(3, 10 * 60_000, 7, 5 * 60_000, true),
+    );
+  });
 });
 
 describe('how long a deleted session is kept', () => {

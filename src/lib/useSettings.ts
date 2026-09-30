@@ -206,6 +206,15 @@ export function useSettings() {
   useEffect(tellRuntime, [tellRuntime]);
 
   /**
+   * Read inside the subscription rather than closed over, so the listener is taken out once.
+   *
+   * Depending on `tellRuntime` would drop and re-register it on every settings change, and
+   * a replacement arriving in that gap is exactly the event this exists to catch.
+   */
+  const latest = useRef(tellRuntime);
+  latest.current = tellRuntime;
+
+  /**
    * And again whenever a replacement sidecar takes over (#230).
    *
    * A new one starts on its own defaults and knows nothing the last was told, and none of
@@ -219,7 +228,7 @@ export function useSettings() {
    * back as the default, which is a change to how much the app holds with nothing on screen
    * to say so.
    */
-  useTauriEvent(() => onSidecarRestarted(tellRuntime), [tellRuntime]);
+  useTauriEvent(() => onSidecarRestarted(() => latest.current()), []);
 
   /**
    * Bring the CLI up to date once, if that was asked for.
