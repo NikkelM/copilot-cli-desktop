@@ -40,6 +40,36 @@ const LOAD_OLDER_THRESHOLD_PX = 120;
 const AUTO_FILL_LIMIT = 4;
 
 /**
+ * How many of the drawn rows it takes to fill the view, counting back from the newest.
+ *
+ * The floor the trimmer must not go under. The budget that decides how much to keep counts
+ * text, and a tool row holds far more text than it draws - its output is collapsed - so a
+ * page can be many times over budget and barely taller than its box. Trimming it to the
+ * budget left it too short to scroll, the auto-fill above widened it straight back, and the
+ * page visibly vanished and returned (#232).
+ *
+ * Measured rather than estimated, because the only honest answer is in pixels: rows differ
+ * in height by more than an order of magnitude, from a one-line tool call to a long reply.
+ */
+function fillsTheView(list: HTMLElement | null): number {
+  if (!list) return 0;
+
+  const rows = list.querySelectorAll<HTMLElement>(':scope > li.entry');
+  let height = 0;
+  let needed = 0;
+  // From the newest backwards, which is the end the reader is at and the end the window is
+  // anchored to. One past filling the box, so the row straddling the top edge is kept whole.
+  for (let index = rows.length - 1; index >= 0 && height < list.clientHeight; index -= 1) {
+    height += rows[index]!.offsetHeight;
+    needed += 1;
+  }
+  // Nothing measurable, which is a list that has not been laid out rather than one whose
+  // rows take no room. No floor rather than a false one: a page that cannot be measured
+  // must not be able to forbid the trimming it cannot justify.
+  return height > 0 ? needed : 0;
+}
+
+/**
  * How long the view has to stay at the bottom before history reached by scrolling up is
  * given back.
  *
@@ -631,7 +661,9 @@ export function Transcript({
           // Reaching back is not the only way to end up drawing too much: a session worked
           // in for long enough arrives at the same place without ever scrolling (#184).
           if (extraPages) onDropOlder?.();
-          budgeted.settle();
+          // Told what it must not trim past, since only the view knows that: the budget
+          // counts text and the box is measured in pixels (#232).
+          budgeted.settle(undefined, fillsTheView(listRef.current));
         }, DROP_OLDER_AFTER_MS);
       }
     } else {

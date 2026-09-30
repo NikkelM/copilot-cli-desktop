@@ -308,6 +308,70 @@ describe('coming back down once the reader settles at the bottom', () => {
     expect(result.current.entries.length).toBeLessThan(400);
   });
 
+  /**
+   * The budget counts text, and a tool row holds far more of it than it draws - its output
+   * is collapsed. So a page can be many times over budget and barely taller than its box,
+   * and trimming it to the budget leaves it too short to scroll. The auto-fill that keeps
+   * such a page reachable then widens it straight back, and the page visibly vanishes and
+   * returns (#232).
+   */
+  describe('what the view needs, whatever the budget says', () => {
+    it('keeps what fills the view even where the budget is long past', () => {
+      const { result } = grown();
+      const over = result.current.entries.length;
+
+      act(() => result.current.settle(undefined, over));
+
+      expect(result.current.entries).toHaveLength(over);
+    });
+
+    it('trims to the floor rather than all the way to the budget', () => {
+      const { result } = grown();
+      act(() => result.current.showMore());
+      const asked = result.current.entries.length;
+      // Between the two, which is the case that tells them apart: the budget would cut
+      // further than this, and the reader is currently drawing more.
+      act(() => result.current.settle());
+      const budgeted = result.current.entries.length;
+      expect(budgeted).toBeLessThan(asked);
+
+      const { result: again } = grown();
+      act(() => again.current.showMore());
+      act(() => again.current.settle(undefined, budgeted + 10));
+
+      expect(again.current.entries).toHaveLength(budgeted + 10);
+    });
+
+    /** A floor under what the budget allows is not a reason to draw less than the budget. */
+    it('still keeps the budget where the view needs less than it', () => {
+      const { result } = grown();
+      act(() => result.current.settle());
+      const budgeted = result.current.entries.length;
+
+      act(() => result.current.settle(undefined, 1));
+
+      expect(result.current.entries).toHaveLength(budgeted);
+    });
+
+    it('trims as it always did when the view asks for nothing', () => {
+      const { result } = grown();
+
+      act(() => result.current.settle(undefined, 0));
+
+      expect(result.current.entries.length).toBeLessThan(400);
+    });
+
+    /** Only ever shortens, so a floor above what is drawn is not a way to reach further back. */
+    it('is not a way to widen the window', () => {
+      const { result } = renderHook(() => useBudgetedEntries('s1', many(400, 16)));
+      const drawn = result.current.entries.length;
+
+      act(() => result.current.settle(undefined, drawn + 50));
+
+      expect(result.current.entries).toHaveLength(drawn);
+    });
+  });
+
   /** Streaming carries on afterwards, and must still be followed. */
   it('keeps up with what arrives after it has settled', () => {
     const { result, rerender } = grown();

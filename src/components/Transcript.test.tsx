@@ -1047,6 +1047,52 @@ describe('coming back to a workable window while the reader follows along', () =
     expect(t.rows()).toBe(400);
   });
 
+  /**
+   * The budget counts text; a tool row holds far more of it than it draws, since its output
+   * is collapsed. So a page can be many times over budget and barely taller than its box,
+   * and trimming it to the budget left it too short to scroll - whereupon the auto-fill that
+   * keeps such a page reachable widened it straight back, and the page visibly vanished and
+   * returned (#232).
+   *
+   * jsdom lays nothing out, so the rows are given a height here. That is the whole subject:
+   * without one, there is no way to know how few rows the view can afford to lose.
+   */
+  describe('trimming a page whose rows are taller than its budget suggests', () => {
+    /**
+     * Each drawn row a hundredth of the viewport, so it takes a hundred of them to fill it -
+     * comfortably more than the budget keeps, which is what makes the floor the thing being
+     * measured rather than a number the budget would have reached anyway.
+     */
+    const measured = (view: ReturnType<typeof render>) => {
+      for (const row of view.container.querySelectorAll('ol.transcript > li.entry')) {
+        Object.defineProperty(row, 'offsetHeight', { configurable: true, get: () => VIEWPORT / 100 });
+      }
+    };
+
+    const settled = (withHeights: boolean) => {
+      const t = mounted(said(4));
+      t.grow(400);
+      if (withHeights) measured(t.view);
+
+      t.scrollTo(BOTTOM);
+      t.wait(DWELL);
+      return t.rows();
+    };
+
+    it('keeps enough to fill the view, which the budget alone does not', () => {
+      const budgetAlone = settled(false);
+
+      expect(settled(true), 'a hundred rows of a hundredth each is what the box holds').toBeGreaterThan(
+        budgetAlone,
+      );
+    });
+
+    // Still a trim: what the view does not need is still given back.
+    it('gives back everything above what the view needs', () => {
+      expect(settled(true)).toBeLessThan(400);
+    });
+  });
+
   it('keeps the newest entries, which are the ones being followed', () => {
     const t = mounted(said(4));
     t.grow(400);

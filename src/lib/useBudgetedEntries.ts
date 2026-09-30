@@ -154,13 +154,19 @@ export function useBudgetedEntries(sessionId: string, entries: Entry[], budget =
    *
    * Never grows. `showMore` and the page's own arrivals are the only things that widen the
    * window, so a ceiling above what is currently drawn leaves it alone rather than reaching
-   * for entries the reader has not asked for. That is also what keeps this from fighting the
-   * auto-fill that extends a page too short to scroll: this can only ever shorten, and a
-   * list holding 64 KB of text is many times any viewport, so the two cannot take turns.
+   * for entries the reader has not asked for.
+   *
+   * Never below what fills the view, either, which is `keep`. The budget counts text, and a
+   * tool row holds far more of it than it draws - its output is collapsed. So a page can be
+   * many times the budget in text and barely taller than the box, and trimming it to fit the
+   * budget then leaves it too short to scroll. The auto-fill that keeps such a page
+   * reachable widens it straight back, and the reader sees the page vanish and return
+   * (#232). Measured: 21 rows came to 1215px in a 1207px box, the budget kept 8 of them,
+   * and the 13 it dropped were worth 8 pixels.
    */
-  const settle = useCallback((ceiling = REACH_BUDGET) => {
+  const settle = useCallback((ceiling = REACH_BUDGET, keep = 0) => {
     const fits = budgetedCount(latest.current, ceiling);
-    setShown((current) => Math.min(current, fits));
+    setShown((current) => Math.max(keep, Math.min(current, fits)));
   }, []);
 
   const from = Math.max(0, entries.length - shown);
