@@ -201,7 +201,9 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
             {badge.label}
           </span>
         ) : (
-          <span className="tool-status">{entry.skill ? '◈' : STATUS_GLYPH[entry.status]}</span>
+          <span className="tool-status">
+            {entry.skill ? '◈' : entry.compaction ? '⌾' : STATUS_GLYPH[entry.status]}
+          </span>
         )}
         <span className="tool-name">{entry.name}</span>
         <span className="tool-subject">
@@ -239,6 +241,9 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         {entry.skill && entry.skill !== 'user' && (
           <span className="tool-note skill">{SKILL_NOTE[entry.skill]}</span>
         )}
+        {/* Whether the reader asked for this or the window filled up. Silent when they
+            asked, for the same reason a skill they invoked says nothing back to them. */}
+        {entry.compaction?.trigger === 'auto' && <span className="tool-note skill">the window filled up</span>}
         {/* Says how much is behind the row, and stays once it is opened: it describes the
             row rather than the fact that it is folded. Right-aligned, so it reads as a
             separate column without needing punctuation. */}

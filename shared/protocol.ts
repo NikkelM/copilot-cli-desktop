@@ -1064,6 +1064,10 @@ export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
   'tool.execution_complete',
   'session.error',
   'skill.invoked',
+  // Summarising the conversation to make room in the window, which is the one thing that
+  // changes what the agent knows without anybody saying anything (#211).
+  'session.compaction_start',
+  'session.compaction_complete',
   'command.output',
   'command.failed',
   'abort',

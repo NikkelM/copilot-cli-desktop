@@ -108,6 +108,19 @@ export interface ToolEntry {
    * row that behaves identically, and a second path for the transcript to render.
    */
   skill?: 'user' | 'agent' | 'context';
+  /**
+   * The conversation being summarised to make room in the context window (#211).
+   *
+   * Shares the row for the same reason a skill does: a named thing that ran, with content
+   * worth reading only if asked for - and the content here is the summary that now stands
+   * in for the messages it replaced.
+   */
+  compaction?: {
+    /** Asked for, or decided by the runtime when the window filled. */
+    trigger: 'manual' | 'auto';
+    messagesRemoved?: number;
+    tokensRemoved?: number;
+  };
   /** When it began, so a long-running call can say how long it has been going. */
   startedAt?: string;
   /** When it stopped, whether it finished or was cancelled. Absent while it runs. */
@@ -148,6 +161,12 @@ export type Entry = MessageEntry | ReasoningEntry | ToolEntry;
 function text(data: Record<string, unknown>, key: string): string | null {
   const value = data[key];
   return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/** A count the runtime reported, which is absent rather than zero when it said nothing. */
+function number(data: Record<string, unknown>, key: string): number | undefined {
+  const value = data[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 /**
@@ -776,6 +795,69 @@ export function toEntries(
           body: text(data, 'message') ?? 'Session error',
         });
         break;
+
+      /**
+       * The conversation being summarised to make room in the window (#211).
+       *
+       * Worth a row because it is the one thing that changes what the agent knows without
+       * anybody saying anything: messages it was working from are replaced by a summary,
+       * and a reader who finds it has forgotten something earlier has no other way to see
+       * that this is why.
+       *
+       * Opened by the start and finished by the completion, like a tool call, so a
+       * compaction that takes twelve seconds says it is working rather than appearing
+       * once it is over.
+       */
+      case 'session.compaction_start': {
+        entries.push({
+          kind: 'tool',
+          key,
+          name: 'Compacting',
+          summary: 'Summarising the conversation to make room',
+          output: null,
+          status: 'running',
+          compaction: { trigger: text(data, 'trigger') === 'manual' ? 'manual' : 'auto' },
+          startedAt: event.timestamp,
+        });
+        break;
+      }
+
+      case 'session.compaction_complete': {
+        const removed = number(data, 'messagesRemoved');
+        const tokens = number(data, 'tokensRemoved');
+        const failed = data?.success === false;
+        // The summary that now stands in for what was removed, which is the only place it
+        // can be read: the messages it replaced are gone from the window.
+        const summaryContent = text(data, 'summaryContent');
+
+        // Finishes the row the start opened, when that is on this page. A page that begins
+        // after the start has a completion with nothing to complete, and says so on its own.
+        const opened = [...entries].reverse().find((entry) => entry.kind === 'tool' && entry.name === 'Compacting');
+
+        const shape = {
+          name: failed ? 'Compaction failed' : 'Compacted',
+          summary: failed
+            ? (text(data, 'error') ?? 'The conversation was left as it was')
+            : [
+                removed === undefined ? null : `${removed} ${removed === 1 ? 'message' : 'messages'}`,
+                tokens === undefined ? null : `${tokens.toLocaleString()} tokens`,
+              ]
+                .filter(Boolean)
+                .join(', '),
+          output: summaryContent ? clip(summaryContent) : null,
+          status: failed ? ('failed' as const) : ('ok' as const),
+          compaction: {
+            trigger: text(data, 'trigger') === 'manual' ? ('manual' as const) : ('auto' as const),
+            ...(removed === undefined ? {} : { messagesRemoved: removed }),
+            ...(tokens === undefined ? {} : { tokensRemoved: tokens }),
+          },
+          endedAt: event.timestamp,
+        };
+
+        if (opened && opened.kind === 'tool') Object.assign(opened, shape);
+        else entries.push({ kind: 'tool', key, startedAt: event.timestamp, ...shape });
+        break;
+      }
 
       // A skill that was loaded into the conversation. Worth a row because its content
       // becomes part of what the agent was told, and a reader wondering why a session

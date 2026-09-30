@@ -1498,3 +1498,78 @@ describe('reading the same events twice', () => {
     expect(entry.output).toBe('no such file');
   });
 });
+/**
+ * Summarising the conversation to make room in the window (#211).
+ *
+ * The one thing that changes what the agent knows without anybody saying anything: messages
+ * it was working from are replaced by a summary. A reader who finds it has forgotten
+ * something earlier has no other way to see that this is why.
+ */
+describe('compacting the conversation', () => {
+  // The shape a real run wrote, taken from a session's own log.
+  const complete = (over: Record<string, unknown> = {}) =>
+    event('session.compaction_complete', {
+      success: true,
+      preCompactionTokens: 8072,
+      postCompactionTokens: 1077,
+      messagesRemoved: 42,
+      tokensRemoved: 6995,
+      summaryContent: '<overview>what the session had been doing</overview>',
+      trigger: 'manual',
+      ...over,
+    });
+
+  const started = (trigger = 'manual') =>
+    event('session.compaction_start', { currentTokens: 17629, trigger });
+
+  it('says what it removed', () => {
+    const [entry] = toEntries([started(), complete()], CWD);
+
+    expect(entry).toMatchObject({ kind: 'tool', name: 'Compacted', summary: '42 messages, 6,995 tokens' });
+  });
+
+  /** The summary now stands in for what was removed, and this is the only place to read it. */
+  it('keeps the summary it wrote', () => {
+    const [entry] = toEntries([started(), complete()], CWD);
+
+    expect(entry.kind === 'tool' && entry.output).toContain('what the session had been doing');
+  });
+
+  it('draws one row rather than two', () => {
+    expect(toEntries([started(), complete()], CWD)).toHaveLength(1);
+  });
+
+  /** Twelve seconds is long enough that a row appearing only at the end looks like nothing. */
+  it('says it is working before it has finished', () => {
+    const [entry] = toEntries([started()], CWD);
+
+    expect(entry).toMatchObject({ kind: 'tool', name: 'Compacting', status: 'running' });
+  });
+
+  it('says who asked for it', () => {
+    const [manual] = toEntries([started('manual'), complete({ trigger: 'manual' })], CWD);
+    const [auto] = toEntries([started('auto'), complete({ trigger: 'auto' })], CWD);
+
+    expect(manual.kind === 'tool' && manual.compaction?.trigger).toBe('manual');
+    expect(auto.kind === 'tool' && auto.compaction?.trigger).toBe('auto');
+  });
+
+  it('says when it failed rather than what it removed', () => {
+    const [entry] = toEntries([started(), complete({ success: false, error: 'the model said nothing' })], CWD);
+
+    expect(entry).toMatchObject({ kind: 'tool', name: 'Compaction failed', status: 'failed' });
+  });
+
+  /** A page that begins after the start has a completion with nothing to complete. */
+  it('stands on its own when the start is further back than the page', () => {
+    const [entry] = toEntries([complete()], CWD);
+
+    expect(entry).toMatchObject({ kind: 'tool', name: 'Compacted', status: 'ok' });
+  });
+
+  it('counts one message as one message', () => {
+    const [entry] = toEntries([complete({ messagesRemoved: 1, tokensRemoved: 12 })], CWD);
+
+    expect(entry.kind === 'tool' && entry.summary).toBe('1 message, 12 tokens');
+  });
+});
