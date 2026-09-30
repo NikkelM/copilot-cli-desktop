@@ -426,10 +426,37 @@ export interface ResolvePermissionParams {
  * `request` is the SDK's PermissionRequest, a union discriminated by `kind`
  * (shell, write, read, mcp, custom-tool, url, ...).
  */
+/**
+ * The subagent behind a request, where one is behind it (#229).
+ *
+ * Absent for the session's own agent, which is the ordinary case: the runtime marks an
+ * event with an agent only when a delegated one produced it.
+ */
+export interface AskedBy {
+  agentId: string;
+  /**
+   * What the subagent was called, when its announcement has been seen.
+   *
+   * Optional because knowing that a delegated agent is asking is worth saying even when
+   * its name is not to hand - a session attached to part-way through a run has the tool
+   * call but never saw the announcement that named the agent making it.
+   */
+  name?: string;
+}
+
 export interface PendingPermission {
   sessionId: string;
   requestId: string;
   request: Record<string, unknown>;
+  /**
+   * The subagent that asked, when the session's own agent was not the one asking (#229).
+   *
+   * Approving a write is a decision about trust, and "the agent wants to edit this file"
+   * and "a subagent delegated to twenty minutes ago wants to edit this file" are different
+   * decisions. Nothing in the request says which, so it is worked out from the tool call
+   * the request names.
+   */
+  askedBy?: AskedBy;
   /**
    * A directory that could be allowed outright, or absent when there is nothing to offer.
    *

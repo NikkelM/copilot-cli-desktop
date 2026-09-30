@@ -12,6 +12,7 @@ import {
 } from '@github/copilot-sdk';
 
 import type {  McpServerState,
+  AskedBy,
   Attachment,
   CommandOutcome,
   ContextTier,
@@ -149,6 +150,22 @@ function toolCallOf(request: PermissionRequest): string | null {
 const ANSWERS_KEPT = 64;
 
 /**
+ * How many of a session's subagent tool calls to remember, and how many subagent names.
+ *
+ * Read moments after the call starts, by the permission request for that same call, so
+ * this covers what is in flight rather than a session's history. Only calls a subagent
+ * made are kept, which is the rare case: across every log on this machine, 4 of 10
+ * permission requests came from a subagent.
+ */
+const CALLERS_KEPT = 256;
+
+/** Drop the oldest entries until a map is back within its bound. */
+function bound<T>(entries: Map<string, T>, limit: number): void {
+  // Insertion order, so this drops the least recently added rather than an arbitrary one.
+  for (const oldest of [...entries.keys()].slice(0, entries.size - limit)) entries.delete(oldest);
+}
+
+/**
  * How much of a prompt travels with a rewind point.
  *
  * The menu draws one line of about seventy characters, so the rest is read from disk, sent
@@ -271,6 +288,8 @@ export interface RuntimeOptions {
     expiresAt: string | null,
     /** A directory worth offering to allow outright, when the path is outside the list. */
     offerFolder?: string,
+    /** The subagent that asked, when the session's own agent was not the one asking (#229). */
+    askedBy?: AskedBy,
   ) => void;
   /** Tells the UI a pending request is no longer awaiting an answer. */
   onPermissionResolved?: (sessionId: string, requestId: string) => void;
@@ -382,12 +401,23 @@ export class SessionRuntime {
     expiresAt: string | null,
     /** A directory worth offering to allow outright, when the path is outside the list. */
     offerFolder?: string,
+    askedBy?: AskedBy,
   ) => void;
   private readonly onPermissionResolved?: (sessionId: string, requestId: string) => void;
   /** What each waiting permission request asked, so its answer can name what it approves. */
   private readonly asked = new Map<string, PermissionRequest>();
   /** What the reader decided about a tool call, so the same one is not asked about twice. */
   private readonly answeredCalls = new Map<string, PermissionRequestResult>();
+  /**
+   * Which subagent made each recent tool call, keyed `sessionId:toolCallId` (#229).
+   *
+   * Only calls a subagent made are kept. The runtime marks an event with an agent only
+   * when a delegated one produced it, so a call that is absent here was the session's own
+   * agent - which is the ordinary case, and the one that needs no explaining.
+   */
+  private readonly callerOf = new Map<string, string>();
+  /** What each subagent is called, keyed `sessionId:agentId`, for naming it in a prompt. */
+  private readonly agentNames = new Map<string, string>();
   private readonly onElicitationRequest?: (
     sessionId: string,
     requestId: string,
@@ -765,7 +795,7 @@ export class SessionRuntime {
     this.asked.set(requestId, request);
 
     const offerFolder = await this.folderWorthOffering(sessionId, request);
-    this.onPermissionRequest(sessionId, requestId, request, expiresAt, offerFolder);
+    this.onPermissionRequest(sessionId, requestId, request, expiresAt, offerFolder, this.askedBy(sessionId, callId));
     return answered;
   }
 
@@ -1015,8 +1045,60 @@ export class SessionRuntime {
     this.plans.abandon(sessionId, { approved: false });
   }
 
+  /**
+   * Note who made a tool call and what each subagent is called (#229).
+   *
+   * A permission request names the tool call it is about and nothing else, so the only way
+   * to say who is asking is to have watched the call start. `tool.execution_start` carries
+   * both the call and the agent, and - measured across every log on this machine - always
+   * arrives before the request about that call, in all ten cases there were.
+   *
+   * The same rule already works out who delegated a task, in `eventLog.ts` and in
+   * `useSubagents.ts`. Lifecycle events are left out of it: a `subagent.*` event names the
+   * call that started the agent without having made it, so counting it would make every
+   * agent its own caller.
+   */
+  private noteAgent(sessionId: string, event: SessionEvent): void {
+    const agentId = event.agentId;
+    if (!agentId) return;
+
+    if (event.type === 'subagent.started') {
+      const data = event.data as { agentDisplayName?: unknown; agentName?: unknown };
+      const name = typeof data.agentDisplayName === 'string' && data.agentDisplayName
+        ? data.agentDisplayName
+        : typeof data.agentName === 'string' && data.agentName
+          ? data.agentName
+          : null;
+      if (name) {
+        this.agentNames.set(`${sessionId}:${agentId}`, name);
+        bound(this.agentNames, CALLERS_KEPT);
+      }
+      return;
+    }
+
+    if (event.type.startsWith('subagent.')) return;
+
+    const call = (event.data as { toolCallId?: unknown } | undefined)?.toolCallId;
+    if (typeof call !== 'string' || !call) return;
+
+    this.callerOf.set(`${sessionId}:${call}`, agentId);
+    bound(this.callerOf, CALLERS_KEPT);
+  }
+
+  /** The subagent behind a tool call, where the call was not the session's own agent (#229). */
+  private askedBy(sessionId: string, callId: string | null): AskedBy | undefined {
+    if (!callId) return undefined;
+    const agentId = this.callerOf.get(`${sessionId}:${callId}`);
+    if (!agentId) return undefined;
+
+    const name = this.agentNames.get(`${sessionId}:${agentId}`);
+    return name ? { agentId, name } : { agentId };
+  }
+
   private handleEvent(sessionId: string, event: SessionEvent): void {
     const entry = this.loaded.get(sessionId);
+
+    this.noteAgent(sessionId, event);
 
     if (entry) {
       // `assistant.turn_end` is one model round trip, not the end of the work: a request

@@ -35,6 +35,8 @@ export function PermissionPrompt({ pending, cwd, onResolve, onAllowFolder }: Per
   // Only where the sidecar found a directory outside what the session may already work in,
   // which is the case that asks twice for one edit (#210).
   const folder = pending.offerFolder;
+  // Absent for the session's own agent, which is the ordinary case (#229).
+  const askedBy = pending.askedBy;
 
   return (
     <section className="permission">
@@ -44,6 +46,17 @@ export function PermissionPrompt({ pending, cwd, onResolve, onAllowFolder }: Per
         {subject && <span className="permission-subject">{subject}</span>}
         <Expiry at={pending.expiresAt} />
       </header>
+
+      {askedBy && (
+        /* Worth a sentence rather than a badge. A prompt from a delegated agent is the
+           rare one, and the rarity is the reason to name it: approving a write is a
+           decision about trust, and a subagent delegated to twenty minutes ago is not the
+           same thing to trust as the agent being talked to. */
+        <p className="permission-asker">
+          Asked by {askedBy.name ? <strong>{askedBy.name}</strong> : 'a subagent'}
+          {askedBy.name ? ', a subagent' : ''} this session delegated to.
+        </p>
+      )}
 
       {kind === 'write' ? (
         <WriteDiff patch={str(request, 'diff') ?? ''} />

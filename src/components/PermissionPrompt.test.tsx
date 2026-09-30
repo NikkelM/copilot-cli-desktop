@@ -320,3 +320,62 @@ describe('allowing the folder a write is outside of', () => {
     expect(screen.getByRole('button', { name: 'Deny' })).toBeTruthy();
   });
 });
+
+/**
+ * Which agent is asking, when it is not the session's own (#229).
+ *
+ * The request names a tool call and nothing else, so without this a prompt raised by a
+ * subagent delegated to twenty minutes ago looks exactly like one from the agent being
+ * talked to - and approving a write is a decision about trust.
+ */
+describe('saying who is asking', () => {
+  const asker = () => document.querySelector('.permission-asker')?.textContent ?? null;
+
+  const askedBy = (by: PendingPermission['askedBy']) => {
+    render(
+      <PermissionPrompt
+        pending={{
+          sessionId: 's1',
+          requestId: 'r1',
+          request: { kind: 'shell', fullCommandText: 'ls' },
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+          ...(by ? { askedBy: by } : {}),
+        }}
+        cwd={null}
+        onResolve={vi.fn()}
+      />,
+    );
+  };
+
+  it('says nothing where the session asked for itself', () => {
+    askedBy(undefined);
+
+    expect(asker()).toBeNull();
+  });
+
+  it('names the subagent that asked', () => {
+    askedBy({ agentId: 'agent-1', name: 'explore' });
+
+    expect(asker()).toBe('Asked by explore, a subagent this session delegated to.');
+  });
+
+  /** A run attached to part-way through has the call but never saw the agent being named. */
+  it('still says a subagent asked when it has no name for it', () => {
+    askedBy({ agentId: 'agent-1' });
+
+    expect(asker()).toBe('Asked by a subagent this session delegated to.');
+  });
+
+  it('draws the name as its own thing rather than as part of the sentence', () => {
+    askedBy({ agentId: 'agent-1', name: 'code-review' });
+
+    expect(document.querySelector('.permission-asker strong')?.textContent).toBe('code-review');
+  });
+
+  /** The agent id is the runtime's own handle and says nothing to a reader. */
+  it('keeps the runtime handle for the agent out of it', () => {
+    askedBy({ agentId: 'toolu_01T2EYeJ8kphRaM2nZNKDQYN', name: 'explore' });
+
+    expect(asker()).not.toContain('toolu_');
+  });
+});

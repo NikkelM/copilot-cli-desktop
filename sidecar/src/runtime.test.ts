@@ -845,6 +845,120 @@ describe('permissions', () => {
     for (let turn = 0; turn < 6; turn += 1) await Promise.resolve();
   };
 
+  /**
+   * Who is asking, when the session's own agent is not the one asking (#229).
+   *
+   * A permission request names a tool call and nothing else, so the asking agent is worked
+   * out from the event that started that call. Measured across every log on this machine:
+   * `tool.execution_start` carries both, and always arrived before the request about it.
+   */
+  describe('who is asking', () => {
+    const started = (toolCallId: string, agentId?: string) => ({
+      type: 'tool.execution_start',
+      data: { toolCallId, toolName: 'write' },
+      ...(agentId ? { agentId } : {}),
+    });
+
+    /** What the runtime sends when a delegated agent begins work. */
+    const announced = (agentId: string, toolCallId: string, names: Record<string, string>) => ({
+      type: 'subagent.started',
+      agentId,
+      data: { toolCallId, ...names },
+    });
+
+    /** Raise a request about `toolCallId`, after whatever events came first, and report who asked. */
+    const asking = async (
+      before: (sessions: ReturnType<typeof makeRuntime>['sessions']) => void,
+      toolCallId: string,
+    ) => {
+      const onPermissionRequest = vi.fn();
+      const { runtime, sessions, permissionHandlers } = makeRuntime({ onPermissionRequest });
+      await runtime.send('a', 'x');
+      before(sessions);
+
+      void permissionHandlers.get('a')?.({ kind: 'write', toolCallId });
+      await prompted();
+      return onPermissionRequest.mock.calls[0]?.[5];
+    };
+
+    it('says nothing where the session asked for itself', async () => {
+      expect(await asking((s) => s.get('a')?.emit(started('call-1')), 'call-1')).toBeUndefined();
+    });
+
+    it('names the subagent that asked', async () => {
+      const askedBy = await asking((s) => {
+        s.get('a')?.emit(announced('agent-1', 'task-1', { agentName: 'explore' }));
+        s.get('a')?.emit(started('call-1', 'agent-1'));
+      }, 'call-1');
+
+      expect(askedBy).toEqual({ agentId: 'agent-1', name: 'explore' });
+    });
+
+    it('prefers what the subagent is shown as', async () => {
+      const askedBy = await asking((s) => {
+        s.get('a')?.emit(
+          announced('agent-1', 'task-1', { agentName: 'explore', agentDisplayName: 'Explore Agent' }),
+        );
+        s.get('a')?.emit(started('call-1', 'agent-1'));
+      }, 'call-1');
+
+      expect(askedBy).toEqual({ agentId: 'agent-1', name: 'Explore Agent' });
+    });
+
+    /**
+     * A session attached to part-way through a run has the tool call but never saw the
+     * announcement that named the agent making it. That a delegated agent is asking is
+     * worth saying without its name.
+     */
+    it('still says a subagent asked when it was never named', async () => {
+      const askedBy = await asking((s) => s.get('a')?.emit(started('call-1', 'agent-1')), 'call-1');
+
+      expect(askedBy).toEqual({ agentId: 'agent-1' });
+    });
+
+    /**
+     * An announcement names the call that created the agent without having made it, so
+     * counting it would make a delegated agent the one asking permission to delegate it.
+     */
+    it('does not make a subagent the one that asked for it', async () => {
+      const askedBy = await asking((s) => {
+        s.get('a')?.emit(started('task-1'));
+        s.get('a')?.emit(announced('agent-1', 'task-1', { agentName: 'explore' }));
+      }, 'task-1');
+
+      expect(askedBy).toBeUndefined();
+    });
+
+    /**
+     * The same holds at the other end of a run, and matters more there: a finished agent
+     * names the call that started it long after the session's own agent made that call,
+     * so a late arrival would otherwise overwrite who really asked. Counted on these logs:
+     * 625 `subagent.completed` and 17 `subagent.failed` carry both a call and an agent.
+     */
+    it('does not let a finished subagent claim the call that started it', async () => {
+      const askedBy = await asking((s) => {
+        s.get('a')?.emit(started('task-1'));
+        s.get('a')?.emit({ type: 'subagent.completed', agentId: 'agent-1', data: { toolCallId: 'task-1' } });
+      }, 'task-1');
+
+      expect(askedBy).toBeUndefined();
+    });
+
+    /** Tool call ids are the runtime's, not this app's, so two sessions can hold the same one. */
+    it('keeps one session from answering for another', async () => {
+      const onPermissionRequest = vi.fn();
+      const { runtime, sessions, permissionHandlers } = makeRuntime({ onPermissionRequest });
+      await runtime.send('a', 'x');
+      await runtime.send('b', 'x');
+      sessions.get('b')?.emit(started('call-1', 'agent-1'));
+
+      void permissionHandlers.get('a')?.({ kind: 'write', toolCallId: 'call-1' });
+      await prompted();
+
+      expect(onPermissionRequest.mock.calls[0]?.[5]).toBeUndefined();
+    });
+  });
+
   it('asks the user rather than deciding on their behalf', async () => {
     const onPermissionRequest = vi.fn();
     const { runtime, permissionHandlers } = makeRuntime({ onPermissionRequest });
@@ -3213,8 +3327,16 @@ describe('how long a question waits', () => {
     void askAbout(runtime, permissionHandlers);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    // The fifth is the directory worth offering, absent for a request that names no path.
-    expect(onPermissionRequest).toHaveBeenCalledWith('a', expect.any(String), expect.anything(), expect.any(String), undefined);
+    // The fifth is the directory worth offering, absent for a request that names no path;
+    // the sixth is the subagent that asked, absent where the session asked for itself.
+    expect(onPermissionRequest).toHaveBeenCalledWith(
+      'a',
+      expect.any(String),
+      expect.anything(),
+      expect.any(String),
+      undefined,
+      undefined,
+    );
   });
 
   describe('with no wait at all', () => {
@@ -3236,7 +3358,14 @@ describe('how long a question waits', () => {
       void askAbout(runtime, permissionHandlers);
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(onPermissionRequest).toHaveBeenCalledWith('a', expect.any(String), expect.anything(), null, undefined);
+      expect(onPermissionRequest).toHaveBeenCalledWith(
+        'a',
+        expect.any(String),
+        expect.anything(),
+        null,
+        undefined,
+        undefined,
+      );
     });
   });
 

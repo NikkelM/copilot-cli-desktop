@@ -1176,6 +1176,25 @@ body {
 }
 
 /*
+ * Who is asking, when it is not the session's own agent (#229).
+ *
+ * Above the request rather than beside the buttons: it qualifies what is being asked
+ * rather than one of the answers, and who wants a file written changes what the answer
+ * should be. Coloured like the rest of the app's asides rather than like the warning,
+ * which is the runtime saying something is dangerous.
+ */
+.permission-asker {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}
+
+.permission-asker strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/*
  * Why this is being asked twice, and what allowing the folder would also do (#210).
  *
  * Above the buttons rather than beside one, because it explains the situation rather than
