@@ -1432,6 +1432,7 @@ export default function App() {
               ofAgent={subagents.open.agentId}
               display={display}
               turnSummary={settings.turnSummary}
+              onError={setError}
             />
 
             <div className="footer">
@@ -1530,6 +1531,7 @@ export default function App() {
               // transcript is not showing the end of the conversation.
               onLatest={jump?.sessionId === selected.sessionId ? () => setJump(null) : undefined}
               highlight={jump?.sessionId === selected.sessionId ? { words: jump.words, at: jump.at } : undefined}
+              onError={setError}
             />
 
             <div className="footer">

@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../../shared/protocol';
+import type { Attachment, TranscriptEvent } from '../../shared/protocol';
 import { stripAnsi } from '../../shared/ansi';
 import { relativise } from './paths';
 
@@ -33,6 +33,15 @@ export interface MessageEntry {
    * meant to say, and a transcript that presents the two alike is misleading about both.
    */
   partial?: boolean;
+  /**
+   * The files that rode along with the prompt (#111).
+   *
+   * Read from the log rather than remembered, because the log has them: a user message
+   * records each attachment's path, name and type. Without this a conversation gives no
+   * sign that a screenshot was ever part of it, and scrolling back says nothing about what
+   * the agent was looking at.
+   */
+  attachments?: Attachment[];
 }
 
 /**
@@ -167,6 +176,32 @@ function text(data: Record<string, unknown>, key: string): string | null {
 function number(data: Record<string, unknown>, key: string): number | undefined {
   const value = data[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * The files a prompt carried, as the log recorded them (#111).
+ *
+ * Only the path and the name are taken. The runtime also writes a mime type, a byte length
+ * and a hash, and none of them says anything a reader wants from a row - the path is what
+ * tells two screenshots called `image.png` apart.
+ *
+ * A file with no path cannot be shown or revealed, so it is left out rather than drawn as a
+ * chip that does nothing.
+ */
+function attachmentsIn(data: Record<string, unknown>): Attachment[] | undefined {
+  const raw = data.attachments;
+  if (!Array.isArray(raw)) return undefined;
+
+  const files = raw
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .filter((item) => typeof item.path === 'string' && item.path)
+    .map((item): Attachment => ({
+      type: 'file',
+      path: String(item.path),
+      ...(typeof item.displayName === 'string' && item.displayName ? { displayName: item.displayName } : {}),
+    }));
+
+  return files.length > 0 ? files : undefined;
 }
 
 /**
@@ -534,7 +569,19 @@ export function toEntries(
     switch (event.type) {
       case 'user.message': {
         const content = text(data, 'content');
-        if (content) entries.push({ kind: 'message', key, variant: 'user', body: content, at: event.timestamp });
+        // What rode along with it, which the log records in full (#111). Kept even for a
+        // message with no text: a prompt can be a screenshot and nothing else.
+        const attached = attachmentsIn(data);
+        if (content || attached) {
+          entries.push({
+            kind: 'message',
+            key,
+            variant: 'user',
+            body: content ?? '',
+            at: event.timestamp,
+            ...(attached ? { attachments: attached } : {}),
+          });
+        }
         break;
       }
 

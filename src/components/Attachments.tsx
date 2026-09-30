@@ -29,11 +29,12 @@ export function Attachments({
   onError,
 }: {
   attached: Attachment[];
-  onChange: (attached: Attachment[]) => void;
+  /** Absent where the files have been sent and are a record rather than a choice (#111). */
+  onChange?: (attached: Attachment[]) => void;
   /** Hands the composer a way to open the picker, since the button is up there. */
-  onPicker: (pick: () => void) => void;
+  onPicker?: (pick: () => void) => void;
   /** Called when the picker is done with, either way: the keyboard belongs back in the box. */
-  onFocusBack: () => void;
+  onFocusBack?: () => void;
   onError: (message: string) => void;
 }) {
   /**
@@ -47,6 +48,9 @@ export function Attachments({
   const [previews, setPreviews] = useState<Record<string, string | null>>({});
 
   useEffect(() => {
+    // Nothing to offer a picker to where the files have already been sent.
+    if (!onPicker || !onChange) return;
+
     onPicker(() => {
       open({ multiple: true, title: 'Attach files' })
         .then((picked) => {
@@ -63,7 +67,7 @@ export function Attachments({
         .catch((e: unknown) => onError(String(e)))
         // Whether they picked something or thought better of it, they are back at the
         // message they were writing.
-        .finally(onFocusBack);
+        .finally(() => onFocusBack?.());
     });
   }, [attached, onChange, onPicker, onFocusBack, onError]);
 
@@ -98,13 +102,17 @@ export function Attachments({
           >
             {file.displayName ?? file.path}
           </button>
-          <button
-            type="button"
-            onClick={() => onChange(attached.filter((other) => other.path !== file.path))}
-            aria-label={`Remove ${file.displayName ?? file.path}`}
-          >
-            ×
-          </button>
+          {/* Absent once the message has gone: what it carried is a record by then, and a
+              cross beside it would offer to change something that has already happened. */}
+          {onChange && (
+            <button
+              type="button"
+              onClick={() => onChange(attached.filter((other) => other.path !== file.path))}
+              aria-label={`Remove ${file.displayName ?? file.path}`}
+            >
+              ×
+            </button>
+          )}
         </span>
       ))}
       {hovered && previews[hovered.path] && (

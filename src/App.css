@@ -1876,6 +1876,12 @@ body {
   gap: 6px;
 }
 
+/* Under a sent message the chips need their own space: the composer's sit in a gapped
+   column, but here they butt straight up against the last line of the prompt (#111). */
+.message .attachments {
+  margin-top: 8px;
+}
+
 .attachment {
   display: inline-flex;
   align-items: center;

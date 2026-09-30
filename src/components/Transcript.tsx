@@ -13,6 +13,7 @@ import { CopyButton } from './CopyButton';
 import { Diff } from './Diff';
 import { Elapsed } from './Elapsed';
 import { ChevronIcon } from './Icons';
+import { Attachments } from './Attachments';
 import { Markdown } from './Markdown';
 
 /**
@@ -105,6 +106,18 @@ function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
  * and everything in between would be carrying an answer to a question it does not ask.
  */
 const Shows = createContext<CliDisplay>(ASSUMED_DISPLAY);
+
+/**
+ * Where a row reports something that went wrong, for the same reason `Shows` is a context.
+ *
+ * Only an attachment chip uses it so far: revealing a file months after it was attached
+ * often fails, because the file was in a temporary directory that has since been cleared,
+ * and a click that does nothing at all is the worse answer.
+ */
+const Reports = createContext<(message: string) => void>(() => undefined);
+
+/** One function, so a transcript given no reporter does not look like a changed one. */
+const noReport = () => undefined;
 
 /**
  * When a message was said.
@@ -347,6 +360,13 @@ interface TranscriptProps {
   display: CliDisplay;
   /** When a turn ends with a line saying what it changed. */
   turnSummary?: ShowTurnChanges;
+  /**
+   * Where a row says something went wrong, which so far is only an attachment.
+   *
+   * Revealing a file months after it was attached often fails - temporary directories are
+   * cleared - and a chip that does nothing when clicked is the worse answer.
+   */
+  onError?: (message: string) => void;
 }
 
 export function Transcript({
@@ -364,6 +384,7 @@ export function Transcript({
   ofAgent,
   display,
   turnSummary,
+  onError,
 }: TranscriptProps) {
   // Rebuilt only when the events are, rather than on every render: a streamed reply
   // re-renders this component once per chunk, and the walk costs more the more history is
@@ -632,6 +653,7 @@ export function Transcript({
   }
 
   return (
+    <Reports.Provider value={onError ?? noReport}>
     <Shows.Provider value={display}>
       <ol
         className="transcript"
@@ -671,6 +693,7 @@ export function Transcript({
         )}
       </ol>
     </Shows.Provider>
+    </Reports.Provider>
   );
 }
 
@@ -702,6 +725,7 @@ const EntryRow = memo(
 
 function EntryBody({ entry }: { entry: Entry }) {
   const shows = useContext(Shows);
+  const report = useContext(Reports);
 
   if (entry.kind === 'tool') return <ToolRow entry={entry} />;
   if (entry.kind === 'reasoning') return <ReasoningRow entry={entry} />;
@@ -722,6 +746,10 @@ function EntryBody({ entry }: { entry: Entry }) {
       ) : (
         <Markdown body={entry.body} anchor={entry.key} streaming={entry.streaming} />
       )}
+      {/* What the prompt carried, drawn as the composer drew it before it was sent, so an
+          attachment looks the same either side of Send (#111). Read-only: what a message
+          carried is a record by the time it is in the conversation. */}
+      {entry.attachments && <Attachments attached={entry.attachments} onError={report} />}
     </div>
   );
 }

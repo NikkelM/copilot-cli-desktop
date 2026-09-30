@@ -1573,3 +1573,88 @@ describe('compacting the conversation', () => {
     expect(entry.kind === 'tool' && entry.summary).toBe('1 message, 12 tokens');
   });
 });
+
+/**
+ * The files a prompt carried (#111).
+ *
+ * Read from the log rather than remembered: a user message records each attachment's path,
+ * name and type. Without this a conversation gives no sign that a screenshot was ever part
+ * of it.
+ */
+describe('what a prompt carried', () => {
+  // The shape a real run wrote, taken from a session's own log.
+  const attached = (over: Record<string, unknown> = {}) => ({
+    type: 'file',
+    path: 'C:\\Users\\nikke\\AppData\\Local\\Temp\\copilot-image-797690.png',
+    displayName: 'copilot-image-797690.png',
+    assetId: 'sha256:506c573f',
+    mimeType: 'image/png',
+    byteLength: 6137,
+    ...over,
+  });
+
+  it('says nothing about a prompt that carried nothing', () => {
+    const [entry] = toEntries([event('user.message', { content: 'hello' })], CWD);
+
+    expect(entry.kind === 'message' && entry.attachments).toBeUndefined();
+  });
+
+  it('keeps the files a prompt carried', () => {
+    const [entry] = toEntries([event('user.message', { content: 'look', attachments: [attached()] })], CWD);
+
+    expect(entry.kind === 'message' && entry.attachments).toEqual([
+      { type: 'file', path: 'C:\\Users\\nikke\\AppData\\Local\\Temp\\copilot-image-797690.png', displayName: 'copilot-image-797690.png' },
+    ]);
+  });
+
+  /** Two screenshots called image.png from different folders are not the same thing. */
+  it('keeps the path, which is what tells two files apart', () => {
+    const [entry] = toEntries(
+      [
+        event('user.message', {
+          content: 'both',
+          attachments: [
+            attached({ path: 'C:\\one\\image.png', displayName: 'image.png' }),
+            attached({ path: 'C:\\two\\image.png', displayName: 'image.png' }),
+          ],
+        }),
+      ],
+      CWD,
+    );
+
+    expect(entry.kind === 'message' && entry.attachments?.map((file) => file.path)).toEqual([
+      'C:\\one\\image.png',
+      'C:\\two\\image.png',
+    ]);
+  });
+
+  // A prompt can be a screenshot and nothing else, which used to draw no row at all.
+  it('draws a prompt that was only a file', () => {
+    const [entry] = toEntries([event('user.message', { attachments: [attached()] })], CWD);
+
+    expect(entry).toMatchObject({ kind: 'message', variant: 'user', body: '' });
+    expect(entry.kind === 'message' && entry.attachments).toHaveLength(1);
+  });
+
+  /** A file with no path can be neither shown nor revealed, so a chip would do nothing. */
+  it('leaves out anything with no path', () => {
+    const [entry] = toEntries(
+      [event('user.message', { content: 'x', attachments: [attached(), { type: 'file', displayName: 'ghost' }] })],
+      CWD,
+    );
+
+    expect(entry.kind === 'message' && entry.attachments).toHaveLength(1);
+  });
+
+  it('says nothing where every file lacked a path', () => {
+    const [entry] = toEntries([event('user.message', { content: 'x', attachments: [{ type: 'file' }] })], CWD);
+
+    expect(entry.kind === 'message' && entry.attachments).toBeUndefined();
+  });
+
+  it('ignores an attachments field that is not a list', () => {
+    const [entry] = toEntries([event('user.message', { content: 'x', attachments: 'two files' })], CWD);
+
+    expect(entry.kind === 'message' && entry.attachments).toBeUndefined();
+  });
+});

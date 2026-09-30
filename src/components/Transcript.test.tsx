@@ -1893,3 +1893,53 @@ describe('summarising what a turn changed', () => {
     expect(rows.indexOf(summary!)).toBe(rows.indexOf(reply!) + 1);
   });
 });
+
+/**
+ * What a prompt carried, under the prompt that carried it (#111).
+ *
+ * The chips sat above the composer until Send and then vanished, so scrolling back said
+ * nothing about what the agent had been looking at.
+ */
+describe('the files a prompt carried', () => {
+  const carrying = (files: Record<string, unknown>[]) =>
+    show([event('user.message', { content: 'have a look at this', attachments: files }, 'm1')]);
+
+  it('names the file under the prompt', () => {
+    carrying([{ type: 'file', path: 'C:\\shots\\screen.png', displayName: 'screen.png' }]);
+
+    expect(screen.getByRole('button', { name: /screen\.png/ })).toBeTruthy();
+  });
+
+  /** The path is what tells two screenshots with the same name apart. */
+  it('offers the path it came from', () => {
+    carrying([{ type: 'file', path: 'C:\\shots\\screen.png', displayName: 'screen.png' }]);
+
+    expect(screen.getByTitle('Show C:\\shots\\screen.png in its folder')).toBeTruthy();
+  });
+
+  it('names every file, not only the first', () => {
+    carrying([
+      { type: 'file', path: 'C:\\one\\a.png', displayName: 'a.png' },
+      { type: 'file', path: 'C:\\two\\b.png', displayName: 'b.png' },
+    ]);
+
+    expect(screen.getByRole('button', { name: /a\.png/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /b\.png/ })).toBeTruthy();
+  });
+
+  /**
+   * What a message carried is a record by the time it is in the conversation, so the cross
+   * that removes one before sending has nothing to offer here.
+   */
+  it('offers no way to take one back', () => {
+    carrying([{ type: 'file', path: 'C:\\shots\\screen.png', displayName: 'screen.png' }]);
+
+    expect(screen.queryByRole('button', { name: 'Remove screen.png' })).toBeNull();
+  });
+
+  it('draws nothing for a prompt that carried nothing', () => {
+    show([event('user.message', { content: 'just words' }, 'm1')]);
+
+    expect(document.querySelector('.attachment')).toBeNull();
+  });
+});
