@@ -4,10 +4,11 @@ import { useCallback, useEffect, useState } from 'react';
  * The tall panels that open under a transcript, of which one shows at a time.
  *
  * `changes` is what the agent edited, `repository` is the working tree including the
- * reader's own edits, and `environment` is what the session can reach. Deliberately three
- * things rather than one, since acting on one must never be mistaken for acting on another.
+ * reader's own edits, `todos` is what the agent says it is doing, and `environment` is what
+ * the session can reach. Deliberately separate things rather than one, since acting on one
+ * must never be mistaken for acting on another.
  */
-export type Panel = 'changes' | 'environment' | 'repository';
+export type Panel = 'changes' | 'environment' | 'repository' | 'todos';
 
 /**
  * Which panel is open, as one answer rather than one flag each.

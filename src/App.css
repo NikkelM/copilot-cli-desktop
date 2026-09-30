@@ -6002,3 +6002,120 @@ pre.fatal,
   color: var(--text-muted);
   font-size: var(--font-md);
 }
+
+/*
+ * What the agent says it is doing (#172).
+ *
+ * Shaped like the changes panel, since it is the same kind of thing: a tall list that opens
+ * under the transcript and describes the session rather than being part of it.
+ */
+.todos {
+  display: flex;
+  flex-direction: column;
+  max-height: 55vh;
+  margin: 0 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+}
+
+.todos-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex: none;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.todos-title {
+  font-size: var(--font-md);
+  font-weight: 600;
+}
+
+.todos-action {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  padding: 2px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.todos-action:hover {
+  color: var(--text);
+}
+
+.todos-list {
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.todo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+}
+
+/* The mark carries the status, so it is the one part that must not be read as decoration. */
+.todo-mark {
+  flex: none;
+  width: 1rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}
+
+.todo[data-status='done'] .todo-mark {
+  color: var(--success);
+}
+
+.todo[data-status='in_progress'] .todo-mark {
+  color: var(--accent);
+}
+
+.todo[data-status='blocked'] .todo-mark {
+  color: var(--warning);
+}
+
+.todo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.todo-name {
+  font-size: var(--font-md);
+}
+
+/* Finished work is still worth listing, and still worth being able to look past. */
+.todo[data-status='done'] .todo-name {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.todo-detail {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+/* Why nothing is happening to this one, which is most of what a plan is read for. */
+.todo-waiting {
+  color: var(--warning);
+  font-size: var(--font-sm);
+}
+
+.todo-status {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

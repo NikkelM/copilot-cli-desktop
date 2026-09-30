@@ -222,6 +222,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.queue': async ({ sessionId }) => ({ items: await runtime.queue(sessionId) }),
 
+    'sessions.todos': async ({ sessionId }) => ({ todos: await runtime.todos(sessionId) }),
+
     // Params are read defensively for the same reason `commands.list` reads them that way:
     // a caller browsing agents outside any session has nothing to say and may send nothing.
     'agents.list': async (params) => ({ agents: await runtime.discovery.agents(params?.cwd) }),

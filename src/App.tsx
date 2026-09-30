@@ -11,6 +11,7 @@ import type {
 } from '../shared/protocol';
 
 import { Changes } from './components/Changes';
+import { Todos } from './components/Todos';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { Environment } from './components/Environment';
@@ -80,6 +81,7 @@ import { clockFrom, intentOf, subagentNameIn } from './lib/timeline';
 import { stashFiles } from './lib/paste';
 import { nameOf } from './lib/paths';
 import { useFileDrop } from './lib/useFileDrop';
+import { useTodos } from './lib/useTodos';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useAgentEvents } from './lib/useAgentEvents';
@@ -300,6 +302,15 @@ export default function App() {
   const changes = useChanges(selectedId);
   const rewind = useRewind(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.open === 'repository');
+  /**
+   * What the agent says it is doing, for the session on screen (#172).
+   *
+   * Not gated on the panel being open, unlike the repository above. The list decides
+   * whether there is an entry to open at all - most sessions never make one - so it has to
+   * be known before anybody asks. It costs nothing: the read only happens for a session
+   * already in memory, and never resumes one.
+   */
+  const todos = useTodos(selectedId, selected?.loaded ?? false);
   /**
    * Switching, then reading the tree again.
    *
@@ -525,6 +536,11 @@ export default function App() {
       ) {
         mcp.reread();
       }
+
+      // The agent wrote to its own todo table. A signal and nothing else - the event
+      // carries no payload - so this is a prompt to read the list again rather than
+      // anything to apply (#172).
+      if (event.type === 'session.todos_changed') todos.changed();
 
       if (event.type === 'assistant.turn_start') setBusy(true);
       // Not `assistant.turn_end`, which is one model round trip: a request that calls tools
@@ -1531,6 +1547,19 @@ export default function App() {
                   >
                     Changes
                   </button>
+                  {/* Only where there is one. Most sessions never make a todo list, and an
+                      entry that opens an empty panel is worse than no entry (#172). */}
+                  {todos.todos.length > 0 && (
+                    <button
+                      type="button"
+                      className={panel.open === 'todos' ? 'header-button on' : 'header-button'}
+                      onClick={() => (panel.open === 'todos' ? panel.hide() : panel.show('todos'))}
+                      aria-pressed={panel.open === 'todos'}
+                      title="Show what the agent says it is doing"
+                    >
+                      Todos
+                    </button>
+                  )}
                   <AgentPicker
                     current={agent.current}
                     agents={agent.agents}
@@ -1606,6 +1635,8 @@ export default function App() {
                   onSpan={changes.setSpan}
                 />
               )}
+
+              {panel.open === 'todos' && <Todos todos={todos.todos} onClose={panel.hide} />}
 
               {panel.open === 'repository' && (
                 <Repository

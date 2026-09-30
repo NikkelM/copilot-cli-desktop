@@ -143,6 +143,14 @@ function makeSession(id: string) {
           steeringMessages: [],
         })),
       },
+      plan: {
+        readSqlTodosWithDependencies: vi.fn(
+          async (): Promise<{
+            rows: Record<string, unknown>[];
+            dependencies: { todoId: string; dependsOn: string }[];
+          }> => ({ rows: [], dependencies: [] }),
+        ),
+      },
       commands: {
         list: vi.fn(async () => ({ commands: [] })),
         enqueue: vi.fn(async (_params: { command: string; displayText?: string }) => ({ queued: true })),
@@ -4348,5 +4356,143 @@ describe('offering to allow a directory', () => {
     harness.sessions.get('a')!.rpc.permissions.paths.add.mockResolvedValue({ success: false });
 
     await expect(harness.runtime.allowFolder('a', outside)).resolves.toEqual({ allowed: false });
+  });
+});
+
+/**
+ * The agent's own todo list (#172).
+ *
+ * The runtime keeps it in the session's SQL database and announces every write to it. The
+ * rows and the dependency edges are read independently - a broken edge table must not cost
+ * the rows - so joining them is this end's job.
+ */
+describe('what the agent says it is doing', () => {
+  const planOf = (sessions: ReturnType<typeof makeRuntime>['sessions'], id = 's1') =>
+    (sessions.get(id) as unknown as { rpc: { plan: { readSqlTodosWithDependencies: ReturnType<typeof vi.fn> } } }).rpc
+      .plan.readSqlTodosWithDependencies;
+
+  const listing = async (
+    rows: Record<string, unknown>[],
+    dependencies: { todoId: string; dependsOn: string }[] = [],
+  ) => {
+    const { runtime, sessions } = makeRuntime();
+    // Loaded by sending: a session that was never woken has no database to read.
+    await runtime.send('s1', 'hello');
+    planOf(sessions).mockResolvedValue({ rows, dependencies });
+    return runtime.todos('s1');
+  };
+
+  it('says nothing for a session nobody has woken', async () => {
+    const { runtime } = makeRuntime();
+
+    expect(await runtime.todos('s1')).toEqual([]);
+  });
+
+  /** Waking one to find out what it is planning would cost what this app exists to avoid. */
+  it('does not wake a session to ask', async () => {
+    const { runtime, sessions } = makeRuntime();
+
+    await runtime.todos('s1');
+
+    expect(sessions.has('s1')).toBe(false);
+  });
+
+  it('carries a todo across as the table holds it', async () => {
+    const [todo] = await listing([
+      { id: 't1', title: 'Read the log', description: 'from the end', status: 'in_progress' },
+    ]);
+
+    expect(todo).toEqual({
+      id: 't1',
+      title: 'Read the log',
+      description: 'from the end',
+      status: 'in_progress',
+      dependsOn: [],
+    });
+  });
+
+  it('joins an edge onto the todo that waits on it', async () => {
+    const todos = await listing(
+      [
+        { id: 't1', title: 'First', status: 'done' },
+        { id: 't2', title: 'Second', status: 'pending' },
+      ],
+      [{ todoId: 't2', dependsOn: 't1' }],
+    );
+
+    expect(todos.map((todo) => todo.dependsOn)).toEqual([[], ['t1']]);
+  });
+
+  it('keeps every edge a todo waits on', async () => {
+    const todos = await listing(
+      [
+        { id: 't1', title: 'First', status: 'done' },
+        { id: 't2', title: 'Second', status: 'done' },
+        { id: 't3', title: 'Third', status: 'pending' },
+      ],
+      [
+        { todoId: 't3', dependsOn: 't1' },
+        { todoId: 't3', dependsOn: 't2' },
+      ],
+    );
+
+    expect(todos[2]?.dependsOn).toEqual(['t1', 't2']);
+  });
+
+  /** An edge to something that is not in the list could only be drawn as a bare id. */
+  it('drops an edge naming a todo that is not listed', async () => {
+    const todos = await listing(
+      [{ id: 't1', title: 'Only', status: 'pending' }],
+      [
+        { todoId: 't1', dependsOn: 'gone' },
+        { todoId: 'also-gone', dependsOn: 't1' },
+      ],
+    );
+
+    expect(todos).toHaveLength(1);
+    expect(todos[0]?.dependsOn).toEqual([]);
+  });
+
+  /** The runtime types every column as optional; an id is what an edge points at. */
+  it('drops a row with no id, which nothing could refer to', async () => {
+    const todos = await listing([{ title: 'Nameless', status: 'pending' }, { id: 't1', title: 'Real', status: 'pending' }]);
+
+    expect(todos.map((todo) => todo.id)).toEqual(['t1']);
+  });
+
+  // It still has a status and a place in the order, and leaving it out would make the list
+  // disagree with what the agent thinks it is working through.
+  it('keeps a row with no title', async () => {
+    const [todo] = await listing([{ id: 't1', status: 'pending' }]);
+
+    expect(todo).toMatchObject({ id: 't1', title: '', status: 'pending' });
+  });
+
+  it('leaves out a description the row did not have', async () => {
+    const [todo] = await listing([{ id: 't1', title: 'Bare', status: 'pending' }]);
+
+    expect(todo && 'description' in todo).toBe(false);
+  });
+
+  /** Its own word, which may be one nobody here anticipated. */
+  it('passes a status through rather than mapping it', async () => {
+    const [todo] = await listing([{ id: 't1', title: 'Odd', status: 'deferred' }]);
+
+    expect(todo?.status).toBe('deferred');
+  });
+
+  it('holds the order the rows came in, which is the order they were made', async () => {
+    const todos = await listing([
+      { id: 'c', title: 'Third', status: 'pending' },
+      { id: 'a', title: 'First', status: 'pending' },
+      { id: 'b', title: 'Second', status: 'pending' },
+    ]);
+
+    expect(todos.map((todo) => todo.id)).toEqual(['c', 'a', 'b']);
+  });
+
+  // The runtime answers with empty arrays where there is no database or no table.
+  it('says nothing where the session has no list', async () => {
+    expect(await listing([])).toEqual([]);
   });
 });

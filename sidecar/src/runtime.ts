@@ -23,6 +23,7 @@ import type {  McpServerState,
   ReasoningEffort,
   ShellResult,
   QueuedItem,
+  Todo,
   RewindPoint,
   RewindPreview,
   RewindResult,
@@ -1582,6 +1583,53 @@ export class SessionRuntime {
       skippedFiles: result.skippedFiles.map((file) => ({ path: file.path, reason: file.reason })),
       ...(result.error ? { error: result.error } : {}),
     };
+  }
+
+  /**
+   * The agent's own todo list, with its dependency edges joined in (#172).
+   *
+   * Empty for a session that is not loaded, and no session is ever resumed to answer - the
+   * rule the queue and the usage figures already follow. There is no second-best answer to
+   * fall back on here either: `session.todos_changed` is ephemeral, so unlike the mode or
+   * the usage it is never written to the log and a cold session has nothing to read.
+   *
+   * The edges are folded into the rows they belong to, because a blocked item is only
+   * legible beside what blocks it. An edge naming a todo that is not in the list is
+   * dropped: it could only be drawn as an id, which says nothing to anybody.
+   *
+   * A row with no id is dropped as well. The runtime types every column as optional, and
+   * an id is what an edge points at - one without it can be neither depended on nor told
+   * apart from the next untitled row.
+   */
+  async todos(sessionId: string): Promise<Todo[]> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return [];
+
+    const { rows, dependencies } = await live.rpc.plan.readSqlTodosWithDependencies();
+
+    const listed = new Set(rows.flatMap((row) => (row.id ? [row.id] : [])));
+    const waitsOn = new Map<string, string[]>();
+    for (const edge of dependencies) {
+      if (!listed.has(edge.todoId) || !listed.has(edge.dependsOn)) continue;
+      waitsOn.set(edge.todoId, [...(waitsOn.get(edge.todoId) ?? []), edge.dependsOn]);
+    }
+
+    return rows.flatMap((row) =>
+      row.id
+        ? [
+            {
+              id: row.id,
+              // Untitled rather than dropped: a row with no title still has a status and a
+              // place in the order, and leaving it out would make the list disagree with
+              // what the agent thinks it is working through.
+              title: row.title ?? '',
+              status: row.status ?? '',
+              ...(row.description ? { description: row.description } : {}),
+              dependsOn: waitsOn.get(row.id) ?? [],
+            },
+          ]
+        : [],
+    );
   }
 
   async queue(sessionId: string): Promise<QueuedItem[]> {

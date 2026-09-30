@@ -27,6 +27,7 @@ import type {
   RepoStatus,
   SessionDisk,
   Dropped,
+  Todo,
   PendingElicitation,
   PendingPermission,
   PendingPlanApproval,
@@ -357,6 +358,18 @@ export async function enqueueCommand(
 export async function sessionQueue(sessionId: string): Promise<QueuedItem[]> {
   const { items } = await request('sessions.queue', { sessionId });
   return items;
+}
+
+/**
+ * The agent's own todo list (#172).
+ *
+ * Empty for a session that is not loaded, which is not resumed to ask. The list lives in
+ * the running session's database, and the event that announces a change is ephemeral, so a
+ * cold session has nothing to replay either.
+ */
+export async function sessionTodos(sessionId: string): Promise<Todo[]> {
+  const { todos } = await request('sessions.todos', { sessionId });
+  return todos;
 }
 
 /** What a session runs on, read from its log. Costs no Copilot process. */

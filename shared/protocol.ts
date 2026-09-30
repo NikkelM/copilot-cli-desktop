@@ -341,8 +341,34 @@ export interface Attachment {
   displayName?: string;
 }
 
-/** What a set of dropped paths turned out to be, for the window that cannot look (#231). */
-export interface Dropped {
+/**
+ * One of the agent's own todos, as the session's database holds it (#172).
+ *
+ * The runtime keeps these in a SQL table the agent writes to as it plans and works. They
+ * are the agent's account of what it is doing, which the CLI draws as a checklist and this
+ * app showed nowhere at all.
+ *
+ * `status` stays the string the table held rather than a union of the four known values.
+ * It is the agent's own word, written by whatever wrote the row, and a value nobody here
+ * anticipated is better shown as it stands than folded into one that was.
+ */
+export interface Todo {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  /**
+   * The todos this one waits on, by id.
+   *
+   * Joined here rather than sent as a second list, because a blocked item is only legible
+   * beside what blocks it. The runtime reads the rows and the edges independently so that
+   * a broken edge table cannot cost the rows, and an edge naming a todo that is not in the
+   * list is dropped for the same reason: it can only be drawn as a dangling id.
+   */
+  dependsOn: string[];
+}
+
+/** What a set of dropped paths turned out to be, for the window that cannot look (#231). */export interface Dropped {
   /** Paths that name a file, and so can be attached. */
   files: string[];
   /** Paths that name a directory. The runtime takes files, so these are refused. */
@@ -1658,6 +1684,14 @@ export interface SidecarRequests {
   };
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
+  /**
+   * The agent's own todo list, with its dependency edges joined in (#172).
+   *
+   * Empty for a session that is not loaded, which is not resumed to ask: the list lives in
+   * the running session's database, and `session.todos_changed` is ephemeral and never
+   * reaches the log, so there is nothing to replay for a cold one either.
+   */
+  'sessions.todos': { params: { sessionId: string }; result: { todos: Todo[] } };
   /** How full the window is. Null for a session that is not loaded, which is not resumed to ask. */
   'sessions.context': { params: { sessionId: string }; result: { usage: SessionContextUsage | null } };
   /**
@@ -1802,6 +1836,7 @@ export const SIDECAR_METHODS = [
   'skills.disabled',
   'skills.set',
   'sessions.queue',
+  'sessions.todos',
   'sessions.context',
   'sessions.usage',
   'sessions.model',
