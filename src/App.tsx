@@ -1281,7 +1281,7 @@ export default function App() {
           },
           {
             id: 'dismiss',
-            label: 'Take off the list',
+            label: 'Hide',
             // Its work is in the session's log either way, so this loses nothing but the row.
             run: () => {
               subagents.dismiss(entry.agentId);

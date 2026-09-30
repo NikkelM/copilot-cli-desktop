@@ -256,7 +256,13 @@ export function useSubagents() {
     });
   }, []);
 
-  /** Take one off the list, for a reader who is done with it before this app decides. */
+  /**
+   * Hide one, for a reader who is done with it before this app decides.
+   *
+   * The row and nothing else. A task's work is in the session's log either way, and stays
+   * readable inside the row that delegated it, so this takes away where it was listed
+   * rather than what it did.
+   */
   const dismiss = useCallback(
     (agentId: string) => {
       finishedAt.current.delete(agentId);

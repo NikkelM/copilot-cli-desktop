@@ -567,7 +567,7 @@ describe('Sidebar subagents', () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText('Take deep-audit off this list'));
+    fireEvent.click(screen.getByLabelText('Hide deep-audit'));
     expect(onDismissSubagent).toHaveBeenCalledWith('a1');
   });
 

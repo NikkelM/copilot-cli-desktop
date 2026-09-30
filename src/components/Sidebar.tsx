@@ -50,7 +50,7 @@ interface SidebarProps {
   /** Which subagent's transcript is open, so its row can say so. */
   selectedSubagentId?: string | null;
   onSelectSubagent?: (agentId: string) => void;
-  /** Take one off the list before it ages out on its own. */
+  /** Hide one, for a reader who is done with it before this app decides. Deletes nothing. */
   onDismissSubagent?: (agentId: string) => void;
   /** Ask for one to be kept, or let a kept one go (#180). */
   onKeepSubagent?: (agentId: string) => void;
@@ -646,8 +646,8 @@ function Delegated({
               type="button"
               className="subagent-dismiss"
               onClick={() => onDismissSubagent(entry.agentId)}
-              title={`Take ${entry.name} off this list`}
-              aria-label={`Take ${entry.name} off this list`}
+              title={`Hide ${entry.name}`}
+              aria-label={`Hide ${entry.name}`}
             >
               ×
             </button>
