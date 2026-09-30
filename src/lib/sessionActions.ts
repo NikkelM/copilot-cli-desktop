@@ -15,6 +15,8 @@ export interface SessionActionDeps {
   toggleArchived: (sessionId: string) => void;
   /** Open the tasks this session delegated, read from its log rather than from memory (#228). */
   showSubagents: (sessionId: string) => void;
+  /** Whether a session is known to have delegated nothing, which is the only certain answer. */
+  hasNoSubagents: (sessionId: string) => boolean;
   /** Which sessions are mid-turn. Read live: a session can start working while a menu is open. */
   working: ReadonlySet<string>;
   unload: (sessionId: string) => void;
@@ -92,6 +94,9 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
     {
       id: 'subagents',
       label: 'Subagents',
+      // Certain, or not said at all: the reason for refusing it is that the log was read
+      // to the end and held nothing, and a log too large to reach the end of says nothing.
+      refused: deps.hasNoSubagents(session.sessionId) ? 'This session has not delegated anything.' : undefined,
       run: () => deps.showSubagents(session.sessionId),
     },
     {

@@ -61,6 +61,8 @@ interface SidebarProps {
   subagentActionsFor?: (entry: WatchedSubagent) => SessionAction[];
   /** Folds the sidebar away. Absent leaves the header without the control. */
   onToggle?: () => void;
+  /** Said when a session's menu opens, for anything worth finding out only then. */
+  onMenuOpened?: (sessionId: string) => void;
   /** What right-clicking a session offers. Absent leaves the rows with no menu at all. */
   actionsFor?: (session: SessionSummary) => SessionAction[];
   /** What is true about each session right now, which the filter box can be asked about. */
@@ -194,6 +196,7 @@ export function Sidebar({
   keepableSubagent,
   isKeptSubagent,
   subagentActionsFor,
+  onMenuOpened,
   favourites = [],
   archived = [],
   tags = {},
@@ -271,9 +274,12 @@ export function Sidebar({
   const openMenu = useCallback(
     (sessionId: string) => (event: ReactMouseEvent) => {
       event.preventDefault();
+      // Asked as the menu opens rather than for every session in the list: this reads a
+      // log, and the sidebar draws hundreds of rows nobody right-clicks.
+      onMenuOpened?.(sessionId);
       setMenu({ sessionId, at: { x: event.clientX, y: event.clientY } });
     },
-    [],
+    [onMenuOpened],
   );
   // Resolved against the current list rather than kept from the right-click, so an action
   // is offered for what the session is now. Sessions evict themselves while a menu is open.

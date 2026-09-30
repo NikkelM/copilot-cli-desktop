@@ -28,6 +28,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   copy: vi.fn(),
   openDirectory: vi.fn(),
   showSubagents: vi.fn(),
+  hasNoSubagents: () => false,
   fork: vi.fn(),
   remove: vi.fn(),
   ...over,
@@ -127,6 +128,17 @@ describe('sessionActions', () => {
       const showSubagents = vi.fn();
       byId(session({ sessionId: 's7' }), deps({ showSubagents })).subagents.run();
       expect(showSubagents).toHaveBeenCalledWith('s7');
+    });
+
+    it('is offered where nothing is known about what a session delegated', () => {
+      expect(byId(session(), deps({ hasNoSubagents: () => false })).subagents.refused).toBeUndefined();
+    });
+
+    /** Refused only where the whole log was read and held nothing, which is certain. */
+    it('is refused where the session is known to have delegated nothing', () => {
+      const action = byId(session(), deps({ hasNoSubagents: () => true })).subagents;
+
+      expect(action.refused).toMatch(/not delegated anything/i);
     });
   });
 
