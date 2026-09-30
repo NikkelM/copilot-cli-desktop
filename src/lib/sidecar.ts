@@ -26,6 +26,7 @@ import type {
   MergeStrategy,  ModelChoice,
   RepoStatus,
   SessionDisk,
+  Dropped,
   PendingElicitation,
   PendingPermission,
   PendingPlanApproval,
@@ -702,6 +703,17 @@ export async function stashPaste(params: StashParams): Promise<string> {
 export async function previewImage(path: string): Promise<string | null> {
   const { dataUrl } = await request('attachments.preview', { path });
   return dataUrl;
+}
+
+/**
+ * Sort dropped paths into what can be attached and what cannot (#231).
+ *
+ * The webview hands over paths and nothing else, and this window cannot read the disk to
+ * tell a file from a folder - that is the sidecar's job, for the same reason a preview
+ * comes from there rather than over `file://`.
+ */
+export function classifyDropped(paths: string[]): Promise<Dropped> {
+  return request('attachments.dropped', { paths });
 }
 
 export function abortSession(sessionId: string): Promise<void> {

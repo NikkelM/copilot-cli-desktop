@@ -5961,3 +5961,44 @@ pre.fatal,
   font-size: var(--font-sm);
   cursor: pointer;
 }
+
+/*
+ * Where a dragged file would land, over the whole window (#231).
+ *
+ * Above the dialogs, since a drag is happening now and the answer to "will this land"
+ * has to be the thing on top - but below a floating menu, which is the one thing that must
+ * stay over everything it can be opened from. It never takes a click, the drag being the
+ * only thing that dismisses it, so it stays out of the way of the pointer.
+ */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(1, 4, 9, 0.72);
+  pointer-events: none;
+}
+
+.drop-note {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 40px;
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  background: var(--bg-raised);
+  text-align: center;
+}
+
+.drop-title {
+  font-size: var(--font-xl);
+  font-weight: 600;
+}
+
+.drop-detail {
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}

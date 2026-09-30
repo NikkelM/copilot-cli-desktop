@@ -31,6 +31,7 @@ import {
   unstagePaths,
 } from './git.js';
 import { previewImage } from './images.js';
+import { classifyDropped } from './dropped.js';
 import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
 import { sessionDiskUsage } from './diskUsage.js';
@@ -178,6 +179,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
       runtime.create(workingDirectory, { allowAll, model, reasoningEffort, contextTier }),
 
     'attachments.stash': (params) => ({ path: stashPaste(params) }),
+
+    'attachments.dropped': ({ paths }) => classifyDropped(paths),
 
     'attachments.preview': ({ path }) => ({ dataUrl: previewImage(path) }),
 

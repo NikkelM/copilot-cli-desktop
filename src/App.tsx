@@ -49,6 +49,7 @@ import {
   locateTurn,
   writeCliSettings,
   stashPaste,
+  classifyDropped,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, readRewindCommand, SUBAGENTS, wantsDirectory, withRewindChoices, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
@@ -77,6 +78,8 @@ import { usageReport } from './lib/usageReport';
 import { activityOf } from './lib/activity';
 import { clockFrom, intentOf, subagentNameIn } from './lib/timeline';
 import { stashFiles } from './lib/paste';
+import { nameOf } from './lib/paths';
+import { useFileDrop } from './lib/useFileDrop';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useAgentEvents } from './lib/useAgentEvents';
@@ -404,6 +407,42 @@ export default function App() {
     return written(id, size);
   }
 
+  /**
+   * Attach what was dropped on the window (#231).
+   *
+   * Nothing is copied. A dropped path is attached where it lies, exactly as the picker
+   * does it, so this is the same operation reached a different way.
+   *
+   * The paths are sorted by the sidecar first, since this window cannot read the disk and
+   * dropping a folder is an easy thing to do by accident. What cannot be attached is said
+   * plainly rather than dropped in silence, which would look like the app ignoring it.
+   */
+  async function handleDrop(sessionId: string, paths: string[]) {
+    try {
+      const { files, folders, missing } = await classifyDropped(paths);
+
+      if (files.length > 0) {
+        setAttachments((current) => {
+          const held = current[sessionId] ?? [];
+          // Dropping a file that is already attached says nothing the first drop did not.
+          const fresh = files
+            .filter((path) => !held.some((file) => file.path === path))
+            .map((path): Attachment => ({ type: 'file', path, displayName: nameOf(path) }));
+
+          return fresh.length > 0 ? { ...current, [sessionId]: [...held, ...fresh] } : current;
+        });
+      }
+
+      const refused = [
+        folders.length > 0 ? `${folders.map(nameOf).join(', ')} ${folders.length > 1 ? 'are folders' : 'is a folder'}` : '',
+        missing.length > 0 ? `${missing.map(nameOf).join(', ')} could not be read` : '',
+      ].filter(Boolean);
+      if (refused.length > 0) setError(`Not attached: ${refused.join('; ')}.`);
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
+  }
+
   async function handlePaste(sessionId: string, files: File[]) {
     try {
       const { attached, tooLarge } = await stashFiles(sessionId, files);
@@ -434,6 +473,17 @@ export default function App() {
   // Read inside event handlers without making them depend on the selected session.
   const selectedRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
+
+  /**
+   * Files dragged onto the window, which attach to whichever session is open (#231).
+   *
+   * Offered only when one is, since with nothing open there is nowhere for a drop to go
+   * and an overlay would be promising something the app would then have to refuse.
+   */
+  const dropping = useFileDrop((paths) => {
+    const forSession = selectedRef.current;
+    if (forSession) void handleDrop(forSession, paths);
+  }, selectedId !== null);
   /** Read by a shortcut handler registered once, which would otherwise hold the first render's answer. */
   const busyRef = useRef(false);
   busyRef.current = busy;
@@ -1819,6 +1869,17 @@ export default function App() {
             return typeof picked === 'string' ? picked : null;
           }}
         />
+      )}
+
+      {/* Over everything, because the whole window is the target: a drop is aimed at the
+          conversation rather than at some particular part of it (#231). */}
+      {dropping && (
+        <div className="drop-overlay">
+          <div className="drop-note">
+            <span className="drop-title">Drop to attach</span>
+            <span className="drop-detail">The files are sent where they are, not copied</span>
+          </div>
+        </div>
       )}
     </div>
   );

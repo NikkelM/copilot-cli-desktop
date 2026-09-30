@@ -341,6 +341,16 @@ export interface Attachment {
   displayName?: string;
 }
 
+/** What a set of dropped paths turned out to be, for the window that cannot look (#231). */
+export interface Dropped {
+  /** Paths that name a file, and so can be attached. */
+  files: string[];
+  /** Paths that name a directory. The runtime takes files, so these are refused. */
+  folders: string[];
+  /** Paths that could not be looked at, which on a drop means gone or unreadable. */
+  missing: string[];
+}
+
 /**
  * The largest pasted file the composer will take.
  *
@@ -1684,6 +1694,14 @@ export interface SidecarRequests {
   /** Writes a pasted file beside the session's record, since a message can only carry a path. */
   'attachments.stash': { params: StashParams; result: { path: string } };
   /**
+   * Sort dropped paths into what can be attached and what cannot (#231).
+   *
+   * The window is handed paths by the webview and cannot read the disk to tell a file from
+   * a folder, so it asks. Dropping a folder is an easy thing to do by accident, and
+   * attaching one as a file would hand the runtime something it cannot open.
+   */
+  'attachments.dropped': { params: { paths: string[] }; result: Dropped };
+  /**
    * An image as a data URL, for showing a file the webview cannot load itself.
    *
    * Null covers every reason there is nothing to show - gone, unreadable, too large, or not
@@ -1792,6 +1810,7 @@ export const SIDECAR_METHODS = [
   'sessions.setMode',
   'runtime.status',
   'attachments.stash',
+  'attachments.dropped',
   'attachments.preview',
   'protocol.version',
 ] as const;
