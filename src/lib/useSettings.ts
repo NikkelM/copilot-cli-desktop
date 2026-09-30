@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { read, save } from './store';
-import { setRuntimeLimits, updateCli } from './sidecar';
+import { onSidecarRestarted, setRuntimeLimits, updateCli } from './sidecar';
+import { useTauriEvent } from './useTauriEvent';
 import type { ShowTurnChanges } from './turnChanges';
 import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol';
 import { SCALE_KEY, TEXT_SCALE_KEY, applyScale, readScale, readTextScale } from './scale';
@@ -177,8 +178,9 @@ export function readSettings(): Settings {
  * full of them is: a single decision, not one per field. It is also what keeps the runtime
  * from being told twice when two of its rules change together.
  *
- * The runtime is told about the memory rules whenever they change and once at startup, since
- * it begins every run on its own defaults and has no memory of what was chosen last time.
+ * The runtime is told about the memory rules whenever they change, once at startup, and again
+ * whenever a replacement sidecar takes over, since it begins every run on its own defaults and
+ * has no memory of what was chosen last time.
  */
 export function useSettings() {
   const [settings, setSettings] = useState<Settings>(readSettings);
@@ -188,7 +190,8 @@ export function useSettings() {
   useEffect(() => applyScale(settings.scale, settings.textScale), [settings.scale, settings.textScale]);
 
   const { maxLoaded, idleMinutes, binRetentionDays, permissionMinutes, allowAll } = settings;
-  useEffect(() => {
+
+  const tellRuntime = useCallback(() => {
     // Failure here is not worth interrupting anyone: the runtime keeps the rules it had,
     // which are the defaults, and the app is still usable.
     void setRuntimeLimits(
@@ -199,6 +202,24 @@ export function useSettings() {
       allowAll,
     ).catch(() => undefined);
   }, [maxLoaded, idleMinutes, binRetentionDays, permissionMinutes, allowAll]);
+
+  useEffect(tellRuntime, [tellRuntime]);
+
+  /**
+   * And again whenever a replacement sidecar takes over (#230).
+   *
+   * A new one starts on its own defaults and knows nothing the last was told, and none of
+   * these settings changed just because it died - so the effect above, which watches the
+   * settings, has no reason to fire and the replacement is never told anything.
+   *
+   * That is not a setting quietly failing to apply. The permission mode is written in both
+   * directions on purpose (#199), so a sidecar that has forgotten `allowAll` does not
+   * merely leave the next session alone: it sets a session that already allowed everything
+   * back to asking. The rest go the same way silently - a cap of "keep every session" comes
+   * back as the default, which is a change to how much the app holds with nothing on screen
+   * to say so.
+   */
+  useTauriEvent(() => onSidecarRestarted(tellRuntime), [tellRuntime]);
 
   /**
    * Bring the CLI up to date once, if that was asked for.

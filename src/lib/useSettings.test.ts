@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { read, save } from './store';
 
 const { updateCli } = vi.hoisted(() => ({ updateCli: vi.fn(async () => ({ ran: true })) }));
+const { onSidecarRestarted } = vi.hoisted(() => ({ onSidecarRestarted: vi.fn() }));
 const { setRuntimeLimits } = vi.hoisted(() => ({
   setRuntimeLimits: vi.fn(
     async (
@@ -18,6 +19,7 @@ const { setRuntimeLimits } = vi.hoisted(() => ({
 }));
 vi.mock('./sidecar', () => ({
   updateCli: () => updateCli(),
+  onSidecarRestarted: (h: () => void) => onSidecarRestarted(h),
   setRuntimeLimits: (
     maxLoadedSessions: number,
     idleTimeoutMs: number,
@@ -54,7 +56,15 @@ beforeEach(() => {
   localStorage.clear();
   setRuntimeLimits.mockReset().mockResolvedValue(undefined);
   updateCli.mockReset().mockResolvedValue({ ran: true });
+  // `useTauriEvent` awaits the subscription, as Tauri's own `listen` returns a promise.
+  onSidecarRestarted.mockReset().mockImplementation((h: () => void) => {
+    fireRestarted = h;
+    return Promise.resolve(() => {});
+  });
 });
+
+/** The handler the restart subscription was given, so a test can fire what Tauri would. */
+let fireRestarted: () => void;
 
 describe('what the app does when nobody has said otherwise', () => {
   it('keeps every session that is opened, and releases an idle one after ten minutes', async () => {
@@ -275,6 +285,65 @@ describe('telling the runtime what may stay in memory', () => {
     act(() => result.current.apply({ binRetentionDays: 30 }));
 
     await waitFor(() => expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 30, 5 * 60_000, false));
+  });
+});
+
+/**
+ * A replacement sidecar starts on its own defaults and knows nothing the last was told, and
+ * none of these settings changed just because it died - so nothing else would tell it (#230).
+ *
+ * Worse than a setting quietly failing to apply: the permission mode is written in both
+ * directions on purpose (#199), so a sidecar that has forgotten `allowAll` sets a session
+ * that already allowed everything back to asking.
+ */
+describe('telling a replacement runtime the same things', () => {
+  const restarted = async (over: Record<string, unknown> = {}) => {
+    const { useSettings } = await load();
+    const { result } = renderHook(() => useSettings());
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalled());
+    if (Object.keys(over).length) {
+      act(() => result.current.apply(over));
+      // Let the change reach the runtime first, so what is asserted after the replacement
+      // can only have come from the replacement.
+      await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledTimes(2));
+    }
+    await waitFor(() => expect(onSidecarRestarted).toHaveBeenCalled());
+
+    setRuntimeLimits.mockClear();
+    act(() => fireRestarted());
+  };
+
+  it('says it all again when one takes over', async () => {
+    await restarted();
+
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledOnce());
+  });
+
+  it('tells it tools may still run without asking', async () => {
+    await restarted({ allowAll: true });
+
+    await waitFor(() =>
+      expect(setRuntimeLimits).toHaveBeenLastCalledWith(0, 10 * 60_000, 7, 5 * 60_000, true),
+    );
+  });
+
+  /** A cap of "keep every session" coming back as the default changes how much the app holds. */
+  it('tells it what may stay in memory, not only what may run', async () => {
+    await restarted({ maxLoaded: 2, idleMinutes: 25 });
+
+    await waitFor(() =>
+      expect(setRuntimeLimits).toHaveBeenLastCalledWith(2, 25 * 60_000, 7, 5 * 60_000, false),
+    );
+  });
+
+  it('says nothing again while no replacement has taken over', async () => {
+    const { useSettings } = await load();
+    renderHook(() => useSettings());
+
+    await waitFor(() => expect(setRuntimeLimits).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(setRuntimeLimits).toHaveBeenCalledOnce();
   });
 });
 
