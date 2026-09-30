@@ -545,6 +545,57 @@ describe('Sidebar subagents', () => {
     expect(lists[1]?.textContent).toContain('explore');
   });
 
+  /**
+   * Subagents delegate in turn, so the list is a tree (#178). Drawn by the same rows at
+   * every level, which is what lets it go as deep as the work did.
+   */
+  describe('one delegated by another', () => {
+    const family = [
+      watched({ agentId: 'outer', name: 'outer-agent' }),
+      watched({ agentId: 'inner', name: 'inner-agent', parentAgentId: 'outer' }),
+    ];
+
+    it('draws it inside the task that delegated it', () => {
+      const { container } = shown({ subagents: family });
+
+      const rows = [...container.querySelectorAll('.subagent-item')];
+      const outer = rows.find((li) => li.querySelector('.subagent-name')?.textContent === 'outer-agent');
+
+      // Scoped, or the ancestor part of the selector matches the list this row sits in.
+      expect(outer?.querySelector(':scope > .subagent-list .subagent-name')?.textContent).toBe('inner-agent');
+    });
+
+    it('draws the one the session delegated outside it', () => {
+      const { container } = shown({ subagents: family });
+
+      const inner = [...container.querySelectorAll('.subagent-item')].find(
+        (li) => li.querySelector('.subagent-name')?.textContent === 'inner-agent',
+      );
+
+      expect(inner?.querySelector('.subagent-name')?.textContent).toBe('inner-agent');
+      expect(inner?.querySelectorAll('.subagent-list')).toHaveLength(0);
+    });
+
+    /** A parent that aged out or was never watched leaves its task with nowhere to sit. */
+    it('draws one whose parent is not on the list rather than hiding it', () => {
+      shown({ subagents: [watched({ agentId: 'orphan', name: 'lost-agent', parentAgentId: 'gone' })] });
+
+      expect(screen.getByText('lost-agent')).toBeTruthy();
+    });
+
+    it('goes as deep as the work did', () => {
+      shown({
+        subagents: [
+          watched({ agentId: 'a', name: 'first' }),
+          watched({ agentId: 'b', name: 'second', parentAgentId: 'a' }),
+          watched({ agentId: 'c', name: 'third', parentAgentId: 'b' }),
+        ],
+      });
+
+      expect(screen.getByText('third')).toBeTruthy();
+    });
+  });
+
   it('marks the one being read', () => {
     const { container } = shown({ subagents: [watched()], selectedSubagentId: 'a1' });
     expect(container.querySelector('.subagent.selected')).toBeTruthy();

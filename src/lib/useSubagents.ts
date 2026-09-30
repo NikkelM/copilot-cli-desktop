@@ -19,6 +19,15 @@ import { isSidekick, showsInTranscript, type DelegatedTask, type TranscriptEvent
  */
 const PROMPTS_BEFORE_STALE = 3;
 
+/**
+ * How many tool calls are remembered while waiting to learn which spawned an agent.
+ *
+ * A session makes thousands and only the handful that delegate are ever asked about, and
+ * the announcement follows its own call immediately - so this only has to span the gap
+ * between the two.
+ */
+const CALLS_REMEMBERED = 256;
+
 /** A subagent this app watched start, and what it has done since. */
 export interface WatchedSubagent {
   /** The runtime's id for the agent instance, which is this entry's identity. */
@@ -32,6 +41,8 @@ export interface WatchedSubagent {
   outcome?: 'completed' | 'failed';
   /** Why it failed, when the announcement that ended it said. */
   error?: string;
+  /** The subagent that delegated it, when the session itself did not. */
+  parentAgentId?: string;
   /** Its own events, by reference: the same objects the transcript holds, not copies. */
   events: TranscriptEvent[];
   /**
@@ -97,6 +108,8 @@ export function useSubagents() {
   const watchedNow = useRef<WatchedSubagent[]>([]);
   /** Which tasks were asked for, readable from the handlers that run outside a render. */
   const keptNow = useRef(new Set<string>());
+  /** Which agent made each recent tool call, for working out who delegated a task. */
+  const callerOf = useRef(new Map<string, string | undefined>());
 
   /**
    * Hand a finished run over to the log, once the log can be shown to have it (#178).
@@ -150,14 +163,45 @@ export function useSubagents() {
     // does, and are nobody's work to look through.
     if (event.agentId && isSidekick(event.agentId)) return;
 
+    /*
+     * Who made each tool call, so a task announced later can be told who delegated it.
+     *
+     * Bounded, because a session makes thousands of calls and only the ones that turn out
+     * to have spawned an agent are ever asked about - and the announcement follows its call
+     * immediately, so the answer is wanted within moments of being recorded.
+     *
+     * Lifecycle events name the call that spawned them without having made it, so they are
+     * left out or a task would be recorded as its own parent.
+     */
+    const call = (event.data as { toolCallId?: unknown } | undefined)?.toolCallId;
+    if (typeof call === 'string' && !event.type.startsWith('subagent.')) {
+      callerOf.current.set(call, event.agentId);
+      if (callerOf.current.size > CALLS_REMEMBERED) {
+        for (const oldest of [...callerOf.current.keys()].slice(0, callerOf.current.size - CALLS_REMEMBERED)) {
+          callerOf.current.delete(oldest);
+        }
+      }
+    }
+
     const name = subagentNameIn(event);
     if (name && event.agentId) {
       const agentId = event.agentId;
+      const parent = typeof call === 'string' ? callerOf.current.get(call) : undefined;
       finishedAt.current.delete(agentId);
       setWatched((current) =>
         current.some((entry) => entry.agentId === agentId)
           ? current
-          : [...current, { agentId, sessionId, name, startedAt: event.timestamp, events: [] }],
+          : [
+              ...current,
+              {
+                agentId,
+                sessionId,
+                name,
+                startedAt: event.timestamp,
+                events: [],
+                ...(parent ? { parentAgentId: parent } : {}),
+              },
+            ],
       );
       return;
     }

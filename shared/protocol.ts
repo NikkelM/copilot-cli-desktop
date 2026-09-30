@@ -72,6 +72,14 @@ export interface DelegatedTask {
   durationMs?: number;
   /** Where its announcement sits in the log, which is how a page says where it stopped. */
   offset: number;
+  /**
+   * The agent that delegated it, when that was another subagent rather than the session.
+   *
+   * Absent for one the session itself delegated, which is most of them. Subagents delegate
+   * in turn - 86 of 1891 real runs here were started from inside another - so a list of
+   * them is a tree rather than a row of siblings.
+   */
+  parentAgentId?: string;
 }
 
 /**

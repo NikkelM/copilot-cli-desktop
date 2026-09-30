@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
@@ -615,57 +615,85 @@ function Delegated({
   const mine = subagents?.filter((entry) => entry.sessionId === sessionId) ?? [];
   if (mine.length === 0 || !onSelectSubagent) return null;
 
-  return (
-    <ul className="subagent-list">
-      {mine.map((entry) => (
-        <li key={entry.agentId} className="subagent-item" onContextMenu={onMenu?.(entry.agentId)}>
+  /**
+   * The tasks a given agent delegated, or the session's own when asked for nobody's.
+   *
+   * A task whose parent is not in the list is drawn at the top rather than hidden: the
+   * parent may have aged out, been hidden, or never been watched, and a task that exists
+   * with nowhere to sit is still a task somebody may want.
+   */
+  const held = new Set(mine.map((entry) => entry.agentId));
+  const under = (parent?: string) =>
+    mine.filter((entry) =>
+      parent === undefined
+        ? !entry.parentAgentId || !held.has(entry.parentAgentId)
+        : entry.parentAgentId === parent,
+    );
+
+  const rows = (parent: string | undefined, depth: number): ReactNode =>
+    under(parent).map((entry) => (
+      <li key={entry.agentId} className="subagent-item" onContextMenu={onMenu?.(entry.agentId)}>
+        <Task entry={entry} depth={depth} />
+        {/* Subagents delegate in turn, and a list of them is a tree. Drawn by the same
+            rows at every level, so how deep it goes is nobody's business here. */}
+        {under(entry.agentId).length > 0 && <ul className="subagent-list">{rows(entry.agentId, depth + 1)}</ul>}
+      </li>
+    ));
+
+  /** One task's own row, which is the same however deep it sits. */
+  function Task({ entry, depth }: { entry: WatchedSubagent; depth: number }) {
+    return (
+      <>
+        <button
+          type="button"
+          className={`subagent${entry.agentId === selectedSubagentId ? ' selected' : ''}`}
+          onClick={() => onSelectSubagent?.(entry.agentId)}
+          title={`Open what ${entry.name} did`}
+          // Indented by how far down it sits, since the nesting is what says who sent it.
+          style={depth > 0 ? { paddingLeft: `${12 + depth * 12}px` } : undefined}
+        >
+          {/* Running, finished or failed, in the shape the session rows already use for
+              the same question - a reader who can read one can read the other. */}
+          <span className={`activity activity-${entry.outcome === undefined ? 'working' : 'idle'}`} aria-hidden />
+          <span className="subagent-name">{entry.name}</span>
+          {entry.outcome === 'failed' && (
+            <span className="subagent-failed" title={entry.error}>
+              failed
+            </span>
+          )}
+        </button>
+        {/* Kept tasks stop ageing out, which is the whole point: the long audit worth
+            coming back to is the first one the conversation leaves behind (#180). Only
+            offered once the log holds its work, since that is what makes keeping it cost
+            a name rather than its megabytes. */}
+        {onKeepSubagent && keepable?.(entry.agentId) && (
           <button
             type="button"
-            className={`subagent${entry.agentId === selectedSubagentId ? ' selected' : ''}`}
-            onClick={() => onSelectSubagent(entry.agentId)}
-            title={`Open what ${entry.name} did`}
+            className={`subagent-keep${isKept?.(entry.agentId) ? ' kept' : ''}`}
+            onClick={() => onKeepSubagent(entry.agentId)}
+            title={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
+            aria-label={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
+            aria-pressed={isKept?.(entry.agentId) ?? false}
           >
-            {/* Running, finished or failed, in the shape the session rows already use for
-                the same question - a reader who can read one can read the other. */}
-            <span className={`activity activity-${entry.outcome === undefined ? 'working' : 'idle'}`} aria-hidden />
-            <span className="subagent-name">{entry.name}</span>
-            {entry.outcome === 'failed' && (
-              <span className="subagent-failed" title={entry.error}>
-                failed
-              </span>
-            )}
+            ★
           </button>
-          {/* Kept tasks stop ageing out, which is the whole point: the long audit worth
-              coming back to is the first one the conversation leaves behind (#180). Only
-              offered once the log holds its work, since that is what makes keeping it cost
-              a name rather than its megabytes. */}
-          {onKeepSubagent && keepable?.(entry.agentId) && (
-            <button
-              type="button"
-              className={`subagent-keep${isKept?.(entry.agentId) ? ' kept' : ''}`}
-              onClick={() => onKeepSubagent(entry.agentId)}
-              title={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
-              aria-label={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
-              aria-pressed={isKept?.(entry.agentId) ?? false}
-            >
-              ★
-            </button>
-          )}
-          {onDismissSubagent && (
-            <button
-              type="button"
-              className="subagent-dismiss"
-              onClick={() => onDismissSubagent(entry.agentId)}
-              title={`Hide ${entry.name}`}
-              aria-label={`Hide ${entry.name}`}
-            >
-              ×
-            </button>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
+        )}
+        {onDismissSubagent && (
+          <button
+            type="button"
+            className="subagent-dismiss"
+            onClick={() => onDismissSubagent(entry.agentId)}
+            title={`Hide ${entry.name}`}
+            aria-label={`Hide ${entry.name}`}
+          >
+            ×
+          </button>
+        )}
+      </>
+    );
+  }
+
+  return <ul className="subagent-list">{rows(undefined, 0)}</ul>;
 }
 
 /**

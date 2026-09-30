@@ -305,6 +305,19 @@ export async function readDelegatedTasks(
 function tasksIn(events: readonly LocatedEvent[]): DelegatedTask[] {
   const started = new Map<string, DelegatedTask>();
 
+  /**
+   * Which agent made each tool call, so a task can be told who delegated it.
+   *
+   * A task's announcement names the call that spawned it, and whoever made that call is its
+   * parent - undefined when that was the session itself. Lifecycle events name the same
+   * call without having made it, so they are left out or a task would parent itself.
+   */
+  const callerOf = new Map<string, string | undefined>();
+  for (const { event } of events) {
+    const id = (event.data as Record<string, unknown> | undefined)?.toolCallId;
+    if (typeof id === 'string' && !event.type.startsWith('subagent.')) callerOf.set(id, event.agentId);
+  }
+
   for (const { event, offset } of events) {
     const agentId = event.agentId;
     // The runtime's own background agents, which are its housekeeping rather than work this
@@ -314,11 +327,15 @@ function tasksIn(events: readonly LocatedEvent[]): DelegatedTask[] {
     const data = (event.data ?? {}) as Record<string, unknown>;
 
     if (event.type === 'subagent.started') {
+      const call = data.toolCallId;
+      const parent = typeof call === 'string' ? callerOf.get(call) : undefined;
+
       started.set(agentId, {
         agentId,
         name: String(data.agentDisplayName ?? data.agentName ?? 'agent'),
         startedAt: String(event.timestamp ?? ''),
         offset,
+        ...(parent ? { parentAgentId: parent } : {}),
       });
       continue;
     }

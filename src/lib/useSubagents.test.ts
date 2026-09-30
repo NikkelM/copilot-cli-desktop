@@ -908,3 +908,66 @@ describe('why a task failed', () => {
     expect(result.current.watched[0]?.error).toBeUndefined();
   });
 });
+
+/**
+ * Tasks delegated from inside another task (#178).
+ *
+ * Subagents delegate in turn - 86 of 1891 real runs in this machine's logs were started
+ * from inside another - so a list of them is a tree rather than a row of siblings.
+ */
+describe('a task delegated by another task', () => {
+  const call = (toolCallId: string, agentId?: string) =>
+    ({ type: 'tool.execution_start', ...(agentId ? { agentId } : {}), data: { toolCallId, name: 'task' } }) as TranscriptEvent;
+
+  const startedBy = (agentId: string, toolCallId: string) =>
+    ({
+      type: 'subagent.started',
+      agentId,
+      timestamp: '2026-09-30T10:00:00.000Z',
+      data: { toolCallId, agentName: 'explore', agentDisplayName: 'explore' },
+    }) as TranscriptEvent;
+
+  it('says who delegated it', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    // The session calls task, which starts the outer agent.
+    act(() => result.current.observe('s1', call('c1')));
+    act(() => result.current.observe('s1', startedBy('outer', 'c1')));
+    // The outer agent calls task in turn, which starts the inner one.
+    act(() => result.current.observe('s1', call('c2', 'outer')));
+    act(() => result.current.observe('s1', startedBy('inner', 'c2')));
+
+    const held = Object.fromEntries(result.current.watched.map((e) => [e.agentId, e.parentAgentId]));
+    expect(held).toEqual({ outer: undefined, inner: 'outer' });
+  });
+
+  /** A task the session delegated has no parent, which is what puts it at the top. */
+  it('says nobody delegated one the session started', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.observe('s1', call('c1')));
+    act(() => result.current.observe('s1', startedBy('a1', 'c1')));
+
+    expect(result.current.watched[0]?.parentAgentId).toBeUndefined();
+  });
+
+  /**
+   * An announcement names the call that spawned it without having made it. Reading those
+   * as calls would record every task as its own parent.
+   */
+  it('does not take an announcement for the call that made it', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.observe('s1', startedBy('a1', 'c1')));
+
+    expect(result.current.watched[0]?.parentAgentId).toBeUndefined();
+  });
+
+  it('says nothing about a parent it never saw call', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.observe('s1', startedBy('a1', 'never-seen')));
+
+    expect(result.current.watched[0]?.parentAgentId).toBeUndefined();
+  });
+});

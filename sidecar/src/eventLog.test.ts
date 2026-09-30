@@ -1149,6 +1149,52 @@ describe('readDelegatedTasks', () => {
   });
 
   /**
+   * Subagents delegate in turn - 86 of 1891 real runs here were started from inside
+   * another - so a list of them is a tree rather than a row of siblings.
+   */
+  describe('one delegated by another', () => {
+    const call = (toolCallId: string, agentId?: string) =>
+      JSON.stringify({ type: 'tool.execution_start', ...(agentId ? { agentId } : {}), data: { toolCallId } });
+
+    const startedBy = (agentId: string, toolCallId: string) =>
+      JSON.stringify({
+        type: 'subagent.started',
+        agentId,
+        timestamp: '2026-09-30T10:00:00.000Z',
+        data: { toolCallId, agentName: 'explore', agentDisplayName: 'explore' },
+      });
+
+    it('says who delegated it', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', [call('c1'), startedBy('outer', 'c1'), call('c2', 'outer'), startedBy('inner', 'c2')]);
+
+      const found = Object.fromEntries(
+        (await readDelegatedTasks('s')).agents.map((a) => [a.agentId, a.parentAgentId]),
+      );
+
+      expect(found).toEqual({ outer: undefined, inner: 'outer' });
+    });
+
+    it('says nobody delegated one the session started', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', [call('c1'), startedBy('a1', 'c1')]);
+
+      expect((await readDelegatedTasks('s')).agents[0]?.parentAgentId).toBeUndefined();
+    });
+
+    /**
+     * An announcement names the call that spawned it without having made it, so reading
+     * those as calls would record every task as its own parent.
+     */
+    it('does not take an announcement for the call that made it', async () => {
+      const { readDelegatedTasks } = await loadEventLog();
+      writeLog('s', [startedBy('a1', 'c1')]);
+
+      expect((await readDelegatedTasks('s')).agents[0]?.parentAgentId).toBeUndefined();
+    });
+  });
+
+  /**
    * The CLI runs background agents of its own - one fetches memories for the main agent -
    * and they announce themselves exactly as a delegated task does. They are the runtime's
    * housekeeping rather than work this session asked for.
