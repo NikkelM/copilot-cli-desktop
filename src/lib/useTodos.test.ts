@@ -20,10 +20,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const watching = (sessionId: string | null = 's1', loaded = true) =>
-  renderHook(({ id, up }: { id: string | null; up: boolean }) => useTodos(id, up), {
-    initialProps: { id: sessionId, up: loaded },
-  });
+const watching = (sessionId: string | null = 's1') =>
+  renderHook(({ id }: { id: string | null }) => useTodos(id), { initialProps: { id: sessionId } });
 
 /** Let a resolved promise reach the hook while the clock is held still. */
 const settle = async () => {
@@ -65,21 +63,14 @@ describe('keeping up with the agent’s todo list', () => {
     expect(sessionTodos).not.toHaveBeenCalled();
   });
 
-  /** Waking one to find out what it is planning would cost what this app exists to avoid. */
-  it('does not ask a session that is not in memory', async () => {
-    watching('s1', false);
+  /**
+   * The case that started this: a session nobody has woken still has a list, because it is
+   * read from the session's database on disk rather than from a running session.
+   */
+  it('asks about a session that is not in memory', async () => {
+    watching();
 
     await settle();
-
-    expect(sessionTodos).not.toHaveBeenCalled();
-  });
-
-  it('asks once it comes into memory', async () => {
-    const view = watching('s1', false);
-
-    await act(async () => {
-      view.rerender({ id: 's1', up: true });
-    });
 
     expect(sessionTodos).toHaveBeenCalledWith('s1');
   });
@@ -89,7 +80,7 @@ describe('keeping up with the agent’s todo list', () => {
     await settle();
 
     await act(async () => {
-      view.rerender({ id: 's2', up: true });
+      view.rerender({ id: 's2' });
     });
 
     expect(sessionTodos).toHaveBeenLastCalledWith('s2');
@@ -172,7 +163,7 @@ describe('keeping up with the agent’s todo list', () => {
     const view = watching();
 
     await act(async () => {
-      view.rerender({ id: 's2', up: true });
+      view.rerender({ id: 's2' });
     });
     // The first call, which was about s1, answering after the reader has gone to s2.
     act(() => answers[0]!([todo('from-s1')]));

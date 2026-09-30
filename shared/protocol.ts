@@ -1687,9 +1687,10 @@ export interface SidecarRequests {
   /**
    * The agent's own todo list, with its dependency edges joined in (#172).
    *
-   * Empty for a session that is not loaded, which is not resumed to ask: the list lives in
-   * the running session's database, and `session.todos_changed` is ephemeral and never
-   * reaches the log, so there is nothing to replay for a cold one either.
+   * Read from the session's database on disk rather than from a running session, so a
+   * session nobody has woken still has a list. The runtime offers this over its own API,
+   * but that needs the session loaded - and this app loads nothing until asked, which
+   * would have meant an empty list for every session in the sidebar.
    */
   'sessions.todos': { params: { sessionId: string }; result: { todos: Todo[] } };
   /** How full the window is. Null for a session that is not loaded, which is not resumed to ask. */

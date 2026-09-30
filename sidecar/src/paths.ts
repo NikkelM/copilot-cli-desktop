@@ -18,6 +18,16 @@ export function sessionEventLog(sessionId: string): string {
   return join(sessionStateDir(sessionId), 'events.jsonl');
 }
 
+/**
+ * The session's own SQL database, which is where the agent keeps its todo list.
+ *
+ * Read directly rather than through the runtime, for the same reason the event log is: a
+ * session that is not loaded has no process to ask, and this app exists not to start one.
+ */
+export function sessionDatabase(sessionId: string): string {
+  return join(sessionStateDir(sessionId), 'session.db');
+}
+
 /** Name of the CLI binary itself, not a shell wrapper: the SDK spawns this without a shell. */
 const cliBinary = process.platform === 'win32' ? 'copilot.exe' : 'copilot';
 

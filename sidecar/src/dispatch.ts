@@ -32,6 +32,7 @@ import {
 } from './git.js';
 import { previewImage } from './images.js';
 import { classifyDropped } from './dropped.js';
+import { readTodos } from './todos.js';
 import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
 import { sessionDiskUsage } from './diskUsage.js';
@@ -222,7 +223,7 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.queue': async ({ sessionId }) => ({ items: await runtime.queue(sessionId) }),
 
-    'sessions.todos': async ({ sessionId }) => ({ todos: await runtime.todos(sessionId) }),
+    'sessions.todos': ({ sessionId }) => ({ todos: readTodos(sessionId) }),
 
     // Params are read defensively for the same reason `commands.list` reads them that way:
     // a caller browsing agents outside any session has nothing to say and may send nothing.

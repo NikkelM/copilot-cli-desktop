@@ -17,18 +17,17 @@ const SETTLE_MS = 150;
 /**
  * The agent's own todo list, for the session being looked at (#172).
  *
- * Asked for rather than replayed. The event that announces a change carries no payload and
- * is ephemeral - it never reaches the log - so the only account of the list is the running
- * session's own database, and the only way to have it is to ask.
+ * Read from the session's database on disk, so a session nobody has woken still has a
+ * list. The runtime offers this over its own API, but only for a loaded session - and this
+ * app loads nothing until asked, which would have meant an empty list for every session in
+ * the sidebar until the moment it was worked in.
  *
- * Empty for a session that is not loaded, and nothing here resumes one. A todo list is
- * something a reader would like to see rather than something they asked for, and this app
- * does not start a process for that.
+ * Read again when the runtime says the table was written to. That event carries no payload
+ * and is ephemeral, so it is a prompt to look rather than anything to apply.
  *
  * @param sessionId the session being looked at, or null
- * @param loaded whether it is in memory, since a cold one has nothing to answer with
  */
-export function useTodos(sessionId: string | null, loaded: boolean) {
+export function useTodos(sessionId: string | null) {
   const [todos, setTodos] = useState<Todo[]>([]);
 
   /** Which session the list on hand belongs to, so a late answer cannot land on another. */
@@ -37,7 +36,7 @@ export function useTodos(sessionId: string | null, loaded: boolean) {
 
   const read = useCallback(() => {
     const forSession = sessionId;
-    if (!forSession || !loaded) {
+    if (!forSession) {
       setTodos([]);
       return;
     }
@@ -54,10 +53,9 @@ export function useTodos(sessionId: string | null, loaded: boolean) {
       .catch(() => {
         if (asking.current === forSession) setTodos([]);
       });
-  }, [sessionId, loaded]);
+  }, [sessionId]);
 
-  // On arriving at a session and on its coming into memory, which is when there is first
-  // something to ask.
+  // On arriving at a session, which is when there is first something to ask about.
   useEffect(read, [read]);
 
   const settling = useRef<ReturnType<typeof setTimeout> | null>(null);

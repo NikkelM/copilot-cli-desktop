@@ -307,10 +307,10 @@ export default function App() {
    *
    * Not gated on the panel being open, unlike the repository above. The list decides
    * whether there is an entry to open at all - most sessions never make one - so it has to
-   * be known before anybody asks. It costs nothing: the read only happens for a session
-   * already in memory, and never resumes one.
+   * be known before anybody asks. It costs a read of a small file on disk and no process,
+   * which is what lets it answer for a session nobody has woken.
    */
-  const todos = useTodos(selectedId, selected?.loaded ?? false);
+  const todos = useTodos(selectedId);
   /**
    * Switching, then reading the tree again.
    *
