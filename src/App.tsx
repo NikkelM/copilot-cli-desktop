@@ -80,6 +80,7 @@ import { stashFiles } from './lib/paste';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useAgentEvents } from './lib/useAgentEvents';
+import { useHasSubagents } from './lib/useHasSubagents';
 import { useNativeMenu } from './lib/useNativeMenu';
 import { useRewind } from './lib/useRewind';
 import { countLines, humanSize, placeholder, worthCollapsing, worthWriting, written } from './lib/longPaste';
@@ -836,7 +837,7 @@ export default function App() {
       else if (what.command.name === TAG.name) tagFromCommand(selectedId, what.input);
       else if (what.command.name === MCP.name) mcpFromCommand(what.input);
       else if (what.command.name === REWIND.name) rewindFromCommand(what.input);
-      else if (what.command.name === SUBAGENTS.name) panel.show('subagents');
+      else if (what.command.name === SUBAGENTS.name) setSubagentsFor(selectedId);
       else if (what.command.name === GIT.name) {
         panel.show('repository');
         repository.refresh();
@@ -1132,6 +1133,9 @@ export default function App() {
   const [deleting, setDeleting] = useState<SessionSummary | null>(null);
   /** Whether the settings window is open. */
   const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Whose delegated tasks are being looked through, if any. Not the selected session (#228). */
+  const [subagentsFor, setSubagentsFor] = useState<string | null>(null);
+  const hasSubagents = useHasSubagents();
 
   /**
    * Delete a session, and leave it if it was the one open.
@@ -1240,12 +1244,11 @@ export default function App() {
           if (putting) evictSession(sessionId).then(() => sessions.refresh()).catch(() => undefined);
         },
         working: sessions.working,
-        // Opening the panel means opening the session it is about: the tasks belong to that
-        // conversation, and the panel sits inside it.
-        showSubagents: (sessionId) => {
-          setSelectedId(sessionId);
-          panel.show('subagents');
-        },
+        // The session is not switched to. Asking what another session delegated is a
+        // question about it rather than a request to go there, and going there would close
+        // whatever was being read.
+        showSubagents: setSubagentsFor,
+        hasNoSubagents: hasSubagents.hasNone,
         load: (sessionId) => {
           loadSession(sessionId)
             .then(() => sessions.refresh())
@@ -1302,6 +1305,7 @@ export default function App() {
         tags={tags}
         onFavourite={toggleFavourite}
         actionsFor={sessionMenu}
+        onMenuOpened={hasSubagents.check}
         onToggle={width.toggle}
         onDismissSubagent={(agentId) => {
           subagents.dismiss(agentId);
@@ -1750,27 +1754,25 @@ export default function App() {
         />
       )}
 
-      {/* A window over the app rather than a panel inside the session: it is about the
-          session rather than part of its conversation, and .main assigns its rows by
-          position so a child that comes and goes moves the transcript into another row. */}
-      {panel.open === 'subagents' && selected && (
+      {/* A window over the app rather than a panel inside the session, and so not one of
+          the panels: it says what another session delegated without going there, and a
+          panel closes itself the moment the session it describes is left. */}
+      {subagentsFor && (
         <Subagents
-          sessionId={selected.sessionId}
+          sessionId={subagentsFor}
           isShown={subagents.isShown}
           isKept={subagents.isKept}
-          onToggleShown={(task) => subagents.toggleShown(task, selected.sessionId)}
-          onKeep={(task) => subagents.keepFound(task, selected.sessionId)}
+          onToggleShown={(task) => subagents.toggleShown(task, subagentsFor)}
+          onKeep={(task) => subagents.keepFound(task, subagentsFor)}
           onOpen={(task) => {
-            // Showing it first, or the sidebar would have nothing to go back to once the
-            // reader closes what they opened.
-            if (!subagents.isShown(task.agentId)) subagents.toggleShown(task, selected.sessionId);
+            // Reading one means going to the conversation that delegated it, which is the
+            // one place its transcript is drawn.
+            if (!subagents.isShown(task.agentId)) subagents.toggleShown(task, subagentsFor);
+            setSelectedId(subagentsFor);
             subagents.setOpenId(task.agentId);
-            panel.hide();
+            setSubagentsFor(null);
           }}
-          onClose={() => {
-            panel.hide();
-            toComposer();
-          }}
+          onClose={() => setSubagentsFor(null)}
         />
       )}
 
