@@ -1207,7 +1207,22 @@ export interface SidecarRequests {
    * than scanned, so this is a dozen small reads whatever the log's size. Null when the log
    * does not reach that far, which a truncated one will not (#30).
    */
-  'sessions.locate': { params: { sessionId: string; source: string }; result: { cursor: number | null } };
+  'sessions.locate': {
+    params: {
+      sessionId: string;
+      /** A search result's handle, which the database turns into the moment it happened. */
+      source?: string;
+      /**
+       * A moment already known, for a caller that has one.
+       *
+       * A delegated task knows when it began from the announcement that started it, so
+       * asking the database to look up what is already in hand would be the long way round
+       * to the same timestamp (#225).
+       */
+      at?: string;
+    };
+    result: { cursor: number | null };
+  };
   /** What is in the recycle bin, newest first. Costs no session: it is read from disk. */
   'bin.list': { params: Record<string, never>; result: BinnedSession[] };
   /**

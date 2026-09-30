@@ -178,6 +178,17 @@ export async function locateTurn(sessionId: string, source: string): Promise<num
   return cursor;
 }
 
+/**
+ * Where to open a session so that a moment is the last thing on the page.
+ *
+ * The same read as `locateTurn`, for a caller that already knows when rather than holding a
+ * search result to look up (#225).
+ */
+export async function locateMoment(sessionId: string, at: string): Promise<number | null> {
+  const { cursor } = await request('sessions.locate', { sessionId, at });
+  return cursor;
+}
+
 /** What is waiting in the recycle bin, newest first. Costs no session: it is read from disk. */
 export function binnedSessions(): Promise<BinnedSession[]> {
   return request('bin.list', {});

@@ -136,8 +136,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
      * Where to open a session so a match is on the page, as a cursor to read back from.
      * Null when the log does not reach that far, which a truncated one will not.
      */
-    'sessions.locate': async ({ sessionId, source }) => {
-      const until = momentAfter(sessionId, source);
+    'sessions.locate': async ({ sessionId, source, at }) => {
+      // A caller with a moment in hand is answered from it. Otherwise the handle names a
+      // turn the database knows the time of.
+      const until = at ?? (source === undefined ? undefined : momentAfter(sessionId, source));
       // Undefined names nothing the database holds, which is not the same as a match that
       // runs to the end of the log.
       return { cursor: until === undefined ? null : await locateTurn(sessionId, until) };

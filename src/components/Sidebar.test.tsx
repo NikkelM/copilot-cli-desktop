@@ -641,6 +641,24 @@ describe('Sidebar subagents', () => {
       expect(subagentActionsFor).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'a1' }));
     });
 
+    /** The entry that goes to the delegating turn needs the moment the task began. */
+    it('hands over what the task knows about itself', () => {
+      const subagentActionsFor = vi.fn(() => actions);
+      shown({
+        subagents: [watched({ startedAt: '2026-09-30T10:00:00.000Z' })],
+        subagentActionsFor,
+      });
+
+      fireEvent.contextMenu(screen.getByText('deep-audit'));
+
+      expect(subagentActionsFor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sessionId: 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8',
+          startedAt: '2026-09-30T10:00:00.000Z',
+        }),
+      );
+    });
+
     /** The webview would otherwise draw its own, which is the whole point of having one. */
     it('takes the right-click for itself', () => {
       shown({ subagents: [watched()], subagentActionsFor: () => actions });

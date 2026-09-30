@@ -44,6 +44,7 @@ import {
   renameSession,
   deleteSession,
   forkSession as fork,
+  locateMoment,
   locateTurn,
   writeCliSettings,
   stashPaste,
@@ -93,7 +94,7 @@ import { useRepoStatus } from './lib/useRepoStatus';
 import { useRuntimeHealth } from './lib/useRuntimeHealth';
 import { useFavourites } from './lib/useFavourites';
 import { STEP, clampScale } from './lib/scale';
-import { useSubagents } from './lib/useSubagents';
+import { type WatchedSubagent, useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
 import { dispatch } from './lib/slash';
 import { usePrompts } from './lib/usePrompts';
@@ -186,6 +187,34 @@ export default function App() {
    */
   const [jump, setJump] = useState<{ sessionId: string; cursor: number; words: string; at: number } | null>(null);
 
+  // Up here rather than with the other hooks, because arriving at a session closes the
+  // delegated task being read and the three functions that do so are just below.
+  const subagents = useSubagents();
+
+  /**
+   * Show a session, at a cursor when one was worked out for it.
+   *
+   * The part every way of arriving has in common. What differs is only how the cursor was
+   * arrived at - searched for, or known - and that is the caller's business rather than
+   * this one's.
+   */
+  const show = useCallback(
+    (sessionId: string, cursor: number | null, session?: SessionSummary, words?: string) => {
+      // Stamped so that asking for the same result again, in the session already open, is a
+      // fresh arrival rather than the one already being shown.
+      setJump(cursor === null ? null : { sessionId, cursor, words: words ?? '', at: Date.now() });
+      setSelectedId(sessionId);
+      setOffList(session ?? null);
+      // Choosing a session is asking for that conversation, including the one whose delegated
+      // task is being read: the subagent view would otherwise be a room with one door.
+      subagents.close();
+      // The wiki is somewhere else entirely, and a session chosen while reading it is a
+      // request to go back to work.
+      setShowWiki(false);
+    },
+    [subagents],
+  );
+
   const open = useCallback(
     async (sessionId: string, session?: SessionSummary, found?: SessionMatch, words?: string) => {
       /**
@@ -202,19 +231,29 @@ export default function App() {
        */
       const at = found ? await locateTurn(sessionId, found.source).catch(() => null) : null;
 
-      // Stamped so that asking for the same result again, in the session already open, is a
-      // fresh arrival rather than the one already being shown.
-      setJump(at === null ? null : { sessionId, cursor: at, words: words ?? '', at: Date.now() });
-      setSelectedId(sessionId);
-      setOffList(session ?? null);
-      // Choosing a session is asking for that conversation, including the one whose delegated
-      // task is being read: the subagent view would otherwise be a room with one door.
-      subagents.close();
-      // The wiki is somewhere else entirely, and a session chosen while reading it is a
-      // request to go back to work.
-      setShowWiki(false);
+      show(sessionId, at, session, words);
     },
-    [],
+    [show],
+  );
+
+  /**
+   * Go to the turn that delegated a task (#225).
+   *
+   * The task knows when it began, and the log is ordered by time, so the turn that sent it
+   * is whatever sits immediately before that moment - no index and no search, just the read
+   * that opening at a search result already does.
+   *
+   * A cursor points at where the next thing begins and the page is what came before it, so
+   * asking for the moment the task started puts the call that started it at the end of the
+   * page, with the conversation that led to it above.
+   */
+  const showDelegation = useCallback(
+    async (entry: WatchedSubagent) => {
+      const at = entry.startedAt ? await locateMoment(entry.sessionId, entry.startedAt).catch(() => null) : null;
+
+      show(entry.sessionId, at);
+    },
+    [show],
   );
 
   const transcript = useTranscript(selectedId, setError, jump?.sessionId === selectedId ? jump.cursor : null);
@@ -230,7 +269,6 @@ export default function App() {
   const contextUsage = useContextUsage(selectedId);
   const agent = useAgent(selectedId, selected?.cwd ?? null, setError);
   const slash = useCommands(selectedId);
-  const subagents = useSubagents();
   // Up here with the other hooks because the keyboard reads it: Ctrl+= and Ctrl+- change
   // the text size, which is one of these rather than a value of its own.
   const { settings, apply: applySettings } = useSettings();
@@ -1278,6 +1316,14 @@ export default function App() {
             id: 'copy-id',
             label: 'Copy agent ID',
             run: () => void copyText(entry.agentId),
+          },
+          {
+            id: 'delegation',
+            label: 'Go to the turn that started it',
+            // Without the moment it began there is nothing to aim at, and a task watched
+            // starting always has one.
+            refused: entry.startedAt ? undefined : 'Not known when this one began',
+            run: () => void showDelegation(entry),
           },
           {
             id: 'dismiss',

@@ -18,6 +18,13 @@ vi.mock('./eventLog.js', () => ({
   lastAgent: vi.fn(async () => ({ name: 'deep-audit', displayName: 'Deep Audit' })),
   lastModel: vi.fn(async () => null),
   readTranscript: vi.fn(() => ({ events: [] })),
+  readAgentTranscript: vi.fn(async () => []),
+  // Answers with whatever moment reached it, so a test can see which one did.
+  locateTurn: vi.fn(async (_sessionId: string, until: string | null) => until),
+}));
+vi.mock('./sessionSearch.js', () => ({
+  searchSessions: vi.fn(() => []),
+  momentAfter: vi.fn(() => 'looked-up-in-the-database'),
 }));
 vi.mock('./directories.js', () => ({
   directoryCaseSensitive: false,
@@ -101,6 +108,43 @@ describe('what the sidecar answers', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     handlers = createHandlers(runtime);
+  });
+
+  /**
+   * Where to open a session, asked two ways (#225).
+   *
+   * A search result is a handle the database turns into a moment. A delegated task already
+   * knows the moment it began, and looking up what is in hand would be the long way round
+   * to the same answer.
+   */
+  describe('where to open a session', () => {
+    it('turns a search result into the moment it happened', async () => {
+      const { cursor } = await handlers['sessions.locate']({ sessionId: 's1', source: 's1:turn:3' });
+
+      expect(cursor).toBe('looked-up-in-the-database');
+    });
+
+    it('takes a moment already known as it is', async () => {
+      const { cursor } = await handlers['sessions.locate']({ sessionId: 's1', at: '2026-09-30T10:00:00.000Z' });
+
+      expect(cursor).toBe('2026-09-30T10:00:00.000Z');
+    });
+
+    it('asks the database nothing when the moment is already known', async () => {
+      const { momentAfter } = await import('./sessionSearch.js');
+      vi.mocked(momentAfter).mockClear();
+
+      await handlers['sessions.locate']({ sessionId: 's1', at: '2026-09-30T10:00:00.000Z' });
+
+      expect(momentAfter).not.toHaveBeenCalled();
+    });
+
+    /** Neither one names anything, and a cursor of nowhere is not a cursor to the end. */
+    it('answers with nothing when it was told neither', async () => {
+      const { cursor } = await handlers['sessions.locate']({ sessionId: 's1' });
+
+      expect(cursor).toBeNull();
+    });
   });
 
   /**
