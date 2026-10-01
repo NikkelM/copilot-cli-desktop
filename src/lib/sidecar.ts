@@ -361,6 +361,27 @@ export async function sessionQueue(sessionId: string): Promise<QueuedItem[]> {
 }
 
 /**
+ * Write a session out as a single file, to move it to another machine (#63).
+ *
+ * Deflated, so a conversation that is mostly event log travels as a fraction of what it
+ * costs on disk.
+ */
+export async function exportSession(sessionId: string, toPath: string): Promise<number> {
+  const { bytes } = await request('sessions.export', { sessionId, toPath });
+  return bytes;
+}
+
+/** What a session would cost to pack, for a confirmation that names a real number. */
+export function exportSize(sessionId: string): Promise<{ files: number; bytes: number }> {
+  return request('sessions.exportSize', { sessionId });
+}
+
+/** Take a bundle in as a session of its own, under the id it already has (#63). */
+export function importSession(fromPath: string): Promise<{ sessionId: string; files: number }> {
+  return request('sessions.import', { fromPath });
+}
+
+/**
  * Sessions another Copilot has open (#63).
  *
  * Only ones this app has not loaded itself. Two Copilots working in one conversation write

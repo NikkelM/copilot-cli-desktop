@@ -34,6 +34,7 @@ import { previewImage } from './images.js';
 import { classifyDropped } from './dropped.js';
 import { readTodos } from './todos.js';
 import { heldSessions } from './activeSessions.js';
+import { exportSession, exportSize, importSession } from './transfer.js';
 import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
 import { sessionDiskUsage } from './diskUsage.js';
@@ -227,6 +228,14 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     // Minus the ones this app is holding, which are open where the reader is looking rather
     // than somewhere they cannot see (#63).
     'sessions.active': () => ({ sessionIds: heldSessions().filter((id) => !runtime.holdsItself(id)) }),
+
+    'sessions.export': ({ sessionId, toPath }) => exportSession(sessionId, toPath),
+
+    'sessions.exportSize': ({ sessionId }) => exportSize(sessionId),
+
+    // The window refreshes the list itself afterwards: an import writes into `session-state`
+    // and the store watcher only sees the database, so nothing here would announce it.
+    'sessions.import': ({ fromPath }) => importSession(fromPath),
 
     'sessions.todos': ({ sessionId }) => ({ todos: readTodos(sessionId) }),
 

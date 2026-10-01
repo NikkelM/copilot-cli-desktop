@@ -10,6 +10,8 @@ export interface SessionActionDeps {
   rename: (session: SessionSummary) => void;
   /** Opens the tag picker. Tags change in handfuls, so this hands over rather than toggling. */
   tag: (session: SessionSummary) => void;
+  /** Writes the session out as a bundle, which means asking where to put it first (#63). */
+  exportTo: (session: SessionSummary) => void;
   /** Which sessions are put away, and how to change that. */
   archived: readonly string[];
   toggleArchived: (sessionId: string) => void;
@@ -66,6 +68,11 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       id: 'tag',
       label: 'Tags…',
       run: () => deps.tag(session),
+    },
+    {
+      id: 'export',
+      label: 'Export…',
+      run: () => deps.exportTo(session),
     },
     {
       id: 'fork',

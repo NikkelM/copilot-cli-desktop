@@ -241,13 +241,57 @@ describe('listSessions', () => {
       expect(listSessions(['never'])).toEqual([]);
     });
 
-    // Only sessions the runtime is holding, or every abandoned directory would be a row.
-    it('says nothing about one nobody is holding', async () => {
+    /**
+     * A directory the store has forgotten is still a conversation (#63).
+     *
+     * This used to need the runtime to be holding it, on the grounds that otherwise every
+     * abandoned directory would appear. That is now the point: the store is an index, the
+     * sessions are the directories, and an index that has lost one should not make it
+     * unreachable. An imported bundle arrives in exactly this state.
+     */
+    it('lists one nobody is holding, since the directory is the session', async () => {
       store.addState('rowless', { cwd: 'C:\\work\\thing' });
 
       const { listSessions } = await loadIndex();
 
+      expect(listSessions().map((s) => s.sessionId)).toEqual(['rowless']);
+    });
+
+    it('describes it from its own workspace', async () => {
+      store.addState('rowless', { name: 'Brought from elsewhere', cwd: 'C:\\work\\thing' });
+
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions()[0]).toMatchObject({ title: 'Brought from elsewhere', cwd: 'C:\\work\\thing' });
+    });
+
+    /** Nothing to describe it by, so there is nothing to put in a row. */
+    it('says nothing about a directory with no workspace', async () => {
+      store.addState('rowless');
+      store.removeName('rowless');
+
+      const { listSessions } = await loadIndex();
+
       expect(listSessions()).toEqual([]);
+    });
+
+    // Resuming one fails with "Cannot create session from empty events array", so a row for
+    // it could only ever produce an error.
+    it('says nothing about a directory whose log is empty', async () => {
+      store.addState('rowless', { cwd: 'C:\\work\\thing' });
+      store.removeLog('rowless');
+
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions()).toEqual([]);
+    });
+
+    it('names it once, rather than twice, when the runtime is holding it too', async () => {
+      store.addState('rowless', { cwd: 'C:\\work\\thing' });
+
+      const { listSessions } = await loadIndex();
+
+      expect(listSessions(['rowless']).map((s) => s.sessionId)).toEqual(['rowless']);
     });
 
     it('lists it beside the sessions that do have rows', async () => {

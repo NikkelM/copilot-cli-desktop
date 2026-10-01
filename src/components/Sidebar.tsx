@@ -34,6 +34,8 @@ interface SidebarProps {
   onWiki: () => void;
   /** Open the settings window. Absent leaves the control out. */
   onSettings?: () => void;
+  /** Bring in a session exported elsewhere. Absent leaves the control out (#63). */
+  onImport?: () => void;
   creating: boolean;
   /** How many sessions may be resident at once; zero or absent means no cap. */
   maxLoaded?: number;
@@ -193,6 +195,7 @@ export function Sidebar({
   onCreate,
   onWiki,
   onSettings,
+  onImport,
   creating,
   maxLoaded,
   activity,
@@ -399,6 +402,19 @@ export function Sidebar({
           >
             Wiki
           </button>
+          {/* Import is about the list rather than about any session in it, so it belongs
+              here beside New rather than in a session's own menu - where Export sits,
+              since that one is about a particular session (#63). */}
+          {onImport && (
+            <button
+              type="button"
+              className="new-session"
+              onClick={onImport}
+              title="Bring in a session exported from another machine"
+            >
+              Import
+            </button>
+          )}
           <button
             type="button"
             className="new-session"

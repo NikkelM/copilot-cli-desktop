@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { open as pickFolder } from '@tauri-apps/plugin-dialog';
+import { open as pickFolder, save as saveFile } from '@tauri-apps/plugin-dialog';
 
 import type {
   Attachment,
@@ -51,6 +51,9 @@ import {
   writeCliSettings,
   stashPaste,
   classifyDropped,
+  exportSession,
+  exportSize,
+  importSession,
 } from './lib/sidecar';
 import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, readRewindCommand, SUBAGENTS, wantsDirectory, withRewindChoices, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
@@ -72,7 +75,7 @@ import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
 import { SidebarToggle } from './components/SidebarToggle';
 import { useSidebarWidth } from './lib/useSidebarWidth';
-import { openPath, openUrl } from '@tauri-apps/plugin-opener';
+import { openPath, openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { explain, messageOf } from './lib/errors';
 import { revealPointerForPicker } from './lib/nativePicker';
 import { usageReport } from './lib/usageReport';
@@ -1302,6 +1305,66 @@ export default function App() {
     [sessions],
   );
 
+  /**
+   * Write a session out as a bundle, somewhere the reader chooses (#63).
+   *
+   * The size is said in the dialog's own title rather than in a message afterwards: the
+   * largest conversation here is 287 MB on disk, and that is worth knowing while choosing
+   * where to put it rather than once it is already being written.
+   */
+  async function exportTo(session: SessionSummary) {
+    try {
+      const { files, bytes } = await exportSize(session.sessionId);
+      if (files === 0) {
+        setError('That session has nothing in it to export.');
+        return;
+      }
+
+      const named = (session.title ?? 'session').replace(/[^\w.-]+/g, '-').slice(0, 40) || 'session';
+      const toPath = await saveFile({
+        title: `Export session (${humanSize(bytes)} before compression)`,
+        defaultPath: `${named}-${session.sessionId.slice(0, 8)}.copilot-session.zip`,
+        filters: [{ name: 'Session bundle', extensions: ['zip'] }],
+      });
+      if (typeof toPath !== 'string') return;
+
+      await exportSession(session.sessionId, toPath);
+      // Shown rather than announced. A message saying it worked is a message to dismiss;
+      // the file sitting selected in its folder is the same news and is already the thing
+      // the reader was going to look for.
+      await revealItemInDir(toPath).catch(() => undefined);
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
+  }
+
+  /**
+   * Take a bundle in, and go to what arrived (#63).
+   *
+   * The list is read again afterwards rather than waiting to be told: an import writes into
+   * the session directory, and the watcher that announces a changed list watches only the
+   * database.
+   */
+  async function importFrom() {
+    try {
+      const picked = await pickFolder({
+        title: 'Import a session bundle',
+        multiple: false,
+        filters: [{ name: 'Session bundle', extensions: ['zip'] }],
+      });
+      const fromPath = Array.isArray(picked) ? picked[0] : picked;
+      if (typeof fromPath !== 'string') return;
+
+      const { sessionId } = await importSession(fromPath);
+      await sessions.refresh();
+      // No cursor: an imported conversation is being arrived at whole rather than at some
+      // particular moment in it.
+      show(sessionId, null);
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
+  }
+
   const sessionMenu = useCallback(
     (session: SessionSummary) =>
       sessionActions(session, {
@@ -1310,6 +1373,7 @@ export default function App() {
         archived,
         rename: setNaming,
         tag: setTagging,
+        exportTo,
         // Archiving is a decision that the session is finished with, so it also stops paying
         // for it: keeping one resumed while hiding it from view is the memory cost this app
         // exists to avoid (#101).
@@ -1366,6 +1430,7 @@ export default function App() {
         maxLoaded={sessions.maxLoaded}
         activity={activity}
         activeElsewhere={elsewhere.active}
+        onImport={() => void importFrom()}
         subagents={subagents.watched}
         selectedSubagentId={subagents.openId}
         onSelectSubagent={(agentId) => {

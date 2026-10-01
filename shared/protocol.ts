@@ -1690,6 +1690,23 @@ export interface SidecarRequests {
    * conversation is, and nothing but this says it is happening.
    */
   'sessions.active': { params: Record<string, never>; result: { sessionIds: string[] } };
+  /**
+   * Write a session out as a single file, to move it to another machine (#63).
+   *
+   * The whole directory except the markers saying it is open, deflated - a session is
+   * almost entirely its event log, and an event log is JSON.
+   */
+  'sessions.export': { params: { sessionId: string; toPath: string }; result: { bytes: number } };
+  /** What a session would cost to pack, so the window can say so before it starts. */
+  'sessions.exportSize': { params: { sessionId: string }; result: { files: number; bytes: number } };
+  /**
+   * Take a bundle in as a session of its own (#63).
+   *
+   * Under the id it already has, since the log's events refer to it. Refused where a
+   * session of that id is already here: merging two conversations that share one would
+   * corrupt both, with no way to say which is right.
+   */
+  'sessions.import': { params: { fromPath: string }; result: { sessionId: string; files: number } };
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   /**
@@ -1845,6 +1862,9 @@ export const SIDECAR_METHODS = [
   'skills.disabled',
   'skills.set',
   'sessions.queue',
+  'sessions.export',
+  'sessions.exportSize',
+  'sessions.import',
   'sessions.active',
   'sessions.todos',
   'sessions.context',

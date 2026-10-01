@@ -7,11 +7,11 @@
  * last message with zero Copilot processes. That is the whole bargain, so this stays.
  */
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, readFileSync, renameSync, statSync, writeFileSync, type Stats } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync, type Stats } from 'node:fs';
 import { join } from 'node:path';
 
 import type { SessionSummary } from '../../shared/protocol.js';
-import { sessionEventLog, sessionStateDir, sessionStoreDb } from './paths.js';
+import { copilotHome, sessionEventLog, sessionStateDir, sessionStoreDb } from './paths.js';
 
 /**
  * Workspaces already read, keyed by session, with what the file looked like when they were.
@@ -178,6 +178,22 @@ function parseWorkspace(path: string): Workspace | null {
   return found;
 }
 
+/**
+ * Every session directory on disk, whatever the store knows about them.
+ *
+ * Named by their directory, which is the session id: that is how the CLI lays them out and
+ * how everything else here finds a session's files.
+ */
+function sessionDirectories(): string[] {
+  try {
+    return readdirSync(join(copilotHome, 'session-state'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    // No directory at all is a CLI that has never run, not a failure worth reporting.
+    return [];
+  }
+}
 
 interface SessionRow {
   id: string;
@@ -317,8 +333,32 @@ export function listSessions(keep: readonly string[] = []): SessionSummary[] {
       .filter((entry) => entry.workspace !== null)
       .map(({ sessionId, workspace }) => fromWorkspace(sessionId, workspace as Workspace));
 
+    /**
+     * And a session on disk that the store has forgotten entirely (#63).
+     *
+     * The store is an index, not the truth: the sessions are the directories. A directory
+     * the index has lost is still a conversation, still costs what it costs, and until now
+     * nothing in the app would ever mention it - the disk panel already says as much where
+     * it marks one `listed: false`.
+     *
+     * Import is what makes this matter rather than merely true. A bundle unpacked from
+     * another machine arrives as exactly this: a directory with a log and a workspace and
+     * no row anywhere, since the row lives in a database that stayed behind. Without this
+     * the import would finish and the session would be nowhere to be seen.
+     *
+     * Held to the same bar as a row: a log with something in it, and a workspace file to
+     * be described from. A directory with neither is not a session anybody can open.
+     */
+    const seen = new Set([...rows.map((row) => row.id), ...missing.map((entry) => entry.sessionId)]);
+    const forgotten = sessionDirectories()
+      .filter((sessionId) => !seen.has(sessionId))
+      .filter((sessionId) => (statSync(sessionEventLog(sessionId), { throwIfNoEntry: false })?.size ?? 0) > 0)
+      .map((sessionId) => ({ sessionId, workspace: readWorkspace(sessionId) }))
+      .filter((entry) => entry.workspace !== null)
+      .map(({ sessionId, workspace }) => fromWorkspace(sessionId, workspace as Workspace));
+
     // The SQL ordering used the turn timestamp, which lastActivity may have superseded.
-    return [...sessions, ...missing].sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
+    return [...sessions, ...missing, ...forgotten].sort((a, b) => toTime(b.updatedAt) - toTime(a.updatedAt));
   } finally {
     db.close();
   }

@@ -21,6 +21,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   archived: [],
   toggleArchived: vi.fn(),
   tag: vi.fn(),
+  exportTo: vi.fn(),
   rename: vi.fn(),
   working: new Set(),
   unload: vi.fn(),
@@ -44,6 +45,7 @@ describe('sessionActions', () => {
       'memory',
       'rename',
       'tag',
+      'export',
       'fork',
       'archive',
       'subagents',
@@ -256,5 +258,27 @@ describe('sessionActions', () => {
     const copy = vi.fn();
     byId(session({ sessionId: 'the-id' }), deps({ copy }))['copy-id'].run();
     expect(copy).toHaveBeenCalledWith('the-id');
+  });
+});
+
+/** Moving a session to another machine, which is about that session (#63). */
+describe('exporting a session', () => {
+  it('hands the session over to be written out', () => {
+    const d = deps();
+    const chosen = session();
+
+    byId(chosen, d)['export']?.run();
+
+    expect(d.exportTo).toHaveBeenCalledWith(chosen);
+  });
+
+  it('is offered whether or not the session is loaded', () => {
+    expect(byId(session({ loaded: true }), deps())['export']?.refused).toBeUndefined();
+    expect(byId(session({ loaded: false }), deps())['export']?.refused).toBeUndefined();
+  });
+
+  /** Nothing is lost by writing a copy out, so it is not one of the ones drawn apart. */
+  it('is not treated as destructive', () => {
+    expect(byId(session(), deps())['export']?.destructive).toBeFalsy();
   });
 });
