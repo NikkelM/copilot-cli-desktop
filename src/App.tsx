@@ -1426,6 +1426,11 @@ export default function App() {
               .then(() => sessions.refresh())
               .catch((e: unknown) => setError(explain(e)));
           },
+          load: (sessionId) => {
+            loadSession(sessionId)
+              .then(() => sessions.refresh())
+              .catch((e: unknown) => setError(explain(e)));
+          },
           remove: setDeletingMany,
           exportAll: exportMany,
           done: clearMarks,

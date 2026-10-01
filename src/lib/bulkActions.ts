@@ -7,6 +7,8 @@ export interface BulkActionDeps {
   toggleArchived: (sessionId: string) => void;
   /** Release one from memory. A session that was never resumed is simply skipped. */
   unload: (sessionId: string) => void;
+  /** Resume one, which costs a process. Offered only where the whole set is cold. */
+  load: (sessionId: string) => void;
   /** Put the whole set to the reader before anything is removed. */
   remove: (sessions: SessionSummary[]) => void;
   /** Write them all out, which means asking for a folder rather than a file. */
@@ -47,15 +49,30 @@ export function bulkActions(sessions: SessionSummary[], deps: BulkActionDeps): S
   const loaded = sessions.filter((session) => session.loaded);
 
   return [
-    {
-      id: 'bulk-unload',
-      label: `Unload ${count(loaded.length)} from memory`,
-      brief: 'Unload',
-      // Nothing to release, rather than a button that would do nothing. The count says so
-      // already, so this only has to explain why it is greyed.
-      refused: loaded.length === 0 ? 'None of these are in memory.' : undefined,
-      run: () => loaded.forEach((session) => deps.unload(session.sessionId)),
-    },
+    /**
+     * One row for memory, saying the thing the set can actually do with it.
+     *
+     * A set with nothing in memory was offered a greyed Unload, which is a button that
+     * exists to say no. Where every one of them is cold there is an obvious other thing to
+     * mean, so it says that instead.
+     *
+     * Only where every one is cold. Loading is the expensive direction - a process each,
+     * which is the cost this app is built to avoid - and a set that is part loaded has no
+     * unambiguous reading, while unloading the ones that are loaded always does.
+     */
+    loaded.length === 0
+      ? {
+          id: 'bulk-load',
+          label: `Load ${count(ids.length)} into memory`,
+          brief: 'Load',
+          run: () => ids.forEach((id) => deps.load(id)),
+        }
+      : {
+          id: 'bulk-unload',
+          label: `Unload ${count(loaded.length)} from memory`,
+          brief: 'Unload',
+          run: () => loaded.forEach((session) => deps.unload(session.sessionId)),
+        },
     {
       id: 'bulk-export',
       label: `Export ${count(ids.length)}…`,

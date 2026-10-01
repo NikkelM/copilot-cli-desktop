@@ -20,6 +20,7 @@ const deps = (over: Partial<BulkActionDeps> = {}): BulkActionDeps => ({
   archived: [],
   toggleArchived: vi.fn(),
   unload: vi.fn(),
+  load: vi.fn(),
   remove: vi.fn(),
   exportAll: vi.fn(),
   done: vi.fn(),
@@ -40,6 +41,17 @@ const three = [session('a'), session('b'), session('c')];
 describe('acting on several sessions', () => {
   it('offers only what makes sense for a set', () => {
     expect(bulkActions(three, deps()).map((a) => a.id)).toEqual([
+      'bulk-load',
+      'bulk-export',
+      'bulk-archive',
+      'bulk-delete',
+    ]);
+  });
+
+  it('offers to release a set that is in memory instead of to load it', () => {
+    const warm = [session('a', { loaded: true }), session('b', { loaded: true })];
+
+    expect(bulkActions(warm, deps()).map((a) => a.id)).toEqual([
       'bulk-unload',
       'bulk-export',
       'bulk-archive',
@@ -131,40 +143,88 @@ describe('acting on several sessions', () => {
 
     /** Deleting and exporting ask something first, and clear up when they are answered. */
     it('is the only one that clears the selection where it stands', () => {
+      const warm = [session('a', { loaded: true }), session('b', { loaded: true })];
       for (const id of ['bulk-unload', 'bulk-export', 'bulk-delete']) {
         const d = deps();
-        byId(three, d)[id]?.run();
+        const action = byId(warm, d)[id];
+        expect(action, `${id} should be in the list`).toBeDefined();
+        action?.run();
         expect(d.done, `${id} should leave the selection alone`).not.toHaveBeenCalled();
       }
     });
   });
 
   describe('unloading', () => {
-    it('counts only the ones that are in memory', () => {
-      const d = deps();
-      const mixed = [session('a', { loaded: true }), session('b'), session('c', { loaded: true })];
+    const mixed = [session('a', { loaded: true }), session('b'), session('c', { loaded: true })];
 
-      expect(byId(mixed, d)['bulk-unload']?.label).toBe('Unload 2 sessions from memory');
+    it('counts only the ones that are in memory', () => {
+      expect(byId(mixed, deps())['bulk-unload']?.label).toBe('Unload 2 sessions from memory');
     });
 
     it('releases only those', () => {
       const d = deps();
-      const mixed = [session('a', { loaded: true }), session('b')];
+      const some = [session('a', { loaded: true }), session('b')];
 
-      byId(mixed, d)['bulk-unload']?.run();
+      byId(some, d)['bulk-unload']?.run();
 
       expect(d.unload).toHaveBeenCalledOnce();
       expect(d.unload).toHaveBeenCalledWith('a');
     });
 
-    it('is refused where none of them is in memory', () => {
-      expect(byId(three, deps())['bulk-unload']?.refused).toBe('None of these are in memory.');
+    it('is offered where one of them is in memory', () => {
+      const some = [session('a', { loaded: true }), session('b')];
+
+      expect(byId(some, deps())['bulk-unload']?.refused).toBeUndefined();
     });
 
-    it('is offered where one of them is', () => {
-      const mixed = [session('a', { loaded: true }), session('b')];
+    it('is not there at all where none of them is', () => {
+      expect(byId(three, deps())['bulk-unload']).toBeUndefined();
+    });
+  });
 
-      expect(byId(mixed, deps())['bulk-unload']?.refused).toBeUndefined();
+  /**
+   * A set with nothing in memory was offered a greyed Unload, which is a button that exists
+   * to say no. Where every one of them is cold there is an obvious other thing to mean.
+   */
+  describe('loading', () => {
+    it('is offered in place of unloading where the whole set is cold', () => {
+      expect(byId(three, deps())['bulk-load']?.label).toBe('Load 3 sessions into memory');
+    });
+
+    it('resumes every one of them', () => {
+      const d = deps();
+
+      byId(three, d)['bulk-load']?.run();
+
+      expect(d.load).toHaveBeenCalledTimes(3);
+      expect(d.load).toHaveBeenCalledWith('b');
+    });
+
+    it('has a short name of its own', () => {
+      expect(byId(three, deps())['bulk-load']?.brief).toBe('Load');
+    });
+
+    /**
+     * Loading is the expensive direction, a process each. A set that is part loaded has no
+     * unambiguous reading, while unloading the ones that are loaded always does.
+     */
+    it('is not offered where any of them is already in memory', () => {
+      const some = [session('a', { loaded: true }), session('b'), session('c')];
+
+      expect(byId(some, deps())['bulk-load']).toBeUndefined();
+    });
+
+    it('takes the place of unloading rather than being added beside it', () => {
+      expect(bulkActions(three, deps())).toHaveLength(bulkActions([session('a', { loaded: true })], deps()).length);
+    });
+
+    /** The rows stay where they are - in memory is a group nobody has folded away. */
+    it('leaves the selection alone', () => {
+      const d = deps();
+
+      byId(three, d)['bulk-load']?.run();
+
+      expect(d.done).not.toHaveBeenCalled();
     });
   });
 
