@@ -52,6 +52,15 @@ interface SidebarProps {
   /** The sessions picked out to be acted on together, which is not the one being read (#63). */
   marked?: readonly string[];
   /**
+   * Whether the list is being picked over rather than read (#63).
+   *
+   * Changes what a plain click means, so the rows say so: each grows a box, and a bar above
+   * them says how many are picked and how to stop.
+   */
+  selecting?: boolean;
+  /** Done picking. Absent leaves the bar without its way out. */
+  onDoneSelecting?: () => void;
+  /**
    * A row was clicked, with whatever modifiers it carried.
    *
    * Answers whether the click was taken as marking. True means it was, and the row should
@@ -210,6 +219,8 @@ export function Sidebar({
   activity,
   activeElsewhere,
   marked,
+  selecting = false,
+  onDoneSelecting,
   onMark,
   subagents,
   selectedSubagentId,
@@ -481,6 +492,19 @@ export function Sidebar({
         />
       </div>
 
+      {/* Only while picking: a bar that is always there is a bar nobody reads, and the
+          count is the one thing a reader cannot work out from rows they have scrolled past. */}
+      {selecting && (
+        <div className="selecting-bar">
+          <span>{marked?.length ?? 0} selected</span>
+          {onDoneSelecting && (
+            <button type="button" className="selecting-done" onClick={onDoneSelecting}>
+              Done
+            </button>
+          )}
+        </div>
+      )}
+
       {matches.length === 0 && hidden.length === 0 ? (
         <p className="no-matches">No sessions match that filter.</p>
       ) : (
@@ -555,6 +579,13 @@ export function Sidebar({
                           onContextMenu={openMenu(session.sessionId)}
                         >
                           <div className="session-line">
+                            {selecting && (
+                              <Check
+                                on={marked?.includes(session.sessionId) ?? false}
+                                title={session.title ?? 'Untitled session'}
+                                onPick={(event) => clicked(session.sessionId, event)}
+                              />
+                            )}
                             <Row
                               session={session}
                               selectedId={selectedId}
@@ -620,6 +651,13 @@ export function Sidebar({
                       onContextMenu={openMenu(session.sessionId)}
                     >
                       <div className="session-line">
+                        {selecting && (
+                          <Check
+                            on={marked?.includes(session.sessionId) ?? false}
+                            title={session.title ?? 'Untitled session'}
+                            onPick={(event) => clicked(session.sessionId, event)}
+                          />
+                        )}
                         <Row
                           session={session}
                           selectedId={selectedId}
@@ -819,6 +857,45 @@ function SessionTags({
  * hundred stars down the side of the list would be noise, and the one that is set is the
  * only one saying anything.
  */
+/**
+ * The box that says whether a row is picked (#63).
+ *
+ * Drawn only while picking. A box on every row the rest of the time would take width from
+ * the titles for a gesture used on a handful of days, and the titles are already as narrow
+ * as they read.
+ *
+ * It is a control of its own rather than a mark on the row, so the keyboard can reach it
+ * and a reader who aims at it gets what they aimed at. Clicking anywhere else on the row
+ * does the same thing, which is why the click stops here: handled twice it would toggle and
+ * toggle back.
+ */
+function Check({
+  on,
+  title,
+  onPick,
+}: {
+  on: boolean;
+  title: string;
+  onPick: (event: ReactMouseEvent) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={on}
+      aria-label={on ? `Deselect ${title}` : `Select ${title}`}
+      className={on ? 'session-check on' : 'session-check'}
+      onMouseDown={(event) => event.preventDefault()}
+      onClick={(event) => {
+        event.stopPropagation();
+        onPick(event);
+      }}
+    >
+      {on ? '✓' : ''}
+    </button>
+  );
+}
+
 function Favourite({ on, title, onToggle }: { on: boolean; title: string; onToggle: () => void }) {
   return (
     <button

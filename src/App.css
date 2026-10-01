@@ -359,6 +359,76 @@ body {
   margin-right: 8px;
 }
 
+/*
+ * The box that says whether a row is picked (#63).
+ *
+ * Drawn only while picking, so the titles keep their width the rest of the time. Lined up
+ * with the first line of the title the same way the star is, so a title that runs to two
+ * lines does not put its box somewhere different from the rest.
+ */
+.session-check {
+  box-sizing: content-box;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  margin: 11px 0 0 10px;
+  padding: 0;
+  border: 1px solid var(--text-dim);
+  border-radius: 3px;
+  background: none;
+  color: var(--bg);
+  font-size: var(--font-sm);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.session-check.on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.session-check:hover {
+  border-color: var(--text);
+}
+
+.session-check:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * What picking over the list looks like from outside a row.
+ *
+ * Under the filter box, where the eye already is, and only while picking: a bar that is
+ * always there is a bar nobody reads. The count is the part that cannot be worked out by
+ * looking, since the rows it is counting have been scrolled past.
+ */
+.selecting-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.selecting-done {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.selecting-done:hover {
+  text-decoration: underline;
+}
+
 .session {
   display: flex;
   flex-direction: column;

@@ -801,3 +801,30 @@ describe('focus on a session row', () => {
     expect(css.slice(at, css.indexOf('\n}', at))).toContain('user-select: none');
   });
 });
+
+/**
+ * The box that says whether a row is picked (#63).
+ *
+ * It sits on the same flex line as the title, and a title is as long as somebody's first
+ * prompt - 303 characters on this machine. Anything on that line that can give way will.
+ */
+describe('the box on a row being picked over', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('keeps its width against a title that wants all of it', () => {
+    expect(block('.session-check')).toContain('flex-shrink: 0');
+  });
+
+  /** A border on a box sized in pixels would otherwise take two of them off the inside. */
+  it('is the size it says it is, border and all', () => {
+    expect(block('.session-check')).toContain('box-sizing: content-box');
+  });
+
+  it('looks different once it is ticked', () => {
+    expect(block('.session-check.on')).toContain('var(--accent)');
+  });
+});

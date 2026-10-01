@@ -236,3 +236,145 @@ describe('a range measured from the open session', () => {
     expect(result.current.marked).toEqual([]);
   });
 });
+
+/**
+ * Picking over the list rather than reading it (#63).
+ *
+ * Asked for by name, because a plain click meaning something else is a large thing to do to
+ * a list silently. Once in it the rows grow boxes and every click adds one, which is the
+ * only form of this that somebody who has never met Ctrl-click can find.
+ */
+describe('picking over the list', () => {
+  it('is off until it is asked for', () => {
+    expect(marking().result.current.selecting).toBe(false);
+  });
+
+  it('keeps the session it was asked about', () => {
+    const { result } = marking();
+
+    act(() => result.current.start('c'));
+
+    expect(result.current.selecting).toBe(true);
+    expect(result.current.marked).toEqual(['c']);
+  });
+
+  it('adds a row already marked rather than taking it back', () => {
+    const { result } = marking();
+    act(() => void result.current.click('c', ctrl, ORDER));
+
+    act(() => result.current.start('c'));
+
+    expect(result.current.marked).toEqual(['c']);
+  });
+
+  it('takes a plain click as marking', () => {
+    const { result } = marking();
+    act(() => result.current.start('a'));
+
+    act(() => void result.current.click('d', plain, ORDER));
+
+    expect(result.current.marked).toEqual(['a', 'd']);
+  });
+
+  it('says a plain click was handled, so no session is opened by it', () => {
+    const { result } = marking();
+    act(() => result.current.start('a'));
+
+    let handled = false;
+    act(() => {
+      handled = result.current.click('d', plain, ORDER);
+    });
+
+    expect(handled).toBe(true);
+  });
+
+  it('takes a row back when it is clicked again', () => {
+    const { result } = marking();
+    act(() => result.current.start('a'));
+    act(() => void result.current.click('d', plain, ORDER));
+
+    act(() => void result.current.click('a', plain, ORDER));
+
+    expect(result.current.marked).toEqual(['d']);
+  });
+
+  it('still spans a range on Shift', () => {
+    const { result } = marking();
+    act(() => result.current.start('b'));
+
+    act(() => void result.current.click('d', shift, ORDER));
+
+    expect(result.current.marked).toEqual(['b', 'c', 'd']);
+  });
+
+  /** Nothing picked is not a selection, and a list where clicking opens nothing is a trap. */
+  it('leaves when the last row is taken back', () => {
+    const { result } = marking();
+    act(() => result.current.start('a'));
+
+    act(() => void result.current.click('a', plain, ORDER));
+
+    expect(result.current.selecting).toBe(false);
+    expect(result.current.marked).toEqual([]);
+  });
+
+  it('leaves when every picked row goes from the list', () => {
+    const view = marking();
+    act(() => view.result.current.start('d'));
+
+    view.rerender({ rows: ['a', 'b', 'c'] });
+
+    expect(view.result.current.selecting).toBe(false);
+  });
+
+  it('stays while some of what was picked is still there', () => {
+    const view = marking();
+    act(() => view.result.current.start('b'));
+    act(() => void view.result.current.click('d', plain, ORDER));
+
+    view.rerender({ rows: ['a', 'b', 'c'] });
+
+    expect(view.result.current.selecting).toBe(true);
+    expect(view.result.current.marked).toEqual(['b']);
+  });
+
+  it('leaves when it is finished with', () => {
+    const { result } = marking();
+    act(() => result.current.start('a'));
+
+    act(() => result.current.clear());
+
+    expect(result.current.selecting).toBe(false);
+    expect(result.current.marked).toEqual([]);
+  });
+
+  it('leaves on Escape, as every other mode does', () => {
+    const { result } = marking();
+    act(() => result.current.start('a'));
+
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+
+    expect(result.current.selecting).toBe(false);
+    expect(result.current.marked).toEqual([]);
+  });
+
+  /** The key belongs to whatever dialog or menu is open when nobody is picking rows. */
+  it('answers no key while it is off', () => {
+    const { result } = marking();
+    act(() => void result.current.click('b', ctrl, ORDER));
+
+    act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+
+    expect(result.current.marked).toEqual(['b']);
+  });
+
+  it('lets go of the key once it has left', () => {
+    const { result, unmount } = marking();
+    act(() => result.current.start('a'));
+    act(() => result.current.clear());
+
+    // Nothing to assert beyond it not throwing: a listener left behind would answer a key
+    // pressed in a list nobody is picking over.
+    expect(() => unmount()).not.toThrow();
+  });
+});

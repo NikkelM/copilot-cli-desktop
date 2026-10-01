@@ -335,7 +335,7 @@ export default function App() {
    * sidebar at the moment of the click, since only it knows the order things are drawn in.
    */
   const listed = useMemo(() => sessions.all.map((session) => session.sessionId), [sessions.all]);
-  const { marked, click: mark, clear: clearMarks } = useMarked(listed, selectedId);
+  const { marked, selecting, click: mark, start: startSelecting, clear: clearMarks } = useMarked(listed, selectedId);
 
   /** Several sessions waiting on one answer about removing them all. */
   const [deletingMany, setDeletingMany] = useState<SessionSummary[] | null>(null);
@@ -1443,10 +1443,9 @@ export default function App() {
         rename: setNaming,
         tag: setTagging,
         exportTo,
-        // The row is marked rather than a mode being entered: marking is Ctrl-click, and
-        // this is the same thing by another route for somebody who has not met it. No order
-        // is needed because only a range reads one, and one row is not a range.
-        select: (sessionId) => mark(sessionId, { toggle: true, range: false }, []),
+        // Picking over the list rather than reading it: the row is marked and every row
+        // grows a box, so the next click adds to the set instead of opening a session.
+        select: startSelecting,
         // Archiving is a decision that the session is finished with, so it also stops paying
         // for it: keeping one resumed while hiding it from view is the memory cost this app
         // exists to avoid (#101).
@@ -1507,7 +1506,9 @@ export default function App() {
         activity={activity}
         activeElsewhere={elsewhere.active}
         marked={marked}
+        selecting={selecting}
         onMark={mark}
+        onDoneSelecting={clearMarks}
         onImport={() => void importFrom()}
         subagents={subagents.watched}
         selectedSubagentId={subagents.openId}

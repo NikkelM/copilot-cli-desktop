@@ -18,8 +18,9 @@ export interface ClickKeys {
  * selected.
  *
  * Ctrl and Shift, because that is what every list on the machine does and nobody has to be
- * told. No checkbox column: it would take room from the titles on every row for the sake of
- * a gesture used on a handful of days, and the rows are already as narrow as they read.
+ * told. No checkbox column by default: it would take room from the titles on every row for
+ * the sake of a gesture used on a handful of days. Asking for the mode by name brings one,
+ * which is the way round that costs the list nothing until somebody wants it.
  *
  * @param listed every session that could be marked, for forgetting the ones that leave
  * @param open the session being read, which a range measures from when nothing else has
@@ -27,12 +28,23 @@ export interface ClickKeys {
 export function useMarked(listed: readonly string[], open: string | null = null) {
   const [marked, setMarked] = useState<readonly string[]>([]);
 
+  /**
+   * Whether the list is being picked over rather than read (#63).
+   *
+   * In it a plain click marks instead of opening, which is a large thing to do to a list
+   * silently - so it is only ever entered by being asked for, and it says so by drawing a
+   * box on every row.
+   */
+  const [selecting, setSelecting] = useState(false);
+
   /** Where a range starts: the last row touched without Shift. */
   const anchor = useRef<string | null>(null);
 
   /** Read inside the click rather than closed over, so the listener is made once. */
   const reading = useRef<string | null>(open);
   reading.current = open;
+  const picking = useRef(selecting);
+  picking.current = selecting;
 
   /**
    * Forget anything that has gone.
@@ -47,6 +59,17 @@ export function useMarked(listed: readonly string[], open: string | null = null)
       return kept.length === current.length ? current : kept;
     });
   }, [listed]);
+
+  /**
+   * Nothing picked is not a selection.
+   *
+   * Said once here rather than at each of the ways a set empties - the last box unticked,
+   * every picked session deleted, a filter typed that leaves none of them - because a list
+   * where clicking opens nothing is a trap however it was arrived at.
+   */
+  useEffect(() => {
+    if (selecting && marked.length === 0) setSelecting(false);
+  }, [selecting, marked]);
 
   /**
    * What a click on a row means.
@@ -81,7 +104,7 @@ export function useMarked(listed: readonly string[], open: string | null = null)
       }
     }
 
-    if (keys.toggle) {
+    if (keys.toggle || picking.current) {
       anchor.current = sessionId;
       setMarked((current) =>
         current.includes(sessionId) ? current.filter((id) => id !== sessionId) : [...current, sessionId],
@@ -96,7 +119,37 @@ export function useMarked(listed: readonly string[], open: string | null = null)
     return false;
   }, []);
 
-  const clear = useCallback(() => setMarked([]), []);
+  /**
+   * Pick over the list, starting with this one.
+   *
+   * The row is marked as well as the mode begun: asked about a session, answering with an
+   * empty selection would throw away the one thing that was said.
+   */
+  const start = useCallback((sessionId: string) => {
+    anchor.current = sessionId;
+    setSelecting(true);
+    setMarked((current) => (current.includes(sessionId) ? current : [...current, sessionId]));
+  }, []);
 
-  return { marked, click, clear };
+  const clear = useCallback(() => {
+    setMarked([]);
+    setSelecting(false);
+  }, []);
+
+  /**
+   * Escape leaves, as it does everywhere else a mode is entered.
+   *
+   * Only while in one, so nothing is taken from the dialogs and menus that answer the same
+   * key: a reader who is not picking over the list never reaches this at all.
+   */
+  useEffect(() => {
+    if (!selecting) return;
+    const leave = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') clear();
+    };
+    window.addEventListener('keydown', leave);
+    return () => window.removeEventListener('keydown', leave);
+  }, [selecting, clear]);
+
+  return { marked, selecting, click, start, clear };
 }

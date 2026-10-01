@@ -2090,6 +2090,228 @@ describe('marking a range, end to end', () => {
 });
 
 /**
+ * Picking over the list rather than reading it (#63).
+ *
+ * Ctrl-click is the gesture every list on the machine uses, which is exactly why somebody
+ * who has not met it has no way to find out it is there. Asked for by name, the rows grow
+ * boxes and a plain click adds to the set - the same thing, for a reader who needs to see
+ * it to know it is possible.
+ */
+describe('picking sessions with boxes', () => {
+  const FIRST = 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8';
+
+  const drawn = (over: {
+    selecting?: boolean;
+    marked?: string[];
+    onMark?: (id: string, keys: { toggle: boolean; range: boolean }, order: readonly string[]) => boolean;
+    onDoneSelecting?: () => void;
+  }) => {
+    const onSelect = vi.fn();
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={onSelect}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        selecting={over.selecting}
+        marked={over.marked}
+        onMark={over.onMark}
+        onDoneSelecting={over.onDoneSelecting}
+      />,
+    );
+    return { onSelect, boxes: () => [...document.querySelectorAll('.session-check')] };
+  };
+
+  it('draws no box while the list is only being read', () => {
+    const t = drawn({ selecting: false });
+
+    expect(t.boxes()).toHaveLength(0);
+  });
+
+  it('draws one on every row while picking', () => {
+    const t = drawn({ selecting: true });
+
+    expect(t.boxes()).toHaveLength(document.querySelectorAll('.session-row').length);
+  });
+
+  it('ticks the boxes of the rows that are picked', () => {
+    const t = drawn({ selecting: true, marked: [FIRST] });
+
+    const ticked = t.boxes().filter((box) => box.getAttribute('aria-checked') === 'true');
+    expect(ticked).toHaveLength(1);
+    expect(ticked[0]?.closest('.session-row')?.textContent).toContain('Biomes');
+  });
+
+  it('says what each box would do, since a tick is not a name', () => {
+    const t = drawn({ selecting: true, marked: [FIRST] });
+
+    expect(t.boxes()[0]?.getAttribute('aria-label')).toMatch(/^Deselect /);
+  });
+
+  it('says the other thing where a row is not picked', () => {
+    const t = drawn({ selecting: true, marked: [] });
+
+    expect(t.boxes()[0]?.getAttribute('aria-label')).toMatch(/^Select /);
+  });
+
+  it('marks the row whose box was pressed', () => {
+    const onMark = vi.fn(() => true);
+    const t = drawn({ selecting: true, onMark });
+
+    fireEvent.click(t.boxes()[0]!);
+
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: false, range: false }, expect.any(Array));
+  });
+
+  /** The row answers the same click, and answered twice it would tick and untick. */
+  it('does not let the row answer the same press', () => {
+    const onMark = vi.fn(() => true);
+    const t = drawn({ selecting: true, onMark });
+
+    fireEvent.click(t.boxes()[0]!);
+
+    expect(onMark).toHaveBeenCalledOnce();
+    expect(t.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('carries the modifiers a press on a box held', () => {
+    const onMark = vi.fn(() => true);
+    const t = drawn({ selecting: true, onMark });
+
+    fireEvent.click(t.boxes()[1]!, { shiftKey: true });
+
+    expect(onMark).toHaveBeenCalledWith(expect.any(String), { toggle: false, range: true }, expect.any(Array));
+  });
+
+  describe('the bar above the list', () => {
+    const bar = () => document.querySelector('.selecting-bar');
+
+    it('is not there while the list is only being read', () => {
+      drawn({ selecting: false, marked: [] });
+
+      expect(bar()).toBeNull();
+    });
+
+    it('counts what has been picked', () => {
+      drawn({ selecting: true, marked: [FIRST] });
+
+      expect(bar()?.textContent).toContain('1 selected');
+    });
+
+    it('counts several', () => {
+      drawn({ selecting: true, marked: [FIRST, '9ec04ce0-1361-4e11-ae34-9f8747cbac64'] });
+
+      expect(bar()?.textContent).toContain('2 selected');
+    });
+
+    it('offers a way out', () => {
+      const onDoneSelecting = vi.fn();
+      drawn({ selecting: true, marked: [FIRST], onDoneSelecting });
+
+      fireEvent.click(screen.getByText('Done'));
+
+      expect(onDoneSelecting).toHaveBeenCalledOnce();
+    });
+  });
+});
+
+/**
+ * Picking driven through the real hook, rather than a mock standing in for it (#63).
+ *
+ * The same lesson as the range above: two green unit tests either side of an interface say
+ * nothing about what they hand each other.
+ */
+describe('picking over the list, end to end', () => {
+  function Harness() {
+    const listed = sessions.map((s) => s.sessionId);
+    const { marked, selecting, click, start, clear } = useMarked(listed, null);
+    return (
+      <>
+        <button type="button" onClick={() => start(listed[0]!)}>
+          Select…
+        </button>
+        <Sidebar
+          sessions={sessions}
+          selectedId={null}
+          onSelect={() => {}}
+          onCreate={() => {}}
+          onWiki={() => {}}
+          creating={false}
+          activity={{}}
+          marked={marked}
+          selecting={selecting}
+          onMark={click}
+          onDoneSelecting={clear}
+        />
+      </>
+    );
+  }
+
+  const boxes = () => [...document.querySelectorAll('.session-check')];
+  const titles = () => [...document.querySelectorAll('.session-row .session')];
+  const marks = () => document.querySelectorAll('.session-row.marked').length;
+
+  const begin = () => {
+    render(<Harness />);
+    fireEvent.click(screen.getByText('Select…'));
+  };
+
+  it('grows boxes on being asked, with the row asked about picked', () => {
+    begin();
+
+    expect(boxes()).toHaveLength(document.querySelectorAll('.session-row').length);
+    expect(marks()).toBe(1);
+  });
+
+  it('adds a row to the set on a plain click, having opened nothing', () => {
+    begin();
+
+    fireEvent.click(titles()[1]!);
+
+    expect(marks()).toBe(2);
+  });
+
+  it('adds a row on its box as readily as on the row', () => {
+    begin();
+
+    fireEvent.click(boxes()[1]!);
+
+    expect(marks()).toBe(2);
+  });
+
+  it('takes a row back when it is clicked again', () => {
+    begin();
+    fireEvent.click(titles()[1]!);
+
+    fireEvent.click(titles()[1]!);
+
+    expect(marks()).toBe(1);
+  });
+
+  /** Nothing picked is not a selection, and a list where clicking opens nothing is a trap. */
+  it('puts the boxes away once the last row is taken back', () => {
+    begin();
+
+    fireEvent.click(titles()[0]!);
+
+    expect(boxes()).toHaveLength(0);
+    expect(marks()).toBe(0);
+  });
+
+  it('puts them away when it is finished with', () => {
+    begin();
+
+    fireEvent.click(screen.getByText('Done'));
+
+    expect(boxes()).toHaveLength(0);
+    expect(marks()).toBe(0);
+  });
+});
+
+/**
  * A pointer leaves no focus ring (#63).
  *
  * Chromium counts a Ctrl or Shift click as keyboard-ish and draws one, so marking a range
