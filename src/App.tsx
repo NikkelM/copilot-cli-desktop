@@ -1421,8 +1421,6 @@ export default function App() {
         {
           archived,
           toggleArchived,
-          favourites,
-          toggleFavourite,
           unload: (sessionId) => {
             evictSession(sessionId)
               .then(() => sessions.refresh())
@@ -1432,7 +1430,7 @@ export default function App() {
           exportAll: exportMany,
         },
       ),
-    [sessions, marked, archived, toggleArchived, favourites, toggleFavourite, exportMany],
+    [sessions, marked, archived, toggleArchived, exportMany],
   );
 
   const sessionMenu = useCallback(

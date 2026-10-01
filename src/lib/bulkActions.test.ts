@@ -19,8 +19,6 @@ const session = (id: string, over: Partial<SessionSummary> = {}): SessionSummary
 const deps = (over: Partial<BulkActionDeps> = {}): BulkActionDeps => ({
   archived: [],
   toggleArchived: vi.fn(),
-  favourites: [],
-  toggleFavourite: vi.fn(),
   unload: vi.fn(),
   remove: vi.fn(),
   exportAll: vi.fn(),
@@ -41,12 +39,19 @@ const three = [session('a'), session('b'), session('c')];
 describe('acting on several sessions', () => {
   it('offers only what makes sense for a set', () => {
     expect(bulkActions(three, deps()).map((a) => a.id)).toEqual([
-      'bulk-favourite',
       'bulk-unload',
       'bulk-export',
       'bulk-archive',
       'bulk-delete',
     ]);
+  });
+
+  /**
+   * A favourite is a session somebody reaches for, which is a judgement made one at a time.
+   * A set of them made favourites together is a top of the list nobody chose.
+   */
+  it('leaves favouriting to one session at a time', () => {
+    expect(bulkActions(three, deps()).map((a) => a.id)).not.toContain('bulk-favourite');
   });
 
   it('says how many it is about', () => {
@@ -60,8 +65,8 @@ describe('acting on several sessions', () => {
   /**
    * A short name for each, for somewhere the count is already on screen (#63).
    *
-   * The bar above the list says how many are picked, and five buttons repeating it fit
-   * nowhere in a column the reader has dragged as narrow as they like.
+   * The bar above the list says how many are picked, and buttons repeating it fit nowhere
+   * in a column the reader has dragged as narrow as they like.
    */
   describe('the short names', () => {
     it('gives every action one', () => {
@@ -74,43 +79,8 @@ describe('acting on several sessions', () => {
     });
 
     it('says which way a toggle is about to go, as the full name does', () => {
-      expect(byId(three, deps({ favourites: [] }))['bulk-favourite']?.brief).toBe('Favourite');
-      expect(byId(three, deps({ favourites: ['a', 'b', 'c'] }))['bulk-favourite']?.brief).toBe('Unfavourite');
+      expect(byId(three, deps({ archived: [] }))['bulk-archive']?.brief).toBe('Archive');
       expect(byId(three, deps({ archived: ['a', 'b', 'c'] }))['bulk-archive']?.brief).toBe('Bring back');
-    });
-  });
-
-  describe('favouriting', () => {
-    it('makes them all favourites when none is', () => {
-      const d = deps();
-
-      byId(three, d)['bulk-favourite']?.run();
-
-      expect(d.toggleFavourite).toHaveBeenCalledTimes(3);
-    });
-
-    /** A mixed set moves the way that leaves it in one state, which is all favourites. */
-    it('only moves the ones that are not already', () => {
-      const d = deps({ favourites: ['a'] });
-
-      byId(three, d)['bulk-favourite']?.run();
-
-      expect(d.toggleFavourite).toHaveBeenCalledTimes(2);
-      expect(d.toggleFavourite).not.toHaveBeenCalledWith('a');
-    });
-
-    it('offers to undo it once they all are', () => {
-      const d = deps({ favourites: ['a', 'b', 'c'] });
-
-      expect(byId(three, d)['bulk-favourite']?.label).toBe('Unfavourite 3 sessions');
-    });
-
-    it('takes them all back off when they all are', () => {
-      const d = deps({ favourites: ['a', 'b', 'c'] });
-
-      byId(three, d)['bulk-favourite']?.run();
-
-      expect(d.toggleFavourite).toHaveBeenCalledTimes(3);
     });
   });
 

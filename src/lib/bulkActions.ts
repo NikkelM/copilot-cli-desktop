@@ -5,8 +5,6 @@ import type { SessionAction } from '../components/SessionMenu';
 export interface BulkActionDeps {
   archived: readonly string[];
   toggleArchived: (sessionId: string) => void;
-  favourites: readonly string[];
-  toggleFavourite: (sessionId: string) => void;
   /** Release one from memory. A session that was never resumed is simply skipped. */
   unload: (sessionId: string) => void;
   /** Put the whole set to the reader before anything is removed. */
@@ -30,23 +28,18 @@ function count(many: number): string {
  *
  * Deliberately a shorter list than a single session's menu. Renaming, forking and opening a
  * directory are about one conversation and mean nothing said four times over, and leaving
- * them out is clearer than showing them refused.
+ * them out is clearer than showing them refused. Favouriting is left out for a different
+ * reason: a favourite is a session somebody reaches for, which is a judgement made one at a
+ * time, and a set of them made favourites together is a top of the list nobody chose.
  */
 export function bulkActions(sessions: SessionSummary[], deps: BulkActionDeps): SessionAction[] {
   const ids = sessions.map((session) => session.sessionId);
-  // The set moves the way the majority is not: marking a mix and choosing Favourite means
-  // making them all favourites, which is the only reading that leaves the set in one state.
-  const allFavourite = ids.every((id) => deps.favourites.includes(id));
+  // The set moves the way the majority is not: marking a mix and choosing Archive means
+  // putting them all away, which is the only reading that leaves the set in one state.
   const allArchived = ids.every((id) => deps.archived.includes(id));
   const loaded = sessions.filter((session) => session.loaded);
 
   return [
-    {
-      id: 'bulk-favourite',
-      label: allFavourite ? `Unfavourite ${count(ids.length)}` : `Favourite ${count(ids.length)}`,
-      brief: allFavourite ? 'Unfavourite' : 'Favourite',
-      run: () => ids.forEach((id) => (deps.favourites.includes(id) === allFavourite ? deps.toggleFavourite(id) : undefined)),
-    },
     {
       id: 'bulk-unload',
       label: `Unload ${count(loaded.length)} from memory`,
