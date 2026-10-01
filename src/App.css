@@ -372,6 +372,22 @@ body {
   font: inherit;
   text-align: left;
   cursor: pointer;
+  /* Shift-clicking down a list is a range, not a sentence: without this the browser drags
+     a text selection across every row on the way and leaves it there (#63). */
+  user-select: none;
+}
+
+/*
+ * Where the keyboard is, said in the app's own terms.
+ *
+ * Left to the browser this was a black rectangle, which on a dark list reads as damage
+ * rather than as focus - and Chromium draws it for a Shift-click as well as for a Tab,
+ * so it turned up in the middle of marking a range. Kept rather than removed: somebody
+ * moving through the list by keyboard has nothing else to go on.
+ */
+.session:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 /**

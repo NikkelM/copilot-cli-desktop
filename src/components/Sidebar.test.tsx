@@ -2013,13 +2013,15 @@ describe('marking a range, end to end', () => {
   const FAV = 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8';
   const OTHER = '9ec04ce0-1361-4e11-ae34-9f8747cbac64';
 
-  function Harness({ favourites = [] as string[] }) {
+  function Harness({ favourites = [] as string[], selected = null as string | null }) {
     const listed = sessions.map((s) => s.sessionId);
-    const { marked, click } = useMarked(listed);
+    // Both, exactly as the window does it: the sidebar draws the open session and the hook
+    // measures a range from it when nothing has been touched.
+    const { marked, click } = useMarked(listed, selected);
     return (
       <Sidebar
         sessions={sessions}
-        selectedId={null}
+        selectedId={selected}
         onSelect={() => {}}
         onCreate={() => {}}
         onWiki={() => {}}
@@ -2033,15 +2035,16 @@ describe('marking a range, end to end', () => {
     );
   }
 
-  const rows = () => [...document.querySelectorAll('.session-row')];
+  /** What a real click lands on: the title button inside the row, which bubbles up to it. */
+  const titles = () => [...document.querySelectorAll('.session-row .session')];
   const markedTitles = () =>
     [...document.querySelectorAll('.session-row.marked .session-title')].map((n) => n.textContent?.trim());
 
   it('marks both ends of a range and what is between them', () => {
     render(<Harness />);
 
-    fireEvent.click(rows()[0]!);
-    fireEvent.click(rows()[1]!, { shiftKey: true });
+    fireEvent.click(titles()[0]!);
+    fireEvent.click(titles()[1]!, { shiftKey: true });
 
     expect(markedTitles()).toHaveLength(2);
   });
@@ -2049,7 +2052,7 @@ describe('marking a range, end to end', () => {
   it('marks one that is ctrl-clicked', () => {
     render(<Harness />);
 
-    fireEvent.click(rows()[0]!, { ctrlKey: true });
+    fireEvent.click(titles()[0]!, { ctrlKey: true });
 
     expect(markedTitles()).toHaveLength(1);
   });
@@ -2058,9 +2061,59 @@ describe('marking a range, end to end', () => {
   it('marks a range across a grouped list', () => {
     render(<Harness favourites={[FAV, OTHER]} />);
 
-    fireEvent.click(rows()[0]!);
-    fireEvent.click(rows()[1]!, { shiftKey: true });
+    fireEvent.click(titles()[0]!);
+    fireEvent.click(titles()[1]!, { shiftKey: true });
 
     expect(markedTitles()).toHaveLength(2);
+  });
+
+  /**
+   * Reported as doing nothing but drawing a focus ring on the row that was clicked: a
+   * reader opens a session, then reaches down the list holding Shift without having
+   * clicked anything in between.
+   */
+  it('marks a range from the open session as the very first thing anybody does', () => {
+    render(<Harness selected={FAV} />);
+
+    fireEvent.click(titles()[1]!, { shiftKey: true });
+
+    expect(markedTitles()).toHaveLength(2);
+  });
+
+  it('marks nothing where there is no open session to measure from either', () => {
+    render(<Harness />);
+
+    fireEvent.click(titles()[1]!, { shiftKey: true });
+
+    expect(markedTitles()).toEqual([]);
+  });
+});
+
+/**
+ * A pointer leaves no focus ring (#63).
+ *
+ * Chromium counts a Ctrl or Shift click as keyboard-ish and draws one, so marking a range
+ * put a box around the last row touched while the row was already saying it was marked.
+ * Focus still follows Tab, which is the case the ring exists for.
+ */
+describe('focus on a session row', () => {
+  it('does not take focus from a click', () => {
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+      />,
+    );
+    const title = document.querySelector('.session-row .session') as HTMLElement;
+
+    const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    title.dispatchEvent(down);
+
+    expect(down.defaultPrevented).toBe(true);
   });
 });

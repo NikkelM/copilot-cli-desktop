@@ -762,3 +762,27 @@ describe('names the app did not choose the length of', () => {
     },
   );
 });
+
+/**
+ * Where the keyboard is, in the app's own terms (#63).
+ *
+ * Left to the browser this was a black rectangle, which on a dark list reads as damage.
+ * The ring is kept rather than removed - somebody moving through the list by keyboard has
+ * nothing else to go on - while a pointer is stopped from raising one at all.
+ */
+describe('focus on a session row', () => {
+  it('says where the keyboard is, in the accent rather than the browser default', () => {
+    const at = css.indexOf('.session:focus-visible');
+    expect(at, 'a focusable row should say where the keyboard is').toBeGreaterThan(-1);
+    expect(css.slice(at, css.indexOf('}', at))).toContain('var(--accent)');
+  });
+
+  /** Shift-clicking down a list is a range, not a sentence. */
+  it('keeps a drag down the list from selecting its text', () => {
+    // Anchored at the start of a line, or this finds the selector inside
+    // `.session-line .session {` and reads the wrong block.
+    const at = css.indexOf('\n.session {');
+    expect(at, '.session should be in the stylesheet').toBeGreaterThan(-1);
+    expect(css.slice(at, css.indexOf('\n}', at))).toContain('user-select: none');
+  });
+});

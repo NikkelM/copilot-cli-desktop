@@ -870,7 +870,15 @@ function Row({
   // Selecting is the whole row's job, so this button does not also do it: the click it
   // raises, including the one Enter raises for a keyboard, reaches the row on the way up.
   return (
-    <button type="button" className={`session${session.sessionId === selectedId ? ' selected' : ''}`}>
+    <button
+      type="button"
+      className={`session${session.sessionId === selectedId ? ' selected' : ''}`}
+      // A pointer should not leave a focus ring behind. Chromium counts a Ctrl or Shift
+      // click as keyboard-ish and draws one, so marking a range left a box around the last
+      // row touched - while the row itself was already saying it was marked (#63). Focus
+      // still follows Tab, which is the case the ring is for.
+      onMouseDown={(event) => event.preventDefault()}
+    >
       <span className="session-title" title={session.title ?? undefined}>
         {session.title === null ? 'Untitled session' : clipTitle(session.title)}
         {/* A word rather than another dot. The dot beside it is this app saying what it is
