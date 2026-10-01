@@ -6164,11 +6164,14 @@ pre.fatal,
  * to happen to - and a reader who confuses them deletes the wrong thing. So this marks
  * the whole row rather than its edge, and in the accent's own colour rather than the
  * selected row's grey.
+ *
+ * On the row rather than on the title inside it, so the mark covers the whole entry: the
+ * star and the tags belong to the session being marked as much as its name does, and a
+ * highlight that stopped short of them looked like it had selected part of a row.
  */
-.session-line .session.marked {
+.session-row.marked {
   background: rgba(47, 129, 247, 0.16);
   box-shadow: inset 0 0 0 1px var(--accent);
-  border-radius: 4px;
 }
 
 /* What is about to be deleted, named rather than counted. */

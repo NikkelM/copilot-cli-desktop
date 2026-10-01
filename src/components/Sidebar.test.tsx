@@ -1918,7 +1918,7 @@ describe('marking sessions in the list', () => {
   it('draws a marked row as marked', () => {
     drawn({ marked: [FIRST] });
 
-    const marked = [...document.querySelectorAll('.session.marked')];
+    const marked = [...document.querySelectorAll('.session-row.marked')];
     expect(marked).toHaveLength(1);
     expect(marked[0]?.textContent).toContain('Biomes');
   });
@@ -1926,7 +1926,7 @@ describe('marking sessions in the list', () => {
   it('draws nothing as marked when nothing is', () => {
     drawn({ marked: [] });
 
-    expect(document.querySelectorAll('.session.marked')).toHaveLength(0);
+    expect(document.querySelectorAll('.session-row.marked')).toHaveLength(0);
   });
 
   it('still opens sessions where nothing is marking at all', () => {
@@ -1935,5 +1935,51 @@ describe('marking sessions in the list', () => {
     fireEvent.click(t.rows()[0]!);
 
     expect(t.onSelect).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The mark covers the whole entry (#63).
+ *
+ * It sat on the title button inside the row, so the star and the tags fell outside the
+ * highlight and it read as having selected part of a session rather than all of one.
+ */
+describe('what a mark covers', () => {
+  const FIRST = 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8';
+
+  const drawn = () =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        marked={[FIRST]}
+        onFavourite={() => {}}
+        favourites={[FIRST]}
+        tags={{ [FIRST]: ['hades'] }}
+      />,
+    );
+
+  it('marks the row rather than the title inside it', () => {
+    drawn();
+
+    expect(document.querySelector('.session-row.marked')).toBeTruthy();
+    expect(document.querySelector('.session.marked')).toBeNull();
+  });
+
+  it('takes in the star, which belongs to the session as much as its name', () => {
+    drawn();
+
+    expect(document.querySelector('.session-row.marked .favourite')).toBeTruthy();
+  });
+
+  it('takes in the tags', () => {
+    drawn();
+
+    expect(document.querySelector('.session-row.marked .session-tags .tag')).toBeTruthy();
   });
 });

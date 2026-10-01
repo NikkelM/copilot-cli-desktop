@@ -512,7 +512,7 @@ export function Sidebar({
                     {shown.map((session) => (
                       <li key={session.sessionId}>
                         <div
-                          className={`session-row${session.sessionId === selectedId ? ' selected' : ''}`}
+                          className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}`}
                           // A row the name did not find was found by something said in it,
                           // so opening it means opening it there rather than at the end.
                           onClick={(event) => {
@@ -537,7 +537,6 @@ export function Sidebar({
                               selectedId={selectedId}
                               activity={activity[session.sessionId]}
                               elsewhere={activeElsewhere?.includes(session.sessionId)}
-                              marked={marked?.includes(session.sessionId)}
                             />
                             {onFavourite && (
                               <Favourite
@@ -590,7 +589,7 @@ export function Sidebar({
                 {hidden.map((session) => (
                   <li key={session.sessionId}>
                     <div
-                      className={`session-row${session.sessionId === selectedId ? ' selected' : ''}`}
+                      className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}`}
                       onClick={(event) => {
                         if (onMark?.(session.sessionId, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey })) {
                           return;
@@ -605,7 +604,6 @@ export function Sidebar({
                           selectedId={selectedId}
                           activity={activity[session.sessionId]}
                           elsewhere={activeElsewhere?.includes(session.sessionId)}
-                          marked={marked?.includes(session.sessionId)}
                         />
                       </div>
                       <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
@@ -839,25 +837,19 @@ function Row({
   selectedId,
   activity,
   elsewhere,
-  marked,
 }: {
   session: SessionSummary;
   selectedId: string | null;
   activity?: ActivityMark;
   /** Some other Copilot has this session open, which this app cannot stop (#63). */
   elsewhere?: boolean;
-  /** Picked out to be acted on with others, which is not the same as being read (#63). */
-  marked?: boolean;
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
 
   // Selecting is the whole row's job, so this button does not also do it: the click it
   // raises, including the one Enter raises for a keyboard, reaches the row on the way up.
   return (
-    <button
-      type="button"
-      className={`session${session.sessionId === selectedId ? ' selected' : ''}${marked ? ' marked' : ''}`}
-    >
+    <button type="button" className={`session${session.sessionId === selectedId ? ' selected' : ''}`}>
       <span className="session-title" title={session.title ?? undefined}>
         {session.title === null ? 'Untitled session' : clipTitle(session.title)}
         {/* A word rather than another dot. The dot beside it is this app saying what it is
