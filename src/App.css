@@ -407,17 +407,23 @@ body {
  */
 .selecting-bar {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 14px;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 14px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-raised);
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
 
-.selecting-done {
+.selecting-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.selecting-cancel {
   border: none;
   background: none;
   color: var(--accent);
@@ -425,8 +431,54 @@ body {
   cursor: pointer;
 }
 
-.selecting-done:hover {
+.selecting-cancel:hover {
   text-decoration: underline;
+}
+
+/* Wrapping rather than scrolling or shrinking: the sidebar is as narrow as the reader
+   drags it, and an action that has been squeezed to three letters is not offered at all. */
+.selecting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.selecting-action {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.selecting-action:hover:not(:disabled) {
+  border-color: var(--text-dim);
+  background: #1c2128;
+}
+
+/* Named and refused rather than left out, so the row of buttons keeps its shape and the
+   reason is in the tooltip where the reader is already pointing. */
+.selecting-action:disabled {
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.selecting-action.caution {
+  color: var(--warning);
+}
+
+.selecting-action.caution:hover:not(:disabled) {
+  border-color: var(--warning);
+}
+
+.selecting-action.danger {
+  color: var(--danger);
+}
+
+.selecting-action.danger:hover:not(:disabled) {
+  border-color: var(--danger);
 }
 
 .session {

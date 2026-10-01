@@ -1408,6 +1408,33 @@ export default function App() {
     }
   }
 
+  /**
+   * What can be done to the marked set, wherever it is asked for (#63).
+   *
+   * One list for the menu and for the bar above the list, so the two can never offer
+   * different things to the same selection.
+   */
+  const markedActions = useMemo(
+    () =>
+      bulkActions(
+        sessions.all.filter((each) => marked.includes(each.sessionId)),
+        {
+          archived,
+          toggleArchived,
+          favourites,
+          toggleFavourite,
+          unload: (sessionId) => {
+            evictSession(sessionId)
+              .then(() => sessions.refresh())
+              .catch((e: unknown) => setError(explain(e)));
+          },
+          remove: setDeletingMany,
+          exportAll: exportMany,
+        },
+      ),
+    [sessions, marked, archived, toggleArchived, favourites, toggleFavourite, exportMany],
+  );
+
   const sessionMenu = useCallback(
     (session: SessionSummary) => {
       /**
@@ -1417,24 +1444,7 @@ export default function App() {
        * row as it always was - which also means a marked set is never acted on by accident
        * from somewhere else in the list.
        */
-      if (marked.length > 1 && marked.includes(session.sessionId)) {
-        return bulkActions(
-          sessions.all.filter((each) => marked.includes(each.sessionId)),
-          {
-            archived,
-            toggleArchived,
-            favourites,
-            toggleFavourite,
-            unload: (sessionId) => {
-              evictSession(sessionId)
-                .then(() => sessions.refresh())
-                .catch((e: unknown) => setError(explain(e)));
-            },
-            remove: setDeletingMany,
-            exportAll: exportMany,
-          },
-        );
-      }
+      if (marked.length > 1 && marked.includes(session.sessionId)) return markedActions;
 
       return sessionActions(session, {
         favourites,
@@ -1489,6 +1499,7 @@ export default function App() {
       forkSession,
       marked,
       exportMany,
+      markedActions,
     ],
   );
 
@@ -1509,6 +1520,7 @@ export default function App() {
         selecting={selecting}
         onMark={mark}
         onDoneSelecting={clearMarks}
+        selectionActions={markedActions}
         onImport={() => void importFrom()}
         subagents={subagents.watched}
         selectedSubagentId={subagents.openId}

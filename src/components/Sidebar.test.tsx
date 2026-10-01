@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 
 import { Sidebar } from './Sidebar';
+import type { SessionAction } from './SessionMenu';
 import { useMarked } from '../lib/useMarked';
 import type { SessionSummary } from '../../shared/protocol';
 
@@ -2105,6 +2106,7 @@ describe('picking sessions with boxes', () => {
     marked?: string[];
     onMark?: (id: string, keys: { toggle: boolean; range: boolean }, order: readonly string[]) => boolean;
     onDoneSelecting?: () => void;
+    selectionActions?: SessionAction[];
   }) => {
     const onSelect = vi.fn();
     render(
@@ -2120,6 +2122,7 @@ describe('picking sessions with boxes', () => {
         marked={over.marked}
         onMark={over.onMark}
         onDoneSelecting={over.onDoneSelecting}
+        selectionActions={over.selectionActions}
       />,
     );
     return { onSelect, boxes: () => [...document.querySelectorAll('.session-check')] };
@@ -2207,13 +2210,95 @@ describe('picking sessions with boxes', () => {
       expect(bar()?.textContent).toContain('2 selected');
     });
 
+    /** Named for what it does to the selection, which is undo it rather than finish it. */
     it('offers a way out', () => {
       const onDoneSelecting = vi.fn();
       drawn({ selecting: true, marked: [FIRST], onDoneSelecting });
 
-      fireEvent.click(screen.getByText('Done'));
+      fireEvent.click(screen.getByText('Cancel'));
 
       expect(onDoneSelecting).toHaveBeenCalledOnce();
+    });
+  });
+
+  /**
+   * What can be done to the set, in the bar as well as in the menu (#63).
+   *
+   * Right-clicking a marked row is the other way to reach these, and it has the same
+   * discoverability problem as Ctrl-click: a reader who got here by pressing Select… has
+   * been given no reason to think a menu is involved.
+   */
+  describe('the actions in the bar', () => {
+    const acting = () => [...document.querySelectorAll('.selecting-action')];
+
+    const some = (): SessionAction[] => [
+      { id: 'bulk-export', label: 'Export 2 sessions…', brief: 'Export…', run: vi.fn() },
+      { id: 'bulk-archive', label: 'Archive 2 sessions', brief: 'Archive', tone: 'caution', run: vi.fn() },
+      { id: 'bulk-delete', label: 'Delete 2 sessions', brief: 'Delete', tone: 'danger', run: vi.fn() },
+    ];
+
+    it('offers every one it was given', () => {
+      drawn({ selecting: true, marked: [FIRST], selectionActions: some() });
+
+      expect(acting().map((button) => button.textContent)).toEqual(['Export…', 'Archive', 'Delete']);
+    });
+
+    /** The bar is already saying how many, and five counted labels fit nowhere. */
+    it('wears the short name and keeps the full one for the pointer', () => {
+      drawn({ selecting: true, marked: [FIRST], selectionActions: some() });
+
+      expect(acting()[2]?.textContent).toBe('Delete');
+      expect(acting()[2]?.getAttribute('title')).toBe('Delete 2 sessions');
+    });
+
+    it('falls back to the full name where there is no short one', () => {
+      drawn({
+        selecting: true,
+        marked: [FIRST],
+        selectionActions: [{ id: 'bulk-odd', label: 'Something unusual', run: vi.fn() }],
+      });
+
+      expect(acting()[0]?.textContent).toBe('Something unusual');
+    });
+
+    it('runs the one that was pressed', () => {
+      const actions = some();
+      drawn({ selecting: true, marked: [FIRST], selectionActions: actions });
+
+      fireEvent.click(acting()[0]!);
+
+      expect(actions[0]?.run).toHaveBeenCalledOnce();
+    });
+
+    it('colours each by what it costs', () => {
+      drawn({ selecting: true, marked: [FIRST], selectionActions: some() });
+
+      expect(acting()[1]?.className).toContain('caution');
+      expect(acting()[2]?.className).toContain('danger');
+      expect(acting()[0]?.className).toBe('selecting-action');
+    });
+
+    /** Kept in the row and greyed, so the buttons do not move under the hand. */
+    it('refuses one rather than dropping it, and says why', () => {
+      const run = vi.fn();
+      drawn({
+        selecting: true,
+        marked: [FIRST],
+        selectionActions: [{ id: 'bulk-unload', label: 'Unload 0 from memory', brief: 'Unload', refused: 'None of these are in memory.', run }],
+      });
+
+      expect((acting()[0] as HTMLButtonElement).disabled).toBe(true);
+      expect(acting()[0]?.getAttribute('title')).toBe('None of these are in memory.');
+
+      fireEvent.click(acting()[0]!);
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it('draws no buttons where it was given none', () => {
+      drawn({ selecting: true, marked: [FIRST], selectionActions: [] });
+
+      expect(acting()).toHaveLength(0);
+      expect(document.querySelector('.selecting-bar')).toBeTruthy();
     });
   });
 });
@@ -2304,7 +2389,7 @@ describe('picking over the list, end to end', () => {
   it('puts them away when it is finished with', () => {
     begin();
 
-    fireEvent.click(screen.getByText('Done'));
+    fireEvent.click(screen.getByText('Cancel'));
 
     expect(boxes()).toHaveLength(0);
     expect(marks()).toBe(0);

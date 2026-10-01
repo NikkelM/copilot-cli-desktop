@@ -827,4 +827,14 @@ describe('the box on a row being picked over', () => {
   it('looks different once it is ticked', () => {
     expect(block('.session-check.on')).toContain('var(--accent)');
   });
+
+  /**
+   * Five actions in a column the reader has dragged as narrow as they like.
+   *
+   * Laid out in one line they would be squeezed until each read as three letters and a
+   * gap, which is not offering them at all.
+   */
+  it('lets the actions in the bar wrap instead of squeezing them', () => {
+    expect(block('.selecting-actions')).toContain('flex-wrap: wrap');
+  });
 });

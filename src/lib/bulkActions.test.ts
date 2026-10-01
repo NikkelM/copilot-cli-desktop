@@ -57,6 +57,29 @@ describe('acting on several sessions', () => {
     expect(byId([session('a')], deps())['bulk-delete']?.label).toBe('Delete 1 session');
   });
 
+  /**
+   * A short name for each, for somewhere the count is already on screen (#63).
+   *
+   * The bar above the list says how many are picked, and five buttons repeating it fit
+   * nowhere in a column the reader has dragged as narrow as they like.
+   */
+  describe('the short names', () => {
+    it('gives every action one', () => {
+      expect(bulkActions(three, deps()).every((action) => action.brief !== undefined)).toBe(true);
+    });
+
+    it('leaves the count out of them', () => {
+      const brief = bulkActions(three, deps()).map((action) => action.brief);
+      expect(brief.some((name) => name?.includes('3'))).toBe(false);
+    });
+
+    it('says which way a toggle is about to go, as the full name does', () => {
+      expect(byId(three, deps({ favourites: [] }))['bulk-favourite']?.brief).toBe('Favourite');
+      expect(byId(three, deps({ favourites: ['a', 'b', 'c'] }))['bulk-favourite']?.brief).toBe('Unfavourite');
+      expect(byId(three, deps({ archived: ['a', 'b', 'c'] }))['bulk-archive']?.brief).toBe('Bring back');
+    });
+  });
+
   describe('favouriting', () => {
     it('makes them all favourites when none is', () => {
       const d = deps();

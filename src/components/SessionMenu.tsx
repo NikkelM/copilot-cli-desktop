@@ -7,6 +7,14 @@ export interface SessionAction {
   /** Absent when the action can be taken. Present to say why it cannot, in place of doing it. */
   refused?: string;
   /**
+   * The name alone, for somewhere the count is already on screen.
+   *
+   * The menu is opened on a row and has to say what it is about; a bar above the list is
+   * already saying how many are picked, and repeating it on five buttons leaves no room
+   * for any of them in a column this narrow.
+   */
+  brief?: string;
+  /**
    * How much the action takes back, for the ones drawn apart at the foot of the menu.
    *
    * `caution` puts a session away and is undone by pressing again; `danger` destroys a

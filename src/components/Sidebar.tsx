@@ -61,6 +61,13 @@ interface SidebarProps {
   /** Done picking. Absent leaves the bar without its way out. */
   onDoneSelecting?: () => void;
   /**
+   * What can be done to the picked set, offered as buttons in the bar.
+   *
+   * The same list the menu shows, so the two can never offer different things to the same
+   * selection. Absent leaves the bar counting and nothing else.
+   */
+  selectionActions?: SessionAction[];
+  /**
    * A row was clicked, with whatever modifiers it carried.
    *
    * Answers whether the click was taken as marking. True means it was, and the row should
@@ -221,6 +228,7 @@ export function Sidebar({
   marked,
   selecting = false,
   onDoneSelecting,
+  selectionActions,
   onMark,
   subagents,
   selectedSubagentId,
@@ -496,11 +504,31 @@ export function Sidebar({
           count is the one thing a reader cannot work out from rows they have scrolled past. */}
       {selecting && (
         <div className="selecting-bar">
-          <span>{marked?.length ?? 0} selected</span>
-          {onDoneSelecting && (
-            <button type="button" className="selecting-done" onClick={onDoneSelecting}>
-              Done
-            </button>
+          <div className="selecting-count">
+            <span>{marked?.length ?? 0} selected</span>
+            {onDoneSelecting && (
+              <button type="button" className="selecting-cancel" onClick={onDoneSelecting}>
+                Cancel
+              </button>
+            )}
+          </div>
+          {selectionActions && selectionActions.length > 0 && (
+            <div className="selecting-actions">
+              {selectionActions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  className={`selecting-action${action.tone ? ` ${action.tone}` : ''}`}
+                  disabled={action.refused !== undefined}
+                  // The full name, since the button is wearing the short one: what the set
+                  // is and how many of them, or why this cannot be done to it.
+                  title={action.refused ?? action.label}
+                  onClick={action.run}
+                >
+                  {action.brief ?? action.label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       )}

@@ -44,11 +44,13 @@ export function bulkActions(sessions: SessionSummary[], deps: BulkActionDeps): S
     {
       id: 'bulk-favourite',
       label: allFavourite ? `Unfavourite ${count(ids.length)}` : `Favourite ${count(ids.length)}`,
+      brief: allFavourite ? 'Unfavourite' : 'Favourite',
       run: () => ids.forEach((id) => (deps.favourites.includes(id) === allFavourite ? deps.toggleFavourite(id) : undefined)),
     },
     {
       id: 'bulk-unload',
       label: `Unload ${count(loaded.length)} from memory`,
+      brief: 'Unload',
       // Nothing to release, rather than a button that would do nothing. The count says so
       // already, so this only has to explain why it is greyed.
       refused: loaded.length === 0 ? 'None of these are in memory.' : undefined,
@@ -57,17 +59,20 @@ export function bulkActions(sessions: SessionSummary[], deps: BulkActionDeps): S
     {
       id: 'bulk-export',
       label: `Export ${count(ids.length)}…`,
+      brief: 'Export…',
       run: () => deps.exportAll(sessions),
     },
     {
       id: 'bulk-archive',
       label: allArchived ? `Bring back ${count(ids.length)}` : `Archive ${count(ids.length)}`,
+      brief: allArchived ? 'Bring back' : 'Archive',
       tone: 'caution',
       run: () => ids.forEach((id) => (deps.archived.includes(id) === allArchived ? deps.toggleArchived(id) : undefined)),
     },
     {
       id: 'bulk-delete',
       label: `Delete ${count(ids.length)}`,
+      brief: 'Delete',
       tone: 'danger',
       run: () => deps.remove(sessions),
     },
