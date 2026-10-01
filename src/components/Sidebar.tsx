@@ -42,6 +42,14 @@ interface SidebarProps {
   /** What each session is doing, keyed by id. Absent means resident and idle (#115). */
   activity: Record<string, ActivityMark>;
   /**
+   * Sessions being resumed, which group with the resident ones.
+   *
+   * Read from here rather than from `activity`, where a resume is the lowest rank and is
+   * hidden the moment the session does anything - a resume that has already produced a
+   * question reads as blocked, and would otherwise fall back into Not loaded.
+   */
+  loading?: ReadonlySet<string>;
+  /**
    * Sessions some other Copilot has open, which this app cannot stop (#63).
    *
    * Separate from `loaded`, which is this app holding one. Both write to the same log and
@@ -134,6 +142,9 @@ const LOOKS_LIKE_ID = /^[0-9a-f-]+$/i;
 /** Where a folded group is remembered, so the sidebar opens as it was left. */
 const FOLDED = 'copilot-desktop.folded';
 
+/** One set rather than a new one per render, which would remake the groups every time. */
+const EMPTY: ReadonlySet<string> = new Set();
+
 function readFolded(): Record<string, boolean> {
   try {
     const stored = readStore('sessions', FOLDED);
@@ -224,6 +235,7 @@ export function Sidebar({
   creating,
   maxLoaded,
   activity,
+  loading = EMPTY,
   activeElsewhere,
   marked,
   selecting = false,
@@ -372,15 +384,21 @@ export function Sidebar({
   }, [waiting, selectedId, onSelect]);
 
   const groups = useMemo(() => {
+    // Being resumed counts as resident. The row moves the moment it is asked for rather
+    // than when the process finishes answering: a session is already costing memory while
+    // it arrives, and leaving it under Not loaded for the seconds that takes says the
+    // opposite of what is happening - the reader presses Load and nothing moves.
+    const resident = (session: SessionSummary) => session.loaded || loading.has(session.sessionId);
+
     // In memory first, and everything loaded is in it: what is resident is the one thing
     // this app is about, and a session's group should say what it costs rather than what
     // was once decided about it. So a favourite that is loaded sits here rather than under
     // Favourites, and a session stopped on a question sits here in its turn rather than
     // being lifted out - the count above the list is what makes that actionable, not a
     // group of its own.
-    const loaded = matches.filter((session) => session.loaded);
+    const loaded = matches.filter(resident);
 
-    const rest = matches.filter((session) => !session.loaded);
+    const rest = matches.filter((session) => !resident(session));
 
     // Put away next. #101 warns that three overlapping reasons a session might not appear is
     // one more than can be reasoned about, so archiving hides nothing: it folds a group away.
@@ -404,7 +422,7 @@ export function Sidebar({
       },
       { key: 'archived', label: 'Archived', sessions: put, foldedByDefault: true },
     ].filter((group) => group.sessions.length > 0);
-  }, [matches, favourites, archived]);
+  }, [matches, favourites, archived, loading]);
 
   /**
    * The rows as they are drawn, top to bottom, for what a Shift range means (#63).

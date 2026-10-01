@@ -303,6 +303,109 @@ describe('Sidebar grouping', () => {
   });
 });
 
+/**
+ * A session being resumed groups with the resident ones.
+ *
+ * It left the reader pressing Load and watching nothing move: the row stayed under Not
+ * loaded for the seconds a resume takes, which says the opposite of what is happening. A
+ * session is already costing memory while it arrives.
+ */
+describe('a session on its way into memory', () => {
+  const mixed = [
+    session({ sessionId: 'a', title: 'Resident', loaded: true }),
+    session({ sessionId: 'b', title: 'Arriving' }),
+    session({ sessionId: 'c', title: 'Cold' }),
+  ];
+
+  const show = (loading?: ReadonlySet<string>) =>
+    render(
+      <Sidebar
+        sessions={mixed}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        loading={loading}
+      />,
+    );
+
+  /** Rows in a group, by the heading above them. */
+  const under = (label: string) => {
+    const heading = screen.getByText(label).closest('li')!;
+    return [...heading.querySelectorAll('.session-title')].map((n) => n.textContent?.trim());
+  };
+
+  it('draws it with the resident ones rather than the cold ones', () => {
+    show(new Set(['b']));
+
+    expect(under('In memory')).toEqual(['Resident', 'Arriving']);
+    expect(under('Not loaded')).toEqual(['Cold']);
+  });
+
+  it('counts it against what memory holds, which is what the cap is about', () => {
+    show(new Set(['b']));
+
+    expect(screen.getByText('In memory').closest('button')?.textContent).toContain('2');
+  });
+
+  it('leaves it where it was until it is asked for', () => {
+    show(new Set());
+
+    expect(under('In memory')).toEqual(['Resident']);
+    expect(under('Not loaded')).toEqual(['Arriving', 'Cold']);
+  });
+
+  it('takes no set at all as nothing arriving', () => {
+    show();
+
+    expect(under('In memory')).toEqual(['Resident']);
+  });
+
+  /**
+   * Read from the resume rather than from what the session is doing: a resume is the
+   * lowest-ranked activity and is hidden the moment the session does anything, so one that
+   * has already produced a question reads as blocked and would fall back out of the group.
+   */
+  it('keeps it there once it is busy enough to hide the resume', () => {
+    render(
+      <Sidebar
+        sessions={mixed}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{ b: { state: 'blocked', queued: 0 } }}
+        loading={new Set(['b'])}
+      />,
+    );
+
+    expect(under('In memory')).toContain('Arriving');
+  });
+
+  /** Archiving hides nothing that is costing memory, however it came to be costing it. */
+  it('takes it out of the archive while it arrives', () => {
+    render(
+      <Sidebar
+        sessions={mixed}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        archived={['b']}
+        loading={new Set(['b'])}
+      />,
+    );
+
+    expect(under('In memory')).toContain('Arriving');
+    expect(screen.queryByText('Archived')).toBeNull();
+  });
+});
+
 /** Folding a group away (#124), which is the only way a list of two hundred stays usable. */
 describe('folding a group', () => {
   const grouped = [
