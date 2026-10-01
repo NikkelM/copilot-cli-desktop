@@ -329,11 +329,13 @@ export default function App() {
   /**
    * The sessions picked out to be acted on together (#63).
    *
-   * Over the list as drawn, which is what a Shift range means: the rows between two others
-   * are the rows between them on screen, not in some order the reader cannot see.
+   * Every session there is, rather than the ones on screen: this is what a mark is checked
+   * against when the list changes, and a session folded into a collapsed group has not
+   * gone anywhere. What a Shift range spans is a different question, answered by the
+   * sidebar at the moment of the click, since only it knows the order things are drawn in.
    */
-  const order = useMemo(() => sessions.all.map((session) => session.sessionId), [sessions.all]);
-  const { marked, click: mark, clear: clearMarks } = useMarked(order);
+  const listed = useMemo(() => sessions.all.map((session) => session.sessionId), [sessions.all]);
+  const { marked, click: mark, clear: clearMarks } = useMarked(listed);
 
   /** Several sessions waiting on one answer about removing them all. */
   const [deletingMany, setDeletingMany] = useState<SessionSummary[] | null>(null);

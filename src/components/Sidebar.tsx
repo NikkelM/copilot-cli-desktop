@@ -57,7 +57,7 @@ interface SidebarProps {
    * Answers whether the click was taken as marking. True means it was, and the row should
    * not also be opened - adding a session to a set is not asking to read it.
    */
-  onMark?: (sessionId: string, keys: { toggle: boolean; range: boolean }) => boolean;
+  onMark?: (sessionId: string, keys: { toggle: boolean; range: boolean }, order: readonly string[]) => boolean;
   /**
    * The subagents watched starting, to nest under the sessions that delegated them.
    *
@@ -387,6 +387,31 @@ export function Sidebar({
     ].filter((group) => group.sessions.length > 0);
   }, [matches, favourites, archived]);
 
+  /**
+   * The rows as they are drawn, top to bottom, for what a Shift range means (#63).
+   *
+   * Only this knows it. The list arrives in one order and is drawn in another - favourites
+   * first, then what is in memory, then the rest - and a folded group draws nothing but the
+   * open session. A range taken over the list as handed in marked rows from a group further
+   * down that were nowhere near the ones being dragged across.
+   */
+  const drawn = useMemo(
+    () =>
+      groups.flatMap((group) => {
+        const shut = group.label !== null && (folded[group.key] ?? group.foldedByDefault === true);
+        const shown = shut ? group.sessions.filter((s) => s.sessionId === selectedId) : group.sessions;
+        return shown.map((session) => session.sessionId);
+      }),
+    [groups, folded, selectedId],
+  );
+
+  /** A row was clicked: marking first, since gathering rows is not going to one. */
+  const clicked = useCallback(
+    (sessionId: string, event: ReactMouseEvent) =>
+      onMark?.(sessionId, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey }, drawn) ?? false,
+    [onMark, drawn],
+  );
+
   return (
     <nav className="sidebar">
       <header className="sidebar-header">
@@ -519,9 +544,7 @@ export function Sidebar({
                             // Marking first: a ctrl or shift click is about gathering rows
                             // rather than going to one, and acting on both would open a
                             // session every time somebody added one to the set (#63).
-                            if (onMark?.(session.sessionId, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey })) {
-                              return;
-                            }
+                            if (clicked(session.sessionId, event)) return;
                             onSelect(
                               session.sessionId,
                               session,
@@ -591,9 +614,7 @@ export function Sidebar({
                     <div
                       className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}`}
                       onClick={(event) => {
-                        if (onMark?.(session.sessionId, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey })) {
-                          return;
-                        }
+                        if (clicked(session.sessionId, event)) return;
                         onSelect(session.sessionId, session);
                       }}
                       onContextMenu={openMenu(session.sessionId)}

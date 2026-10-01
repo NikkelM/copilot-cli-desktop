@@ -1849,7 +1849,7 @@ describe('a session open somewhere else', () => {
  * confuses them deletes the wrong thing.
  */
 describe('marking sessions in the list', () => {
-  const drawn = (over: { marked?: string[]; onMark?: (id: string, keys: { toggle: boolean; range: boolean }) => boolean } = {}) => {
+  const drawn = (over: { marked?: string[]; onMark?: (id: string, keys: { toggle: boolean; range: boolean }, order: readonly string[]) => boolean } = {}) => {
     const onSelect = vi.fn();
     render(
       <Sidebar
@@ -1875,7 +1875,7 @@ describe('marking sessions in the list', () => {
 
     fireEvent.click(t.rows()[0]!);
 
-    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: false, range: false });
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: false, range: false }, expect.any(Array));
     expect(t.onSelect).toHaveBeenCalled();
   });
 
@@ -1885,7 +1885,7 @@ describe('marking sessions in the list', () => {
 
     fireEvent.click(t.rows()[0]!, { ctrlKey: true });
 
-    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: true, range: false });
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: true, range: false }, expect.any(Array));
   });
 
   it('reads the Mac modifier as the same thing', () => {
@@ -1894,7 +1894,7 @@ describe('marking sessions in the list', () => {
 
     fireEvent.click(t.rows()[0]!, { metaKey: true });
 
-    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: true, range: false });
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: true, range: false }, expect.any(Array));
   });
 
   it('passes on a range click', () => {
@@ -1903,7 +1903,24 @@ describe('marking sessions in the list', () => {
 
     fireEvent.click(t.rows()[0]!, { shiftKey: true });
 
-    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: false, range: true });
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: false, range: true }, expect.any(Array));
+  });
+
+  /**
+   * The order a range is measured over has to be the order on screen, which only this
+   * knows: the list arrives in one order and is drawn grouped in another (#63).
+   */
+  it('hands over the rows in the order they are drawn', () => {
+    const onMark = vi.fn((_id: string, _keys: { toggle: boolean; range: boolean }, _order: readonly string[]) => true);
+    const t = drawn({ onMark });
+
+    fireEvent.click(t.rows()[0]!, { shiftKey: true });
+
+    const order = onMark.mock.calls[0]![2];
+    const onScreen = [...document.querySelectorAll('.session-row .session-title')];
+    expect(order).toHaveLength(onScreen.length);
+    // Same rows, same sequence: the first drawn row is the first in the order handed over.
+    expect(order[0]).toBe(FIRST);
   });
 
   /** Adding a session to a set is not asking to read it. */
