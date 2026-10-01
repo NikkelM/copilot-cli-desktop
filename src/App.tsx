@@ -335,7 +335,7 @@ export default function App() {
    * sidebar at the moment of the click, since only it knows the order things are drawn in.
    */
   const listed = useMemo(() => sessions.all.map((session) => session.sessionId), [sessions.all]);
-  const { marked, click: mark, clear: clearMarks } = useMarked(listed);
+  const { marked, click: mark, clear: clearMarks } = useMarked(listed, selectedId);
 
   /** Several sessions waiting on one answer about removing them all. */
   const [deletingMany, setDeletingMany] = useState<SessionSummary[] | null>(null);

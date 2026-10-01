@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 
 import { Sidebar } from './Sidebar';
+import { useMarked } from '../lib/useMarked';
 import type { SessionSummary } from '../../shared/protocol';
 
 const findSessions = vi.hoisted(() => vi.fn());
@@ -1998,5 +1999,68 @@ describe('what a mark covers', () => {
     drawn();
 
     expect(document.querySelector('.session-row.marked .session-tags .tag')).toBeTruthy();
+  });
+});
+
+/**
+ * Marking driven through the real hook, rather than a mock standing in for it (#63).
+ *
+ * The unit tests either side of this were both green while a Shift range marked nothing at
+ * all: the hook was right about an order, the sidebar was right about drawing one, and
+ * what they handed each other was never exercised.
+ */
+describe('marking a range, end to end', () => {
+  const FAV = 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8';
+  const OTHER = '9ec04ce0-1361-4e11-ae34-9f8747cbac64';
+
+  function Harness({ favourites = [] as string[] }) {
+    const listed = sessions.map((s) => s.sessionId);
+    const { marked, click } = useMarked(listed);
+    return (
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        marked={marked}
+        onMark={click}
+        favourites={favourites}
+        onFavourite={() => {}}
+      />
+    );
+  }
+
+  const rows = () => [...document.querySelectorAll('.session-row')];
+  const markedTitles = () =>
+    [...document.querySelectorAll('.session-row.marked .session-title')].map((n) => n.textContent?.trim());
+
+  it('marks both ends of a range and what is between them', () => {
+    render(<Harness />);
+
+    fireEvent.click(rows()[0]!);
+    fireEvent.click(rows()[1]!, { shiftKey: true });
+
+    expect(markedTitles()).toHaveLength(2);
+  });
+
+  it('marks one that is ctrl-clicked', () => {
+    render(<Harness />);
+
+    fireEvent.click(rows()[0]!, { ctrlKey: true });
+
+    expect(markedTitles()).toHaveLength(1);
+  });
+
+  /** The arrangement the bug was reported in: two groups, a range inside one of them. */
+  it('marks a range across a grouped list', () => {
+    render(<Harness favourites={[FAV, OTHER]} />);
+
+    fireEvent.click(rows()[0]!);
+    fireEvent.click(rows()[1]!, { shiftKey: true });
+
+    expect(markedTitles()).toHaveLength(2);
   });
 });

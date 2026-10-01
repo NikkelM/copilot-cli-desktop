@@ -194,3 +194,45 @@ describe('marking several sessions', () => {
     expect(result.current.marked).toEqual([]);
   });
 });
+
+/**
+ * A Shift-click before anything has been touched (#63).
+ *
+ * The reader means the row they are looking at: they opened a session, then reached down
+ * the list holding Shift. Without a fallback the first such click did nothing but clear
+ * the marks and open whatever was under the pointer, which is how it was reported.
+ */
+describe('a range measured from the open session', () => {
+  it('spans from what is open when nothing has been touched', () => {
+    const { result } = renderHook(() => useMarked(ORDER, 'b'));
+
+    act(() => void result.current.click('d', shift, ORDER));
+
+    expect(result.current.marked).toEqual(['b', 'c', 'd']);
+  });
+
+  it('prefers a row that was actually touched', () => {
+    const { result } = renderHook(() => useMarked(ORDER, 'a'));
+    act(() => void result.current.click('c', plain, ORDER));
+
+    act(() => void result.current.click('d', shift, ORDER));
+
+    expect(result.current.marked).toEqual(['c', 'd']);
+  });
+
+  it('still does nothing where there is no open session either', () => {
+    const { result } = renderHook(() => useMarked(ORDER, null));
+
+    act(() => void result.current.click('c', shift, ORDER));
+
+    expect(result.current.marked).toEqual([]);
+  });
+
+  it('does nothing where the open session is not drawn', () => {
+    const { result } = renderHook(() => useMarked(ORDER, 'e'));
+
+    act(() => void result.current.click('b', shift, ['a', 'b']));
+
+    expect(result.current.marked).toEqual([]);
+  });
+});

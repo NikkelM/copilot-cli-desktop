@@ -22,12 +22,17 @@ export interface ClickKeys {
  * a gesture used on a handful of days, and the rows are already as narrow as they read.
  *
  * @param listed every session that could be marked, for forgetting the ones that leave
+ * @param open the session being read, which a range measures from when nothing else has
  */
-export function useMarked(listed: readonly string[]) {
+export function useMarked(listed: readonly string[], open: string | null = null) {
   const [marked, setMarked] = useState<readonly string[]>([]);
 
   /** Where a range starts: the last row touched without Shift. */
   const anchor = useRef<string | null>(null);
+
+  /** Read inside the click rather than closed over, so the listener is made once. */
+  const reading = useRef<string | null>(open);
+  reading.current = open;
 
   /**
    * Forget anything that has gone.
@@ -58,11 +63,16 @@ export function useMarked(listed: readonly string[]) {
    * @param order the sessions as they are drawn, top to bottom, folded ones left out
    */
   const click = useCallback((sessionId: string, keys: ClickKeys, order: readonly string[]): boolean => {
-    if (keys.range && anchor.current) {
-      const from = order.indexOf(anchor.current);
-      const to = order.indexOf(sessionId);
-      if (from !== -1 && to !== -1) {
-        const span = order.slice(Math.min(from, to), Math.max(from, to) + 1);
+    // The session being read stands in when nothing has been touched yet, which is what
+    // a reader means by Shift-clicking having opened something: the row they are looking
+    // at is the end they are measuring from. Without it the first Shift-click of a run
+    // did nothing at all and quietly opened a session instead.
+    const from = anchor.current ?? reading.current;
+    if (keys.range && from) {
+      const start = order.indexOf(from);
+      const end = order.indexOf(sessionId);
+      if (start !== -1 && end !== -1) {
+        const span = order.slice(Math.min(start, end), Math.max(start, end) + 1);
         // Added to what is already marked rather than replacing it, so several ranges can
         // be gathered - which is what holding Shift after a Ctrl-click means everywhere
         // else.
