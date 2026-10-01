@@ -99,4 +99,46 @@ describe('SessionMenu', () => {
     expect(menu.style.left).toBe('796px');
     expect(menu.style.top).toBe('676px');
   });
+
+  /**
+   * The foot of the menu: the rows that take a session off the list.
+   *
+   * The rule above them belongs to the group, not to each row in it. With the line tied to
+   * the colour instead, archiving and deleting beside each other drew two lines and made a
+   * group of one out of each.
+   */
+  describe('the rows drawn apart', () => {
+    const footed = () => [
+      { id: 'a', label: 'Favourite', run: () => {} },
+      { id: 'b', label: 'Archive', tone: 'caution' as const, run: () => {} },
+      { id: 'c', label: 'Delete session', tone: 'danger' as const, run: () => {} },
+    ];
+
+    it('draws one line, above the first of them', () => {
+      open(footed());
+
+      const apart = screen.getAllByRole('menuitem').filter((item) => item.classList.contains('apart'));
+      expect(apart.map((item) => item.textContent)).toEqual(['Archive']);
+    });
+
+    it('colours each by what it costs', () => {
+      open(footed());
+
+      expect(screen.getByText('Archive').className).toContain('caution');
+      expect(screen.getByText('Delete session').className).toContain('danger');
+    });
+
+    it('leaves the rows above untouched', () => {
+      open(footed());
+
+      const first = screen.getByText('Favourite');
+      expect(first.className).toBe('session-menu-item');
+    });
+
+    it('draws no line at all where nothing is set apart', () => {
+      open([{ id: 'a', label: 'Favourite', run: () => {} }]);
+
+      expect(screen.getAllByRole('menuitem').some((item) => item.classList.contains('apart'))).toBe(false);
+    });
+  });
 });

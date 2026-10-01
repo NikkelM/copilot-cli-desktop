@@ -12,6 +12,8 @@ export interface SessionActionDeps {
   tag: (session: SessionSummary) => void;
   /** Writes the session out as a bundle, which means asking where to put it first (#63). */
   exportTo: (session: SessionSummary) => void;
+  /** Begin marking sessions with this one, for somebody who has not met Ctrl-click (#63). */
+  select: (sessionId: string) => void;
   /** Which sessions are put away, and how to change that. */
   archived: readonly string[];
   toggleArchived: (sessionId: string) => void;
@@ -75,6 +77,13 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       run: () => deps.exportTo(session),
     },
     {
+      id: 'select',
+      // Named for what it begins rather than what it does once: the gesture is Ctrl-click,
+      // and this is where somebody who has not met it finds out there is one.
+      label: 'Select…',
+      run: () => deps.select(session.sessionId),
+    },
+    {
       id: 'fork',
       // The cost is in the label because there is nowhere else to put it and it is the one
       // thing worth knowing before pressing: this app opens nothing it is not asked to, and
@@ -88,19 +97,8 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       run: () => deps.fork(session),
     },
     {
-      id: 'archive',
-      label: deps.archived.includes(session.sessionId) ? 'Unarchive' : 'Archive',
-      // Nothing on disk changes and the group is one press from open, so unlike deleting
-      // this asks nothing first. What it does refuse is putting away a session mid-turn:
-      // archiving lets it go, and letting go mid-turn loses the turn.
-      refused: deps.working.has(session.sessionId)
-        ? 'Still working. Archive once the turn finishes.'
-        : undefined,
-      run: () => deps.toggleArchived(session.sessionId),
-    },
-    {
       id: 'subagents',
-      label: 'Subagents',
+      label: 'View subagents',
       // Certain, or not said at all: the reason for refusing it is that the log was read
       // to the end and held nothing, and a log too large to reach the end of says nothing.
       refused: deps.hasNoSubagents(session.sessionId) ? 'This session has not delegated anything.' : undefined,
@@ -120,9 +118,24 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       },
     },
     {
+      id: 'archive',
+      label: deps.archived.includes(session.sessionId) ? 'Unarchive' : 'Archive',
+      // At the foot beside deleting, since both take a session off the list - but in its own
+      // colour, because one is undone by pressing again and the other cannot be undone at
+      // all, and that is the whole difference a reader is weighing.
+      tone: 'caution',
+      // Nothing on disk changes and the group is one press from open, so unlike deleting
+      // this asks nothing first. What it does refuse is putting away a session mid-turn:
+      // archiving lets it go, and letting go mid-turn loses the turn.
+      refused: deps.working.has(session.sessionId)
+        ? 'Still working. Archive once the turn finishes.'
+        : undefined,
+      run: () => deps.toggleArchived(session.sessionId),
+    },
+    {
       id: 'delete',
       label: 'Delete session',
-      destructive: true,
+      tone: 'danger',
       // The turn would be cut off partway and its record deleted underneath it, which is a
       // worse thing to do by accident than any of the above.
       refused: deps.working.has(session.sessionId)

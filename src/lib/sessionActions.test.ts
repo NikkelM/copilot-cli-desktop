@@ -22,6 +22,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   toggleArchived: vi.fn(),
   tag: vi.fn(),
   exportTo: vi.fn(),
+  select: vi.fn(),
   rename: vi.fn(),
   working: new Set(),
   unload: vi.fn(),
@@ -46,12 +47,25 @@ describe('sessionActions', () => {
       'rename',
       'tag',
       'export',
+      'select',
       'fork',
-      'archive',
       'subagents',
       'copy-id',
       'directory',
+      'archive',
       'delete',
+    ]);
+  });
+
+  /**
+   * The foot of the menu holds the two that take a session off the list, in the order they
+   * cost: one is undone by pressing again, the other cannot be undone at all.
+   */
+  it('keeps taking a session off the list to the foot of the menu', () => {
+    const toned = sessionActions(session(), deps()).filter((a) => a.tone !== undefined);
+    expect(toned.map((a) => [a.id, a.tone])).toEqual([
+      ['archive', 'caution'],
+      ['delete', 'danger'],
     ]);
   });
 
@@ -187,8 +201,8 @@ describe('sessionActions', () => {
       expect(action.refused).toMatch(/still working/i);
     });
 
-    it('is not one of the actions that loses something', () => {
-      expect(byId(session(), deps()).archive.destructive).toBeUndefined();
+    it('is warned about rather than coloured like deleting, since pressing again undoes it', () => {
+      expect(byId(session(), deps()).archive.tone).toBe('caution');
     });
   });
   describe('deleting', () => {
@@ -211,8 +225,7 @@ describe('sessionActions', () => {
     });
 
     it('is marked apart from the actions that lose nothing', () => {
-      const actions = sessionActions(session(), deps());
-      expect(actions.filter((a) => a.destructive).map((a) => a.id)).toEqual(['delete']);
+      expect(byId(session(), deps()).delete.tone).toBe('danger');
     });
   });
 
@@ -250,7 +263,7 @@ describe('sessionActions', () => {
 
     // It takes nothing away: the source is left exactly as it was.
     it('is not one of the actions that loses something', () => {
-      expect(byId(session(), deps()).fork.destructive).toBeUndefined();
+      expect(byId(session(), deps()).fork.tone).toBeUndefined();
     });
   });
 
@@ -279,6 +292,35 @@ describe('exporting a session', () => {
 
   /** Nothing is lost by writing a copy out, so it is not one of the ones drawn apart. */
   it('is not treated as destructive', () => {
-    expect(byId(session(), deps())['export']?.destructive).toBeFalsy();
+    expect(byId(session(), deps())['export']?.tone).toBeUndefined();
+  });
+});
+
+/**
+ * Marking a session from the menu, which is Ctrl-click by another route (#63).
+ *
+ * The gesture is the one every list on the machine uses, which is exactly why somebody who
+ * has not met it has no way to find out it is there. The menu is where they look.
+ */
+describe('selecting a session', () => {
+  it('marks the session it was opened on', () => {
+    const select = vi.fn();
+    byId(session({ sessionId: 'picked' }), deps({ select }))['select']?.run();
+
+    expect(select).toHaveBeenCalledExactlyOnceWith('picked');
+  });
+
+  it('is offered whether or not the session is loaded', () => {
+    expect(byId(session({ loaded: true }), deps())['select']?.refused).toBeUndefined();
+    expect(byId(session({ loaded: false }), deps())['select']?.refused).toBeUndefined();
+  });
+
+  /** Offered mid-turn too: marking a row takes nothing from the turn running in it. */
+  it('is offered while the session is working', () => {
+    expect(byId(session(), deps({ working: new Set(['abc']) }))['select']?.refused).toBeUndefined();
+  });
+
+  it('takes nothing away, so it is not drawn at the foot', () => {
+    expect(byId(session(), deps())['select']?.tone).toBeUndefined();
   });
 });

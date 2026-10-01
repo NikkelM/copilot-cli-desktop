@@ -1443,6 +1443,10 @@ export default function App() {
         rename: setNaming,
         tag: setTagging,
         exportTo,
+        // The row is marked rather than a mode being entered: marking is Ctrl-click, and
+        // this is the same thing by another route for somebody who has not met it. No order
+        // is needed because only a range reads one, and one row is not a range.
+        select: (sessionId) => mark(sessionId, { toggle: true, range: false }, []),
         // Archiving is a decision that the session is finished with, so it also stops paying
         // for it: keeping one resumed while hiding it from view is the memory cost this app
         // exists to avoid (#101).

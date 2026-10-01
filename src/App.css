@@ -4461,20 +4461,19 @@ pre.fatal,
 }
 
 /*
- * Set apart from the rest of the menu, since it is the only row that loses anything.
+ * The foot of the menu: the rows that take a session off the list.
  *
- * The line is drawn above the row rather than on it. As a border it was part of the row, so
- * the fill ran right up under it, and the padding that kept them apart made this row taller
- * than every other one - a block where the others are neat rounded rows.
+ * The line is drawn above the first of them rather than on it. As a border it was part of
+ * the row, so the fill ran right up under it, and the padding that kept them apart made
+ * this row taller than every other one - a block where the others are neat rounded rows.
  */
-.session-menu-item.destructive {
+.session-menu-item.apart {
   position: relative;
   margin-top: 9px;
-  color: var(--danger);
 }
 
 /* Out to the edges of the menu, which its padding holds the rows back from. */
-.session-menu-item.destructive::before {
+.session-menu-item.apart::before {
   content: '';
   position: absolute;
   top: -5px;
@@ -4483,7 +4482,22 @@ pre.fatal,
   border-top: 1px solid var(--border);
 }
 
-.session-menu-item.destructive:hover:not(:disabled) {
+/* Putting a session away is undone by pressing again, so it is warned about rather than
+   coloured like the one that cannot be undone. */
+.session-menu-item.caution {
+  color: var(--warning);
+}
+
+.session-menu-item.caution:hover:not(:disabled) {
+  background: var(--warning);
+  color: var(--bg);
+}
+
+.session-menu-item.danger {
+  color: var(--danger);
+}
+
+.session-menu-item.danger:hover:not(:disabled) {
   background: var(--danger);
   color: var(--bg);
 }

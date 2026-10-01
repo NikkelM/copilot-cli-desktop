@@ -42,9 +42,9 @@ describe('acting on several sessions', () => {
   it('offers only what makes sense for a set', () => {
     expect(bulkActions(three, deps()).map((a) => a.id)).toEqual([
       'bulk-favourite',
-      'bulk-archive',
       'bulk-unload',
       'bulk-export',
+      'bulk-archive',
       'bulk-delete',
     ]);
   });
@@ -162,13 +162,17 @@ describe('acting on several sessions', () => {
       expect(d.remove).toHaveBeenCalledWith(three);
     });
 
-    /** It is the one that loses something, so it is drawn apart from the rest. */
+    /** It is the one that cannot be undone, so it carries the stronger of the two colours. */
     it('is marked as destructive', () => {
-      expect(byId(three, deps())['bulk-delete']?.destructive).toBe(true);
+      expect(byId(three, deps())['bulk-delete']?.tone).toBe('danger');
     });
 
-    it('is the only one that is', () => {
-      expect(bulkActions(three, deps()).filter((a) => a.destructive).map((a) => a.id)).toEqual(['bulk-delete']);
+    it('shares the foot of the menu with archiving, which is the lesser of the two', () => {
+      const toned = bulkActions(three, deps()).filter((a) => a.tone !== undefined);
+      expect(toned.map((a) => [a.id, a.tone])).toEqual([
+        ['bulk-archive', 'caution'],
+        ['bulk-delete', 'danger'],
+      ]);
     });
   });
 });

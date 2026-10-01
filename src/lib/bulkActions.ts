@@ -47,11 +47,6 @@ export function bulkActions(sessions: SessionSummary[], deps: BulkActionDeps): S
       run: () => ids.forEach((id) => (deps.favourites.includes(id) === allFavourite ? deps.toggleFavourite(id) : undefined)),
     },
     {
-      id: 'bulk-archive',
-      label: allArchived ? `Bring back ${count(ids.length)}` : `Archive ${count(ids.length)}`,
-      run: () => ids.forEach((id) => (deps.archived.includes(id) === allArchived ? deps.toggleArchived(id) : undefined)),
-    },
-    {
       id: 'bulk-unload',
       label: `Unload ${count(loaded.length)} from memory`,
       // Nothing to release, rather than a button that would do nothing. The count says so
@@ -65,9 +60,15 @@ export function bulkActions(sessions: SessionSummary[], deps: BulkActionDeps): S
       run: () => deps.exportAll(sessions),
     },
     {
+      id: 'bulk-archive',
+      label: allArchived ? `Bring back ${count(ids.length)}` : `Archive ${count(ids.length)}`,
+      tone: 'caution',
+      run: () => ids.forEach((id) => (deps.archived.includes(id) === allArchived ? deps.toggleArchived(id) : undefined)),
+    },
+    {
       id: 'bulk-delete',
       label: `Delete ${count(ids.length)}`,
-      destructive: true,
+      tone: 'danger',
       run: () => deps.remove(sessions),
     },
   ];

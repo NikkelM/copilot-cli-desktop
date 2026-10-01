@@ -6,8 +6,14 @@ export interface SessionAction {
   label: string;
   /** Absent when the action can be taken. Present to say why it cannot, in place of doing it. */
   refused?: string;
-  /** Drawn apart from the rest and in the warning colour, for the ones that lose something. */
-  destructive?: boolean;
+  /**
+   * How much the action takes back, for the ones drawn apart at the foot of the menu.
+   *
+   * `caution` puts a session away and is undone by pressing again; `danger` destroys a
+   * conversation. Two colours rather than one, because they are not the same risk and a
+   * reader deciding between them is deciding exactly that.
+   */
+  tone?: 'caution' | 'danger';
   run: () => void;
 }
 
@@ -63,14 +69,18 @@ export function SessionMenu({
     menu.style.top = `${Math.max(4, Math.min(at.y, window.innerHeight - height - 4))}px`;
   }, [at]);
 
+  // The rule drawn above the foot of the menu belongs to whichever toned action comes
+  // first, not to each of them: two would draw two lines and make a group of one.
+  const apart = actions.findIndex((action) => action.tone !== undefined);
+
   return (
     <div className="session-menu" ref={box} role="menu">
-      {actions.map((action) => (
+      {actions.map((action, index) => (
         <button
           key={action.id}
           type="button"
           role="menuitem"
-          className={action.destructive ? 'session-menu-item destructive' : 'session-menu-item'}
+          className={`session-menu-item${action.tone ? ` ${action.tone}` : ''}${index === apart ? ' apart' : ''}`}
           disabled={action.refused !== undefined}
           title={action.refused}
           onClick={() => {

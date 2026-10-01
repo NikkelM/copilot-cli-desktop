@@ -235,15 +235,16 @@ describe('how a window button answers the pointer', () => {
 });
 
 /**
- * The row that deletes a session is drawn like every other row in the menu.
+ * The rows at the foot of the menu are drawn like every other row in it.
  *
- * It was set apart with a border of its own and the padding to clear it, which made it
- * taller than its neighbours and gave it square corners the moment it was pointed at.
+ * They were set apart with a border of their own and the padding to clear it, which made
+ * them taller than their neighbours and gave them square corners the moment they were
+ * pointed at.
  */
-describe('the row that loses something', () => {
+describe('the rows that take a session off the list', () => {
   const rule = (() => {
-    const at = css.indexOf('.session-menu-item.destructive {');
-    expect(at, 'the destructive row should be in the stylesheet').toBeGreaterThan(-1);
+    const at = css.indexOf('.session-menu-item.apart {');
+    expect(at, 'the row drawn apart should be in the stylesheet').toBeGreaterThan(-1);
     return css.slice(at, css.indexOf('\n}', at));
   })();
 
@@ -254,7 +255,21 @@ describe('the row that loses something', () => {
 
   it('is separated by a line beside it rather than one on it', () => {
     expect(rule, 'a border is part of the row, so the fill runs into it').not.toContain('border-top');
-    expect(css).toContain('.session-menu-item.destructive::before {');
+    expect(css).toContain('.session-menu-item.apart::before {');
+  });
+
+  /**
+   * Archiving is undone by pressing again and deleting is not, so they are not the same
+   * colour. Drawing archive in the delete red would say the two cost the same.
+   */
+  it('colours putting a session away apart from destroying it', () => {
+    const caution = css.indexOf('.session-menu-item.caution {');
+    const danger = css.indexOf('.session-menu-item.danger {');
+    expect(caution, 'the lesser of the two should have a colour').toBeGreaterThan(-1);
+    expect(danger, 'the one that cannot be undone should have a colour').toBeGreaterThan(-1);
+
+    expect(css.slice(caution, css.indexOf('\n}', caution))).toContain('var(--warning)');
+    expect(css.slice(danger, css.indexOf('\n}', danger))).toContain('var(--danger)');
   });
 });
 
