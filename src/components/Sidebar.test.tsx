@@ -1840,3 +1840,100 @@ describe('a session open somewhere else', () => {
     expect(marks()).toHaveLength(0);
   });
 });
+
+/**
+ * Picking out several sessions to act on together (#63).
+ *
+ * Ctrl and Shift, because that is what every list on the machine does. A marked row is
+ * drawn differently from the open one: they are different claims, and a reader who
+ * confuses them deletes the wrong thing.
+ */
+describe('marking sessions in the list', () => {
+  const drawn = (over: { marked?: string[]; onMark?: (id: string, keys: { toggle: boolean; range: boolean }) => boolean } = {}) => {
+    const onSelect = vi.fn();
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={onSelect}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        marked={over.marked}
+        onMark={over.onMark}
+      />,
+    );
+    return { onSelect, rows: () => [...document.querySelectorAll('.session-row')] };
+  };
+
+  const FIRST = 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8';
+
+  it('hands a plain click to whatever opens a session', () => {
+    const onMark = vi.fn(() => false);
+    const t = drawn({ onMark });
+
+    fireEvent.click(t.rows()[0]!);
+
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: false, range: false });
+    expect(t.onSelect).toHaveBeenCalled();
+  });
+
+  it('passes on which modifiers a click carried', () => {
+    const onMark = vi.fn(() => true);
+    const t = drawn({ onMark });
+
+    fireEvent.click(t.rows()[0]!, { ctrlKey: true });
+
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: true, range: false });
+  });
+
+  it('reads the Mac modifier as the same thing', () => {
+    const onMark = vi.fn(() => true);
+    const t = drawn({ onMark });
+
+    fireEvent.click(t.rows()[0]!, { metaKey: true });
+
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: true, range: false });
+  });
+
+  it('passes on a range click', () => {
+    const onMark = vi.fn(() => true);
+    const t = drawn({ onMark });
+
+    fireEvent.click(t.rows()[0]!, { shiftKey: true });
+
+    expect(onMark).toHaveBeenCalledWith(FIRST, { toggle: false, range: true });
+  });
+
+  /** Adding a session to a set is not asking to read it. */
+  it('does not open a session the click only marked', () => {
+    const t = drawn({ onMark: () => true });
+
+    fireEvent.click(t.rows()[0]!, { ctrlKey: true });
+
+    expect(t.onSelect).not.toHaveBeenCalled();
+  });
+
+  it('draws a marked row as marked', () => {
+    drawn({ marked: [FIRST] });
+
+    const marked = [...document.querySelectorAll('.session.marked')];
+    expect(marked).toHaveLength(1);
+    expect(marked[0]?.textContent).toContain('Biomes');
+  });
+
+  it('draws nothing as marked when nothing is', () => {
+    drawn({ marked: [] });
+
+    expect(document.querySelectorAll('.session.marked')).toHaveLength(0);
+  });
+
+  it('still opens sessions where nothing is marking at all', () => {
+    const t = drawn();
+
+    fireEvent.click(t.rows()[0]!);
+
+    expect(t.onSelect).toHaveBeenCalled();
+  });
+});

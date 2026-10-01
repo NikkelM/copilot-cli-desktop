@@ -86,6 +86,8 @@ import { nameOf } from './lib/paths';
 import { useFileDrop } from './lib/useFileDrop';
 import { useTodos } from './lib/useTodos';
 import { useActiveElsewhere } from './lib/useActiveElsewhere';
+import { useMarked } from './lib/useMarked';
+import { bulkActions } from './lib/bulkActions';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useAgentEvents } from './lib/useAgentEvents';
@@ -323,6 +325,45 @@ export default function App() {
    * in elsewhere is worth seeing before it is opened rather than after.
    */
   const elsewhere = useActiveElsewhere();
+
+  /**
+   * The sessions picked out to be acted on together (#63).
+   *
+   * Over the list as drawn, which is what a Shift range means: the rows between two others
+   * are the rows between them on screen, not in some order the reader cannot see.
+   */
+  const order = useMemo(() => sessions.all.map((session) => session.sessionId), [sessions.all]);
+  const { marked, click: mark, clear: clearMarks } = useMarked(order);
+
+  /** Several sessions waiting on one answer about removing them all. */
+  const [deletingMany, setDeletingMany] = useState<SessionSummary[] | null>(null);
+
+  /**
+   * Write several sessions out, into a folder rather than onto a file (#63).
+   *
+   * One at a time rather than together: a single archive of four conversations would be a
+   * thing only this app could take apart, where four bundles are each the thing import
+   * already accepts.
+   */
+  async function exportMany(chosen: SessionSummary[]) {
+    try {
+      const folder = await pickFolder({ directory: true, title: `Export ${chosen.length} sessions to…` });
+      if (typeof folder !== 'string') return;
+
+      for (const session of chosen) {
+        const named = (session.title ?? 'session').replace(/[^\w.-]+/g, '-').slice(0, 40) || 'session';
+        await exportSession(
+          session.sessionId,
+          `${folder}${folder.endsWith('\\') || folder.endsWith('/') ? '' : '\\'}${named}-${session.sessionId.slice(0, 8)}.copilot-session.zip`,
+        );
+      }
+
+      clearMarks();
+      await revealItemInDir(folder).catch(() => undefined);
+    } catch (e: unknown) {
+      setError(explain(e));
+    }
+  }
   /**
    * Switching, then reading the tree again.
    *
@@ -1366,8 +1407,34 @@ export default function App() {
   }
 
   const sessionMenu = useCallback(
-    (session: SessionSummary) =>
-      sessionActions(session, {
+    (session: SessionSummary) => {
+      /**
+       * Right-clicking inside a marked set acts on the set (#63).
+       *
+       * Outside it the marks are not what is being pointed at, so the menu is about the one
+       * row as it always was - which also means a marked set is never acted on by accident
+       * from somewhere else in the list.
+       */
+      if (marked.length > 1 && marked.includes(session.sessionId)) {
+        return bulkActions(
+          sessions.all.filter((each) => marked.includes(each.sessionId)),
+          {
+            archived,
+            toggleArchived,
+            favourites,
+            toggleFavourite,
+            unload: (sessionId) => {
+              evictSession(sessionId)
+                .then(() => sessions.refresh())
+                .catch((e: unknown) => setError(explain(e)));
+            },
+            remove: setDeletingMany,
+            exportAll: exportMany,
+          },
+        );
+      }
+
+      return sessionActions(session, {
         favourites,
         toggleFavourite,
         archived,
@@ -1404,7 +1471,8 @@ export default function App() {
         openDirectory: (path) => void openPath(path).catch((e: unknown) => setError(messageOf(e))),
         remove: (target) => (settings.confirmDelete ? setDeleting(target) : void removeSession(target)),
         fork: forkSession,
-      }),
+      });
+    },
     [
       favourites,
       toggleFavourite,
@@ -1414,6 +1482,8 @@ export default function App() {
       settings.confirmDelete,
       removeSession,
       forkSession,
+      marked,
+      exportMany,
     ],
   );
 
@@ -1430,6 +1500,8 @@ export default function App() {
         maxLoaded={sessions.maxLoaded}
         activity={activity}
         activeElsewhere={elsewhere.active}
+        marked={marked}
+        onMark={mark}
         onImport={() => void importFrom()}
         subagents={subagents.watched}
         selectedSubagentId={subagents.openId}
@@ -1891,6 +1963,37 @@ export default function App() {
           onToggle={(tag) => toggleTag(tagging.sessionId, tag)}
           onRetire={retireTag}
           onClose={() => setTagging(null)}
+        />
+      )}
+
+      {deletingMany && (
+        <Confirm
+          title={`Delete ${deletingMany.length} sessions?`}
+          body={
+            <>
+              <p>
+                These {deletingMany.length} conversations and everything they wrote will be removed: the
+                transcripts, their checkpoints, and the snapshots that let their file changes be rewound.
+              </p>
+              {/* Named rather than counted. Four rows were marked by hand and the one worth
+                  checking is whichever was marked by accident, which a number cannot show. */}
+              <ul className="confirm-list">
+                {deletingMany.map((session) => (
+                  <li key={session.sessionId}>{session.title ?? 'Untitled session'}</li>
+                ))}
+              </ul>
+              <p>Nothing they did to your files is undone, and this cannot be reversed.</p>
+            </>
+          }
+          confirmLabel={`Delete ${deletingMany.length} sessions`}
+          onConfirm={() => {
+            // One after another rather than together: each is its own removal, and one that
+            // fails must not take the rest with it.
+            for (const session of deletingMany) void removeSession(session);
+            setDeletingMany(null);
+            clearMarks();
+          }}
+          onCancel={() => setDeletingMany(null)}
         />
       )}
 

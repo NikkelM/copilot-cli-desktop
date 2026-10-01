@@ -119,7 +119,10 @@ describe('explain', () => {
     });
 
     expect(offenders, 'report through explain for runtime errors, messageOf for git and the shell').toEqual([]);
-  });
+    // Longer than the default, because this one reads every source file in the project:
+    // on its own that is half a second, and under a full suite competing for the disk it
+    // has been measured at six - which failed as a timeout rather than as a finding.
+  }, 30_000);
 
   it('says the working directory is gone', () => {
     expect(explain('working directory not found')).toBe(

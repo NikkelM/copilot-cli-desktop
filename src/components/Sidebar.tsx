@@ -49,6 +49,15 @@ interface SidebarProps {
    * about it.
    */
   activeElsewhere?: string[];
+  /** The sessions picked out to be acted on together, which is not the one being read (#63). */
+  marked?: readonly string[];
+  /**
+   * A row was clicked, with whatever modifiers it carried.
+   *
+   * Answers whether the click was taken as marking. True means it was, and the row should
+   * not also be opened - adding a session to a set is not asking to read it.
+   */
+  onMark?: (sessionId: string, keys: { toggle: boolean; range: boolean }) => boolean;
   /**
    * The subagents watched starting, to nest under the sessions that delegated them.
    *
@@ -200,6 +209,8 @@ export function Sidebar({
   maxLoaded,
   activity,
   activeElsewhere,
+  marked,
+  onMark,
   subagents,
   selectedSubagentId,
   onSelectSubagent,
@@ -504,14 +515,20 @@ export function Sidebar({
                           className={`session-row${session.sessionId === selectedId ? ' selected' : ''}`}
                           // A row the name did not find was found by something said in it,
                           // so opening it means opening it there rather than at the end.
-                          onClick={() =>
+                          onClick={(event) => {
+                            // Marking first: a ctrl or shift click is about gathering rows
+                            // rather than going to one, and acting on both would open a
+                            // session every time somebody added one to the set (#63).
+                            if (onMark?.(session.sessionId, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey })) {
+                              return;
+                            }
                             onSelect(
                               session.sessionId,
                               session,
                               named?.has(session.sessionId) ? undefined : said.get(session.sessionId),
                               parseQuery(query).text,
-                            )
-                          }
+                            );
+                          }}
                           onContextMenu={openMenu(session.sessionId)}
                         >
                           <div className="session-line">
@@ -520,6 +537,7 @@ export function Sidebar({
                               selectedId={selectedId}
                               activity={activity[session.sessionId]}
                               elsewhere={activeElsewhere?.includes(session.sessionId)}
+                              marked={marked?.includes(session.sessionId)}
                             />
                             {onFavourite && (
                               <Favourite
@@ -573,7 +591,12 @@ export function Sidebar({
                   <li key={session.sessionId}>
                     <div
                       className={`session-row${session.sessionId === selectedId ? ' selected' : ''}`}
-                      onClick={() => onSelect(session.sessionId, session)}
+                      onClick={(event) => {
+                        if (onMark?.(session.sessionId, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey })) {
+                          return;
+                        }
+                        onSelect(session.sessionId, session);
+                      }}
                       onContextMenu={openMenu(session.sessionId)}
                     >
                       <div className="session-line">
@@ -582,6 +605,7 @@ export function Sidebar({
                           selectedId={selectedId}
                           activity={activity[session.sessionId]}
                           elsewhere={activeElsewhere?.includes(session.sessionId)}
+                          marked={marked?.includes(session.sessionId)}
                         />
                       </div>
                       <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
@@ -815,19 +839,25 @@ function Row({
   selectedId,
   activity,
   elsewhere,
+  marked,
 }: {
   session: SessionSummary;
   selectedId: string | null;
   activity?: ActivityMark;
   /** Some other Copilot has this session open, which this app cannot stop (#63). */
   elsewhere?: boolean;
+  /** Picked out to be acted on with others, which is not the same as being read (#63). */
+  marked?: boolean;
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
 
   // Selecting is the whole row's job, so this button does not also do it: the click it
   // raises, including the one Enter raises for a keyboard, reaches the row on the way up.
   return (
-    <button type="button" className={`session${session.sessionId === selectedId ? ' selected' : ''}`}>
+    <button
+      type="button"
+      className={`session${session.sessionId === selectedId ? ' selected' : ''}${marked ? ' marked' : ''}`}
+    >
       <span className="session-title" title={session.title ?? undefined}>
         {session.title === null ? 'Untitled session' : clipTitle(session.title)}
         {/* A word rather than another dot. The dot beside it is this app saying what it is
