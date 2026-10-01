@@ -9,6 +9,7 @@
     "core:window:allow-set-cursor-position",
     "opener:default",
     "dialog:allow-open",
+    "dialog:allow-save",
     {
       "identifier": "opener:allow-open-path",
       "allow": [{ "path": "**" }]

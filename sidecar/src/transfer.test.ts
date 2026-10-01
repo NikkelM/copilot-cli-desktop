@@ -254,13 +254,13 @@ describe('taking a session back in', () => {
   it('refuses a bundle holding more than one session', async () => {
     const path = await zipOf({ [`${ID}/events.jsonl`]: 'a', [`${OTHER}/events.jsonl`]: 'b' }, join(home, 'two.zip'));
 
-    await expect(importSession(path)).rejects.toThrow('exactly one session');
+    await expect(importSession(path)).rejects.toThrow('does not contain a Copilot session');
   });
 
   it('refuses a bundle whose folder is not a session id', async () => {
     const path = await zipOf({ 'my-stuff/events.jsonl': 'a' }, join(home, 'odd.zip'));
 
-    await expect(importSession(path)).rejects.toThrow('exactly one session');
+    await expect(importSession(path)).rejects.toThrow('does not contain a Copilot session');
   });
 
   // A session with no conversation would be listed and then fail the moment it was opened.

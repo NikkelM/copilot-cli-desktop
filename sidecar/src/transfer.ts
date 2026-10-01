@@ -155,7 +155,7 @@ export async function importSession(
   const roots = new Set(entries.map((entry) => entry.path.split('/')[0] ?? ''));
   const sessionId = [...roots][0] ?? '';
   if (roots.size !== 1 || !SESSION_ID.test(sessionId)) {
-    throw new Error('That bundle does not hold exactly one session.');
+    throw new Error('This .zip does not contain a Copilot session.');
   }
 
   const destination = sessionStateDir(sessionId);
