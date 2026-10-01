@@ -361,6 +361,17 @@ export async function sessionQueue(sessionId: string): Promise<QueuedItem[]> {
 }
 
 /**
+ * Sessions another Copilot has open (#63).
+ *
+ * Only ones this app has not loaded itself. Two Copilots working in one conversation write
+ * to the same log and the same database, and nothing else in the app says it is happening.
+ */
+export async function activeSessions(): Promise<string[]> {
+  const { sessionIds } = await request('sessions.active', {});
+  return sessionIds;
+}
+
+/**
  * The agent's own todo list (#172).
  *
  * Empty for a session that is not loaded, which is not resumed to ask. The list lives in

@@ -33,6 +33,7 @@ import {
 import { previewImage } from './images.js';
 import { classifyDropped } from './dropped.js';
 import { readTodos } from './todos.js';
+import { heldSessions } from './activeSessions.js';
 import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
 import { sessionDiskUsage } from './diskUsage.js';
@@ -222,6 +223,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     }),
 
     'sessions.queue': async ({ sessionId }) => ({ items: await runtime.queue(sessionId) }),
+
+    // Minus the ones this app is holding, which are open where the reader is looking rather
+    // than somewhere they cannot see (#63).
+    'sessions.active': () => ({ sessionIds: heldSessions().filter((id) => !runtime.holdsItself(id)) }),
 
     'sessions.todos': ({ sessionId }) => ({ todos: readTodos(sessionId) }),
 

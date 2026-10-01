@@ -82,6 +82,7 @@ import { stashFiles } from './lib/paste';
 import { nameOf } from './lib/paths';
 import { useFileDrop } from './lib/useFileDrop';
 import { useTodos } from './lib/useTodos';
+import { useActiveElsewhere } from './lib/useActiveElsewhere';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useAgentEvents } from './lib/useAgentEvents';
@@ -311,6 +312,14 @@ export default function App() {
    * which is what lets it answer for a session nobody has woken.
    */
   const todos = useTodos(selectedId);
+
+  /**
+   * Which sessions some other Copilot has open (#63).
+   *
+   * Not scoped to the one on screen: the sidebar marks them all, and a session being worked
+   * in elsewhere is worth seeing before it is opened rather than after.
+   */
+  const elsewhere = useActiveElsewhere();
   /**
    * Switching, then reading the tree again.
    *
@@ -1356,6 +1365,7 @@ export default function App() {
         creating={creating}
         maxLoaded={sessions.maxLoaded}
         activity={activity}
+        activeElsewhere={elsewhere.active}
         subagents={subagents.watched}
         selectedSubagentId={subagents.openId}
         onSelectSubagent={(agentId) => {

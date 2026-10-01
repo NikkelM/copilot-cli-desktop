@@ -1768,3 +1768,75 @@ describe('saying why a row is in the list', () => {
     expect(document.querySelector('.session-excerpt')).toBeNull();
   });
 });
+
+/**
+ * A session another Copilot has open (#63).
+ *
+ * The app cannot stop it. Two Copilots in one conversation write to the same log and the
+ * same database, so saying which sessions are in that state is the only useful thing left.
+ */
+describe('a session open somewhere else', () => {
+  const marks = () => [...document.querySelectorAll('.session-elsewhere')];
+
+  const drawn = (active: string[]) =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        activeElsewhere={active}
+      />,
+    );
+
+  it('marks the one that is open elsewhere', () => {
+    drawn(['f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8']);
+
+    expect(marks()).toHaveLength(1);
+  });
+
+  it('marks it on its own row rather than on any other', () => {
+    drawn(['f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8']);
+
+    expect(marks()[0]?.closest('.session')?.textContent).toContain('Biomes');
+  });
+
+  it('leaves every other session unmarked', () => {
+    drawn([]);
+
+    expect(marks()).toHaveLength(0);
+  });
+
+  it('marks every one that is open elsewhere', () => {
+    drawn(['f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8', '9ec04ce0-1361-4e11-ae34-9f8747cbac64']);
+
+    expect(marks()).toHaveLength(2);
+  });
+
+  /** The warning is the reason the mark exists, so it has to say what the risk is. */
+  it('says what being open twice would cost', () => {
+    drawn(['f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8']);
+
+    expect(marks()[0]?.getAttribute('title')).toContain('same conversation');
+  });
+
+  // Nothing is passed where the app has never managed to ask, which must not throw.
+  it('draws nothing where it was told nothing', () => {
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+      />,
+    );
+
+    expect(marks()).toHaveLength(0);
+  });
+});

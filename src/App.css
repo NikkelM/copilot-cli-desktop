@@ -6135,3 +6135,23 @@ pre.fatal,
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/*
+ * A session some other Copilot has open (#63).
+ *
+ * A word rather than another dot. The activity dot beside it is this app reporting on
+ * itself; this is the opposite - a session being worked in somewhere the app has no say
+ * over - and the two must not read as degrees of the same thing.
+ */
+.session-elsewhere {
+  flex: none;
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--warning);
+  border-radius: 3px;
+  color: var(--warning);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}

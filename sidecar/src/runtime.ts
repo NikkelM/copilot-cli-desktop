@@ -1584,8 +1584,12 @@ export class SessionRuntime {
     };
   }
 
-  async queue(sessionId: string): Promise<QueuedItem[]> {
-    const live = this.loaded.get(sessionId)?.session;
+  /** Whether this app is the one holding a session, as opposed to some other Copilot (#63). */
+  holdsItself(sessionId: string): boolean {
+    return this.loaded.has(sessionId);
+  }
+
+  async queue(sessionId: string): Promise<QueuedItem[]> {    const live = this.loaded.get(sessionId)?.session;
     if (!live) return [];
 
     const { items } = await live.rpc.queue.pendingItems();

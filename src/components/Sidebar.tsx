@@ -40,6 +40,14 @@ interface SidebarProps {
   /** What each session is doing, keyed by id. Absent means resident and idle (#115). */
   activity: Record<string, ActivityMark>;
   /**
+   * Sessions some other Copilot has open, which this app cannot stop (#63).
+   *
+   * Separate from `loaded`, which is this app holding one. Both write to the same log and
+   * the same database, so saying which is which is the only thing the app can usefully do
+   * about it.
+   */
+  activeElsewhere?: string[];
+  /**
    * The subagents watched starting, to nest under the sessions that delegated them.
    *
    * Only ones this app saw begin. Finding the rest means reading a whole session log, which
@@ -188,6 +196,7 @@ export function Sidebar({
   creating,
   maxLoaded,
   activity,
+  activeElsewhere,
   subagents,
   selectedSubagentId,
   onSelectSubagent,
@@ -494,6 +503,7 @@ export function Sidebar({
                               session={session}
                               selectedId={selectedId}
                               activity={activity[session.sessionId]}
+                              elsewhere={activeElsewhere?.includes(session.sessionId)}
                             />
                             {onFavourite && (
                               <Favourite
@@ -551,7 +561,12 @@ export function Sidebar({
                       onContextMenu={openMenu(session.sessionId)}
                     >
                       <div className="session-line">
-                        <Row session={session} selectedId={selectedId} activity={activity[session.sessionId]} />
+                        <Row
+                          session={session}
+                          selectedId={selectedId}
+                          activity={activity[session.sessionId]}
+                          elsewhere={activeElsewhere?.includes(session.sessionId)}
+                        />
                       </div>
                       <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
                     </div>
@@ -783,10 +798,13 @@ function Row({
   session,
   selectedId,
   activity,
+  elsewhere,
 }: {
   session: SessionSummary;
   selectedId: string | null;
   activity?: ActivityMark;
+  /** Some other Copilot has this session open, which this app cannot stop (#63). */
+  elsewhere?: boolean;
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
 
@@ -796,6 +814,18 @@ function Row({
     <button type="button" className={`session${session.sessionId === selectedId ? ' selected' : ''}`}>
       <span className="session-title" title={session.title ?? undefined}>
         {session.title === null ? 'Untitled session' : clipTitle(session.title)}
+        {/* A word rather than another dot. The dot beside it is this app saying what it is
+            doing, and this is the opposite - a session being worked in somewhere this app
+            has no say over, which is a different kind of thing and must not read as a
+            louder version of the same one (#63). */}
+        {elsewhere && (
+          <span
+            className="session-elsewhere"
+            title="Open in a terminal as well. Both write to the same conversation, so the last one to write wins."
+          >
+            CLI
+          </span>
+        )}
         {/* Shape first, colour second: five states is more than a hue can carry, and a
             reader who cannot separate hues gets none of it at all.
 

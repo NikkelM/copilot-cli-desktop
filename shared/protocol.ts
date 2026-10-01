@@ -1682,6 +1682,14 @@ export interface SidecarRequests {
     params: { sessionId: string; name: string; enabled: boolean };
     result: { disabled: string[] };
   };
+  /**
+   * Sessions another Copilot has open, by the marker the CLI leaves in their folders (#63).
+   *
+   * Only ones this app has not loaded itself: a session open here is open where the reader
+   * is looking, which is not the thing being warned about. Two Copilots writing to one
+   * conversation is, and nothing but this says it is happening.
+   */
+  'sessions.active': { params: Record<string, never>; result: { sessionIds: string[] } };
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   /**
@@ -1837,6 +1845,7 @@ export const SIDECAR_METHODS = [
   'skills.disabled',
   'skills.set',
   'sessions.queue',
+  'sessions.active',
   'sessions.todos',
   'sessions.context',
   'sessions.usage',
