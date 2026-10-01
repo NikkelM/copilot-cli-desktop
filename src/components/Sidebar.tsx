@@ -410,7 +410,7 @@ export function Sidebar({
               type="button"
               className="new-session"
               onClick={onImport}
-              title="Bring in a session exported from another machine"
+              title="Import a .zip file containing a Copilot session"
             >
               Import
             </button>
