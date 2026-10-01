@@ -22,6 +22,7 @@ const deps = (over: Partial<BulkActionDeps> = {}): BulkActionDeps => ({
   unload: vi.fn(),
   remove: vi.fn(),
   exportAll: vi.fn(),
+  done: vi.fn(),
   ...over,
 });
 
@@ -80,7 +81,7 @@ describe('acting on several sessions', () => {
 
     it('says which way a toggle is about to go, as the full name does', () => {
       expect(byId(three, deps({ archived: [] }))['bulk-archive']?.brief).toBe('Archive');
-      expect(byId(three, deps({ archived: ['a', 'b', 'c'] }))['bulk-archive']?.brief).toBe('Bring back');
+      expect(byId(three, deps({ archived: ['a', 'b', 'c'] }))['bulk-archive']?.brief).toBe('Unarchive');
     });
   });
 
@@ -96,7 +97,7 @@ describe('acting on several sessions', () => {
     it('offers to bring them back once they are all away', () => {
       const d = deps({ archived: ['a', 'b', 'c'] });
 
-      expect(byId(three, d)['bulk-archive']?.label).toBe('Bring back 3 sessions');
+      expect(byId(three, d)['bulk-archive']?.label).toBe('Unarchive 3 sessions');
     });
 
     it('only moves the ones that are not already away', () => {
@@ -106,6 +107,35 @@ describe('acting on several sessions', () => {
 
       expect(d.toggleArchived).toHaveBeenCalledTimes(2);
       expect(d.toggleArchived).not.toHaveBeenCalledWith('b');
+    });
+
+    /**
+     * The rows have left the list - archived sessions fold into a group of their own - so a
+     * selection that stayed behind would be counting rows nobody can see.
+     */
+    it('lets the selection go once the set has moved', () => {
+      const d = deps();
+
+      byId(three, d)['bulk-archive']?.run();
+
+      expect(d.done).toHaveBeenCalledOnce();
+    });
+
+    it('lets it go when they are brought back as well', () => {
+      const d = deps({ archived: ['a', 'b', 'c'] });
+
+      byId(three, d)['bulk-archive']?.run();
+
+      expect(d.done).toHaveBeenCalledOnce();
+    });
+
+    /** Deleting and exporting ask something first, and clear up when they are answered. */
+    it('is the only one that clears the selection where it stands', () => {
+      for (const id of ['bulk-unload', 'bulk-export', 'bulk-delete']) {
+        const d = deps();
+        byId(three, d)[id]?.run();
+        expect(d.done, `${id} should leave the selection alone`).not.toHaveBeenCalled();
+      }
     });
   });
 

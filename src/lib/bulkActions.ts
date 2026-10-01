@@ -11,6 +11,13 @@ export interface BulkActionDeps {
   remove: (sessions: SessionSummary[]) => void;
   /** Write them all out, which means asking for a folder rather than a file. */
   exportAll: (sessions: SessionSummary[]) => void;
+  /**
+   * The set has been dealt with and the marks can go.
+   *
+   * For the actions that act in place. Exporting and deleting hand the set up and clear it
+   * when their dialog is answered, which is later and is the caller's to decide.
+   */
+  done: () => void;
 }
 
 /** `3 sessions`, or `1 session` - said in full because it is what the action acts on. */
@@ -57,10 +64,15 @@ export function bulkActions(sessions: SessionSummary[], deps: BulkActionDeps): S
     },
     {
       id: 'bulk-archive',
-      label: allArchived ? `Bring back ${count(ids.length)}` : `Archive ${count(ids.length)}`,
-      brief: allArchived ? 'Bring back' : 'Archive',
+      label: allArchived ? `Unarchive ${count(ids.length)}` : `Archive ${count(ids.length)}`,
+      brief: allArchived ? 'Unarchive' : 'Archive',
       tone: 'caution',
-      run: () => ids.forEach((id) => (deps.archived.includes(id) === allArchived ? deps.toggleArchived(id) : undefined)),
+      run: () => {
+        ids.forEach((id) => (deps.archived.includes(id) === allArchived ? deps.toggleArchived(id) : undefined));
+        // The rows have gone from where they were - archived sessions fold into a group of
+        // their own - so a selection that stayed would be counting rows nobody can see.
+        deps.done();
+      },
     },
     {
       id: 'bulk-delete',

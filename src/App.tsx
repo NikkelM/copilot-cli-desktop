@@ -1428,9 +1428,10 @@ export default function App() {
           },
           remove: setDeletingMany,
           exportAll: exportMany,
+          done: clearMarks,
         },
       ),
-    [sessions, marked, archived, toggleArchived, exportMany],
+    [sessions, marked, archived, toggleArchived, exportMany, clearMarks],
   );
 
   const sessionMenu = useCallback(
