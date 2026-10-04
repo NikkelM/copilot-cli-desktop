@@ -1131,6 +1131,9 @@ export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
   // changes what the agent knows without anybody saying anything (#211).
   'session.compaction_start',
   'session.compaction_complete',
+  // The other way room is made, and the lossy one: the oldest messages are cut and no
+  // summary is kept, so the agent simply stops knowing them (#7).
+  'session.truncation',
   'command.output',
   'command.failed',
   'abort',

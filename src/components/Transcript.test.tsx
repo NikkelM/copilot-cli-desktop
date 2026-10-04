@@ -690,6 +690,80 @@ describe('a skill in the transcript', () => {
   });
 });
 
+/**
+ * History cut to fit the window, drawn so it reads as loss (#7).
+ *
+ * The row succeeded, so by status it is a success - and a green tick beside "337 messages
+ * dropped" says the opposite of what happened. It also must not be confusable with a
+ * compaction, which leaves a summary behind, or with an interrupted tool, which did not
+ * lose anything at all.
+ */
+describe('truncation in the transcript', () => {
+  const cut = (over: Record<string, unknown> = {}) =>
+    show([
+      event(
+        'session.truncation',
+        {
+          tokenLimit: 200000,
+          postTruncationTokensInMessages: 188898,
+          tokensRemovedDuringTruncation: 377798,
+          messagesRemovedDuringTruncation: 337,
+          ...over,
+        },
+        'e1',
+      ),
+    ]);
+
+  it('says what went, on the row', () => {
+    cut();
+
+    expect(screen.getByText('Truncated')).toBeTruthy();
+    expect(screen.getByText('337 messages, 377,798 tokens')).toBeTruthy();
+  });
+
+  /** The difference from a compaction, which is the whole of what the row has to say. */
+  it('says that nothing stands in for what went', () => {
+    cut();
+
+    expect(screen.getByText('no summary kept')).toBeTruthy();
+  });
+
+  it('wears a marker of its own rather than a finished tool\u2019s tick', () => {
+    const { container } = cut();
+
+    const glyph = container.querySelector('.tool-status')?.textContent;
+    expect(glyph).not.toBe('\u2713');
+    // Nor a compaction's, nor an interrupted tool's: three different things happened.
+    expect(glyph).not.toBe('\u233E');
+    expect(glyph).not.toBe('\u2298');
+  });
+
+  /** Green says a success and this is a loss, so the row is marked for the stylesheet. */
+  it('is marked as having lost something', () => {
+    const { container } = cut();
+
+    expect(container.querySelector('.tool.lossy')).toBeTruthy();
+  });
+
+  /** There is no summary, so opening it would show an empty panel. */
+  it('does not open, because there is nothing behind it', () => {
+    const { container } = cut();
+
+    const head = container.querySelector('.tool-head') as HTMLButtonElement;
+    expect(head.disabled).toBe(true);
+  });
+
+  it('leaves an ordinary tool unmarked', () => {
+    const { container } = show([
+      event('tool.execution_start', { toolCallId: 't1', toolName: 'bash' }, 'e1'),
+      event('tool.execution_complete', { toolCallId: 't1', result: 'done' }, 'e2'),
+    ]);
+
+    expect(container.querySelector('.tool.lossy')).toBeNull();
+    expect(container.querySelector('.tool-note')).toBeNull();
+  });
+});
+
 // Same reason the block above defines scroll metrics by hand: jsdom lays nothing out, so
 // without them the component can never tell where the reader is.
 describe('giving back history once the reader is following again', () => {

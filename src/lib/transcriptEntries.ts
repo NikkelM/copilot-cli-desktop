@@ -130,6 +130,26 @@ export interface ToolEntry {
     messagesRemoved?: number;
     tokensRemoved?: number;
   };
+  /**
+   * History dropped outright to fit the window, which is not the same as compacting it (#7).
+   *
+   * Compaction leaves a summary behind, so the agent keeps a gist of what went. Truncation
+   * leaves nothing: the oldest messages are cut and no record of them reaches the model
+   * again. Both shorten what the agent knows, and only one of them is recoverable, so they
+   * are not the same row wearing a different word.
+   *
+   * The transcript itself still holds every message - the log is untouched - which is
+   * exactly what makes this worth drawing. Without it a reader scrolls up, reads work the
+   * agent now contradicts, and has no way to tell a forgetful model from a broken one.
+   */
+  truncation?: {
+    messagesRemoved?: number;
+    tokensRemoved?: number;
+    /** What the model was left holding, for a reader asking how close it still is. */
+    tokensKept?: number;
+    /** The ceiling it was cut to fit under. */
+    tokenLimit?: number;
+  };
   /** When it began, so a long-running call can say how long it has been going. */
   startedAt?: string;
   /** When it stopped, whether it finished or was cancelled. Absent while it runs. */
@@ -903,6 +923,52 @@ export function toEntries(
 
         if (opened && opened.kind === 'tool') Object.assign(opened, shape);
         else entries.push({ kind: 'tool', key, startedAt: event.timestamp, ...shape });
+        break;
+      }
+
+      /**
+       * History cut to fit the window, with nothing kept in its place (#7).
+       *
+       * The runtime's other way of making room, and the lossy one. Compaction writes a
+       * summary and the agent keeps the gist; truncation drops the oldest messages and
+       * that is the end of them. Measured here: eleven of these across seven sessions, one
+       * of which cut 337 messages and 377,798 tokens in a single step.
+       *
+       * One event rather than a start and a completion, because it is reported after the
+       * fact - there is no moment at which it can be said to be working.
+       */
+      case 'session.truncation': {
+        const removed = number(data, 'messagesRemovedDuringTruncation');
+        const tokens = number(data, 'tokensRemovedDuringTruncation');
+
+        entries.push({
+          kind: 'tool',
+          key,
+          name: 'Truncated',
+          // Counted in messages first. Tokens are the reason it happened, but messages are
+          // what the reader can go and look at, and the number they can feel the size of.
+          summary:
+            [
+              removed === undefined ? null : `${removed} ${removed === 1 ? 'message' : 'messages'}`,
+              tokens === undefined ? null : `${tokens.toLocaleString()} tokens`,
+            ]
+              .filter(Boolean)
+              .join(', ') || 'The oldest messages were dropped',
+          // Nothing to expand, which is the whole point: compaction has a summary to show
+          // here and truncation has no equivalent, because none was made.
+          output: null,
+          status: 'ok',
+          truncation: {
+            ...(removed === undefined ? {} : { messagesRemoved: removed }),
+            ...(tokens === undefined ? {} : { tokensRemoved: tokens }),
+            ...(number(data, 'postTruncationTokensInMessages') === undefined
+              ? {}
+              : { tokensKept: number(data, 'postTruncationTokensInMessages') }),
+            ...(number(data, 'tokenLimit') === undefined ? {} : { tokenLimit: number(data, 'tokenLimit') }),
+          },
+          startedAt: event.timestamp,
+          endedAt: event.timestamp,
+        });
         break;
       }
 

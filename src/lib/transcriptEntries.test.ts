@@ -1575,6 +1575,100 @@ describe('compacting the conversation', () => {
 });
 
 /**
+ * History cut to fit the window, with nothing kept in its place (#7).
+ *
+ * The runtime's other way of making room, and the lossy one. Compaction writes a summary
+ * and the agent keeps the gist; truncation drops the oldest messages and that is the end of
+ * them. The transcript still holds every message, which is what makes this worth drawing: a
+ * reader who scrolls up, reads work the agent now contradicts and finds no row here has no
+ * way to tell a forgetful model from a broken one.
+ */
+describe('truncating the conversation', () => {
+  /**
+   * The shape a real run wrote, taken from a session's own log.
+   *
+   * Eleven of these across seven sessions on this machine. These numbers are one of them:
+   * 337 messages and 377,798 tokens cut in a single step.
+   */
+  const truncated = (over: Record<string, unknown> = {}) =>
+    event('session.truncation', {
+      tokenLimit: 200000,
+      preTruncationTokensInMessages: 566696,
+      preTruncationMessagesLength: 543,
+      postTruncationTokensInMessages: 188898,
+      postTruncationMessagesLength: 206,
+      tokensRemovedDuringTruncation: 377798,
+      messagesRemovedDuringTruncation: 337,
+      toolDefinitionsTokenCount: 15153,
+      performedBy: 'BasicTruncator',
+      ...over,
+    });
+
+  it('says what went', () => {
+    const [entry] = toEntries([truncated()], CWD);
+
+    expect(entry).toMatchObject({ kind: 'tool', name: 'Truncated', summary: '337 messages, 377,798 tokens' });
+  });
+
+  /** Nothing was kept, so there is nothing to expand - which is the difference that matters. */
+  it('has no summary to show, because none was made', () => {
+    const [entry] = toEntries([truncated()], CWD);
+
+    expect(entry.kind === 'tool' && entry.output).toBeNull();
+  });
+
+  it('carries what it cut, for a row that wants to say more than its name', () => {
+    const [entry] = toEntries([truncated()], CWD);
+
+    expect(entry.kind === 'tool' && entry.truncation).toEqual({
+      messagesRemoved: 337,
+      tokensRemoved: 377798,
+      tokensKept: 188898,
+      tokenLimit: 200000,
+    });
+  });
+
+  /** It is reported after the fact, so there is no moment at which it is working. */
+  it('arrives finished rather than running', () => {
+    const [entry] = toEntries([truncated()], CWD);
+
+    expect(entry.kind === 'tool' && entry.status).toBe('ok');
+  });
+
+  it('is one row', () => {
+    expect(toEntries([truncated()], CWD)).toHaveLength(1);
+  });
+
+  it('counts one message as one message', () => {
+    const [entry] = toEntries(
+      [truncated({ messagesRemovedDuringTruncation: 1, tokensRemovedDuringTruncation: 12 })],
+      CWD,
+    );
+
+    expect(entry.kind === 'tool' && entry.summary).toBe('1 message, 12 tokens');
+  });
+
+  /** A runtime that reports nothing still happened, and the row still has to say so. */
+  it('says something even where the counts are missing', () => {
+    const [entry] = toEntries([event('session.truncation', { performedBy: 'BasicTruncator' })], CWD);
+
+    expect(entry).toMatchObject({ kind: 'tool', name: 'Truncated' });
+    expect(entry.kind === 'tool' && entry.summary).toBe('The oldest messages were dropped');
+  });
+
+  /**
+   * Not the same row as a compaction wearing a different word. One leaves a summary behind
+   * and the other leaves nothing, and a reader deciding whether the agent still knows
+   * something is deciding exactly that.
+   */
+  it('is told apart from a compaction', () => {
+    const [entry] = toEntries([truncated()], CWD);
+
+    expect(entry.kind === 'tool' && entry.compaction).toBeUndefined();
+  });
+});
+
+/**
  * The files a prompt carried (#111).
  *
  * Read from the log rather than remembered: a user message records each attachment's path,

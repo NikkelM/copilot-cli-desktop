@@ -231,7 +231,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
           : null;
 
   return (
-    <div className={`tool ${entry.status}${open ? ' open' : ''}`}>
+    <div className={`tool ${entry.status}${entry.truncation ? ' lossy' : ''}${open ? ' open' : ''}`}>
       <button
         type="button"
         className="tool-head"
@@ -245,7 +245,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
           </span>
         ) : (
           <span className="tool-status">
-            {entry.skill ? '◈' : entry.compaction ? '⌾' : STATUS_GLYPH[entry.status]}
+            {entry.skill ? '◈' : entry.compaction ? '⌾' : entry.truncation ? '⌫' : STATUS_GLYPH[entry.status]}
           </span>
         )}
         <span className="tool-name">{entry.name}</span>
@@ -287,6 +287,10 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         {/* Whether the reader asked for this or the window filled up. Silent when they
             asked, for the same reason a skill they invoked says nothing back to them. */}
         {entry.compaction?.trigger === 'auto' && <span className="tool-note skill">the window filled up</span>}
+        {/* The difference between this row and a compaction, said on the row, because it is
+            the whole of what a reader needs from it: compacting leaves a summary behind and
+            this leaves nothing. Without it the two read as the same tidy-up. */}
+        {entry.truncation && <span className="tool-note">no summary kept</span>}
         {/* Says how much is behind the row, and stays once it is opened: it describes the
             row rather than the fact that it is folded. Right-aligned, so it reads as a
             separate column without needing punctuation. */}

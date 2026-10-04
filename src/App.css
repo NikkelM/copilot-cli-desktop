@@ -2383,6 +2383,18 @@ button.group:hover {
   color: var(--warning);
 }
 
+/*
+ * A row where something was lost for good (#7).
+ *
+ * It finished, so by status it is a success and wears the success colour - which for
+ * truncation says the opposite of what happened: the oldest messages were cut and no
+ * summary was kept. Marked rather than restyled wholesale, so only the glyph changes and
+ * the row still reads as part of the sequence it is in.
+ */
+.tool.lossy .tool-status {
+  color: var(--warning);
+}
+
 .tool-note {
   flex-shrink: 0;
   color: var(--warning);

@@ -838,3 +838,21 @@ describe('the box on a row being picked over', () => {
     expect(block('.selecting-actions')).toContain('flex-wrap: wrap');
   });
 });
+
+/**
+ * A transcript row where something was lost for good (#7).
+ *
+ * Truncation finishes successfully, so by status it is a success and takes the success
+ * colour - a green tick beside "337 messages dropped", which says the opposite of what
+ * happened.
+ */
+describe('a row that lost something', () => {
+  it('does not wear the colour of a row that went well', () => {
+    const at = css.indexOf('.tool.lossy .tool-status {');
+    expect(at, 'a lossy row should say so').toBeGreaterThan(-1);
+
+    const rule = css.slice(at, css.indexOf('\n}', at));
+    expect(rule).toContain('var(--warning)');
+    expect(rule, 'success is what it must not look like').not.toContain('var(--success)');
+  });
+});
