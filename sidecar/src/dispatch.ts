@@ -51,7 +51,7 @@ import {
   wikiExists,
   writeWikiPage,
 } from './wiki.js';
-import { pagesForSession, repositoryName } from './wikiSubject.js';
+import { pagesForSession, repositoryName, wikiTags } from './wikiSubject.js';
 
 export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
   return {
@@ -223,6 +223,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
       const pages = name || tags?.length ? pagesForSession(await listWikiPages(), name, tags ?? []) : [];
       return { name, pages };
     },
+
+    // Read from the page list, which is a directory walk and one JSON read. No Copilot
+    // process, like everything else the wiki does.
+    'wiki.tags': async () => ({ tags: wikiTags(await listWikiPages()) }),
 
     'commands.invoke': async ({ sessionId, name, input }) => ({
       outcome: await runtime.invoke(sessionId, name, input),

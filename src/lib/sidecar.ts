@@ -578,6 +578,12 @@ export function wikiForSession(
   return request('wiki.forSession', { repository, cwd, tags });
 }
 
+/** Every tag the wiki already uses, commonest first, for the picker to offer (#35). */
+export async function wikiTags(): Promise<{ tag: string; pages: number }[]> {
+  const { tags } = await request('wiki.tags');
+  return tags;
+}
+
 /** The skills this session has switched off. Read from the app's own record, so it costs no process. */
 export function disabledSkills(sessionId: string): Promise<{ disabled: string[] }> {
   return request('skills.disabled', { sessionId });

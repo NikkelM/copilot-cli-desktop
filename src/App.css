@@ -4838,6 +4838,34 @@ pre.fatal,
   list-style: none;
 }
 
+/*
+ * The words the wiki is already written in, offered under the ones in use (#35).
+ *
+ * Named rather than merely listed, because they behave differently from everything above
+ * them: these are not tags anything carries yet, and pressing one puts it on the session
+ * rather than taking it off.
+ */
+.tag-from-wiki-label {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+/*
+ * A suggestion is built from the same parts as a tag in use - a pill holding a name and a
+ * second control - so it needs none of that pill's spacing restated. It was stated once,
+ * when this was a single button, and was wrong twice over: half the inset of everything
+ * around it, and written at the same specificity as the rule it meant to correct, which the
+ * cascade then settled on source order in favour of the other one.
+ *
+ * What is its own is the count riding inside the name. The two are set at very different
+ * sizes, so they are centred against each other rather than left on a shared baseline.
+ */
+.tag-from-wiki .tag-name {
+  display: inline-flex;
+  align-items: center;
+}
+
 .tag-list .tag {
   padding: 5px 14px;
   background: none;

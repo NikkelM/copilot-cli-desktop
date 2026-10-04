@@ -1,4 +1,5 @@
 import type { WikiPage } from '../../shared/protocol.js';
+import { tagSlug as slug } from '../../shared/tags.js';
 
 /**
  * The notes a session's subject already has (#35).
@@ -15,14 +16,6 @@ import type { WikiPage } from '../../shared/protocol.js';
  * Measured against the wiki and session store on the machine this was written for - 117
  * pages, 745 sessions with a working directory - which is what settled the guards below.
  */
-
-/** Lowercase, and everything that is not a letter or digit becomes a single dash. */
-function slug(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
 /**
  * The folders a wiki is organised by rather than named after.
@@ -61,6 +54,34 @@ export function repositoryName(repository: string | null, cwd: string | null): s
   const name = slug(leaf ?? '');
   // A name the wiki organises by says nothing about which repository this is.
   return name && !ORGANISING.has(name) ? name : null;
+}
+
+/**
+ * Every tag the wiki already uses, and how many pages carry each (#35).
+ *
+ * For the picker that tags a session: a session tagged in the wiki's own words matches the
+ * pages written in them, and one tagged in different words matches nothing. Measured here,
+ * that is not a hypothetical - a session tagged `ireland` and a page tagged `dublin` are
+ * about the same thing and never met.
+ *
+ * Counted rather than merely listed, because the count is the whole reason to prefer one
+ * word over another: a tag no page carries will link to nothing.
+ */
+export function wikiTags(pages: readonly WikiPage[]): { tag: string; pages: number }[] {
+  const counts = new Map<string, number>();
+
+  for (const page of pages) {
+    // Once per page, so a page that lists a tag twice does not count it twice.
+    for (const tag of new Set((page.tags ?? []).map(slug))) {
+      if (tag) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+  }
+
+  // Commonest first, which is the order they are worth offering in; the alphabet decides
+  // ties, so the list does not reorder itself between reads for no reason.
+  return [...counts]
+    .map(([tag, n]) => ({ tag, pages: n }))
+    .sort((a, b) => b.pages - a.pages || a.tag.localeCompare(b.tag));
 }
 
 /**

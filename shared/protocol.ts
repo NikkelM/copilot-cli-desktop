@@ -1608,6 +1608,13 @@ export interface SidecarRequests {
     params: { repository: string | null; cwd: string | null; tags?: string[] };
     result: { name: string | null; pages: WikiPage[] };
   };
+  /**
+   * Every tag the wiki already uses, commonest first, with how many pages carry each (#35).
+   *
+   * For the picker that tags a session: tagging one in the wiki's own words is what makes
+   * the two find each other, and the count is what says whether a word is one of them.
+   */
+  'wiki.tags': { params: void; result: { tags: { tag: string; pages: number }[] } };
   /** Run a command in a session, resuming it if it is cold. */
   'commands.invoke': {
     params: { sessionId: string; name: string; input?: string };
@@ -1862,6 +1869,7 @@ export const SIDECAR_METHODS = [
   'wiki.create',
   'wiki.search',
   'wiki.forSession',
+  'wiki.tags',
   'commands.invoke',
   'commands.enqueue',
   'agents.list',

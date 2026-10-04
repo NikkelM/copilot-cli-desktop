@@ -111,6 +111,7 @@ import { STEP, clampScale } from './lib/scale';
 import { type WatchedSubagent, useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
 import { useWikiNotes } from './lib/useWikiNotes';
+import { useWikiTags } from './lib/useWikiTags';
 import { dispatch } from './lib/slash';
 import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
@@ -338,6 +339,14 @@ export default function App() {
    * whether there is an entry to open at all - most sessions never make one - so it has to
    * be known before anybody asks. It costs a read of a small file on disk and no process,
    * which is what lets it answer for a session nobody has woken.
+  /**
+   * The words the wiki is already written in, for the picker to offer (#35).
+   *
+   * Read only while the picker is open, which is the one moment they are worth anything.
+   * Words refused before are already left out: the hook answers what to offer, so nothing
+   * here has to remember what to hide.
+   */
+  const { tags: offeredWikiTags, dismiss: dismissWikiTag } = useWikiTags(tagging !== null);
    */
   const todos = useTodos(selectedId);
 
@@ -2030,8 +2039,10 @@ export default function App() {
           title={tagging.title ?? 'Untitled session'}
           held={tags[tagging.sessionId] ?? []}
           known={knownTags}
+          wikiTags={offeredWikiTags}
           onToggle={(tag) => toggleTag(tagging.sessionId, tag)}
           onRetire={retireTag}
+          onDismiss={dismissWikiTag}
           onClose={() => setTagging(null)}
         />
       )}

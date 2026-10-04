@@ -290,8 +290,9 @@ describe('finding a tag by typing', () => {
     await userEvent.type(screen.getByLabelText('Find or add a tag'), 'brand new');
     expect(chips()).toHaveLength(0);
 
+    // Typed with a space and added as a tag has to be spelled: one word, dashed (#35).
     await userEvent.click(screen.getByText('Add'));
-    expect(onToggle).toHaveBeenCalledExactlyOnceWith('brand new');
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith('brand-new');
   });
 
   it('refuses to add one the session already has, and says why', async () => {
@@ -354,5 +355,171 @@ describe('a tag retired while the dialog is open', () => {
     );
 
     expect(chips().map((c) => c.textContent)).toEqual(['bug']);
+  });
+});
+
+/**
+ * The words the wiki is already written in, offered while a tag is being typed (#35).
+ *
+ * A session tagged in the wiki's own words matches the pages written in them; one tagged in
+ * different words matches nothing. Measured rather than imagined: a session tagged `ireland`
+ * and a page tagged `dublin` were about the same thing here and never met.
+ */
+describe('tags borrowed from the wiki', () => {
+  // As the sidecar delivers them: commonest first, which this draws in the order given
+  // rather than sorting again.
+  const wikiTags = [
+    { tag: 'dublin', pages: 3 },
+    { tag: 'unity', pages: 2 },
+    { tag: 'duplicates', pages: 1 },
+  ];
+
+  const suggestions = () =>
+    [...document.querySelectorAll('.tag-from-wiki .tag-name')] as HTMLElement[];
+
+  /** The control that stops one being offered, which sits beside the name as a cross. */
+  const refusals = () => [...document.querySelectorAll('.tag-from-wiki .tag-retire')] as HTMLElement[];
+
+  const typing = async (text: string, over: Partial<Parameters<typeof TagPicker>[0]> = {}) => {
+    const props = show({ wikiTags, ...over });
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), text);
+    return props;
+  };
+
+  /**
+   * At rest as well as while typing, so the words a wiki is mostly written in are visible to
+   * somebody who does not know to look for them - which is the whole problem.
+   */
+  it('offers the commonest of them before anything is typed', () => {
+    show({ wikiTags });
+
+    expect(suggestions().map((s) => s.textContent)).toEqual(['dublin3', 'unity2', 'duplicates1']);
+  });
+
+  /** The sidecar has already ranked them, so drawing them in another order would undo that. */
+  it('keeps the order it was given', () => {
+    show({ wikiTags: [{ tag: 'zebra', pages: 9 }, { tag: 'apple', pages: 1 }] });
+
+    expect(suggestions().map((s) => s.textContent)).toEqual(['zebra9', 'apple1']);
+  });
+
+  it('narrows to what is being typed', async () => {
+    await typing('dub');
+
+    expect(suggestions().map((s) => s.textContent)).toEqual(['dublin3']);
+  });
+
+  it('says how many pages each would reach, which is why one is worth preferring', async () => {
+    await typing('dub');
+
+    expect(suggestions()[0]?.getAttribute('title')).toBe('Used on 3 pages in your wiki');
+  });
+
+  it('counts one page as one', async () => {
+    await typing('dupl');
+
+    expect(suggestions()[0]?.getAttribute('title')).toBe('Used on 1 page in your wiki');
+  });
+
+  it('puts one on the session when it is pressed', async () => {
+    const { onToggle } = await typing('dub');
+
+    await userEvent.click(suggestions()[0]!);
+
+    expect(onToggle).toHaveBeenCalledExactlyOnceWith('dublin');
+  });
+
+  /** A word the sessions already use is offered above, and twice is once too many. */
+  it('leaves out a word the sessions already use', async () => {
+    await typing('unit', { known: ['unity'] });
+
+    expect(suggestions()).toHaveLength(0);
+  });
+
+  it('leaves out a word this session already carries', async () => {
+    await typing('unit', { held: ['unity'] });
+
+    expect(suggestions()).toHaveLength(0);
+  });
+
+  it('says nothing where the wiki has no such word', async () => {
+    await typing('ireland');
+
+    expect(suggestions()).toHaveLength(0);
+    expect(screen.queryByText('From your wiki')).toBeNull();
+  });
+
+  /** Roughly three rows of the dialog: enough to read past the first few, short of 889. */
+  it('offers no more than about three rows of them at once', async () => {
+    const many = Array.from({ length: 40 }, (_, i) => ({ tag: `hades-${i}`, pages: 1 }));
+    await typing('hades', { wikiTags: many });
+
+    expect(suggestions()).toHaveLength(10);
+  });
+
+  it('says nothing about the wiki where there is none', async () => {
+    const props = show({});
+    await userEvent.type(screen.getByLabelText('Find or add a tag'), 'dub');
+
+    expect(props.onToggle).not.toHaveBeenCalled();
+    expect(screen.queryByText('From your wiki')).toBeNull();
+  });
+
+  /**
+   * A wiki's commonest tags include the ones it is organised by rather than the ones that
+   * say what a thing is about - `hades-ii` is on 67 of 117 pages here. Those are not wrong,
+   * they are just never the answer, and a list that keeps offering them gets ignored.
+   */
+  describe('refusing one', () => {
+    it('offers a way to stop being shown each', () => {
+      show({ wikiTags });
+
+      expect(refusals()).toHaveLength(3);
+    });
+
+    it('says which word it would stop suggesting', () => {
+      show({ wikiTags });
+
+      expect(refusals()[0]?.getAttribute('title')).toBe('Stop suggesting dublin');
+    });
+
+    it('hands the word up when the cross is pressed', async () => {
+      const onDismiss = vi.fn();
+      show({ wikiTags, onDismiss });
+
+      await userEvent.click(refusals()[0]!);
+
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith('dublin');
+    });
+
+    /** Refusing a suggestion is not choosing it, and the two controls sit side by side. */
+    it('does not put the word on the session as well', async () => {
+      const { onToggle } = show({ wikiTags, onDismiss: vi.fn() });
+
+      await userEvent.click(refusals()[0]!);
+
+      expect(onToggle).not.toHaveBeenCalled();
+    });
+
+    it('still lets the name itself be chosen', async () => {
+      const { onToggle } = show({ wikiTags, onDismiss: vi.fn() });
+
+      await userEvent.click(suggestions()[0]!);
+
+      expect(onToggle).toHaveBeenCalledExactlyOnceWith('dublin');
+    });
+  });
+
+  /**
+   * Built from the same parts as a tag in use, which is where its spacing comes from. As a
+   * single button it had half the inset of everything around it.
+   */
+  it('is a pill holding a name and a second control, as a tag in use is', () => {
+    show({ wikiTags });
+
+    const pill = document.querySelector('.tag-list .tag.tag-from-wiki');
+    expect(pill, 'the suggestion should be a pill like the others').toBeTruthy();
+    expect(pill?.querySelector('.tag-name'), 'with the name inside it').toBeTruthy();
+    expect(pill?.querySelector('.tag-retire'), 'and a second control beside it').toBeTruthy();
   });
 });

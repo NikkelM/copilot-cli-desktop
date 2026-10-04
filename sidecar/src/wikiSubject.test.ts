@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { pagesForSession, repositoryName } from './wikiSubject.js';
+import { pagesForSession, repositoryName, wikiTags } from './wikiSubject.js';
 import type { WikiPage } from '../../shared/protocol.js';
 
 const page = (path: string, tags?: string[]): WikiPage => ({
@@ -222,5 +222,57 @@ describe('the pages matching a session\u2019s tags', () => {
 
   it('asks nothing of a wiki with no pages', () => {
     expect(pagesForSession([], 'my-repo', ['unity'])).toEqual([]);
+  });
+});
+
+/**
+ * The words the wiki is already written in (#35).
+ *
+ * A session tagged in them matches the pages written in them; one tagged in different words
+ * matches nothing. Measured here rather than imagined: a session tagged `ireland` and a page
+ * tagged `dublin` were about the same thing and never met.
+ */
+describe('the tags the wiki already uses', () => {
+  it('counts how many pages carry each', () => {
+    const wiki = [page('a.md', ['unity', 'game']), page('b.md', ['unity']), page('c.md', ['cooking'])];
+
+    expect(wikiTags(wiki)).toEqual([
+      { tag: 'unity', pages: 2 },
+      { tag: 'cooking', pages: 1 },
+      { tag: 'game', pages: 1 },
+    ]);
+  });
+
+  /** Commonest first is the order they are worth offering in. */
+  it('puts the commonest first', () => {
+    const wiki = [page('a.md', ['rare']), page('b.md', ['common']), page('c.md', ['common'])];
+
+    expect(wikiTags(wiki)[0]?.tag).toBe('common');
+  });
+
+  /** The alphabet decides ties, so the list does not reorder itself between reads. */
+  it('settles a tie by name rather than by whatever order the files were read in', () => {
+    const wiki = [page('a.md', ['zebra']), page('b.md', ['apple'])];
+
+    expect(wikiTags(wiki).map(({ tag }) => tag)).toEqual(['apple', 'zebra']);
+  });
+
+  it('reads a tag however it was written', () => {
+    const wiki = [page('a.md', ['Timeless Manor']), page('b.md', ['timeless-manor'])];
+
+    expect(wikiTags(wiki)).toEqual([{ tag: 'timeless-manor', pages: 2 }]);
+  });
+
+  /** A page listing a tag twice still carries it once. */
+  it('counts a page once however many times it lists a tag', () => {
+    expect(wikiTags([page('a.md', ['unity', 'Unity'])])).toEqual([{ tag: 'unity', pages: 1 }]);
+  });
+
+  it('ignores a page with no tags at all', () => {
+    expect(wikiTags([page('a.md'), page('b.md', ['unity'])])).toEqual([{ tag: 'unity', pages: 1 }]);
+  });
+
+  it('says nothing about an empty wiki', () => {
+    expect(wikiTags([])).toEqual([]);
   });
 });
