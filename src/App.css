@@ -5902,6 +5902,29 @@ pre.fatal,
 
 /* Why a row is here at all, under a row the name did not find. Two lines at most: the point
    is to recognise the conversation, not to read it in the sidebar. */
+/**
+ * What a session last said, under its name (#240).
+ *
+ * The clamp itself is set on the element rather than here, because how many lines a row may
+ * give up is a setting. Where the text breaks is left to the browser: that depends on how
+ * wide the sidebar has been dragged and how large the text is set, and a sentence cut at a
+ * guessed column reads worse than one cut where it ran out.
+ */
+.session-said {
+  margin: 0 0 8px;
+  padding: 0 14px;
+  color: var(--text-dim);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  /* Hidden clips at the padding box, not at the last line, so a bottom padding here would
+     be somewhere the line after the clamp gets painted. The gap is a margin for that. */
+  overflow: hidden;
+  /* The title above it is allowed to be long; this must not widen the column for it. */
+  overflow-wrap: anywhere;
+}
+
 .session-excerpt {
   margin: -2px 0 0;
   padding: 0 14px 10px;

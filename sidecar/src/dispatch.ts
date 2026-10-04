@@ -52,6 +52,7 @@ import {
   writeWikiPage,
 } from './wiki.js';
 import { pagesForSession, repositoryName, wikiTags } from './wikiSubject.js';
+import { sessionPreviews } from './sessionPreview.js';
 
 export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
   return {
@@ -241,6 +242,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     // Minus the ones this app is holding, which are open where the reader is looking rather
     // than somewhere they cannot see (#63).
     'sessions.active': () => ({ sessionIds: heldSessions().filter((id) => !runtime.holdsItself(id)) }),
+
+    // Reads a fixed window of each named log's tail, and only of the ones that have moved
+    // since the last look. No Copilot process, like everything else that only reads.
+    'sessions.previews': ({ sessionIds }) => ({ previews: sessionPreviews(sessionIds) }),
 
     'sessions.export': ({ sessionId, toPath }) => exportSession(sessionId, toPath),
 

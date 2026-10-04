@@ -880,3 +880,89 @@ describe('the mark on the notes count', () => {
     expect(rule, 'a second font is a second set of metrics').not.toContain('font-family');
   });
 });
+
+/**
+ * A class with two rules in one stylesheet is a class whose first rule is mostly dead.
+ *
+ * `.tag-count` was written twice - once for the filter that counts sessions, once for the
+ * picker that counts wiki pages - and the later one silently won. The two wanted the same
+ * thing, so the second was deleted; this keeps the question from being reopened by accident.
+ */
+describe('a class written twice', () => {
+  /** Only where the class is the whole selector: `.tag.on .tag-count` is a different rule. */
+  const declarations = (name: string) =>
+    [...css.replace(/\/\*[\s\S]*?\*\//g, ' ').matchAll(new RegExp(`(^|\\n)\\s*\\${name}\\s*\\{`, 'g'))].length;
+
+  it('styles the tag count in one place', () => {
+    expect(declarations('.tag-count')).toBe(1);
+  });
+
+  /** The counter has to be able to find something, or every answer of one is luck. */
+  it('has a selector to count, so this cannot pass by finding nothing', () => {
+    expect(declarations('.tag-from-wiki-label')).toBe(1);
+  });
+});
+
+/**
+ * A suggested tag is drawn as the tags in use beside it are (#35).
+ *
+ * They sit in the same list, and one that is shorter and narrower than its neighbours reads
+ * as a different kind of thing rather than as the same thing not yet chosen.
+ *
+ * It was first a single button, which had half the inset of everything around it: a tag in
+ * use is a pill holding a button, so its spacing is the padding of both. Restating that sum
+ * was the wrong fix twice over - it was also written at the specificity of the rule it meant
+ * to correct, so the cascade settled it on source order and the correction never applied.
+ * Building it from the same parts needs no sum at all, which is what the component test now
+ * pins.
+ */
+describe('a tag suggested from the wiki', () => {
+  it('restates none of the pill spacing it gets from being built the same way', () => {
+    const at = css.indexOf('.tag-from-wiki .tag-name {');
+    expect(at, 'the count inside the name should still be styled').toBeGreaterThan(-1);
+
+    const rule = css.slice(at, css.indexOf('\n}', at));
+    expect(rule, 'the pill and the button inside it already provide this').not.toContain('padding');
+  });
+});
+
+/**
+ * What a session last said, clamped to the lines a reader asked for (#240).
+ *
+ * `overflow: hidden` clips at the padding box rather than at the last line, so any bottom
+ * padding on a clamped element is space the line after the clamp gets painted in. It showed
+ * as a half-height line under every preview, which is what this is here to stop.
+ */
+describe('the clamped preview on a session row', () => {
+  const block = () => {
+    const at = css.indexOf('.session-said {');
+    return css.slice(at, css.indexOf('}', at));
+  };
+
+  it('keeps the gap below it outside anything that can be painted in', () => {
+    expect(block()).toMatch(/margin:[^;]*8px/);
+  });
+
+  it('pads it sideways only', () => {
+    expect(block()).toMatch(/padding:\s*0 14px;/);
+  });
+
+  it('clips what the clamp leaves out', () => {
+    expect(block()).toContain('overflow: hidden');
+  });
+
+  /** Both halves of the clamp, which does nothing without either. */
+  it('lays the lines out in a box that can be clamped', () => {
+    expect(block()).toContain('display: -webkit-box');
+    expect(block()).toContain('-webkit-box-orient: vertical');
+  });
+
+  /**
+   * How many lines is a setting, so it is set on the element. Chromium takes a plain number
+   * here and not a `var()` that resolves to one, which is a row that clamps and one that
+   * does not.
+   */
+  it('leaves how many lines to the element rather than fixing it here', () => {
+    expect(block()).not.toContain('-webkit-line-clamp');
+  });
+});

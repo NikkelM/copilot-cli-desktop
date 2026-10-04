@@ -1713,6 +1713,14 @@ export interface SidecarRequests {
    */
   'sessions.active': { params: Record<string, never>; result: { sessionIds: string[] } };
   /**
+   * What each of these sessions last said, for the rows on screen (#240).
+   *
+   * Asked about the rows a reader can see rather than about the whole list, and answered
+   * from a fixed window of each log's tail, remembered against its size and modification
+   * time. The version that read every session which had moved is why it was removed once.
+   */
+  'sessions.previews': { params: { sessionIds: string[] }; result: { previews: Record<string, string> } };
+  /**
    * Write a session out as a single file, to move it to another machine (#63).
    *
    * The whole directory except the markers saying it is open, deflated - a session is
@@ -1890,6 +1898,7 @@ export const SIDECAR_METHODS = [
   'sessions.exportSize',
   'sessions.import',
   'sessions.active',
+  'sessions.previews',
   'sessions.todos',
   'sessions.context',
   'sessions.usage',

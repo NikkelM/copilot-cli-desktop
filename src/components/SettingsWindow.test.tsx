@@ -7,6 +7,7 @@ import { SettingsWindow } from './SettingsWindow';
 import type { Settings } from '../lib/useSettings';
 import type { BinnedSession, CliSetting } from '../../shared/protocol';
 import type { CliSettingsState } from '../lib/useCliSettings';
+import { save } from '../lib/store';
 
 afterEach(cleanup);
 
@@ -25,19 +26,21 @@ const SAVED: Settings = {
   defaultEffort: '',
   defaultContext: '',
     turnSummary: 'always',
+  sidebarTags: true,
+  sidebarPreviewLines: 2,
   };
 
 const show = (over: Partial<Settings> = {}) => {
   const onSave = vi.fn();
   const onClose = vi.fn();
   const settings = { ...SAVED, ...over };
-  const { rerender } = render(<SettingsWindow settings={settings} onSave={onSave} onClose={onClose} />);
+  const { rerender, unmount } = render(<SettingsWindow settings={settings} onSave={onSave} onClose={onClose} />);
 
   /** What the app does after a save: hands back the settings it now holds. */
   const saved = (next: Settings) =>
     rerender(<SettingsWindow settings={next} onSave={onSave} onClose={onClose} />);
 
-  return { onSave, onClose, saved };
+  return { onSave, onClose, saved, unmount };
 };
 
 const kept = () => screen.getByLabelText('Sessions kept in memory') as HTMLInputElement;
@@ -54,6 +57,44 @@ describe('the settings window', () => {
 
     expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Session management');
     expect(kept()).toBeTruthy();
+  });
+
+  /**
+   * And on the one it was left in after that.
+   *
+   * Somebody adjusting one thing usually adjusts the next thing beside it, and being
+   * returned to the first category every time is a navigation they did not ask for.
+   */
+  describe('where it opens next time', () => {
+    it('opens where it was left', async () => {
+      const first = show();
+      await userEvent.click(tab('Appearance'));
+      first.unmount();
+
+      show();
+
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Appearance');
+    });
+
+    /** Where the reader is, not a setting they are editing: closing unsaved still counts. */
+    it('remembers it without the window being saved', async () => {
+      const first = show();
+      await userEvent.click(tab('Transcript'));
+      first.unmount();
+
+      const { onSave } = show();
+
+      expect(onSave).not.toHaveBeenCalled();
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Transcript');
+    });
+
+    it('falls back to the first category for a name it does not recognise', () => {
+      save('sessions', 'settingsCategory', 'a-category-that-went-away');
+
+      show();
+
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Session management');
+    });
   });
 
   it('shows only the settings of the category being looked at', async () => {
@@ -1989,5 +2030,137 @@ describe('summarising what a turn changed', () => {
     await userEvent.click(tab('Appearance'));
 
     expect(screen.queryByLabelText('Summarise what a turn changed')).toBeNull();
+  });
+});
+
+/**
+ * Whether the sidebar draws a session's tags on its row (#123).
+ *
+ * Under Appearance, unlike the turn summary above it: this changes how the list is drawn
+ * rather than what anything reports. The tags themselves are untouched.
+ */
+describe('showing tags in the sidebar', () => {
+  const openAppearance = () => userEvent.click(tab('Appearance'));
+
+  it('is offered where the rest of the drawing is', async () => {
+    show();
+    await openAppearance();
+
+    expect(screen.getByLabelText('Show tags in the sidebar')).toBeTruthy();
+  });
+
+  it('starts from what was saved', async () => {
+    show({ sidebarTags: false });
+    await openAppearance();
+
+    expect((screen.getByLabelText('Show tags in the sidebar') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('shows them by default', async () => {
+    show();
+    await openAppearance();
+
+    expect((screen.getByLabelText('Show tags in the sidebar') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('saves being turned off', async () => {
+    const { onSave } = show();
+    await openAppearance();
+
+    await userEvent.click(screen.getByLabelText('Show tags in the sidebar'));
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sidebarTags: false }));
+  });
+});
+
+/**
+ * How many lines of the last reply a sidebar row gives up (#240).
+ *
+ * Capped rather than open: five lines of prose under every title turns a list of sessions
+ * into a list of paragraphs, and the list is what the sidebar is for.
+ */
+describe('how much of the last reply the sidebar shows', () => {
+  const openAppearance = () => userEvent.click(tab('Appearance'));
+  const lines = () => screen.getByLabelText('Lines of the last reply in the sidebar') as HTMLInputElement;
+  const more = () => screen.getByLabelText('More lines of the last reply in the sidebar') as HTMLButtonElement;
+  const fewer = () => screen.getByLabelText('Fewer lines of the last reply in the sidebar') as HTMLButtonElement;
+
+  it('is offered where the rest of the drawing is', async () => {
+    show();
+    await openAppearance();
+
+    expect(lines()).toBeTruthy();
+  });
+
+  it('starts from what was saved', async () => {
+    show({ sidebarPreviewLines: 4 });
+    await openAppearance();
+
+    expect(lines().value).toBe('4');
+  });
+
+  it('saves what was chosen', async () => {
+    const { onSave } = show();
+    await openAppearance();
+
+    await userEvent.click(more());
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sidebarPreviewLines: 3 }));
+  });
+
+  it('takes none at all, which switches it off', async () => {
+    const { onSave } = show({ sidebarPreviewLines: 1 });
+    await openAppearance();
+
+    await userEvent.click(fewer());
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sidebarPreviewLines: 0 }));
+  });
+
+  it('offers no more once it is at the most a row can hold', async () => {
+    show({ sidebarPreviewLines: 5 });
+    await openAppearance();
+
+    expect(more().disabled).toBe(true);
+  });
+
+  it('offers no fewer once there are none', async () => {
+    show({ sidebarPreviewLines: 0 });
+    await openAppearance();
+
+    expect(fewer().disabled).toBe(true);
+  });
+
+  it('refuses a typed number past the cap', async () => {
+    const { onSave } = show();
+    await openAppearance();
+
+    fireEvent.change(lines(), { target: { value: '30' } });
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sidebarPreviewLines: 5 }));
+  });
+
+  it('refuses a typed number below none', async () => {
+    const { onSave } = show();
+    await openAppearance();
+
+    fireEvent.change(lines(), { target: { value: '-4' } });
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sidebarPreviewLines: 0 }));
+  });
+
+  it('is found by what it is for rather than only by its name', async () => {
+    show();
+
+    // Nothing in the label says "preview", and it is what somebody would look for.
+    await userEvent.type(screen.getByLabelText('Search settings'), 'preview');
+    await openAppearance();
+
+    expect(lines()).toBeTruthy();
   });
 });

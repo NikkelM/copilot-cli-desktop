@@ -2527,3 +2527,195 @@ describe('focus on a session row', () => {
     expect(down.defaultPrevented).toBe(true);
   });
 });
+
+/**
+ * Whether a session's tags are drawn on its row (#123).
+ *
+ * The chips are a second line under every row that carries any, and a sidebar is as narrow
+ * as the reader has dragged it. Somebody who tags sessions to filter by them rather than to
+ * read them should be able to have the width back.
+ */
+describe('tags on a row', () => {
+  const FIRST = 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8';
+
+  const drawn = (over: { showTags?: boolean; chosen?: string[] } = {}) => {
+    const view = render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        tags={{ [FIRST]: ['hades', 'mod'] }}
+        showTags={over.showTags}
+      />,
+    );
+    return { view, chips: () => [...document.querySelectorAll('.session-tags .tag')] };
+  };
+
+  it('draws them by default, since a tag nobody sees is a tag nobody maintains', () => {
+    const t = drawn();
+
+    expect(t.chips().map((c) => c.textContent)).toEqual(['hades', 'mod']);
+  });
+
+  it('draws them when it is asked to', () => {
+    const t = drawn({ showTags: true });
+
+    expect(t.chips()).toHaveLength(2);
+  });
+
+  it('leaves them off the rows when it is not', () => {
+    const t = drawn({ showTags: false });
+
+    expect(t.chips()).toHaveLength(0);
+  });
+
+  /** The tags are still there: this is about the rows, not about the session. */
+  it('still filters by a tag that is not drawn', async () => {
+    drawn({ showTags: false });
+
+    await userEvent.type(screen.getByPlaceholderText(/Filter by title/), 'tag:hades');
+
+    expect(document.querySelectorAll('.session-row')).toHaveLength(1);
+  });
+
+  /**
+   * Hidden means hidden, including a tag that is currently narrowing the list.
+   *
+   * The control that narrowed it already says so, in its own label and its count, so a row
+   * repeating it would be ignoring the setting to say something already on screen.
+   */
+  it('keeps them off the rows even while one of them is filtering', async () => {
+    const t = drawn({ showTags: false });
+
+    await userEvent.click(screen.getByLabelText('Filter by tag'));
+    await userEvent.click(screen.getByRole('button', { name: /hades/ }));
+
+    expect(t.chips()).toHaveLength(0);
+  });
+});
+
+/**
+ * What a session last said, under its name (#240).
+ *
+ * A row is how somebody finds a session among two hundred, and a title the runtime wrote is
+ * often the least distinguishing thing about it. How many lines of this to give up is the
+ * reader's to decide, down to none at all.
+ */
+describe('the last reply on a row', () => {
+  const FIRST = 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8';
+  const SECOND = '9ec04ce0-1361-4e11-ae34-9f8747cbac64';
+
+  const drawn = (over: { previews?: Record<string, string>; previewLines?: number; onWatchRow?: () => void } = {}) => {
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        previews={over.previews ?? { [FIRST]: 'What it said last' }}
+        previewLines={over.previewLines ?? 2}
+        onWatchRow={over.onWatchRow}
+      />,
+    );
+    return { said: () => [...document.querySelectorAll<HTMLElement>('.session-said')] };
+  };
+
+  it('draws what the session said', () => {
+    const t = drawn();
+
+    expect(t.said().map((p) => p.textContent)).toEqual(['What it said last']);
+  });
+
+  it('draws nothing on a row with no answer yet', () => {
+    const t = drawn({ previews: {} });
+
+    expect(t.said()).toHaveLength(0);
+  });
+
+  it('draws nothing at all when the reader asked for no lines', () => {
+    const t = drawn({ previewLines: 0 });
+
+    expect(t.said()).toHaveLength(0);
+  });
+
+  it('is absent by default, so a row costs nothing until it is asked for', () => {
+    render(
+      <Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} previews={{ [FIRST]: 'Unasked for' }} />,
+    );
+
+    expect(document.querySelectorAll('.session-said')).toHaveLength(0);
+  });
+
+  it.each([1, 2, 5])('clamps to the %i lines it was given', (lines) => {
+    const t = drawn({ previewLines: lines });
+
+    expect(t.said()[0]!.style.webkitLineClamp).toBe(String(lines));
+  });
+
+  it('draws one for every row that has an answer', () => {
+    const t = drawn({ previews: { [FIRST]: 'One', [SECOND]: 'Two' } });
+
+    expect(t.said().map((p) => p.textContent)).toEqual(['One', 'Two']);
+  });
+
+  it('says which rows are drawn, so only those are ever read', () => {
+    const watched = new Set<string>();
+    drawn({
+      onWatchRow: ((id: string, node: Element | null) => node && watched.add(id)) as unknown as () => void,
+    });
+
+    expect([...watched].sort()).toEqual([SECOND, FIRST].sort());
+  });
+
+  /**
+   * The watcher is told a row has gone by that row's ref being handed back empty, and React
+   * hands a ref back whenever its identity changed. A row built with a fresh arrow each time
+   * would therefore report itself gone on every render, and the list of what is on screen
+   * would empty itself as fast as it filled.
+   */
+  it('keeps watching a row across a redraw rather than giving it back', () => {
+    const calls: [string, boolean][] = [];
+    const watch = ((id: string, node: Element | null) => calls.push([id, node !== null])) as unknown as () => void;
+    const { rerender } = render(
+      <Sidebar sessions={sessions} selectedId={null} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} previewLines={2} onWatchRow={watch} />,
+    );
+    calls.length = 0;
+
+    rerender(
+      <Sidebar sessions={sessions} selectedId={'other' as string} onSelect={() => {}} onCreate={() => {}}
+        onWiki={() => {}} creating={false} activity={{}} previewLines={2} onWatchRow={watch} />,
+    );
+
+    expect(calls.filter(([, attached]) => !attached)).toEqual([]);
+  });
+
+  it('draws it under the tags rather than over them', () => {
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        tags={{ [FIRST]: ['hades'] }}
+        previews={{ [FIRST]: 'What it said last' }}
+        previewLines={2}
+      />,
+    );
+    const row = document.querySelector(`.session-row`)!;
+    const parts = [...row.children].map((n) => n.className);
+
+    expect(parts.indexOf('session-said')).toBeGreaterThan(parts.indexOf('session-tags'));
+  });
+});

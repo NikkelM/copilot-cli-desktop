@@ -8,12 +8,13 @@ import type { BinnedSession, CliSetting, ModelChoice, SessionDisk } from '../../
 import type { CliSettingsState } from '../lib/useCliSettings';
 import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
-import { DEFAULT_IDLE_MINUTES, DEFAULT_PERMISSION_MINUTES } from '../lib/useSettings';
+import { DEFAULT_IDLE_MINUTES, DEFAULT_PERMISSION_MINUTES, MOST_PREVIEW_LINES } from '../lib/useSettings';
 import { formatRelative } from '../lib/time';
 import type { ShowTurnChanges } from '../lib/turnChanges';
 import { anyMatch, matches, type Searchable } from '../lib/settingsSearch';
 import { groupCliSettings, leafName } from '../lib/cliGroups';
 import { bytes } from '../lib/units';
+import { read as readStore, save } from '../lib/store';
 
 /**
  * A whole number, with its own steppers.
@@ -30,6 +31,7 @@ function NumberField({
   value,
   onChange,
   min = 0,
+  max,
   hint,
 }: {
   /** Names the field and both of its steppers, so each says what it changes. */
@@ -37,11 +39,20 @@ function NumberField({
   value: number;
   onChange: (value: number) => void;
   min?: number;
-  hint: string;
+  /**
+   * The most it may be, where there is one.
+   *
+   * Enforced on every way in rather than only on the stepper: a number typed into the box
+   * is the way a value out of range actually arrives.
+   */
+  max?: number;
+  /** Absent where the number speaks for itself. Not every setting needs a note. */
+  hint?: string;
 }) {
-  // No floor here: the control that would go below the minimum is disabled at it, so a
-  // second guard would be a line nothing can reach. What is typed is floored on its way in.
-  const step = (by: number) => onChange(value + by);
+  // One clamp for every way in: the steppers disable themselves at either end, but a number
+  // typed into the box is the way a value out of range actually arrives.
+  const clamp = (n: number) => Math.max(min, max === undefined ? n : Math.min(max, n));
+  const step = (by: number) => onChange(clamp(value + by));
 
   return (
     <label className="settings-row">
@@ -50,13 +61,19 @@ function NumberField({
         <input
           type="number"
           min={min}
+          max={max}
           step={1}
           aria-label={label}
           value={value}
-          onChange={(event) => onChange(Math.max(min, Math.floor(Number(event.target.value) || 0)))}
+          onChange={(event) => onChange(clamp(Math.floor(Number(event.target.value) || 0)))}
         />
         <span className="number-steppers">
-          <button type="button" aria-label={`More ${label.toLowerCase()}`} onClick={() => step(1)}>
+          <button
+            type="button"
+            aria-label={`More ${label.toLowerCase()}`}
+            onClick={() => step(1)}
+            disabled={max !== undefined && value >= max}
+          >
             <ChevronIcon open={false} />
           </button>
           <button
@@ -69,7 +86,7 @@ function NumberField({
           </button>
         </span>
       </span>
-      <span className="settings-hint">{hint}</span>
+      {hint && <span className="settings-hint">{hint}</span>}
     </label>
   );
 }
@@ -84,7 +101,8 @@ function TickField({
   label: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
-  hint: string;
+  /** Left out where the label says it all, rather than restated in longer words. */
+  hint?: string;
 }) {
   return (
     <div className="settings-row settings-check">
@@ -332,8 +350,20 @@ type CategoryId = (typeof CATEGORIES)[number]['id'];
  * Named rather than taken from the top of the list, which is in alphabetical order and so
  * says nothing about where anybody would want to start. Tying the two together would mean
  * a category added one day quietly became the first thing everybody sees.
+ *
+ * Only for a reader who has not been here before. After that it opens where they left it:
+ * somebody adjusting one thing usually adjusts the next thing beside it, and being returned
+ * to the first category each time is a navigation they did not ask for.
  */
 const OPENS_ON: CategoryId = 'management';
+
+/** Where the settings window was last left, so it opens there again. */
+const LAST_CATEGORY = 'settingsCategory';
+
+function openingCategory(): CategoryId {
+  const last = readStore('sessions', LAST_CATEGORY);
+  return CATEGORIES.some((entry) => entry.id === last) ? (last as CategoryId) : OPENS_ON;
+}
 
 /**
  * What each category holds, for finding a setting without knowing where it lives.
@@ -367,6 +397,8 @@ const INDEX: Record<CategoryId, Searchable[]> = {
   appearance: [
     { label: 'App scale', keywords: 'size zoom bigger smaller' },
     { label: 'Text size', keywords: 'font scale reading transcript' },
+    { label: 'Show tags in the sidebar', keywords: 'tags sidebar session list hide chips labels' },
+    { label: 'Lines of the last reply in the sidebar', keywords: 'preview excerpt message said rows quote' },
   ],
   cli: [{ label: 'Update the CLI when the app starts', keywords: 'upgrade version auto' }],
   transcript: [
@@ -487,7 +519,11 @@ export function SettingsWindow({
   onWriteCli?: (changes: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
-  const [category, setCategory] = useState<CategoryId>(OPENS_ON);
+  const [category, setCategory] = useState<CategoryId>(openingCategory);
+
+  // Written as it changes rather than on Save: it is where the reader is, not a setting they
+  // are editing, and closing the window without saving still leaves them where they were.
+  useEffect(() => save('sessions', LAST_CATEGORY, category), [category]);
   const [pending, setPending] = useState<Pending | null>(null);
   const [query, setQuery] = useState('');
   /**
@@ -984,6 +1020,24 @@ export function SettingsWindow({
                   >
                     Reset to default sizes
                   </button>
+                )}
+
+                {shows('Show tags in the sidebar') && (
+                  <TickField
+                    label="Show tags in the sidebar"
+                    checked={draft.sidebarTags}
+                    onChange={(checked) => edit('sidebarTags', checked)}
+                  />
+                )}
+
+                {shows('Lines of the last reply in the sidebar') && (
+                  <NumberField
+                    label="Lines of the last reply in the sidebar"
+                    value={draft.sidebarPreviewLines}
+                    min={0}
+                    max={MOST_PREVIEW_LINES}
+                    onChange={(value) => edit('sidebarPreviewLines', value)}
+                  />
                 )}
               </>
             )}

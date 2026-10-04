@@ -110,6 +110,25 @@ interface SidebarProps {
   actionsFor?: (session: SessionSummary) => SessionAction[];
   /** What is true about each session right now, which the filter box can be asked about. */
   tags?: Tags;
+  /**
+   * Whether those tags are drawn on the rows.
+   *
+   * Off is for a reader who tags sessions to filter by them rather than to read them: the
+   * chips are a second line under every row that carries any, and a narrow sidebar has no
+   * line to spare. The filter box and the picker are unaffected.
+   */
+  showTags?: boolean;
+  /**
+   * What each session last said, for the rows that have an answer yet (#240).
+   *
+   * Only the rows on screen are ever asked about, so most of this map is missing most of
+   * the time, and a row without an entry simply draws no preview.
+   */
+  previews?: Record<string, string>;
+  /** How many lines of that to draw. Zero draws none and asks for none. */
+  previewLines?: number;
+  /** Told which rows are drawn where a reader could read them, so previews follow the eye. */
+  onWatchRow?: (sessionId: string, node: Element | null) => void;
   /** Sessions put away, which fold into a group of their own. */
   archived?: string[];
   /** Sessions kept among the favourites. Absent is none, which is what a fresh install has. */
@@ -254,6 +273,10 @@ export function Sidebar({
   favourites = [],
   archived = [],
   tags = {},
+  showTags = true,
+  previews,
+  previewLines = 0,
+  onWatchRow,
   onFavourite,
   actionsFor,
   onToggle,
@@ -449,6 +472,26 @@ export function Sidebar({
     [onMark, drawn],
   );
 
+  /**
+   * Hand a row to whoever is watching which of them are on screen.
+   *
+   * One callback per session, kept and handed back again, because React detaches a ref
+   * whose identity changed and attaches it anew. An arrow built in the row would therefore
+   * unwatch and rewatch every row on every render, and since a detached row is how the
+   * watcher is told a row has gone, the list of what is on screen would empty itself.
+   */
+  const rowRef = useMemo(() => {
+    const held = new Map<string, (node: Element | null) => void>();
+    return (sessionId: string) => {
+      let ref = held.get(sessionId);
+      if (!ref) {
+        ref = (node: Element | null) => onWatchRow?.(sessionId, node);
+        held.set(sessionId, ref);
+      }
+      return ref;
+    };
+  }, [onWatchRow]);
+
   return (
     <nav className="sidebar">
       <header className="sidebar-header">
@@ -607,6 +650,9 @@ export function Sidebar({
                     {shown.map((session) => (
                       <li key={session.sessionId}>
                         <div
+                          // Watched so the app can ask what this session last said only
+                          // while the row is somewhere a reader could read it (#240).
+                          ref={rowRef(session.sessionId)}
                           className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}`}
                           // A row the name did not find was found by something said in it,
                           // so opening it means opening it there rather than at the end.
@@ -646,7 +692,16 @@ export function Sidebar({
                               />
                             )}
                           </div>
-                          <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
+                          <SessionTags
+                            tags={tags[session.sessionId]}
+                            chosen={chosen}
+                            onPick={pickTag}
+                            shown={showTags}
+                          />
+                          {/* What this session last said, where that is being drawn at all.
+                              Under the tags rather than above them: a tag is a fact about
+                              the session, and this is the session talking (#240). */}
+                          <LastSaid text={previews?.[session.sessionId]} lines={previewLines} />
                           {/* Only on a row the name did not find, which is the row whose
                               presence needs explaining. */}
                           {/* Why the row is here, when that is not already on it: the words
@@ -689,6 +744,9 @@ export function Sidebar({
                 {hidden.map((session) => (
                   <li key={session.sessionId}>
                     <div
+                      // Watched like the rows above it: a session found by id has no title,
+                      // so what it last said is the only thing identifying it (#240).
+                      ref={rowRef(session.sessionId)}
                       className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}`}
                       onClick={(event) => {
                         if (clicked(session.sessionId, event)) return;
@@ -711,7 +769,8 @@ export function Sidebar({
                           elsewhere={activeElsewhere?.includes(session.sessionId)}
                         />
                       </div>
-                      <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} />
+                      <SessionTags tags={tags[session.sessionId]} chosen={chosen} onPick={pickTag} shown={showTags} />
+                      <LastSaid text={previews?.[session.sessionId]} lines={previewLines} />
                     </div>
                   </li>
                 ))}
@@ -855,6 +914,26 @@ function Delegated({
 }
 
 /**
+ * What a session last said, under its name (#240).
+ *
+ * Clamped to however many lines the reader asked for, and absent entirely at zero: that is
+ * a feature switched off rather than a narrower row.
+ *
+ * The clamp is set here rather than through a custom property in the stylesheet. Chromium
+ * takes `-webkit-line-clamp` as a plain number and not as a `var()` that resolves to one,
+ * and the difference between those two is a row that clamps and a row that does not.
+ */
+function LastSaid({ text, lines }: { text?: string; lines: number }) {
+  if (!text || lines <= 0) return null;
+
+  return (
+    <p className="session-said" style={{ WebkitLineClamp: lines }}>
+      {text}
+    </p>
+  );
+}
+
+/**
  * What is true about a session, under its row, and a way to see the rest like it.
  *
  * Pressing one narrows the list to sessions carrying it, which is the same thing the tag menu
@@ -865,12 +944,25 @@ function SessionTags({
   tags = [],
   chosen,
   onPick,
+  shown = true,
 }: {
   tags?: readonly string[];
   chosen: readonly string[];
   onPick: (tag: string) => void;
+  /**
+   * Whether tags are drawn on a row at all.
+   *
+   * Decided here rather than at each of the two places that draw a row, so the answer is in
+   * one place and a row added later cannot forget to ask it.
+   *
+   * No exception for a tag that is currently filtering. It was worth considering - a list
+   * narrowed with nothing saying why is a bad place to be - but the control that narrowed
+   * it says so itself, in its own label and its count, and the exception would have covered
+   * only tags picked there rather than ones typed into the box.
+   */
+  shown?: boolean;
 }) {
-  if (tags.length === 0) return null;
+  if (!shown || tags.length === 0) return null;
 
   return (
     <span className="session-tags">

@@ -47,6 +47,20 @@ export const UPDATE_ON_START = 'updateOnStart';
 /** When a turn should end with a line saying what it changed. */
 export const TURN_SUMMARY = 'turnSummary';
 
+/** Whether a session's tags are drawn under its name in the sidebar. */
+export const SIDEBAR_TAGS = 'sidebarTags';
+
+/** How many lines of what a session last said to draw under its name. Zero draws none. */
+export const SIDEBAR_PREVIEW_LINES = 'sidebarPreviewLines';
+
+/**
+ * The most lines of a reply a sidebar row will give up.
+ *
+ * Past this a row stops being a row: five lines of prose under every title is a list of
+ * paragraphs, and what the sidebar is for is finding a session among two hundred.
+ */
+export const MOST_PREVIEW_LINES = 5;
+
 export interface Settings {
   /** Zero means no cap, which is what the runtime starts with. */
   maxLoaded: number;
@@ -114,6 +128,21 @@ export interface Settings {
    */
   turnSummary: ShowTurnChanges;
   /**
+   * Whether a session's tags are drawn under its name in the sidebar.
+   *
+   * On, because a tag nobody can see is a tag nobody maintains. Off for a reader who tags
+   * sessions to filter by them rather than to read them: the chips are a second line under
+   * every row that carries any, and a narrow sidebar has no line to spare.
+   */
+  sidebarTags: boolean;
+  /**
+   * How many lines of what a session last said to draw under its name (#240).
+   *
+   * Zero draws none, and nothing is read for a row that would draw none - which is the
+   * difference between this costing something and costing nothing.
+   */
+  sidebarPreviewLines: number;
+  /**
    * How large everything is drawn, as a multiple of the app's own size.
    *
    * Kept here rather than beside the gesture that used to own it, so there is one answer to
@@ -165,6 +194,13 @@ export function readSettings(): Settings {
     // else, including a key written by a later version, leaves the line showing rather
     // than quietly hiding what a turn did.
     turnSummary: shown === 'off' || shown === 'multiple' ? shown : 'always',
+    // Drawn unless it was turned off outright, like the question before deleting: a tag
+    // nobody can see is a tag nobody maintains, so an unreadable key leaves them showing.
+    sidebarTags: read('settings', SIDEBAR_TAGS) !== 'false',
+    // Capped on the way in as well as on the way out, so a file written by hand or by a
+    // later version cannot hand the sidebar a row thirty lines tall. The floor is already
+    // the reader's: a negative stored value is nonsense and falls back to the default.
+    sidebarPreviewLines: Math.min(MOST_PREVIEW_LINES, number(SIDEBAR_PREVIEW_LINES, 2)),
     // Its own reader: a scale is a fraction, and the one above floors what it is given.
     scale: readScale(),
     textScale: readTextScale(),
@@ -308,6 +344,8 @@ const KEYS: Record<keyof Settings, string> = {
   defaultContext: DEFAULT_CONTEXT,
   updateOnStart: UPDATE_ON_START,
   turnSummary: TURN_SUMMARY,
+  sidebarTags: SIDEBAR_TAGS,
+  sidebarPreviewLines: SIDEBAR_PREVIEW_LINES,
   scale: SCALE_KEY,
   textScale: TEXT_SCALE_KEY,
 };

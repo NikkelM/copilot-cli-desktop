@@ -393,6 +393,17 @@ export async function activeSessions(): Promise<string[]> {
 }
 
 /**
+ * What each of these sessions last said, for the rows on screen (#240).
+ *
+ * Asked about what a reader can see rather than about the whole list. A disk read of a
+ * fixed window, skipped entirely for a log that has not moved, and no Copilot process.
+ */
+export async function sessionPreviews(sessionIds: string[]): Promise<Record<string, string>> {
+  const { previews } = await request('sessions.previews', { sessionIds });
+  return previews;
+}
+
+/**
  * The agent's own todo list (#172).
  *
  * Empty for a session that is not loaded, which is not resumed to ask. The list lives in

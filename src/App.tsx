@@ -112,6 +112,8 @@ import { type WatchedSubagent, useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
 import { useWikiNotes } from './lib/useWikiNotes';
 import { useWikiTags } from './lib/useWikiTags';
+import { useOnScreen } from './lib/useOnScreen';
+import { useSessionPreviews } from './lib/useSessionPreviews';
 import { dispatch } from './lib/slash';
 import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
@@ -299,6 +301,14 @@ export default function App() {
   const { favourites, toggle: toggleFavourite } = useFavourites();
   const { archived, toggle: toggleArchived, unarchive } = useArchived();
   const { tags, known: knownTags, toggle: toggleTag, retire: retireTag } = useTags();
+  /**
+   * What the sessions on screen last said, and which rows those are (#240).
+   *
+   * Watched rather than assumed: the sidebar draws every row it has, so a list of two
+   * hundred would otherwise mean two hundred log reads for the twenty anybody can see.
+   */
+  const { watch: watchRow, visible: onScreen } = useOnScreen();
+  const previews = useSessionPreviews(onScreen, settings.sidebarPreviewLines);
   /** The session whose tags are being changed, if any. */
   const [tagging, setTagging] = useState<SessionSummary | null>(null);
   /** The session whose name is being changed, if any. */
@@ -329,6 +339,14 @@ export default function App() {
     selected?.cwd ?? null,
     selectedId ? (tags[selectedId] ?? []) : [],
   );
+  /**
+   * The words the wiki is already written in, for the picker to offer (#35).
+   *
+   * Read only while the picker is open, which is the one moment they are worth anything.
+   * Words refused before are already left out: the hook answers what to offer, so nothing
+   * here has to remember what to hide.
+   */
+  const { tags: offeredWikiTags, dismiss: dismissWikiTag } = useWikiTags(tagging !== null);
   const changes = useChanges(selectedId);
   const rewind = useRewind(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.showing('repository'));
@@ -339,14 +357,6 @@ export default function App() {
    * whether there is an entry to open at all - most sessions never make one - so it has to
    * be known before anybody asks. It costs a read of a small file on disk and no process,
    * which is what lets it answer for a session nobody has woken.
-  /**
-   * The words the wiki is already written in, for the picker to offer (#35).
-   *
-   * Read only while the picker is open, which is the one moment they are worth anything.
-   * Words refused before are already left out: the hook answers what to offer, so nothing
-   * here has to remember what to hide.
-   */
-  const { tags: offeredWikiTags, dismiss: dismissWikiTag } = useWikiTags(tagging !== null);
    */
   const todos = useTodos(selectedId);
 
@@ -1580,6 +1590,10 @@ export default function App() {
         favourites={favourites}
         archived={archived}
         tags={tags}
+        showTags={settings.sidebarTags}
+        previews={previews}
+        previewLines={settings.sidebarPreviewLines}
+        onWatchRow={watchRow}
         onFavourite={toggleFavourite}
         actionsFor={sessionMenu}
         onMenuOpened={hasSubagents.check}

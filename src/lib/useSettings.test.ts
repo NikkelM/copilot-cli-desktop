@@ -50,6 +50,8 @@ const SAVED_SHAPE = {
   defaultEffort: '',
   defaultContext: '',
   turnSummary: 'always' as const,
+  sidebarTags: true,
+  sidebarPreviewLines: 2,
 };
 
 beforeEach(() => {
@@ -81,6 +83,123 @@ describe('what the app does when nobody has said otherwise', () => {
     const { useSettings } = await load();
 
     expect(renderHook(() => useSettings()).result.current.settings.confirmDelete).toBe(true);
+  });
+
+  /**
+   * A tag nobody can see is a tag nobody maintains, so the rows show them until somebody
+   * says otherwise (#123).
+   */
+  it('draws tags on the sidebar rows', async () => {
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarTags).toBe(true);
+  });
+});
+
+describe('whether the sidebar draws tags', () => {
+  it('remembers being turned off', async () => {
+    const { useSettings, SIDEBAR_TAGS } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ sidebarTags: false }));
+
+    expect(result.current.settings.sidebarTags).toBe(false);
+    expect(read('settings', SIDEBAR_TAGS)).toBe('false');
+  });
+
+  it('reads that back on the next run', async () => {
+    const { SIDEBAR_TAGS } = await load();
+    save('settings', SIDEBAR_TAGS, 'false');
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarTags).toBe(false);
+  });
+
+  /** Only the exact stored false hides them, so a key holding anything odd still draws. */
+  it('draws them for a stored value nobody recognises', async () => {
+    const { SIDEBAR_TAGS } = await load();
+    save('settings', SIDEBAR_TAGS, 'perhaps');
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarTags).toBe(true);
+  });
+});
+
+/**
+ * How many lines of the last reply a sidebar row gives up (#240).
+ *
+ * Clamped on the way in as well as on the way out: the file it is read from can be written
+ * by hand, and a row thirty lines tall is not a sidebar.
+ */
+describe('how much of the last reply the sidebar shows', () => {
+  it('shows two lines before anybody has said otherwise', async () => {
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarPreviewLines).toBe(2);
+  });
+
+  it('remembers what was chosen', async () => {
+    const { useSettings, SIDEBAR_PREVIEW_LINES } = await load();
+    const { result } = renderHook(() => useSettings());
+
+    act(() => result.current.apply({ sidebarPreviewLines: 4 }));
+
+    expect(result.current.settings.sidebarPreviewLines).toBe(4);
+    expect(read('settings', SIDEBAR_PREVIEW_LINES)).toBe('4');
+  });
+
+  it('reads it back on the next run', async () => {
+    const { SIDEBAR_PREVIEW_LINES } = await load();
+    save('settings', SIDEBAR_PREVIEW_LINES, '3');
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarPreviewLines).toBe(3);
+  });
+
+  it('takes none at all, which is the feature switched off', async () => {
+    const { SIDEBAR_PREVIEW_LINES } = await load();
+    save('settings', SIDEBAR_PREVIEW_LINES, '0');
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarPreviewLines).toBe(0);
+  });
+
+  it('keeps a stored nine within what a row can hold', async () => {
+    const { SIDEBAR_PREVIEW_LINES } = await load();
+    save('settings', SIDEBAR_PREVIEW_LINES, '9');
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarPreviewLines).toBe(5);
+  });
+
+  /** A negative is not "none", it is nonsense, and nonsense gets the default rather than a guess. */
+  it('falls back to two for a stored negative', async () => {
+    const { SIDEBAR_PREVIEW_LINES } = await load();
+    save('settings', SIDEBAR_PREVIEW_LINES, '-3');
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarPreviewLines).toBe(2);
+  });
+
+  it('falls back to two for a stored value that is not a number', async () => {
+    const { SIDEBAR_PREVIEW_LINES } = await load();
+    save('settings', SIDEBAR_PREVIEW_LINES, 'a few');
+
+    const { useSettings } = await load();
+
+    expect(renderHook(() => useSettings()).result.current.settings.sidebarPreviewLines).toBe(2);
+  });
+
+  it('stops at five, because past that a row is a paragraph', async () => {
+    const { MOST_PREVIEW_LINES } = await load();
+
+    expect(MOST_PREVIEW_LINES).toBe(5);
   });
 });
 
@@ -119,6 +238,8 @@ describe('changing a setting', () => {
       defaultEffort: '',
       defaultContext: '',
       turnSummary: 'always',
+      sidebarTags: true,
+      sidebarPreviewLines: 2,
     });
   });
 
@@ -153,6 +274,8 @@ describe('changing a setting', () => {
       defaultEffort: '',
       defaultContext: '',
       turnSummary: 'always',
+      sidebarTags: true,
+      sidebarPreviewLines: 2,
     });
   });
 
