@@ -146,3 +146,28 @@ export function FolderIcon() {
     </svg>
   );
 }
+
+/**
+ * A notebook, for the pages a repository already has in the wiki (#35).
+ *
+ * Drawn rather than written as a character. The glyph it replaces carried its own font
+ * metrics into a row whose text had different ones, so centring the two boxes left the
+ * mark sitting visibly above the words beside it.
+ */
+export function NotesIcon() {
+  return (
+    <svg {...shared}>
+      <rect
+        x="2.75"
+        y="2.75"
+        width="10.5"
+        height="10.5"
+        rx="1.4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.25"
+      />
+      <path d="M6.25 2.75V13.25" fill="none" stroke="currentColor" strokeWidth="1.25" />
+    </svg>
+  );
+}

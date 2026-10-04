@@ -63,6 +63,7 @@ import { normalise, useTags } from './lib/useTags';
 import { TagPicker } from './components/TagPicker';
 import { RenamePrompt } from './components/RenamePrompt';
 import { HeaderTags } from './components/HeaderTags';
+import { HeaderNotes } from './components/HeaderNotes';
 import { sessionDefaults, useSettings } from './lib/useSettings';
 import { useRecycleBin } from './lib/useRecycleBin';
 import { useDiskUsage } from './lib/useDiskUsage';
@@ -109,6 +110,7 @@ import { useFavourites } from './lib/useFavourites';
 import { STEP, clampScale } from './lib/scale';
 import { type WatchedSubagent, useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
+import { useWikiNotes } from './lib/useWikiNotes';
 import { dispatch } from './lib/slash';
 import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
@@ -139,6 +141,13 @@ export default function App() {
    * returns to where the reader was.
    */
   const [showWiki, setShowWiki] = useState(false);
+  /**
+   * The pages the wiki was opened for, when it was opened from a session's note count (#35).
+   *
+   * Held here rather than inside the browser because it is a fact about why the browser was
+   * opened, which the browser itself cannot know.
+   */
+  const [wikiScope, setWikiScope] = useState<readonly string[] | null>(null);
   /** Whether the model's thinking is shown. Off is a preference, not a session's state. */
   const { display, set: setDisplay, take: takeDisplay } = useCliDisplay();
   /**
@@ -305,6 +314,20 @@ export default function App() {
   }, [sessions.all, unarchive]);
 
   const wiki = useWiki(showWiki);
+  /**
+   * What this session is about that is already written down, for the header to say so (#35).
+   *
+   * Not gated on the wiki being open, unlike the browser above: the point is to say there
+   * is something to find before anybody thinks to look. Reads the session's tags as well as
+   * its repository - a session working in a parent folder has no repository worth the name,
+   * and its tags are the only thing saying what it is for. Costs one read of the page list
+   * and no Copilot process.
+   */
+  const wikiNotes = useWikiNotes(
+    selected?.repository ?? null,
+    selected?.cwd ?? null,
+    selectedId ? (tags[selectedId] ?? []) : [],
+  );
   const changes = useChanges(selectedId);
   const rewind = useRewind(selectedId);
   const repository = useRepoStatus(selected?.cwd ?? null, panel.showing('repository'));
@@ -954,7 +977,12 @@ export default function App() {
       if (what.command.name === CHANGES.name) openChanges();
       else if (what.command.name === ENVIRONMENT.name) openEnvironment();
       else if (what.command.name === USAGE.name) void showUsage(selectedId);
-      else if (what.command.name === WIKI.name) setShowWiki(true);
+      else if (what.command.name === WIKI.name) {
+        // Opened on its own account rather than about a session, so it shows the whole wiki
+        // however it was last narrowed.
+        setWikiScope(null);
+        setShowWiki(true);
+      }
       else if (what.command.name === TAG.name) tagFromCommand(selectedId, what.input);
       else if (what.command.name === MCP.name) mcpFromCommand(what.input);
       else if (what.command.name === REWIND.name) rewindFromCommand(what.input);
@@ -1514,7 +1542,10 @@ export default function App() {
         selectedId={selectedId}
         onSelect={open}
         onCreate={() => void handleCreate()}
-        onWiki={() => setShowWiki(true)}
+        onWiki={() => {
+          setWikiScope(null);
+          setShowWiki(true);
+        }}
         onSettings={() => setSettingsOpen(true)}
         creating={creating}
         maxLoaded={sessions.maxLoaded}
@@ -1630,6 +1661,8 @@ export default function App() {
             canGoBack={wiki.canGoBack}
             canGoForward={wiki.canGoForward}
             trail={wiki.trail}
+            scope={wikiScope}
+            onClearScope={() => setWikiScope(null)}
             onClose={() => setShowWiki(false)}
           />
         ) : subagents.open ? (
@@ -1706,6 +1739,19 @@ export default function App() {
                   onError={setError}
                 />
                 <HeaderTags tags={tags[selected.sessionId] ?? []} onEdit={() => setTagging(selected)} />
+                {/* What this session is about that is already written down, where anything
+                    is (#35). Beside the tags because it is the same kind of claim about the
+                    session - and partly built from them - and silent otherwise. */}
+                <HeaderNotes
+                  pages={wikiNotes}
+                  onOpen={(page) => {
+                    // Asked for before the browser opens, which is what stops it landing on
+                    // the wiki's front page instead of the page that was pressed.
+                    wiki.go(page);
+                    setWikiScope(wikiNotes.map((each) => each.path));
+                    setShowWiki(true);
+                  }}
+                />
                 <div className="header-controls">
                   {/* Reads files rather than starting a session, so it costs nothing until
                       it is asked for - and then costs enough to be worth asking for. */}

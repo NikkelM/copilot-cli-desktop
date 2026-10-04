@@ -34,6 +34,23 @@ interface WikiProps {
   canGoForward: boolean;
   /** Where the reader has been, newest last, including the page they are on. */
   trail: string[];
+  /**
+   * The pages the browser was opened for, when it was opened for some of them (#35).
+   *
+   * Narrows what the tree draws, and nothing else. Arriving from a session's note count is
+   * arriving with a question about that session, and a tree holding the whole wiki answers
+   * a different one - the seven pages that were counted are somewhere in it, and finding
+   * them again is work the count had already done.
+   *
+   * Only the tree, because `pages` is also what resolves a wikilink: narrowed everywhere, a
+   * link out of one of these pages to the rest of the wiki would stop being a link.
+   *
+   * Paths rather than a name to show. A session is named after its own first prompt, which
+   * runs to 303 characters here, and none of that belongs in a column this narrow.
+   */
+  scope?: readonly string[] | null;
+  /** Leave the scope and show the whole wiki. Absent leaves no way out of one. */
+  onClearScope?: () => void;
   onClose: () => void;
 }
 
@@ -367,9 +384,25 @@ export function Wiki({
   canGoBack,
   canGoForward,
   trail,
+  scope = null,
+  onClearScope,
   onClose,
 }: WikiProps) {
-  const tree = useMemo(() => (pages ? asTree(pages) : null), [pages]);
+  /**
+   * What the tree draws: the whole wiki, or the pages the browser was opened for (#35).
+   *
+   * A scope naming nothing that exists draws the wiki rather than an empty tree - the pages
+   * may have been renamed since the count was taken, and an empty browser would be a worse
+   * answer than the one nobody asked for.
+   */
+  const shown = useMemo(() => {
+    if (!pages || !scope) return pages;
+    const wanted = new Set(scope);
+    const kept = pages.filter((each) => wanted.has(each.path));
+    return kept.length > 0 ? kept : pages;
+  }, [pages, scope]);
+
+  const tree = useMemo(() => (shown ? asTree(shown) : null), [shown]);
   const title = pages?.find((each) => each.path === page?.path)?.title ?? page?.path ?? 'Wiki';
   /** Nothing to browse, which is the case the browser has to explain itself for. */
   const empty = where !== null && pages !== null && pages.length === 0;
@@ -557,6 +590,21 @@ export function Wiki({
                 aria-label="Search the wiki"
               />
             </div>
+
+            {/* What the tree is holding back, and how to stop it. Only while scoped: a
+                browser opened the ordinary way is already showing everything (#35). */}
+            {scope && (
+              <div className="wiki-scope">
+                <span>
+                  {shown?.length ?? 0} {shown?.length === 1 ? 'page' : 'pages'} for this session
+                </span>
+                {onClearScope && (
+                  <button type="button" className="wiki-scope-clear" onClick={onClearScope}>
+                    Show all
+                  </button>
+                )}
+              </div>
+            )}
 
             {results !== null ? (
               <Results results={results} openPath={page?.path ?? null} onOpen={onOpen} />

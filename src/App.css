@@ -4035,6 +4035,40 @@ pre.fatal,
   padding: 0 0 8px;
 }
 
+/*
+ * What the tree is holding back, and how to stop it (#35).
+ *
+ * Only drawn while the browser was opened about a session. Arriving from a note count is
+ * arriving with a question about that session, so the tree answers that one - but a reader
+ * who then wants the rest of the wiki must not have to go back and come in again.
+ */
+.wiki-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-raised);
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.wiki-scope-clear {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.wiki-scope-clear:hover {
+  text-decoration: underline;
+}
+
 .wiki-search input {
   width: 100%;
   padding: 5px 8px;
@@ -5032,6 +5066,57 @@ pre.fatal,
 
 .header-tags:hover .header-tags-empty {
   color: var(--text-muted);
+}
+
+/*
+ * What this repository already has written down, beside its tags (#35).
+ *
+ * Shaped like the tags it sits next to - the same quiet row of things that are true about
+ * the session - rather than like the controls on the right, which are things to do. It
+ * reports, and pressing it goes somewhere.
+ */
+.header-notes {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-md);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.header-notes:hover,
+.header-notes:focus-visible {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Dimmer than the count beside it: the mark says what kind of thing this is, and the
+   number is what is worth reading.
+
+   A flex box of its own rather than an inline run, so what it holds is centred on the
+   row's middle instead of sitting on the text's baseline.
+
+   The nudge is optical rather than geometric. Both boxes are already centred - the drawn
+   mark sits dead centre of its own - but a line of text is not centred inside its line
+   box: the font reserves room below the baseline for descenders that "7 notes" does not
+   use, which leaves the words low against a mark that is exactly halfway. In em so it
+   survives the text scale being changed. */
+.header-notes-mark {
+  display: flex;
+  align-items: center;
+  transform: translateY(0.1em);
+  color: var(--text-dim);
+}
+
+.header-notes:hover .header-notes-mark {
+  color: var(--accent);
 }
 
 /* The one field in the rename dialog, which is the whole of it. */

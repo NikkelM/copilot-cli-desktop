@@ -857,3 +857,103 @@ describe('searching the wiki', () => {
     expect(view.container.querySelector('.wiki-tree')).toBeTruthy();
   });
 });
+
+/**
+ * The browser opened about one session, showing the pages that session was counted (#35).
+ *
+ * Arriving from a note count is arriving with a question about that session. A tree holding
+ * the whole wiki answers a different one: the pages that were counted are somewhere in it,
+ * and finding them again is work the count had already done.
+ */
+describe('a wiki opened about a session', () => {
+  const titles = (view: ReturnType<typeof shown>) =>
+    [...view.container.querySelectorAll('.wiki-tree button')].map((node) => node.textContent?.trim());
+
+  const scoped = (scope: string[]) => shown({ path: 'projects/app/overview.md', body: 'prose' }, { scope });
+
+  it('draws only the pages it was opened for', () => {
+    const view = shown({ path: 'index.md', body: 'prose' }, { scope: ['index.md'] });
+
+    expect(titles(view)).toContain('Index');
+    expect(titles(view), 'a page nobody asked about').not.toContain('Knowledge Base Home');
+  });
+
+  /** A folder is only drawn because of what is inside it, so an empty one should not be. */
+  it('leaves out a folder holding nothing it was opened for', () => {
+    const view = shown({ path: 'index.md', body: 'prose' }, { scope: ['index.md'] });
+
+    expect(view.container.textContent, 'resources holds only out-of-scope pages').not.toContain('resources');
+  });
+
+  it('says how many it is holding back the rest for', () => {
+    scoped(['projects/app/overview.md', 'resources/guides/rtk.md']);
+
+    expect(screen.getByText('2 pages for this session')).toBeTruthy();
+  });
+
+  it('counts one page as one', () => {
+    scoped(['projects/app/overview.md']);
+
+    expect(screen.getByText('1 page for this session')).toBeTruthy();
+  });
+
+  it('offers a way out of it', async () => {
+    const onClearScope = vi.fn();
+    shown({ path: 'index.md', body: 'prose' }, { scope: ['index.md'], onClearScope });
+
+    await userEvent.click(screen.getByText('Show all'));
+
+    expect(onClearScope).toHaveBeenCalledOnce();
+  });
+
+  it('says nothing about a scope where there is none', () => {
+    const view = shown({ path: 'index.md', body: 'prose' });
+
+    expect(view.container.querySelector('.wiki-scope')).toBeNull();
+    expect(titles(view)).toContain('Knowledge Base Home');
+  });
+
+  /**
+   * A page counted and then renamed leaves a scope naming nothing. An empty tree is a worse
+   * answer than the whole wiki: the reader can still see where they are.
+   */
+  it('draws the whole wiki rather than nothing when the scope has gone stale', () => {
+    const view = scoped(['projects/app/renamed-since.md']);
+
+    expect(titles(view)).toContain('Knowledge Base Home');
+  });
+
+  /** Searching is a question about the whole wiki, and the scope is not the answer to it. */
+  it('leaves searching alone', () => {
+    shown(
+      { path: 'index.md', body: 'prose' },
+      {
+        scope: ['index.md'],
+        query: 'rtk',
+        results: [{ path: 'resources/guides/rtk.md', title: 'RTK Install', score: 1, matchedIn: ['title'] }],
+      },
+    );
+
+    expect(screen.getByText('RTK Install')).toBeTruthy();
+  });
+
+  /**
+   * The scope narrows the tree and nothing else.
+   *
+   * A wikilink is resolved against the pages that exist, so resolving it against the scope
+   * instead would turn every link out of these pages into punctuation - which is the one
+   * way out of a narrowed wiki that a reader is most likely to take.
+   */
+  it('still follows a link out of the scope and into the rest of the wiki', async () => {
+    const onOpen = vi.fn();
+    const user = userEvent.setup();
+    shown(
+      { path: 'index.md', body: 'see [[projects/README|Projects]] for more' },
+      { scope: ['index.md'], onOpen },
+    );
+
+    await user.click(screen.getByRole('link', { name: 'Projects' }));
+
+    expect(onOpen).toHaveBeenCalledWith('projects/README.md');
+  });
+});

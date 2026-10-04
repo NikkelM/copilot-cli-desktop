@@ -856,3 +856,27 @@ describe('a row that lost something', () => {
     expect(rule, 'success is what it must not look like').not.toContain('var(--success)');
   });
 });
+
+/**
+ * The mark beside the note count, which sat visibly above the words next to it (#35).
+ *
+ * It was a text glyph in a monospace family, inside a row whose text inherits the UI font.
+ * Two fonts means two sets of metrics, and centring their boxes does not centre what is
+ * drawn inside them.
+ */
+describe('the mark on the notes count', () => {
+  const rule = (() => {
+    const at = css.indexOf('.header-notes-mark {');
+    expect(at, 'the mark should be in the stylesheet').toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  })();
+
+  it('centres what it holds rather than resting it on a baseline', () => {
+    expect(rule).toContain('align-items: center');
+  });
+
+  /** A family of its own is the whole cause: the mark is drawn now, so it needs none. */
+  it('does not take a font of its own', () => {
+    expect(rule, 'a second font is a second set of metrics').not.toContain('font-family');
+  });
+});
