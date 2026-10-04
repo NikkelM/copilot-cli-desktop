@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { goneFrom, needsPruning } from './pruneSessions';
 import { read as readStore, save } from './store';
+import { tagSlug } from '../../shared/tags';
 
 /**
  * What is true about a session right now, as the reader sees it.
@@ -39,12 +40,19 @@ export type Tags = Readonly<Record<string, readonly string[]>>;
 /**
  * What a tag may be.
  *
- * Lowercased and trimmed so `Bug` and `bug ` are the same tag rather than two that look
- * alike in a list. Spaces are kept: a tag is a label rather than an identifier, and refusing
- * `needs review` would only send people to `needs-review` without saying why.
+ * One spelling shared with the wiki, because the two have to match each other: a session
+ * tagged `Timeless Manor` and a page tagged `timeless-manor` are the same subject, and
+ * anything that answers otherwise leaves them unable to find one another (#35).
+ *
+ * Spaces were kept here for a while, on the grounds that a tag is a label rather than an
+ * identifier and that refusing `needs review` only sends people to `needs-review` without
+ * saying why. True in isolation, and wrong the moment the wiki was on the other side of it.
+ *
+ * Stored tags are read through this as well, so one written before now is the same tag it
+ * always was rather than a second one beside its new spelling.
  */
 export function normalise(tag: string): string {
-  return tag.trim().toLowerCase().replace(/\s+/g, ' ');
+  return tagSlug(tag);
 }
 
 function read(): Tags {

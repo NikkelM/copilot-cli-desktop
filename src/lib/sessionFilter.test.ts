@@ -46,9 +46,17 @@ describe('parseQuery', () => {
     expect(asks('tag:Bug').tags).toEqual(['bug']);
   });
 
-  it('takes a quoted tag, for one with a space in it', () => {
-    expect(asks('tag:"needs review"').tags).toEqual(['needs review']);
-    expect(asks("tag:'needs review'").tags).toEqual(['needs review']);
+  /**
+   * Still worth quoting, because the space is how somebody would type the tag they are
+   * looking at. It resolves to the one spelling a tag has, which is the dashed one (#35).
+   */
+  it('takes a quoted tag, for one typed with a space in it', () => {
+    expect(asks('tag:"needs review"').tags).toEqual(['needs-review']);
+    expect(asks("tag:'needs review'").tags).toEqual(['needs-review']);
+  });
+
+  it('finds the same tag typed either way', () => {
+    expect(asks('tag:"needs review"').tags).toEqual(asks('tag:needs-review').tags);
   });
 
   it('ignores a bare tag: as someone reaching for the name', () => {

@@ -27,11 +27,19 @@ describe('normalise', () => {
     expect(normalise('  bug  ')).toBe('bug');
   });
 
-  it('keeps spaces, since a tag is a label rather than an identifier', async () => {
+  it('writes a space as a dash, so a tag is spelled as the wiki spells it', async () => {
     const { normalise } = await load();
 
-    expect(normalise('needs review')).toBe('needs review');
-    expect(normalise('needs   review')).toBe('needs review');
+    expect(normalise('needs review')).toBe('needs-review');
+    expect(normalise('needs   review')).toBe('needs-review');
+    expect(normalise('Timeless Manor')).toBe('timeless-manor');
+  });
+
+  /** A tag written before this is the same tag, not a second one beside its new spelling. */
+  it('reads one written the old way as the same tag', async () => {
+    const { normalise } = await load();
+
+    expect(normalise('needs review')).toBe(normalise('needs-review'));
   });
 });
 
@@ -40,6 +48,26 @@ describe('what is true about a session', () => {
     const { useTags } = await load();
 
     expect(renderHook(() => useTags()).result.current.tags).toEqual({});
+  });
+
+  /**
+   * Tags written before spaces became dashes are read as the tag they always were (#35).
+   *
+   * Every stored tag is read through the same spelling, so this needs no migration step and
+   * no second copy of a session's tags beside the first.
+   */
+  it('reads one stored with a space as the tag it is now', async () => {
+    save('sessions', TAGS, JSON.stringify({ s1: ['timeless manor'] }));
+    const { useTags } = await load();
+
+    expect(renderHook(() => useTags()).result.current.tags).toEqual({ s1: ['timeless-manor'] });
+  });
+
+  it('folds both spellings of one tag into one', async () => {
+    save('sessions', TAGS, JSON.stringify({ s1: ['timeless manor', 'timeless-manor'] }));
+    const { useTags } = await load();
+
+    expect(renderHook(() => useTags()).result.current.tags).toEqual({ s1: ['timeless-manor'] });
   });
 
   it('tags a session and untags it again', async () => {
