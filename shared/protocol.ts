@@ -1596,6 +1596,18 @@ export interface SidecarRequests {
   'wiki.create': { params: void; result: { page: string | null } };
   /** The pages answering a query, best first, ranked as the wiki's own search script ranks. */
   'wiki.search': { params: { query: string; limit?: number }; result: { results: WikiSearchResult[] } };
+  /**
+   * The pages a session's subject already has notes in (#35).
+   *
+   * Asked on the session's behalf rather than by anybody, so it answers only where it is
+   * certain: a page tagged with the repository or filed in a folder named after it, or one
+   * carrying a tag the session carries - provided that tag is narrow enough to mean
+   * something rather than to name a shelf.
+   */
+  'wiki.forSession': {
+    params: { repository: string | null; cwd: string | null; tags?: string[] };
+    result: { name: string | null; pages: WikiPage[] };
+  };
   /** Run a command in a session, resuming it if it is cold. */
   'commands.invoke': {
     params: { sessionId: string; name: string; input?: string };
@@ -1849,6 +1861,7 @@ export const SIDECAR_METHODS = [
   'wiki.save',
   'wiki.create',
   'wiki.search',
+  'wiki.forSession',
   'commands.invoke',
   'commands.enqueue',
   'agents.list',

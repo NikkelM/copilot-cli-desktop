@@ -569,6 +569,15 @@ export async function searchWiki(query: string, limit?: number): Promise<WikiSea
   return results;
 }
 
+/** The notes a session's subject already has, where there are any for certain (#35). */
+export function wikiForSession(
+  repository: string | null,
+  cwd: string | null,
+  tags: string[],
+): Promise<{ name: string | null; pages: WikiPage[] }> {
+  return request('wiki.forSession', { repository, cwd, tags });
+}
+
 /** The skills this session has switched off. Read from the app's own record, so it costs no process. */
 export function disabledSkills(sessionId: string): Promise<{ disabled: string[] }> {
   return request('skills.disabled', { sessionId });

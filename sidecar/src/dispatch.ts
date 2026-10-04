@@ -51,6 +51,7 @@ import {
   wikiExists,
   writeWikiPage,
 } from './wiki.js';
+import { pagesForSession, repositoryName } from './wikiSubject.js';
 
 export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
   return {
@@ -214,6 +215,14 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'wiki.search': async ({ query, limit }) => ({
       results: await searchWikiPages(query, limit ?? 25),
     }),
+
+    // Asked on a session's behalf when it is opened, so it reads the page list and nothing
+    // else: no Copilot process, and no search over page bodies.
+    'wiki.forSession': async ({ repository, cwd, tags }) => {
+      const name = repositoryName(repository, cwd);
+      const pages = name || tags?.length ? pagesForSession(await listWikiPages(), name, tags ?? []) : [];
+      return { name, pages };
+    },
 
     'commands.invoke': async ({ sessionId, name, input }) => ({
       outcome: await runtime.invoke(sessionId, name, input),
