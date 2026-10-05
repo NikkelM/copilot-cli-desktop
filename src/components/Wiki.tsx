@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { WikiPage, WikiPageContent, WikiSearchResult } from '../../shared/protocol';
-import { splitFrontmatter } from '../../shared/frontmatter';
-import { isWikiLink, resolveWikiLink, withResolvedLinks } from '../lib/wikiLinks';
 import { ChevronIcon } from './Icons';
-import { Markdown } from './Markdown';
+import { WikiPageBody } from './WikiPageBody';
 
 interface WikiProps {
   pages: WikiPage[] | null;
@@ -182,34 +180,6 @@ function FolderBody({
       ))}
     </ul>
   );
-}
-
-/**
- * The fields a page declares about itself, shown as what they are.
- *
- * Read here rather than in the sidecar, which hands the block over as written: what the
- * fields mean is a question about this wiki's conventions, and a page whose frontmatter
- * cannot be made sense of should still be readable.
- *
- * A deliberately small reading of YAML - `key: value` and `- item` lists, which is all the
- * schema uses. Anything else is shown as the line it was written as rather than guessed at.
- */
-export function readFrontmatter(source: string): Array<{ key: string; value: string }> {
-  const fields: Array<{ key: string; value: string }> = [];
-
-  for (const line of source.split('\n')) {
-    const item = /^\s*-\s+(.*)$/.exec(line);
-    if (item && fields.length > 0) {
-      const last = fields[fields.length - 1]!;
-      last.value = last.value ? `${last.value}, ${item[1]!.trim()}` : item[1]!.trim();
-      continue;
-    }
-
-    const field = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (field) fields.push({ key: field[1]!, value: field[2]!.trim().replace(/^["']|["']$/g, '') });
-  }
-
-  return fields.filter((field) => field.value !== '');
 }
 
 /**
@@ -421,31 +391,6 @@ export function Wiki({
   useEffect(() => setRaw(false), [page?.path]);
 
   /**
-   * What is rendered, which is the draft when there is one.
-   *
-   * Split here rather than asked of the sidecar, so previewing an edit costs nothing and
-   * works on text that has never been written. Through the same function the sidecar uses,
-   * or a page would render differently depending on whether it had been saved yet.
-   */
-  const shownSource = useMemo(() => splitFrontmatter(source), [source]);
-  const fields = useMemo(
-    () => (shownSource.frontmatter ? readFrontmatter(shownSource.frontmatter) : []),
-    [shownSource.frontmatter],
-  );
-
-  /**
-   * The body with its wikilinks rewritten as ordinary links.
-   *
-   * The renderer has never heard of `[[page]]`, and this wiki is written almost entirely in
-   * them - 315 of them against 65 ordinary links - so leaving them would show most of its
-   * cross-references as punctuation.
-   */
-  const body = useMemo(
-    () => (page && pages ? withResolvedLinks(shownSource.body, page.path, pages) : shownSource.body),
-    [shownSource.body, page, pages],
-  );
-
-  /**
    * The gestures that already mean back, wherever the reader's hands are.
    *
    * A button alone makes retracing a trip to the header, and both of these are what a
@@ -616,49 +561,17 @@ export function Wiki({
           </nav>
 
           <article className="wiki-page-body">
-            {/* The page as the file it is, which is also how it is edited. No metadata
-                strip above it: the frontmatter is in the text being edited. */}
-            {raw && page ? (
-              <textarea
-                className="wiki-source"
-                value={source}
-                spellCheck={false}
-                aria-label={`Source of ${page.path}`}
-                onChange={(event) => onEdit(page.path, event.target.value)}
-              />
-            ) : (
-              <>
-                {fields.length > 0 && (
-                  <dl className="wiki-meta">
-                    {fields.map((field) => (
-                      <div key={field.key}>
-                        <dt>{field.key}</dt>
-                        <dd>{field.value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-
-                {loading && !page ? (
-                  <p className="wiki-empty">Reading…</p>
-                ) : page ? (
-                  <Markdown
-                    body={body}
-                    anchor={page.path}
-                    onLink={(href) => {
-                      if (!isWikiLink(href) || !pages) return false;
-                      const found = resolveWikiLink(decodeURI(href), page.path, pages);
-                      if (!found) return false;
-
-                      onOpen(found.path);
-                      return true;
-                    }}
-                  />
-                ) : (
-                  <p className="wiki-empty">Choose a page.</p>
-                )}
-              </>
-            )}
+            {/* The page as the file it is, or as what it renders to. The same component the
+                column beside a session uses, so one page cannot look like two (#35). */}
+            <WikiPageBody
+              page={page}
+              pages={pages}
+              source={source}
+              raw={raw}
+              loading={loading}
+              onEdit={onEdit}
+              onOpen={onOpen}
+            />
           </article>
         </div>
       )}

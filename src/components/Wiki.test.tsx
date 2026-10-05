@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { Wiki, asTree, readFrontmatter } from './Wiki';
+import { Wiki, asTree } from './Wiki';
+import { readFrontmatter } from './frontmatterFields';
 import type { WikiPage, WikiPageContent } from '../../shared/protocol';
 
 vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }));
