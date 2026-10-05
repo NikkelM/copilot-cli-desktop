@@ -940,6 +940,13 @@ export interface SessionChange {
   changedAt: string;
   /** Whether both ends survive on disk, so asking for the diff will produce one. */
   diffable: boolean;
+  /**
+   * Whether this is a turn still in flight rather than one the store has recorded (#140).
+   *
+   * The count is about to change, so a row carrying this must not read as final. Absent on
+   * everything the rewind store answers for, which is everything that has finished.
+   */
+  running?: boolean;
 }
 
 /**

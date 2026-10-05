@@ -3578,6 +3578,23 @@ pre.fatal,
   font-size: var(--font-sm);
 }
 
+/*
+ * A row for a turn that has not finished (#140).
+ *
+ * The store is one turn behind, so this row was built from the events as the tools ran. Its
+ * count is about to change and there is no diff behind it yet, and saying so is cheaper
+ * than letting somebody read a half-finished number as the answer.
+ *
+ * Pushed right like the turn count beside it. The first auto margin takes the free space,
+ * so a second one costs nothing and covers the rows that have no turn count.
+ */
+.changes-running {
+  flex: none;
+  margin-left: auto;
+  color: var(--accent);
+  font-size: var(--font-sm);
+}
+
 .changes-counts {
   display: flex;
   gap: 6px;

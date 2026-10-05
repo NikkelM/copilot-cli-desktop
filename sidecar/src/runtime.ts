@@ -48,6 +48,7 @@ import { binSession, binnedSessions, restoreSession, sweepBin } from './recycleB
 import { Discovery } from './discovery.js';
 import { coauthorEnabled } from './cliSettings.js';
 import { TITLE_QUESTION, isPlaceholder, titleIn } from './sessionTitle.js';
+import { forgetLive, noteToolEnd, noteToolStart } from './liveChanges.js';
 
 /**
  * The legacy ask_user shapes. Declared here because the package root does not re-export
@@ -1109,6 +1110,30 @@ export class SessionRuntime {
       // whole request, which is what `session.idle` marks the end of.
       if (event.type === 'assistant.turn_start') entry.busy = true;
       if (event.type === 'session.idle' || event.type === 'abort') entry.busy = false;
+
+      /*
+       * What the running turn has touched, which the store will not know until the turn
+       * after this one begins (#140).
+       *
+       * Dropped at `session.idle` rather than at `assistant.turn_end`: a request that calls
+       * tools ends and starts a turn nine times over, and forgetting at each of those would
+       * empty the panel in the middle of the work it is describing.
+       */
+      if (event.type === 'tool.execution_start') {
+        noteToolStart(sessionId, event.data.toolCallId, event.data.toolName, event.data.arguments);
+      }
+
+      if (event.type === 'tool.execution_complete') {
+        // Only when a file actually moved. Most tool calls are reads, and a notification
+        // apiece would be a re-read of the whole store for every grep the agent runs.
+        if (noteToolEnd(sessionId, event.data.toolCallId, event.data.success !== false, new Date().toISOString())) {
+          this.onChangesRecorded?.(sessionId);
+        }
+      }
+
+      // Forgotten before the notification below, so whoever reads the list on it reads the
+      // store rather than the store plus a set that is about to be written into it.
+      if (event.type === 'session.idle' || event.type === 'abort') forgetLive(sessionId);
 
       // The runtime finishes writing its record of the work when the session goes idle, so
       // that is the moment the list is worth reading again - announcing the round trips

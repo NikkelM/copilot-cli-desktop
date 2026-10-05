@@ -13,6 +13,7 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol.js';
 import { contentHash, fileKey, readBackup, readRewind, type Image, type RewindSnapshot } from './rewind.js';
+import { hasLive, liveChanges } from './liveChanges.js';
 import { gitBlobHash } from './rewindLegacy.js';
 
 /**
@@ -291,7 +292,53 @@ export function sessionChanges(sessionId: string, since?: string): SessionChange
     });
   }
 
-  return changes.sort((a, b) => b.changedAt.localeCompare(a.changedAt) || a.path.localeCompare(b.path));
+  return withLive(sessionId, changes).sort(
+    (a, b) => b.changedAt.localeCompare(a.changedAt) || a.path.localeCompare(b.path),
+  );
+}
+
+/**
+ * Add what the turn still running has done, on top of what the store recorded (#140).
+ *
+ * The store is one turn behind by design - the CLI writes a turn's snapshot when the next
+ * turn begins - so without this a long turn shows nothing until it ends. There is no risk
+ * of counting the same work twice: the live set is dropped the moment the session goes
+ * idle, which is the moment the snapshot it would duplicate gets written.
+ *
+ * A file the turn is still writing and an earlier turn already changed is one row, not two.
+ * Its counts are what the session has done to it in total, and the row says it is still
+ * moving, which is the part that matters to somebody watching.
+ */
+function withLive(sessionId: string, recorded: SessionChange[]): SessionChange[] {
+  if (!hasLive(sessionId)) return recorded;
+
+  const merged = new Map(recorded.map((change) => [change.path, change]));
+
+  for (const live of liveChanges(sessionId)) {
+    if (transient(live.path)) continue;
+
+    const before = merged.get(live.path);
+    if (!before) {
+      merged.set(live.path, live);
+      continue;
+    }
+
+    merged.set(live.path, {
+      ...before,
+      linesAdded: before.linesAdded + live.linesAdded,
+      linesRemoved: before.linesRemoved + live.linesRemoved,
+      turns: before.turns + 1,
+      changedAt: live.changedAt,
+      // What the session did to the file overall. A file it created earlier is still a file
+      // it created, however many times this turn has rewritten it since.
+      status: before.status === 'created' && live.status !== 'deleted' ? 'created' : live.status,
+      // The halves come from different places and only one of them has both ends on disk.
+      diffable: false,
+      running: true,
+    });
+  }
+
+  return [...merged.values()];
 }
 
 /**

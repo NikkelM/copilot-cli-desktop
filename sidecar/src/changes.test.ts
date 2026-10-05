@@ -554,3 +554,157 @@ describe('the diff for one file', () => {
     expect(sessionDiff(SESSION, join(home, 'gone.ts')).stale).toBe(false);
   });
 });
+
+/**
+ * What a turn has changed while it is still running, on top of what the store recorded.
+ *
+ * The CLI writes a turn's snapshot when the next turn begins, so without this a long turn
+ * shows nothing until it ends. The risk the tests here exist for is the opposite one: the
+ * same work appearing twice, once live and once from the store (#140).
+ */
+describe('changes while a turn is still running', () => {
+  /** Run a file tool against the live tracker the reader merges from. */
+  async function running(path: string, old_str: string, new_str: string, id = 't1') {
+    const live = await import('./liveChanges.js');
+    live.noteToolStart(SESSION, id, 'edit', { path, old_str, new_str });
+    live.noteToolEnd(SESSION, id, true, '2026-01-01T12:00:00.000Z');
+    return live;
+  }
+
+  afterEach(async () => {
+    const live = await import('./liveChanges.js');
+    live.forgetLive(SESSION);
+  });
+
+  it('shows a file the running turn touched, with nothing in the store yet', async () => {
+    const { sessionChanges } = await load();
+    await running('a.ts', 'one\n', 'two\n');
+
+    const changes = sessionChanges(SESSION);
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.path).toBe('a.ts');
+    expect(changes[0]?.running).toBe(true);
+  });
+
+  it('says nothing is running once the turn has handed over', async () => {
+    const { sessionChanges } = await load();
+    const live = await running('a.ts', 'one\n', 'two\n');
+
+    live.forgetLive(SESSION);
+
+    expect(sessionChanges(SESSION)).toEqual([]);
+  });
+
+  it('leaves the recorded rows alone when nothing is running', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'old.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+
+    const changes = sessionChanges(SESSION);
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.running).toBeUndefined();
+  });
+
+  it('shows both what was recorded and what is running', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'old.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+    await running('new.ts', 'one\n', 'two\n');
+
+    expect(sessionChanges(SESSION).map((c) => c.path).sort()).toEqual(['new.ts', 'old.ts']);
+  });
+
+  /** The same file in both halves is one row. Two would read as two different files. */
+  it('joins a file the store knows and the turn is still writing', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+    await running('a.ts', 'b\n', 'c\n');
+
+    const changes = sessionChanges(SESSION);
+
+    expect(changes).toHaveLength(1);
+    expect(changes[0]?.running).toBe(true);
+  });
+
+  it('counts the turn still running as one more turn', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+    await running('a.ts', 'b\n', 'c\n');
+
+    expect(sessionChanges(SESSION)[0]?.turns).toBe(2);
+  });
+
+  /**
+   * The row says what the session has done to the file in total, so the work the store
+   * recorded and the work still going both have to be in it.
+   */
+  it('adds what the turn is doing to what the store recorded', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+    await running('a.ts', 'b\n', 'c\nd\n');
+
+    const [row] = sessionChanges(SESSION);
+    // One line swapped in the store, then one swapped and one added by the running turn.
+    expect(row?.linesAdded).toBe(3);
+    expect(row?.linesRemoved).toBe(2);
+  });
+
+  it('takes the time of the running turn, which is the newest', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+    await running('a.ts', 'b\n', 'c\n');
+
+    expect(sessionChanges(SESSION)[0]?.changedAt).toBe('2026-01-01T12:00:00.000Z');
+  });
+
+  /** One end is on disk and the other is not, so the two cannot be diffed against each other. */
+  it('offers no diff for a row the turn is still writing', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+    await running('a.ts', 'b\n', 'c\n');
+
+    expect(sessionChanges(SESSION)[0]?.diffable).toBe(false);
+  });
+
+  /** A file the session created earlier is still a file it created. */
+  it('keeps the status the session gave the file', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: ABSENT, postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+    await running('a.ts', 'b\n', 'c\n');
+
+    expect(sessionChanges(SESSION)[0]?.status).toBe('created');
+  });
+
+  it('keeps a running row out of the answer when it is noise', async () => {
+    const { sessionChanges } = await load(join(home, 'scratch'));
+    await running(join(home, 'scratch', 'note.txt'), 'one\n', 'two\n');
+
+    expect(sessionChanges(SESSION)).toEqual([]);
+  });
+
+  it('is sorted with everything else, newest first', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'old.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionChanges } = await load();
+    await running('new.ts', 'one\n', 'two\n');
+
+    expect(sessionChanges(SESSION).map((c) => c.path)).toEqual(['new.ts', 'old.ts']);
+  });
+});

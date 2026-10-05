@@ -269,3 +269,45 @@ describe('the file type beside a change', () => {
     expect(badge?.getAttribute('data-tone')).toBeNull();
   });
 });
+
+/**
+ * A row for work that has not finished (#140).
+ *
+ * The CLI writes a turn's snapshot when the next turn begins, so this row was built from
+ * the events as the tools ran. Its count is about to change, and saying so is cheaper than
+ * letting somebody read a half-finished number as the answer.
+ */
+describe('a turn that is still running', () => {
+  it('says so on the row', () => {
+    render(<Changes {...props} changes={[change({ running: true })]} />);
+
+    expect(screen.getByText('still working')).toBeTruthy();
+  });
+
+  it('says nothing of the sort for work that has finished', () => {
+    render(<Changes {...props} changes={[change()]} />);
+
+    expect(screen.queryByText('still working')).toBeNull();
+  });
+
+  it('still says what has changed so far', () => {
+    render(<Changes {...props} changes={[change({ running: true, linesAdded: 7, linesRemoved: 2 })]} />);
+
+    // Scoped to the row: the panel's own header counts the same lines up again.
+    const row = document.querySelector('.changes-row')!;
+    expect(row.querySelector('.added')?.textContent).toBe('+7');
+    expect(row.querySelector('.removed')?.textContent).toBe('\u22122');
+  });
+
+  it('draws the running rows alongside the finished ones', () => {
+    render(
+      <Changes
+        {...props}
+        changes={[change({ path: 'C:\\work\\repo\\a.ts', running: true }), change({ path: 'C:\\work\\repo\\b.ts' })]}
+      />,
+    );
+
+    expect(screen.getAllByText(/still working/)).toHaveLength(1);
+    expect(document.querySelectorAll('.changes-row')).toHaveLength(2);
+  });
+});

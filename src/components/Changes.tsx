@@ -164,6 +164,10 @@ export function Changes({
                 <FileBadge path={change.path} />
                 <span className="changes-path">{relativise(change.path, cwd)}</span>
                 {change.turns > 1 && <span className="changes-turns">{change.turns} turns</span>}
+                {/* A count that is about to change must not read as final, and the row has
+                    no diff behind it yet: the before image is the CLI's to write, and it
+                    writes it when the turn ends (#140). */}
+                {change.running && <span className="changes-running">still working</span>}
                 <span className="changes-counts">
                   {change.linesAdded > 0 && <span className="added">+{change.linesAdded}</span>}
                   {change.linesRemoved > 0 && <span className="removed">−{change.linesRemoved}</span>}

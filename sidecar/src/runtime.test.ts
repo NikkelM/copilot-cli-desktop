@@ -4350,3 +4350,129 @@ describe('offering to allow a directory', () => {
     await expect(harness.runtime.allowFolder('a', outside)).resolves.toEqual({ allowed: false });
   });
 });
+
+/**
+ * What the running turn has touched, kept until the store takes over (#140).
+ *
+ * The runtime is where this lives because it sees every session's events all the time. The
+ * app only has the session on screen, and only the pages of it that have been read.
+ */
+describe('SessionRuntime watching a running turn', () => {
+  // Held per session until the turn ends, so each test has to start from nothing.
+  let liveMod: typeof import('./liveChanges.js');
+  const live = async () => liveMod;
+
+  beforeEach(async () => {
+    liveMod = await import('./liveChanges.js');
+    liveMod.forgetLive('a');
+  });
+
+  const wrote = (session: { emit: (e: unknown) => void }, path: string, id = 'c1') => {
+    session.emit({
+      type: 'tool.execution_start',
+      data: { toolCallId: id, toolName: 'edit', arguments: { path, old_str: 'one\n', new_str: 'two\n' } },
+    });
+    session.emit({ type: 'tool.execution_complete', data: { toolCallId: id, success: true } });
+  };
+
+  it('keeps what a file tool changed', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+
+    wrote(sessions.get('a')!, 'a.ts');
+
+    expect((await live()).liveChanges('a').map((c) => c.path)).toEqual(['a.ts']);
+  });
+
+  it('says so, so a panel knows to read again', async () => {
+    const onChangesRecorded = vi.fn();
+    const { runtime, sessions } = makeRuntime({ onChangesRecorded });
+    await runtime.send('a', 'make a file');
+
+    wrote(sessions.get('a')!, 'a.ts');
+
+    expect(onChangesRecorded).toHaveBeenCalledWith('a');
+  });
+
+  /** Most calls are reads, and one notification apiece would re-read the store constantly. */
+  it('says nothing for a tool that only read', async () => {
+    const onChangesRecorded = vi.fn();
+    const { runtime, sessions } = makeRuntime({ onChangesRecorded });
+    await runtime.send('a', 'look at a file');
+
+    const session = sessions.get('a')!;
+    session.emit({ type: 'tool.execution_start', data: { toolCallId: 'c1', toolName: 'view', arguments: { path: 'a.ts' } } });
+    session.emit({ type: 'tool.execution_complete', data: { toolCallId: 'c1', success: true } });
+
+    expect(onChangesRecorded).not.toHaveBeenCalled();
+  });
+
+  it('keeps nothing from a write that failed', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+
+    const session = sessions.get('a')!;
+    session.emit({
+      type: 'tool.execution_start',
+      data: { toolCallId: 'c1', toolName: 'edit', arguments: { path: 'a.ts', old_str: 'one', new_str: 'two' } },
+    });
+    session.emit({ type: 'tool.execution_complete', data: { toolCallId: 'c1', success: false } });
+
+    expect((await live()).liveChanges('a')).toEqual([]);
+  });
+
+  /**
+   * The store becomes the record when the session goes idle. Keeping this past that moment
+   * would count every one of these changes twice, once live and once from the snapshot.
+   */
+  it('hands over to the store when the session goes idle', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    const session = sessions.get('a')!;
+    wrote(session, 'a.ts');
+
+    session.emit({ type: 'session.idle', data: {} });
+
+    expect((await live()).liveChanges('a')).toEqual([]);
+  });
+
+  /** A request that calls tools ends and starts a turn nine times over on average. */
+  it('keeps it across the round trips within one turn', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    const session = sessions.get('a')!;
+    wrote(session, 'a.ts');
+
+    session.emit({ type: 'assistant.turn_end', data: {} });
+    session.emit({ type: 'assistant.turn_start', data: {} });
+
+    expect((await live()).liveChanges('a')).toHaveLength(1);
+  });
+
+  it('drops it when the turn is interrupted', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    const session = sessions.get('a')!;
+    wrote(session, 'a.ts');
+
+    session.emit({ type: 'abort', data: {} });
+
+    expect((await live()).liveChanges('a')).toEqual([]);
+  });
+
+  /** Whoever reads the list on the idle notification must see the store, not the store plus this. */
+  it('has already handed over by the time it announces the turn is done', async () => {
+    const seen: number[] = [];
+    const { runtime, sessions } = makeRuntime({
+      onChangesRecorded: () => seen.push(liveMod.liveChanges('a').length),
+    });
+    await runtime.send('a', 'make a file');
+    const session = sessions.get('a')!;
+    wrote(session, 'a.ts');
+
+    session.emit({ type: 'session.idle', data: {} });
+
+    // The write announced one, and the idle announced none: the handover happened between.
+    expect(seen).toEqual([1, 0]);
+  });
+});
