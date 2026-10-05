@@ -88,7 +88,9 @@ export function Changes({
   useEffect(() => {
     if (!open) return;
     if (changes && !changes.some((change) => change.path === open)) setOpen(null);
-    else onDiff(open);
+    // A row the turn is still writing has no diff to ask for: the before image is written
+    // when the turn ends. Asking anyway is a round trip that can only come back empty.
+    else if (!changes?.find((change) => change.path === open)?.running) onDiff(open);
   }, [open, changes, onDiff]);
 
   function toggle(path: string) {
@@ -174,7 +176,7 @@ export function Changes({
                 </span>
               </button>
 
-              {open === change.path && <Expanded diff={diffs[change.path]} />}
+              {open === change.path && <Expanded diff={diffs[change.path]} running={change.running} />}
             </li>
           ))}
         </ul>
@@ -192,7 +194,14 @@ const WHY: Record<NonNullable<FileDiff['reason']>, string> = {
   untracked: 'No snapshot was taken of this file.',
 };
 
-function Expanded({ diff }: { diff: FileDiff | undefined }) {
+function Expanded({ diff, running }: { diff: FileDiff | undefined; running?: boolean }) {
+  /*
+   * A row the turn is still writing has no diff and will not have one until the turn ends,
+   * because the before image is the CLI's to write and it writes it then. Saying so here
+   * rather than letting the generic answer stand: "no snapshot was taken of this file" is
+   * about a file nobody recorded, and reads as a fault where this is a matter of waiting.
+   */
+  if (running) return <p className="changes-note">Still being written. The diff is here once the turn ends.</p>;
   if (!diff) return <p className="changes-note">Reading the diff.</p>;
   if (!diff.patch) return <p className="changes-note">{diff.reason ? WHY[diff.reason] : 'No diff to show.'}</p>;
 

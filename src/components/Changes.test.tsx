@@ -311,3 +311,47 @@ describe('a turn that is still running', () => {
     expect(document.querySelectorAll('.changes-row')).toHaveLength(2);
   });
 });
+
+/**
+ * Opening a row whose turn has not finished (#140).
+ *
+ * There is no diff and there will not be one until the turn ends, because the before image
+ * is the CLI's to write and it writes it then. The generic answer - "no snapshot was taken
+ * of this file" - is about a file nobody recorded, and reads as a fault.
+ */
+describe('opening a row the turn is still writing', () => {
+  const openRow = (over: Partial<SessionChange> = {}) => {
+    const onDiff = vi.fn();
+    render(<Changes {...props} changes={[change({ running: true, diffable: false, ...over })]} onDiff={onDiff} />);
+    fireEvent.click(screen.getByRole('button', { name: /thing\.ts/ }));
+    return onDiff;
+  };
+
+  it('says the diff is a matter of waiting', () => {
+    openRow();
+
+    expect(screen.getByText(/once the turn ends/)).toBeTruthy();
+  });
+
+  it('does not claim nothing was recorded', () => {
+    openRow();
+
+    expect(screen.queryByText(/No snapshot was taken/)).toBeNull();
+  });
+
+  /** A round trip that can only come back empty. */
+  it('asks for no diff it cannot have', () => {
+    const onDiff = openRow();
+
+    expect(onDiff).not.toHaveBeenCalled();
+  });
+
+  it('still asks for one on a row that has finished', () => {
+    const onDiff = vi.fn();
+    render(<Changes {...props} changes={[change()]} onDiff={onDiff} />);
+
+    fireEvent.click(screen.getByRole('button', { name: /thing\.ts/ }));
+
+    expect(onDiff).toHaveBeenCalledWith('C:\\work\\repo\\src\\thing.ts');
+  });
+});

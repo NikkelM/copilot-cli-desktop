@@ -166,3 +166,107 @@ describe('what a turn changed', () => {
     expect(changesByTurn([]).size).toBe(0);
   });
 });
+
+/**
+ * A patch applied rather than a file edited (#140 follow-up).
+ *
+ * `apply_patch` is given a whole envelope, so unlike `edit` and `create` it carries no path
+ * in its arguments and its row has none. The summary required a row to have both a patch
+ * and a path, so it skipped every one of them - measured on a real session here, 23 rows
+ * carried a patch, 2 carried a path, and the turn summarised to nothing at all.
+ */
+describe('a turn that applied patches', () => {
+  const diff = (path: string, added: number, removed: number) =>
+    [
+      `diff --git a/${path} b/${path}`,
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      '@@ -1,1 +1,1 @@',
+      ...Array.from({ length: added }, (_, i) => `+line ${i}`),
+      ...Array.from({ length: removed }, (_, i) => `-line ${i}`),
+    ].join('\n');
+
+  /** A row as `apply_patch` leaves one: a patch, and no path. */
+  const applied = (key: string, patch: string): Entry =>
+    ({
+      kind: 'tool',
+      key,
+      name: 'Applying patch',
+      summary: '',
+      output: null,
+      status: 'ok',
+      patch,
+    }) as Entry;
+
+  it('summarises a patch that named no path on its row', () => {
+    const entries = [asked('a'), applied('b', diff('C:/w/one.ts', 2, 1))];
+
+    const turn = changesByTurn(entries, 'always').get(1);
+
+    expect(turn?.files.map((f) => f.path)).toEqual(['C:/w/one.ts']);
+    expect(turn?.added).toBe(2);
+    expect(turn?.removed).toBe(1);
+  });
+
+  it('counts every file one patch touched', () => {
+    const entries = [asked('a'), applied('b', `${diff('C:/w/one.ts', 2, 0)}\n${diff('C:/w/two.ts', 3, 1)}`)];
+
+    const turn = changesByTurn(entries, 'always').get(1);
+
+    expect(turn?.files.map((f) => f.path)).toEqual(['C:/w/one.ts', 'C:/w/two.ts']);
+    expect(turn?.added).toBe(5);
+    expect(turn?.removed).toBe(1);
+  });
+
+  it('gives each file only its own hunks to draw', () => {
+    const entries = [asked('a'), applied('b', `${diff('C:/w/one.ts', 2, 0)}\n${diff('C:/w/two.ts', 3, 1)}`)];
+
+    const files = changesByTurn(entries, 'always').get(1)?.files ?? [];
+
+    expect(files[0]?.patches[0]).toContain('a/C:/w/one.ts');
+    expect(files[0]?.patches[0]).not.toContain('two.ts');
+  });
+
+  it('joins a file two patches both touched', () => {
+    const entries = [
+      asked('a'),
+      applied('b', diff('C:/w/one.ts', 2, 0)),
+      applied('c', diff('C:/w/one.ts', 1, 1)),
+    ];
+
+    const turn = changesByTurn(entries, 'always').get(2);
+
+    expect(turn?.files).toHaveLength(1);
+    expect(turn?.files[0]?.patches).toHaveLength(2);
+    expect(turn?.added).toBe(3);
+  });
+
+  /**
+   * A single-file patch keeps the row's own path. That is the path the tool was given, in
+   * the platform's own spelling, where the patch carries git's normalised one.
+   */
+  it('prefers the row path where the patch is about one file', () => {
+    const named = (key: string, path: string, patch: string): Entry =>
+      ({ kind: 'tool', key, name: 'Editing', summary: '', output: null, status: 'ok', path, patch }) as Entry;
+    const entries = [asked('a'), named('b', 'C:\\w\\one.ts', diff('C:/w/one.ts', 1, 0))];
+
+    expect(changesByTurn(entries, 'always').get(1)?.files[0]?.path).toBe('C:\\w\\one.ts');
+  });
+
+  /** A patch git did not write has no headers to read, so the row's path is all there is. */
+  it('falls back to the row path for a patch with no headers', () => {
+    const entries = [asked('a'), edited('b', 'C:\\w\\one.ts', 1, 0)];
+
+    expect(changesByTurn(entries, 'always').get(1)?.files[0]?.path).toBe('C:\\w\\one.ts');
+  });
+
+  it('still says nothing about a row with neither a patch nor a path', () => {
+    expect(changesByTurn([asked('a'), ran('b')], 'always').size).toBe(0);
+  });
+
+  it('still says nothing about a patch that changed nothing', () => {
+    const empty = ['diff --git a/C:/w/one.ts b/C:/w/one.ts', '--- a/C:/w/one.ts', '+++ b/C:/w/one.ts', '@@ -1,1 +1,1 @@', ' same'].join('\n');
+
+    expect(changesByTurn([asked('a'), applied('b', empty)], 'always').size).toBe(0);
+  });
+});

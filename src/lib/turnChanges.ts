@@ -1,4 +1,4 @@
-import { countChanges, parsePatch } from './patch';
+import { countChanges, parsePatch, splitByFile } from './patch';
 import type { Entry } from './transcriptEntries';
 
 /** One file a turn changed, and how much of it. */
@@ -79,7 +79,7 @@ export function changesByTurn(entries: Entry[], show: ShowTurnChanges = 'always'
       continue;
     }
 
-    if (entry.kind === 'tool' && entry.patch && entry.path) edits.push(entry);
+    if (entry.kind === 'tool' && entry.patch) edits.push(entry);
   }
 
   // The turn in progress ends where the rows do.
@@ -95,30 +95,52 @@ function gather(edits: Entry[]): TurnChanges {
   let removed = 0;
 
   for (const entry of edits) {
-    if (entry.kind !== 'tool' || !entry.patch || !entry.path) continue;
+    if (entry.kind !== 'tool' || !entry.patch) continue;
 
-    const counts = countChanges(parsePatch(entry.patch));
-    // Writing a file without changing it leaves a patch of nothing but context. Counting it
-    // would claim an edit that is not there and draw a diff with nothing in it.
-    if (counts.added === 0 && counts.removed === 0) continue;
+    for (const file of filesIn(entry.patch, entry.path)) {
+      const counts = countChanges(parsePatch(file.patch));
+      // Writing a file without changing it leaves a patch of nothing but context. Counting
+      // it would claim an edit that is not there and draw a diff with nothing in it.
+      if (counts.added === 0 && counts.removed === 0) continue;
 
-    added += counts.added;
-    removed += counts.removed;
+      added += counts.added;
+      removed += counts.removed;
 
-    const held = files.get(entry.path);
-    if (held) {
-      held.added += counts.added;
-      held.removed += counts.removed;
-      held.patches.push(entry.patch);
-    } else {
-      files.set(entry.path, {
-        path: entry.path,
-        added: counts.added,
-        removed: counts.removed,
-        patches: [entry.patch],
-      });
+      const held = files.get(file.path);
+      if (held) {
+        held.added += counts.added;
+        held.removed += counts.removed;
+        held.patches.push(file.patch);
+      } else {
+        files.set(file.path, {
+          path: file.path,
+          added: counts.added,
+          removed: counts.removed,
+          patches: [file.patch],
+        });
+      }
     }
   }
 
   return { files: [...files.values()], added, removed };
+}
+
+/**
+ * The files one edit was about, and the part of its patch belonging to each.
+ *
+ * Taken from the patch rather than from the row's own path, because a row has one path and
+ * a patch may be about several files: `apply_patch` takes a whole envelope and carries no
+ * path at all in its arguments. That is why the summary used to skip every patch it applied
+ * - the row had a patch and no path, and the pair was required.
+ *
+ * The row's path still wins where the patch is about a single file. It is the path the tool
+ * was given, in the platform's own spelling, where the patch holds git's normalised one.
+ */
+function filesIn(patch: string, path: string | undefined): { path: string; patch: string }[] {
+  const inside = splitByFile(patch);
+  if (inside.length === 1 && path) return [{ path, patch }];
+  if (inside.length > 0) return inside;
+  // A patch git did not write, so there are no headers to read. The row's own path is all
+  // there is, and without one there is nothing to attribute the change to.
+  return path ? [{ path, patch }] : [];
 }
