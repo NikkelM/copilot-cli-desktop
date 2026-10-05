@@ -2063,3 +2063,70 @@ describe('the files a prompt carried', () => {
     expect(document.querySelector('.attachment')).toBeNull();
   });
 });
+
+/**
+ * A session changing model, in the transcript (#212).
+ *
+ * A reply written by one model sits directly above a reply written by another, and nothing
+ * else in the transcript says so. The row has to be distinguishable from the other things
+ * that happen to a session rather than in it: a compaction and a truncation both wear their
+ * own marker, and a model change is neither.
+ */
+describe('a model change in the transcript', () => {
+  const moved = (over: Record<string, unknown> = {}) =>
+    show([
+      event(
+        'session.model_change',
+        { previousModel: 'claude-opus-4.8', newModel: 'claude-sonnet-5', ...over },
+        'e1',
+      ),
+    ]);
+
+  it('says what the session moved to, on the row', () => {
+    moved();
+
+    expect(screen.getByText('Model')).toBeTruthy();
+    expect(screen.getByText('claude-opus-4.8 \u2192 claude-sonnet-5')).toBeTruthy();
+  });
+
+  it('wears a marker of its own rather than a finished tool\u2019s tick', () => {
+    const { container } = moved();
+
+    const glyph = container.querySelector('.tool-status')?.textContent;
+    expect(glyph).not.toBe('\u2713');
+    // Nor a compaction's, nor a truncation's: three different things happened.
+    expect(glyph).not.toBe('\u233E');
+    expect(glyph).not.toBe('\u232B');
+  });
+
+  /** Nothing was lost, unlike the two rows it sits nearest in meaning. */
+  it('is not marked as having lost anything', () => {
+    const { container } = moved();
+
+    expect(container.querySelector('.tool.lossy')).toBeNull();
+  });
+
+  it('does not open, because the whole of it is on the row', () => {
+    const { container } = moved();
+
+    expect((container.querySelector('.tool-head') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('says how hard it was told to think, where that moved too', () => {
+    moved({ previousReasoningEffort: 'high', reasoningEffort: 'max' });
+
+    expect(screen.getByText('high \u2192 max')).toBeTruthy();
+  });
+
+  it('says nothing about effort that stayed where it was', () => {
+    const { container } = moved({ previousReasoningEffort: 'max', reasoningEffort: 'max' });
+
+    expect(container.textContent).not.toContain('max \u2192 max');
+  });
+
+  it('draws nothing at all for a session merely saying what it runs on', () => {
+    const { container } = show([event('session.model_change', { newModel: 'claude-opus-5' }, 'e1')]);
+
+    expect(container.querySelector('.tool')).toBeNull();
+  });
+});

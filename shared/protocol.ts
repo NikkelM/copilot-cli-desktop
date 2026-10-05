@@ -1134,6 +1134,9 @@ export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
   // The other way room is made, and the lossy one: the oldest messages are cut and no
   // summary is kept, so the agent simply stops knowing them (#7).
   'session.truncation',
+  // Which model the session runs on, where it actually moved. Most of these events are the
+  // session declaring itself rather than changing, and the renderer drops those (#212).
+  'session.model_change',
   'command.output',
   'command.failed',
   'abort',

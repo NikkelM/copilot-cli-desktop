@@ -150,6 +150,22 @@ export interface ToolEntry {
     /** The ceiling it was cut to fit under. */
     tokenLimit?: number;
   };
+  /**
+   * The session changing which model it runs on, mid-conversation (#212).
+   *
+   * Only ever set where something actually moved. The runtime emits this event far more
+   * often than anything changes - measured over 248 of them here, 65% carry no previous
+   * model at all and a further 13% say the model and effort are what they already were.
+   * Those are the session declaring what it is on, which the header already says.
+   */
+  model?: {
+    /** What it was, which is the half that makes this a change rather than a statement. */
+    from: string;
+    to: string;
+    /** How hard it was told to think, where that moved too. */
+    effortFrom?: string;
+    effortTo?: string;
+  };
   /** When it began, so a long-running call can say how long it has been going. */
   startedAt?: string;
   /** When it stopped, whether it finished or was cancelled. Absent while it runs. */
@@ -937,6 +953,58 @@ export function toEntries(
        * One event rather than a start and a completion, because it is reported after the
        * fact - there is no moment at which it can be said to be working.
        */
+      /**
+       * The session changing model, where it genuinely changed (#212).
+       *
+       * Measured across 248 of these events on this machine: 162 carry no previous model
+       * at all and 31 more say the model and effort are both what they already were. Those
+       * are the session stating what it runs on, at startup or on resume, and drawing them
+       * would put a row saying "claude-opus-5 to claude-opus-5" above most conversations.
+       *
+       * What is left is worth a row: a reply written by one model sits directly above a
+       * reply written by another, and nothing else in the transcript says so.
+       */
+      case 'session.model_change': {
+        const to = text(data, 'newModel');
+        const from = text(data, 'previousModel');
+        const effortTo = text(data, 'reasoningEffort');
+        const effortFrom = text(data, 'previousReasoningEffort');
+
+        // Nothing to say without both halves: a new model with no previous one is the
+        // session declaring itself rather than changing.
+        if (!to || !from) break;
+
+        const modelMoved = from !== to;
+        /*
+         * Effort moves on its own - the same model told to think harder - which is a change
+         * to how the session behaves even though its name has not moved.
+         *
+         * Both ends have to be readable for this to count. Switching to the automatic model
+         * sets the effort to null, and "max to nothing" is not a row anybody can act on;
+         * where that happens the model itself moved, and that is what the row says.
+         */
+        const effortMoved = Boolean(effortFrom && effortTo && effortFrom !== effortTo);
+        if (!modelMoved && !effortMoved) break;
+
+        entries.push({
+          kind: 'tool',
+          key,
+          name: 'Model',
+          summary: modelMoved ? `${from} → ${to}` : to,
+          // Nothing behind it. The whole of what happened is on the row.
+          output: null,
+          status: 'ok',
+          model: {
+            from,
+            to,
+            ...(effortMoved && effortFrom && effortTo ? { effortFrom, effortTo } : {}),
+          },
+          startedAt: event.timestamp,
+          endedAt: event.timestamp,
+        });
+        break;
+      }
+
       case 'session.truncation': {
         const removed = number(data, 'messagesRemovedDuringTruncation');
         const tokens = number(data, 'tokensRemovedDuringTruncation');

@@ -245,7 +245,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
           </span>
         ) : (
           <span className="tool-status">
-            {entry.skill ? '◈' : entry.compaction ? '⌾' : entry.truncation ? '⌫' : STATUS_GLYPH[entry.status]}
+            {entry.skill ? '◈' : entry.compaction ? '⌾' : entry.truncation ? '⌫' : entry.model ? '⇄' : STATUS_GLYPH[entry.status]}
           </span>
         )}
         <span className="tool-name">{entry.name}</span>
@@ -291,6 +291,13 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
             the whole of what a reader needs from it: compacting leaves a summary behind and
             this leaves nothing. Without it the two read as the same tidy-up. */}
         {entry.truncation && <span className="tool-note">no summary kept</span>}
+        {/* How hard it was told to think, where that moved as well as the model - or where
+            it moved on its own, which is the only thing that happened on such a row. */}
+        {entry.model?.effortTo && (
+          <span className="tool-note">
+            {entry.model.effortFrom} → {entry.model.effortTo}
+          </span>
+        )}
         {/* Says how much is behind the row, and stays once it is opened: it describes the
             row rather than the fact that it is folded. Right-aligned, so it reads as a
             separate column without needing punctuation. */}

@@ -1752,3 +1752,190 @@ describe('what a prompt carried', () => {
     expect(entry.kind === 'message' && entry.attachments).toBeUndefined();
   });
 });
+
+/**
+ * The session changing which model it runs on (#212).
+ *
+ * The runtime emits this event far more often than anything changes. Measured across 248
+ * of them on this machine: 162 carry no previous model at all, and 31 more say the model
+ * and the effort are both what they already were. Only 55 move anything, across 24 of the
+ * 211 sessions - so most of the work here is refusing to draw a row.
+ *
+ * Every shape below is one that actually occurs in those logs.
+ */
+describe('a session changing model', () => {
+  const changed = (data: Record<string, unknown>) => event('session.model_change', data, 'm1');
+  const rows = (data: Record<string, unknown>) => toEntries([changed(data)], null) as ToolEntry[];
+
+  it('says what it changed from and to', () => {
+    const [row] = rows({ previousModel: 'claude-opus-4.8', newModel: 'claude-sonnet-5' });
+
+    expect(row?.name).toBe('Model');
+    expect(row?.summary).toBe('claude-opus-4.8 → claude-sonnet-5');
+  });
+
+  it('marks the row as a model change, so it can be drawn as one', () => {
+    const [row] = rows({ previousModel: 'claude-opus-4.8', newModel: 'claude-sonnet-5' });
+
+    expect(row?.model).toEqual({ from: 'claude-opus-4.8', to: 'claude-sonnet-5' });
+  });
+
+  it('has nothing to expand, since the whole of it is on the row', () => {
+    const [row] = rows({ previousModel: 'claude-opus-5', newModel: 'auto' });
+
+    expect(row?.output).toBeNull();
+  });
+
+  it('is not an error', () => {
+    const [row] = rows({ previousModel: 'claude-opus-5', newModel: 'auto' });
+
+    expect(row?.status).toBe('ok');
+  });
+
+  it('happens at a moment rather than over one', () => {
+    const [row] = rows({ previousModel: 'claude-opus-5', newModel: 'auto' });
+
+    expect(row?.startedAt).toBe(row?.endedAt);
+  });
+
+  it('draws the move to the automatic model like any other', () => {
+    const [row] = rows({
+      source: 'model_command',
+      contextTier: null,
+      previousModel: 'claude-opus-5',
+      newModel: 'auto',
+      previousReasoningEffort: 'max',
+      reasoningEffort: null,
+    });
+
+    expect(row?.summary).toBe('claude-opus-5 → auto');
+  });
+});
+
+/**
+ * Two thirds of these events carry no previous model, and an eighth say nothing moved.
+ * Both are the session stating what it runs on, which the header already says.
+ */
+describe('a session saying which model it is on', () => {
+  const rows = (data: Record<string, unknown>) => toEntries([event('session.model_change', data, 'm1')], null);
+
+  it('draws nothing where there is no previous model to have changed from', () => {
+    expect(rows({ newModel: 'claude-opus-4.6-1m' })).toEqual([]);
+  });
+
+  it('draws nothing for the shape the runtime sends on startup', () => {
+    expect(
+      rows({
+        source: 'startup',
+        contextTier: 'long_context',
+        previousModel: 'claude-opus-5',
+        newModel: 'claude-opus-5',
+        previousReasoningEffort: 'max',
+        reasoningEffort: 'max',
+      }),
+    ).toEqual([]);
+  });
+
+  it('draws nothing where only the effort is known and it did not move', () => {
+    expect(rows({ newModel: 'claude-opus-4.8', previousReasoningEffort: 'high', reasoningEffort: 'high' })).toEqual([]);
+  });
+
+  it('draws nothing for an event carrying no model at all', () => {
+    expect(rows({ source: 'startup' })).toEqual([]);
+  });
+});
+
+/**
+ * The same model told to think harder is a change to how the session behaves, even though
+ * its name has not moved. Five of the 248 are this.
+ */
+describe('a session changing only how hard it thinks', () => {
+  const rows = (data: Record<string, unknown>) => toEntries([event('session.model_change', data, 'm1')], null) as ToolEntry[];
+
+  it('draws a row for it', () => {
+    const [row] = rows({
+      previousModel: 'claude-opus-4.8',
+      newModel: 'claude-opus-4.8',
+      previousReasoningEffort: 'high',
+      reasoningEffort: 'max',
+      contextTier: 'long_context',
+    });
+
+    expect(row).toBeTruthy();
+  });
+
+  /** Naming it twice would read as a change that did not happen. */
+  it('names the model once rather than as a move to itself', () => {
+    const [row] = rows({
+      previousModel: 'claude-opus-4.8',
+      newModel: 'claude-opus-4.8',
+      previousReasoningEffort: 'high',
+      reasoningEffort: 'max',
+    });
+
+    expect(row?.summary).toBe('claude-opus-4.8');
+  });
+
+  it('carries both ends of the effort, which is the whole of what moved', () => {
+    const [row] = rows({
+      previousModel: 'claude-opus-4.8',
+      newModel: 'claude-opus-4.8',
+      previousReasoningEffort: 'high',
+      reasoningEffort: 'max',
+    });
+
+    expect(row?.model).toEqual({
+      from: 'claude-opus-4.8',
+      to: 'claude-opus-4.8',
+      effortFrom: 'high',
+      effortTo: 'max',
+    });
+  });
+
+  it('carries it alongside a model that moved as well', () => {
+    const [row] = rows({
+      previousModel: 'claude-opus-4.8',
+      newModel: 'claude-opus-5',
+      previousReasoningEffort: 'high',
+      reasoningEffort: 'max',
+    });
+
+    expect(row?.model?.effortFrom).toBe('high');
+    expect(row?.summary).toBe('claude-opus-4.8 → claude-opus-5');
+  });
+
+  it('leaves the effort off a row where it did not move', () => {
+    const [row] = rows({
+      previousModel: 'claude-opus-4.8',
+      newModel: 'claude-sonnet-5',
+      previousReasoningEffort: 'max',
+      reasoningEffort: 'max',
+    });
+
+    expect(row?.model?.effortFrom).toBeUndefined();
+  });
+
+  /**
+   * Switching to the automatic model sets the effort to null. "max to nothing" is not a row
+   * anybody can act on, and where it happens the model moved, which is what the row says.
+   */
+  it('says nothing about an effort that went away', () => {
+    const [row] = rows({
+      previousModel: 'claude-opus-5',
+      newModel: 'auto',
+      previousReasoningEffort: 'max',
+      reasoningEffort: null,
+    });
+
+    expect(row?.model?.effortTo).toBeUndefined();
+  });
+
+  it('draws nothing at all where only an effort went away', () => {
+    expect(
+      toEntries(
+        [event('session.model_change', { previousModel: 'auto', newModel: 'auto', previousReasoningEffort: 'max', reasoningEffort: null }, 'm1')],
+        null,
+      ),
+    ).toEqual([]);
+  });
+});
