@@ -9,19 +9,28 @@ import { NotesIcon } from './Icons';
  * one would be a button that leaves the app, and an empty one would be a label saying no
  * four times a day.
  *
- * Opens the wiki at the first of them rather than listing them here. The browser is one
- * press away and already does searching, trees and reading; this only has to say that there
- * is something to find, which is the part nobody would otherwise discover.
+ * Opens the first of them in the column beside the transcript, and closes it again. Not a
+ * list: which note to read is a choice worth offering where there is room for the titles,
+ * which is the column itself rather than a header already holding a path and a branch.
  */
-export function HeaderNotes({ pages, onOpen }: { pages: readonly WikiPage[]; onOpen: (page: string) => void }) {
+export function HeaderNotes({
+  pages,
+  open = false,
+  onOpen,
+}: {
+  pages: readonly WikiPage[];
+  /** Whether the column is showing, so the control can say so and close it again. */
+  open?: boolean;
+  onOpen: (page: string) => void;
+}) {
   const first = pages[0];
   if (!first) return null;
-
   return (
     <button
       type="button"
-      className="header-notes"
+      className={open ? 'header-notes on' : 'header-notes'}
       onClick={() => onOpen(first.path)}
+      aria-pressed={open}
       title={
         pages.length === 1
           ? `Your notes on this repository: ${first.title}`

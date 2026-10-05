@@ -84,3 +84,44 @@ describe('the notes on a repository', () => {
     expect(screen.getByRole('button').textContent).toBe('1 note');
   });
 });
+
+/**
+ * The control says whether the column is open as well as that there is something in it,
+ * because it is now the way to close it again (#35).
+ */
+describe('while the notes are open beside the session', () => {
+  it('says so, rather than looking like a way to open them again', () => {
+    render(<HeaderNotes pages={[page('a.md', 'A')]} open onOpen={() => {}} />);
+
+    expect(screen.getByRole('button').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('is marked as open for anything drawing it', () => {
+    render(<HeaderNotes pages={[page('a.md', 'A')]} open onOpen={() => {}} />);
+
+    expect(screen.getByRole('button').className).toContain('on');
+  });
+
+  it('says nothing of the sort when they are closed', () => {
+    render(<HeaderNotes pages={[page('a.md', 'A')]} onOpen={() => {}} />);
+
+    expect(screen.getByRole('button').getAttribute('aria-pressed')).toBe('false');
+    expect(screen.getByRole('button').className).not.toContain('on');
+  });
+
+  /** Closed is the default: most sessions are worked in without the wiki being opened. */
+  it('is closed where nobody has said otherwise', () => {
+    render(<HeaderNotes pages={[page('a.md', 'A')]} onOpen={() => {}} />);
+
+    expect(screen.getByRole('button').className).toBe('header-notes');
+  });
+
+  it('still asks for the same page, so whoever owns the state can close it', () => {
+    const onOpen = vi.fn();
+    render(<HeaderNotes pages={[page('a.md', 'A')]} open onOpen={onOpen} />);
+
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(onOpen).toHaveBeenCalledExactlyOnceWith('a.md');
+  });
+});

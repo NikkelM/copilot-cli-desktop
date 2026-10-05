@@ -74,6 +74,8 @@ import { SettingsWindow } from './components/SettingsWindow';
 import { usePanel } from './lib/usePanel';
 import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
+import { NotesGrip } from './components/NotesGrip';
+import { SessionNotes } from './components/SessionNotes';
 import { SidebarToggle } from './components/SidebarToggle';
 import { useSidebarWidth } from './lib/useSidebarWidth';
 import { openPath, openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
@@ -111,6 +113,8 @@ import { STEP, clampScale } from './lib/scale';
 import { type WatchedSubagent, useSubagents } from './lib/useSubagents';
 import { useWiki } from './lib/useWiki';
 import { useWikiNotes } from './lib/useWikiNotes';
+import { useNotesWidth } from './lib/useNotesWidth';
+import { useNotesColumn } from './lib/useNotesColumn';
 import { useWikiTags } from './lib/useWikiTags';
 import { useOnScreen } from './lib/useOnScreen';
 import { useSessionPreviews } from './lib/useSessionPreviews';
@@ -324,11 +328,10 @@ export default function App() {
     unarchive(sessions.all.filter((session) => session.loaded).map((session) => session.sessionId));
   }, [sessions.all, unarchive]);
 
-  const wiki = useWiki(showWiki);
   /**
    * What this session is about that is already written down, for the header to say so (#35).
    *
-   * Not gated on the wiki being open, unlike the browser above: the point is to say there
+   * Not gated on the wiki being open, unlike the browser below: the point is to say there
    * is something to find before anybody thinks to look. Reads the session's tags as well as
    * its repository - a session working in a parent folder has no repository worth the name,
    * and its tags are the only thing saying what it is for. Costs one read of the page list
@@ -339,6 +342,24 @@ export default function App() {
     selected?.cwd ?? null,
     selectedId ? (tags[selectedId] ?? []) : [],
   );
+
+  /**
+   * Whether a note is drawn beside the session, and how wide that column is (#35).
+   *
+   * When it closes is the hook's rule rather than one written here, where nothing could
+   * test it. One answer for both the grid and the column, which asked twice could disagree.
+   */
+  const notes = useNotesColumn(selectedId, wikiNotes, showWiki);
+  const notesWidth = useNotesWidth();
+
+  /**
+   * One wiki for both the browser and the column, which is what keeps edits safe.
+   *
+   * A second instance for the column would hold its own drafts, so the same file could have
+   * two different unsaved versions and whichever was saved second would silently take the
+   * other's work. One place to be, one set of drafts.
+   */
+  const wiki = useWiki(showWiki || notes.open);
   /**
    * The words the wiki is already written in, for the picker to offer (#35).
    *
@@ -1555,7 +1576,18 @@ export default function App() {
   );
 
   return (
-    <div className={width.dragging ? 'app resizing' : 'app'}>
+    <div
+      className={[
+        'app',
+        // A drag is on either edge, and both want the same caret everywhere while it runs.
+        width.dragging || notesWidth.dragging ? 'resizing' : '',
+        // Gives the notes their column. Set here rather than in a second grid rule per
+        // branch, so the grid is written once and the class says whether it is in use.
+        notes.open ? 'with-notes' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <Sidebar
         sessions={sessions.all}
         selectedId={selectedId}
@@ -1767,12 +1799,19 @@ export default function App() {
                     session - and partly built from them - and silent otherwise. */}
                 <HeaderNotes
                   pages={wikiNotes}
+                  open={notes.open}
                   onOpen={(page) => {
-                    // Asked for before the browser opens, which is what stops it landing on
+                    // Closing again from the same control, since it is now a thing that is
+                    // open rather than somewhere to go.
+                    if (notes.open) {
+                      notes.hide();
+                      return;
+                    }
+
+                    // Asked for before the column opens, which is what stops it landing on
                     // the wiki's front page instead of the page that was pressed.
                     wiki.go(page);
-                    setWikiScope(wikiNotes.map((each) => each.path));
-                    setShowWiki(true);
+                    notes.show();
                   }}
                 />
                 <div className="header-controls">
@@ -2011,6 +2050,43 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* A note from the wiki beside the session it is about, rather than in place of it
+          (#35). After .main and outside it: it is a column of the app's own grid, so the
+          transcript keeps its width rather than giving up part of it.
+
+          Only where the session has notes at all. A column that opened empty would be a
+          feature arguing with the header control that says there is nothing to show. */}
+      {notes.open && (
+        <>
+          <NotesGrip            dragging={notesWidth.dragging}
+            onStart={notesWidth.start}
+            onNudge={notesWidth.nudge}
+            onReset={notesWidth.reset}
+          />
+          <SessionNotes
+            notes={wikiNotes}
+            pages={wiki.pages}
+            page={wiki.page}
+            loading={wiki.loading}
+            failed={wiki.failed}
+            saving={wiki.saving}
+            draft={wiki.draft}
+            onOpen={wiki.go}
+            onEdit={wiki.edit}
+            onRevert={wiki.revert}
+            onSave={(path) => void wiki.save(path)}
+            onBrowse={() => {
+              // Carrying the session's pages over, so the browser opens on what this column
+              // was showing rather than on the whole wiki. The column is not closed, only
+              // stood down while the browser is up, so coming back brings it with it.
+              setWikiScope(wikiNotes.map((each) => each.path));
+              setShowWiki(true);
+            }}
+            onClose={notes.hide}
+          />
+        </>
+      )}
 
       {/* Fixed rather than placed, so it can appear over whichever branch is showing
           without becoming a row in the grid: .main and .app both assign by position, and a

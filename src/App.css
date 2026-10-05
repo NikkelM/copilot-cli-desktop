@@ -38,6 +38,10 @@
      written as an inline style, wins over it: a custom property set on .app itself would
      beat anything inherited. */
   --sidebar-column: calc(160px + var(--font-base) * 8.75);
+  /* The notes column's, read at the same time and against the sidebar's but not sharing it:
+     what suits a list of session titles is not what suits a page of prose. 544px at the
+     default base, which holds about seventy characters a line. */
+  --notes-column: calc(var(--font-base) * 34);
   /**
    * How much larger the conversation is drawn than the rest of the app.
    *
@@ -84,6 +88,12 @@ body {
 
 .app {
   display: grid;
+  /*
+   * What the sidebar is actually taking, named once so the notes column can be measured
+   * against it. A ceiling in vw as well as the dragged width, since a width that suits this
+   * window may be the whole of a smaller one.
+   */
+  --sidebar-used: min(var(--sidebar-column), 40vw);
   /* Grows with the text, but nowhere near as fast. A title needs a little more room when
      the letters are bigger; it does not need twice the window, and scaling this one to one
      left the sidebar taking half the screen at the largest size (#139). Just over half the
@@ -92,13 +102,26 @@ body {
 
      A width someone dragged to replaces that rate rather than being added to it, and is a
      multiple of the text size for the same reason the default grows at all: it should still
-     be the same amount of sidebar after the text is made larger (#189). The vw ceiling
-     applies either way, since a width that suits this window may be the whole of a smaller
-     one. */
-  grid-template-columns: min(var(--sidebar-column), 40vw) 1fr;
+     be the same amount of sidebar after the text is made larger (#189). */
+  /* Sidebar, session, and the notes beside it when any are open (#35). The notes column is
+     zero wide until something is in it, so the grid does not have to be rewritten for a
+     child that comes and goes - and a zero column costs the transcript nothing. */
+  grid-template-columns: var(--sidebar-used) 1fr 0;
   height: 100vh;
   /* So the grip can be placed over the boundary rather than given a column of its own. */
   position: relative;
+}
+
+/*
+ * Only while a note is open, which is what keeps the column out of the layout otherwise.
+ *
+ * The two side columns share what is left after the session keeps a fifth of the window.
+ * Subtracted rather than given a ceiling of its own, so dragging the sidebar wider leaves
+ * the notes less and the session always has somewhere to be read.
+ */
+.app.with-notes {
+  --notes-used: min(var(--notes-column), calc(80vw - var(--sidebar-used)));
+  grid-template-columns: var(--sidebar-used) 1fr var(--notes-used);
 }
 
 /* Everywhere, not only over the grip: during a drag the pointer spends most of its time over
@@ -115,7 +138,8 @@ body {
   z-index: 20;
   top: 0;
   bottom: 0;
-  left: min(var(--sidebar-column), 40vw);
+  /* The same width the grid gives the sidebar, named once so the two cannot drift apart. */
+  left: var(--sidebar-used);
   width: 9px;
   margin-left: -4px;
   cursor: col-resize;
@@ -132,6 +156,32 @@ body {
 }
 
 .sidebar-grip:focus-visible {
+  outline: none;
+}
+
+/* The notes column's own edge, on its left, where the sidebar's is on its right (#35). */
+.notes-grip {
+  position: absolute;
+  z-index: 20;
+  top: 0;
+  bottom: 0;
+  /* Only ever drawn inside .app.with-notes, which is where this is defined. */
+  right: var(--notes-used);
+  width: 9px;
+  margin-right: -4px;
+  cursor: col-resize;
+}
+
+.notes-grip:hover::after,
+.notes-grip:focus-visible::after,
+.notes-grip.dragging::after {
+  content: '';
+  position: absolute;
+  inset: 0 4px;
+  background: var(--accent);
+}
+
+.notes-grip:focus-visible {
   outline: none;
 }
 
@@ -6482,4 +6532,141 @@ pre.fatal,
   overflow-y: auto;
   color: var(--text-muted);
   font-size: var(--font-md);
+}
+
+/*
+ * A note from the wiki, beside the session it is about (#35).
+ *
+ * Its own column of the app's grid rather than something inside the session pane, so the
+ * transcript keeps its width and the edge between them is one the reader can take hold of.
+ */
+.notes {
+  /*
+   * A column, not a grid of named rows.
+   *
+   * Two of the four things in here come and go - the picker needs more than one note, the
+   * error needs something to have failed - and a grid assigning rows by position puts the
+   * page in whichever row is left. That is what made the editor a few lines tall: it fills
+   * its row, and an `auto` row is only as tall as its content.
+   */
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 16px 16px 16px 8px;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.notes-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  /* The column is narrow and the buttons beside this are the part that has to fit. */
+  white-space: nowrap;
+}
+
+.notes-mark {
+  display: inline-flex;
+  width: 1em;
+  height: 1em;
+}
+
+.notes-mark svg {
+  width: 100%;
+  height: 100%;
+}
+
+.notes-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* Wraps rather than overflowing: this column can be dragged down to fifteen characters
+     of prose, and a row of buttons that cannot fit should take a second line. */
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.notes-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.notes-close:hover {
+  background: var(--bg-raised);
+  color: var(--text);
+}
+
+/*
+ * Which of the session's notes is being read.
+ *
+ * Only where there is more than one. Wrapped rather than scrolled sideways: a page title is
+ * long and a hidden one is a note nobody finds.
+ */
+.notes-pages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 10px;
+}
+
+.notes-page {
+  max-width: 100%;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--font-xs);
+  text-align: left;
+  /* A title too long for the column is cut rather than widening it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.notes-page:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.notes-page.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--text);
+}
+
+.notes-body {
+  /* Takes what the head and the picker leave, however many of them there are. The floor is
+     what lets it scroll rather than growing the column to fit the page. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+
+/* The editor fills what is left of the column, as it fills the pane in the browser. */
+.notes-body .wiki-source {
+  height: 100%;
 }

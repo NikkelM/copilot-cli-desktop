@@ -966,3 +966,106 @@ describe('the clamped preview on a session row', () => {
     expect(block()).not.toContain('-webkit-line-clamp');
   });
 });
+
+/**
+ * The column a note is read in, beside the session it is about (#35).
+ *
+ * A third column of the app's grid rather than something inside the session pane, so the
+ * transcript keeps its own width and the edge between them can be taken hold of.
+ */
+describe('the notes column', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    return at === -1 ? '' : css.slice(at, css.indexOf('}', at));
+  };
+
+  /** Zero until something is in it, so a child that comes and goes needs no second grid. */
+  it('takes no width at all while nothing is open', () => {
+    expect(block('.app')).toMatch(/grid-template-columns:[^;]*1fr 0;/);
+  });
+
+  it('takes its own column once a note is open', () => {
+    expect(block('.app.with-notes')).toMatch(/grid-template-columns:[^;]*var\(--notes-used\)/);
+  });
+
+  /**
+   * The session keeps a fifth of the window whatever the two side columns are doing, and
+   * the notes take what is left after the sidebar rather than having a ceiling of their own.
+   * Dragging the sidebar wider therefore leaves the notes less, not the session.
+   */
+  it('leaves the session a fifth of the window', () => {
+    expect(block('.app.with-notes')).toContain('calc(80vw - var(--sidebar-used))');
+  });
+
+  it('is measured against what the sidebar is actually taking', () => {
+    expect(block('.app')).toMatch(/--sidebar-used:\s*min\(var\(--sidebar-column\), \d+vw\)/);
+  });
+
+  it('never gives the notes more than the window has left', () => {
+    expect(block('.app.with-notes')).toMatch(/--notes-used:\s*min\(var\(--notes-column\), calc\(/);
+  });
+
+  it('has a default to fall back on when nobody has dragged it', () => {
+    expect(css).toMatch(/--notes-column:\s*calc\(var\(--font-base\)/);
+  });
+
+  it('scrolls its page rather than the whole column', () => {
+    expect(block('.notes-body')).toContain('overflow-y: auto');
+  });
+
+  /**
+   * Two of the four things in the column come and go. A grid assigning rows by position
+   * would put the page in whichever row was left, and an `auto` row is only as tall as its
+   * content - which is what made the editor a few lines tall inside a full-height column.
+   */
+  it('lays its contents out so the page takes what is left, however many rows there are', () => {
+    expect(block('.notes')).toContain('flex-direction: column');
+    expect(block('.notes')).not.toContain('grid-template-rows');
+  });
+
+  it('gives the page the space the head and the picker do not use', () => {
+    expect(block('.notes-body')).toMatch(/flex:\s*1/);
+  });
+
+  /** Without the floor it grows the column to fit the page instead of scrolling. */
+  it('lets the page scroll rather than growing to fit it', () => {
+    expect(block('.notes-body')).toContain('min-height: 0');
+  });
+
+  it('fills the column with the editor, as the browser fills its pane', () => {
+    expect(block('.notes-body .wiki-source')).toContain('height: 100%');
+  });
+
+  it('refuses to be widened by a long line in the page it holds', () => {
+    expect(block('.notes')).toContain('min-width: 0');
+  });
+});
+
+/** The edge between the session and its notes, which mirrors the sidebar's (#35). */
+describe('the notes grip', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(`${selector} {`);
+    return at === -1 ? '' : css.slice(at, css.indexOf('}', at));
+  };
+
+  it('sits on the column it resizes, not beside it', () => {
+    expect(block('.notes-grip')).toContain('right: var(--notes-used)');
+  });
+
+  it('is centred over the boundary rather than pushed off it', () => {
+    expect(block('.notes-grip')).toContain('margin-right: -4px');
+  });
+
+  it('says what it does when pointed at', () => {
+    expect(block('.notes-grip')).toContain('cursor: col-resize');
+  });
+
+  it('sits over what it divides rather than under it', () => {
+    expect(block('.notes-grip')).toContain('position: absolute');
+  });
+
+  /** Both grips take their position from the width the grid gave the column, not a copy. */
+  it('takes its position from the same width the grid uses', () => {
+    expect(block('.sidebar-grip')).toContain('left: var(--sidebar-used)');
+  });
+});
