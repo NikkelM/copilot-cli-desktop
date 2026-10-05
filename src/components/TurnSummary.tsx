@@ -1,10 +1,15 @@
-import { useState } from 'react';
-
 import { ChevronIcon } from './Icons';
 import { Diff } from './Diff';
 import { fileBadge } from '../lib/fileBadge';
-import { parsePatch } from '../lib/patch';
+import { parsePatch, type PatchLine } from '../lib/patch';
 import type { ChangedFile, TurnChanges } from '../lib/turnChanges';
+
+/** How the reader has this summary open, if at all. */
+export interface TurnView {
+  open: boolean;
+  /** Which file is open inside it. Undefined until they pick, which is what lets one open itself. */
+  picked?: string | null;
+}
 
 /** The file's own name, which is what a reader recognises, with the rest of the path after it. */
 function nameOf(path: string): { name: string; within: string } {
@@ -24,10 +29,23 @@ function nameOf(path: string): { name: string; within: string } {
  * opens again onto the change itself - drawn by the same component the session's list of
  * changes uses, so the two never answer the same question differently (#40).
  */
-export function TurnSummary({ changes }: { changes: TurnChanges }) {
-  const [open, setOpen] = useState(false);
-  /** Undefined until the reader picks one, which is what lets the lone file open itself. */
-  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+export function TurnSummary({
+  changes,
+  view,
+  onView,
+}: {
+  changes: TurnChanges;
+  /**
+   * How it is being read, held by whoever draws it rather than here (#140 follow-up).
+   *
+   * A summary is keyed to the last row of its turn, so every row the turn adds moves it to
+   * a different place in the list and React builds it again. State kept in here went with
+   * it, and a summary somebody had opened closed itself every time the agent did anything.
+   */
+  view: TurnView;
+  onView: (view: TurnView) => void;
+}) {
+  const { open, picked } = view;
   const { files, added, removed } = changes;
 
   /**
@@ -43,7 +61,7 @@ export function TurnSummary({ changes }: { changes: TurnChanges }) {
 
   return (
     <div className={open ? 'turn-changes open' : 'turn-changes'}>
-      <button type="button" className="turn-changes-head" onClick={() => setOpen((was) => !was)}>
+      <button type="button" className="turn-changes-head" onClick={() => onView({ ...view, open: !open })}>
         <ChevronIcon open={open} />
         <span className="turn-changes-label">
           {files.length === 1 ? '1 file changed' : `${files.length} files changed`}
@@ -61,13 +79,26 @@ export function TurnSummary({ changes }: { changes: TurnChanges }) {
               key={file.path}
               file={file}
               open={shown === file.path}
-              onToggle={() => setPicked(shown === file.path ? null : file.path)}
+              onToggle={() => onView({ ...view, picked: shown === file.path ? null : file.path })}
             />
           ))}
         </ul>
       )}
     </div>
   );
+}
+
+/**
+ * Every edit the turn made to one file, as one diff.
+ *
+ * The edits are kept apart until here because each one's line numbers count the file as the
+ * edit before it left it, so their hunks cannot be interleaved. Laid end to end with a gap
+ * between them they read as one file's worth of change, which is the question being asked -
+ * what did this turn do to this file - rather than a list of the writes it took to get there.
+ */
+function allEdits(patches: string[]): PatchLine[] {
+  const gap: PatchLine = { kind: 'skip', text: '', before: null, after: null };
+  return patches.flatMap((patch, at) => (at === 0 ? parsePatch(patch) : [gap, ...parsePatch(patch)]));
 }
 
 function FileRow({ file, open, onToggle }: { file: ChangedFile; open: boolean; onToggle: () => void }) {
@@ -106,18 +137,7 @@ function FileRow({ file, open, onToggle }: { file: ChangedFile; open: boolean; o
 
       {open && (
         <div className="turn-changes-diffs">
-          {file.patches.map((patch, at) => (
-            <div key={at}>
-              {/* Which edit this is, because each one's line numbers count the file as the
-                  edit before it left it, not as it started. */}
-              {edits > 1 && (
-                <p className="turn-changes-step">
-                  Edit {at + 1} of {edits}
-                </p>
-              )}
-              <Diff lines={parsePatch(patch)} />
-            </div>
-          ))}
+          <Diff lines={allEdits(file.patches)} />
         </div>
       )}
     </li>

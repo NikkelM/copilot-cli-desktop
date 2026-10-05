@@ -38,6 +38,9 @@ describe('what a turn changed', () => {
 
     expect([...byTurn.keys()], 'the last row of the turn').toEqual([3]);
     expect(byTurn.get(3)).toEqual({
+      // The question that began the turn, which is what the summary is remembered by: the
+      // row it is drawn under moves every time the turn gains one.
+      id: 'a',
       files: [
         { path: 'one.ts', added: 3, removed: 1, patches: [patch(3, 1)] },
         { path: 'two.ts', added: 2, removed: 0, patches: [patch(2, 0)] },
@@ -268,5 +271,37 @@ describe('a turn that applied patches', () => {
     const empty = ['diff --git a/C:/w/one.ts b/C:/w/one.ts', '--- a/C:/w/one.ts', '+++ b/C:/w/one.ts', '@@ -1,1 +1,1 @@', ' same'].join('\n');
 
     expect(changesByTurn([asked('a'), applied('b', empty)], 'always').size).toBe(0);
+  });
+});
+
+/**
+ * A summary is drawn under the last row of its turn, so every row the turn adds moves it.
+ * Whatever is remembered about how it is being read has to hang on the turn instead, or a
+ * reader who opened one has it close itself whenever the agent does anything.
+ */
+describe('naming the turn a summary belongs to', () => {
+  it('names it after the question that began it', () => {
+    const entries = [asked('a'), edited('b', 'one.ts', 1, 0)];
+
+    expect(changesByTurn(entries, 'always').get(1)?.id).toBe('a');
+  });
+
+  it('keeps the same name as the turn goes on', () => {
+    const before = [asked('a'), edited('b', 'one.ts', 1, 0)];
+    const after = [...before, edited('c', 'two.ts', 1, 0), said('d')];
+
+    const first = changesByTurn(before, 'always').get(1)?.id;
+    const later = changesByTurn(after, 'always').get(3)?.id;
+
+    expect(first).toBe(later);
+  });
+
+  it('gives each turn a name of its own', () => {
+    const entries = [asked('a'), edited('b', 'one.ts', 1, 0), asked('c'), edited('d', 'two.ts', 1, 0)];
+
+    const ids = [...changesByTurn(entries, 'always').values()].map((turn) => turn.id);
+
+    expect(ids).toEqual(['a', 'c']);
+    expect(new Set(ids).size).toBe(2);
   });
 });

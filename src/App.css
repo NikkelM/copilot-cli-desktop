@@ -6112,12 +6112,6 @@ pre.fatal,
   padding: 2px 0 6px 18px;
 }
 
-.turn-changes-step {
-  margin: 6px 0 2px;
-  color: var(--text-dim);
-  font-size: var(--font-xs);
-}
-
 .turn-changes-name {
   font-family: ui-monospace, monospace;
   overflow-wrap: anywhere;

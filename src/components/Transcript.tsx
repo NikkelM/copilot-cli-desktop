@@ -5,7 +5,7 @@ import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry }
 import { useBudgetedEntries } from '../lib/useBudgetedEntries';
 import { fileBadge } from '../lib/fileBadge';
 import { changesByTurn, type ShowTurnChanges } from '../lib/turnChanges';
-import { TurnSummary } from './TurnSummary';
+import { TurnSummary, type TurnView } from './TurnSummary';
 import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
 import { ASSUMED_DISPLAY, type CliDisplay } from '../lib/useCliDisplay';
@@ -580,6 +580,16 @@ export function Transcript({
    */
   const turnChanges = useMemo(() => changesByTurn(entries, turnSummary), [entries, turnSummary]);
 
+  /**
+   * How each turn's summary is being read, held here rather than inside it.
+   *
+   * A summary is drawn under the last row of its turn, so every row the turn adds moves it
+   * and React builds it again. Kept in the summary, a reader who opened one had it close
+   * itself every time the agent did anything (#140 follow-up). Keyed by the turn rather
+   * than by the row, which is the thing that does not move.
+   */
+  const [turnViews, setTurnViews] = useState<Record<string, TurnView>>({});
+
   /** Where the drawn window starts, so an index into the entries can be found among the rows. */
   const from = entries.length - shown.length;
   const pointingAt = target >= 0 && !tookOver ? target - from : -1;
@@ -719,7 +729,16 @@ export function Transcript({
                 in, and the styling and the search's landing row both go by that class. */}
             {turnChanges.has(index + from) && (
               <li className="turn-summary">
-                <TurnSummary changes={turnChanges.get(index + from)!} />
+                {(() => {
+                  const turn = turnChanges.get(index + from)!;
+                  return (
+                    <TurnSummary
+                      changes={turn}
+                      view={turnViews[turn.id] ?? { open: false }}
+                      onView={(view) => setTurnViews((held) => ({ ...held, [turn.id]: view }))}
+                    />
+                  );
+                })()}
               </li>
             )}
           </Fragment>

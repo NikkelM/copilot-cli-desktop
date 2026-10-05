@@ -2130,3 +2130,99 @@ describe('a model change in the transcript', () => {
     expect(container.querySelector('.tool')).toBeNull();
   });
 });
+
+/**
+ * A turn summary a reader opened has to stay open as the turn goes on (#140 follow-up).
+ *
+ * The summary is drawn under the last row of its turn, so every row the turn adds moves it
+ * to a different place in the list and React builds it again. Kept inside the summary, the
+ * fact that it was open went with it, and it closed itself whenever the agent did anything.
+ */
+describe('a turn summary while the turn is still going', () => {
+  const patch = (line: string) =>
+    ['diff --git a/a.ts b/a.ts', '--- a/a.ts', '+++ b/a.ts', '@@ -1,0 +1,1 @@', `+${line}`].join('\n');
+
+  const edit = (id: string, callId: string, line: string): TranscriptEvent[] => [
+    event('tool.execution_start', { toolCallId: callId, toolName: 'edit', arguments: { path: 'a.ts' } }, `${id}s`),
+    event(
+      'tool.execution_complete',
+      { toolCallId: callId, success: true, result: { content: 'done', detailedContent: patch(line) } },
+      `${id}c`,
+    ),
+  ];
+
+  const working = [event('user.message', { content: 'do it' }, 'u1'), ...edit('e1', 't1', 'the first')];
+
+  const summary = () => screen.getByRole('button', { name: /files? changed/ });
+
+  it('draws a summary for the turn in progress', () => {
+    show(working);
+
+    expect(summary()).toBeTruthy();
+  });
+
+  it('stays open when the turn adds a row', async () => {
+    const { rerender } = show(working);
+    await userEvent.click(summary());
+    expect(document.querySelector('.turn-changes.open')).toBeTruthy();
+
+    rerender(
+      <Transcript
+        events={[...working, event('assistant.message', { content: 'still going' }, 'm1')]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={true}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+
+    expect(document.querySelector('.turn-changes.open')).toBeTruthy();
+  });
+
+  it('stays open when the turn changes another file', async () => {
+    const { rerender } = show(working);
+    await userEvent.click(summary());
+
+    rerender(
+      <Transcript
+        events={[...working, ...edit('e2', 't2', 'the second')]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={true}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+
+    expect(document.querySelector('.turn-changes.open')).toBeTruthy();
+  });
+
+  it('takes the new work into the summary rather than freezing it', async () => {
+    const { rerender } = show(working);
+    await userEvent.click(summary());
+
+    rerender(
+      <Transcript
+        events={[...working, ...edit('e2', 't2', 'the second')]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={true}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+
+    // Scoped to the summary's own line: the file row under it counts the same lines again.
+    expect(summary().querySelector('.added')?.textContent).toBe('+2');
+  });
+
+  it('is closed to begin with, as it always was', () => {
+    show(working);
+
+    expect(document.querySelector('.turn-changes.open')).toBeNull();
+  });
+});

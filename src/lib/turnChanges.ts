@@ -18,6 +18,14 @@ export interface ChangedFile {
 
 /** What a turn changed, taken together. */
 export interface TurnChanges {
+  /**
+   * The turn itself, which is the question that began it.
+   *
+   * Stable as the turn goes on, where the row it is drawn under is not: a summary is keyed
+   * to the last row of its turn, so every new row moves it. Whatever is remembered about
+   * how it is being read has to hang on this instead.
+   */
+  id: string;
   files: ChangedFile[];
   added: number;
   removed: number;
@@ -62,7 +70,7 @@ export function changesByTurn(entries: Entry[], show: ShowTurnChanges = 'always'
       // Counted after parsing, because a call that wrote a file without changing it is not
       // an edit, and a turn can be left with fewer real changes than it made calls.
       const made = summary.files.reduce((n, file) => n + file.patches.length, 0);
-      if (made >= least) byTurn.set(endsAt, summary);
+      if (made >= least) byTurn.set(endsAt, { ...summary, id: entries[startedAt]?.key ?? String(startedAt) });
     }
     edits = [];
   };
@@ -89,7 +97,7 @@ export function changesByTurn(entries: Entry[], show: ShowTurnChanges = 'always'
 }
 
 /** Fold a turn's edits into one file list, newest count last so a file appears once. */
-function gather(edits: Entry[]): TurnChanges {
+function gather(edits: Entry[]): Omit<TurnChanges, 'id'> {
   const files = new Map<string, ChangedFile>();
   let added = 0;
   let removed = 0;
