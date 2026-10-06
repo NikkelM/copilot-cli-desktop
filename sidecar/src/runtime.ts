@@ -1373,10 +1373,17 @@ export class SessionRuntime {
    * next turn begins, so anything reading the store straight after a turn would be one turn
    * behind. Asking for the session's rewind points is what makes it write, and costs nothing
    * for a session that is not loaded - which is every session the app has only browsed.
+   *
+   * Not while the session is working. There is nothing it could write that would help: the
+   * turn in flight is not persisted until the next one begins, and the turn before it was
+   * persisted when this one did. What it costs is a request to a runtime that is busy, on
+   * every file the agent writes, in front of an answer the caller is waiting for - so a
+   * panel watching a working session would be waiting on the work rather than describing
+   * it. What the running turn has done is held here instead (#140).
    */
   async flushChanges(sessionId: string): Promise<void> {
     const entry = this.loaded.get(sessionId);
-    if (!entry) return;
+    if (!entry || entry.busy) return;
 
     try {
       await entry.session.rpc.history.listRewindPoints();

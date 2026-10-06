@@ -1480,6 +1480,8 @@ describe('SessionRuntime flushing what it holds', () => {
   it('asks a loaded session to write its record out', async () => {
     const { runtime, sessions } = makeRuntime();
     await runtime.send('a', 'hello');
+    // Sending marks the session busy, and a busy session is deliberately left alone.
+    sessions.get('a')!.emit({ type: 'session.idle', data: {} });
 
     await runtime.flushChanges('a');
 
@@ -4474,5 +4476,64 @@ describe('SessionRuntime watching a running turn', () => {
 
     // The write announced one, and the idle announced none: the handover happened between.
     expect(seen).toEqual([1, 0]);
+  });
+});
+
+/**
+ * Reading what a session changed must never wait on the session (#140).
+ *
+ * The flush exists to make the runtime write out a turn it is still holding. While a turn
+ * is in flight there is nothing it could write that would help, and asking anyway puts a
+ * request to a busy runtime in front of an answer somebody is waiting for - so a panel
+ * watching a working session would be waiting on the work rather than describing it.
+ */
+describe('SessionRuntime flushing while a turn is running', () => {
+  it('asks nothing of a session that is working', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    const session = sessions.get('a')!;
+    session.emit({ type: 'assistant.turn_start', data: {} });
+    session.rpc.history.listRewindPoints.mockClear();
+
+    await runtime.flushChanges('a');
+
+    expect(session.rpc.history.listRewindPoints).not.toHaveBeenCalled();
+  });
+
+  it('answers at once rather than waiting on the turn', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    const session = sessions.get('a')!;
+    // A runtime that serves nothing until its turn is done, which is the case that hung.
+    session.rpc.history.listRewindPoints.mockImplementation(() => new Promise(() => {}));
+    session.emit({ type: 'assistant.turn_start', data: {} });
+
+    await expect(runtime.flushChanges('a')).resolves.toBeUndefined();
+  });
+
+  it('asks again once the turn is over', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    const session = sessions.get('a')!;
+    session.emit({ type: 'assistant.turn_start', data: {} });
+    session.emit({ type: 'session.idle', data: {} });
+    session.rpc.history.listRewindPoints.mockClear();
+
+    await runtime.flushChanges('a');
+
+    expect(session.rpc.history.listRewindPoints).toHaveBeenCalled();
+  });
+
+  it('asks again once the turn is interrupted', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    const session = sessions.get('a')!;
+    session.emit({ type: 'assistant.turn_start', data: {} });
+    session.emit({ type: 'abort', data: {} });
+    session.rpc.history.listRewindPoints.mockClear();
+
+    await runtime.flushChanges('a');
+
+    expect(session.rpc.history.listRewindPoints).toHaveBeenCalled();
   });
 });
