@@ -2319,3 +2319,128 @@ describe('following the work when the box changes size', () => {
     expect(t.list.scrollTop, 'the text observer should still be following').toBe(HEIGHT);
   });
 });
+
+/**
+ * A panel open under the transcript can leave less than a screen of conversation, and then
+ * the bottom of the list is also within a few pixels of its top. Reaching back from there
+ * marked a restore that only the next render clears - and when what was asked for did not
+ * grow the list, nothing ever cleared it, so the transcript stopped following the work.
+ */
+describe('following the work from a box too short to scroll in', () => {
+  const HEIGHT = 1000;
+  // Short enough that the bottom is also the top, which is what a panel does to the box.
+  const VIEWPORT = 990;
+
+  function transcript(over: { more?: boolean; onLoadOlder?: () => void } = {}) {
+    const draw = (text: string) => (
+      <Transcript
+        events={[
+          { type: 'assistant.message', data: { content: 'working on it' }, id: 'e1' },
+          { type: 'assistant.message_delta', data: { messageId: 'm1', deltaContent: text } },
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={over.more ?? true}
+        loadingOlder={false}
+        onLoadOlder={over.onLoadOlder ?? (() => {})}
+        display={ASSUMED_DISPLAY}
+      />
+    );
+
+    const view = render(draw('The'));
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+
+    let height = HEIGHT;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+
+    return {
+      list,
+      // The reader sitting at the bottom of a box that barely scrolls.
+      atBottom: () => {
+        list.scrollTop = HEIGHT - VIEWPORT;
+        fireEvent.scroll(list);
+      },
+      grow: async (by: number, text: string) => {
+        height += by;
+        view.rerender(draw(text));
+        await new Promise((done) => setTimeout(done, 0));
+      },
+      get height() { return height; },
+    };
+  }
+
+  it('keeps following a reply that arrives after the reader sits at the bottom', async () => {
+    const t = transcript();
+    t.atBottom();
+
+    await t.grow(300, 'a longer reply arriving');
+
+    expect(t.list.scrollTop, 'the newest text should be in view').toBe(t.height);
+  });
+
+  /** Being at the bottom is not somebody asking for what came before it. */
+  it('does not reach back for older messages from the bottom', () => {
+    let asked = 0;
+    const t = transcript({ onLoadOlder: () => { asked += 1; } });
+
+    t.atBottom();
+
+    expect(asked, 'the bottom should not have been read as the top').toBe(0);
+  });
+
+  it('still follows when there is nothing older to ask for', async () => {
+    const t = transcript({ more: false });
+    t.atBottom();
+
+    await t.grow(300, 'a longer reply arriving');
+
+    expect(t.list.scrollTop).toBe(t.height);
+  });
+});
+
+/**
+ * Reaching back marks a restore that the next render pays off. Asking something that cannot
+ * answer - a transcript given no way to fetch an older page - wrote a debt nothing settled,
+ * and the mark outlived the scroll that made it: the reader could come back to the bottom
+ * and the transcript would no longer follow the work.
+ */
+describe('reaching back for a page that never comes', () => {
+  const VIEWPORT = 300;
+
+  it('still follows the work once the reader returns to the bottom', async () => {
+    const draw = (text: string) => (
+      <Transcript
+        events={[
+          { type: 'assistant.message', data: { content: 'working on it' }, id: 'e1' },
+          { type: 'assistant.message_delta', data: { messageId: 'm1', deltaContent: text } },
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder
+        loadingOlder={false}
+        display={ASSUMED_DISPLAY}
+      />
+    );
+
+    const view = render(draw('The'));
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+    let height = 1000;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+
+    const scrollTo = (top: number) => {
+      list.scrollTop = top;
+      fireEvent.scroll(list);
+    };
+
+    scrollTo(0);
+    scrollTo(1000 - VIEWPORT);
+
+    height += 300;
+    view.rerender(draw('a longer reply arriving'));
+    await new Promise((done) => setTimeout(done, 0));
+
+    expect(list.scrollTop, 'the newest text should be in view').toBe(height);
+  });
+});

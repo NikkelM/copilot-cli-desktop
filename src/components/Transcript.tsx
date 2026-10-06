@@ -720,12 +720,34 @@ export function Transcript({
     // different day above the match.
     if (highlight && !tookOver) return;
 
+    /*
+     * The bottom is not a request for what came before it.
+     *
+     * A panel open under the transcript - what the session changed, its todos - can leave
+     * less than a screen of conversation, and then the bottom is also within a few pixels
+     * of the top. Reaching back from there marks a restore that only the next render
+     * clears, and if what was asked for does not grow the list, nothing ever clears it:
+     * both followers below are gated on that mark, so the transcript stops following the
+     * work and stays where it is.
+     *
+     * A list shorter than its own box does still need filling, but that is the effect
+     * above, which fills without marking anything.
+     */
+    if (pinned.current) return;
+
     if (list.scrollTop <= LOAD_OLDER_THRESHOLD_PX && more && !loadingOlder) {
-      restoreFrom.current = list.scrollHeight;
+      // Marked only where something is actually going to arrive, since the mark is a debt
+      // paid off by the next render and an unpayable one is never written off.
+      const height = list.scrollHeight;
       // The entries already built come first: they cost nothing to show, where an older
       // page costs a read and a parse.
-      if (budgeted.hasMore) budgeted.showMore();
-      else onLoadOlder?.();
+      if (budgeted.hasMore) {
+        restoreFrom.current = height;
+        budgeted.showMore();
+      } else if (onLoadOlder) {
+        restoreFrom.current = height;
+        onLoadOlder();
+      }
     }
   }
 
