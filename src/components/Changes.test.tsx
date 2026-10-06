@@ -2,7 +2,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { SessionChange } from '../../shared/protocol';
+import type { FileDiff, SessionChange } from '../../shared/protocol';
 import { Changes } from './Changes';
 
 const change = (over: Partial<SessionChange> = {}): SessionChange => ({
@@ -315,35 +315,58 @@ describe('a turn that is still running', () => {
 /**
  * Opening a row whose turn has not finished (#140).
  *
- * There is no diff and there will not be one until the turn ends, because the before image
- * is the CLI's to write and it writes it then. The generic answer - "no snapshot was taken
- * of this file" - is about a file nobody recorded, and reads as a fault.
+ * The store has no snapshot for it yet, but every write reported a diff, so the row opens
+ * onto what the turn has done rather than onto an explanation of why it cannot.
  */
 describe('opening a row the turn is still writing', () => {
-  const openRow = (over: Partial<SessionChange> = {}) => {
+  const patch = (line: string) =>
+    ['diff --git a/thing.ts b/thing.ts', '--- a/thing.ts', '+++ b/thing.ts', '@@ -1,0 +1,1 @@', `+${line}`].join('\n');
+
+  const openRow = (diff?: FileDiff) => {
     const onDiff = vi.fn();
-    render(<Changes {...props} changes={[change({ running: true, diffable: false, ...over })]} onDiff={onDiff} />);
+    render(
+      <Changes
+        {...props}
+        changes={[change({ running: true })]}
+        diffs={diff ? ({ 'C:\\work\\repo\\src\\thing.ts': diff } as Record<string, FileDiff>) : ({} as Record<string, never>)}
+        onDiff={onDiff}
+      />,
+    );
     fireEvent.click(screen.getByRole('button', { name: /thing\.ts/ }));
     return onDiff;
   };
 
-  it('says the diff is a matter of waiting', () => {
-    openRow();
+  it('shows what the turn has written', () => {
+    openRow({ patch: null, patches: [patch('the new line')], stale: false });
 
-    expect(screen.getByText(/once the turn ends/)).toBeTruthy();
+    expect(screen.getByText('the new line')).toBeTruthy();
+  });
+
+  it('joins the writes into one diff', () => {
+    openRow({ patch: null, patches: [patch('the first'), patch('the second')], stale: false });
+
+    expect(document.querySelectorAll('.tool-diff')).toHaveLength(1);
+    expect(screen.getByText('the first')).toBeTruthy();
+    expect(screen.getByText('the second')).toBeTruthy();
   });
 
   it('does not claim nothing was recorded', () => {
-    openRow();
+    openRow({ patch: null, patches: [patch('the new line')], stale: false });
 
     expect(screen.queryByText(/No snapshot was taken/)).toBeNull();
   });
 
-  /** A round trip that can only come back empty. */
-  it('asks for no diff it cannot have', () => {
+  it('asks for it, since there is something to answer with', () => {
     const onDiff = openRow();
 
-    expect(onDiff).not.toHaveBeenCalled();
+    expect(onDiff).toHaveBeenCalledWith('C:\\work\\repo\\src\\thing.ts');
+  });
+
+  /** Said in terms of the turn, since what is being waited for is the turn's own writing. */
+  it('says what it is waiting for while the answer is on its way', () => {
+    openRow();
+
+    expect(screen.getByText('Reading what it has written.')).toBeTruthy();
   });
 
   it('still asks for one on a row that has finished', () => {

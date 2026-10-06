@@ -4369,12 +4369,22 @@ describe('SessionRuntime watching a running turn', () => {
     liveMod.forgetLive('a');
   });
 
+  /** A write and the diff it reports, which is what the tracker reads. */
   const wrote = (session: { emit: (e: unknown) => void }, path: string, id = 'c1') => {
+    const patch = [
+      `diff --git a/${path} b/${path}`,
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      '@@ -1,1 +1,1 @@',
+      '-one',
+      '+two',
+    ].join('\n');
+
+    session.emit({ type: 'tool.execution_start', data: { toolCallId: id, toolName: 'edit', arguments: { path } } });
     session.emit({
-      type: 'tool.execution_start',
-      data: { toolCallId: id, toolName: 'edit', arguments: { path, old_str: 'one\n', new_str: 'two\n' } },
+      type: 'tool.execution_complete',
+      data: { toolCallId: id, success: true, result: { detailedContent: patch } },
     });
-    session.emit({ type: 'tool.execution_complete', data: { toolCallId: id, success: true } });
   };
 
   it('keeps what a file tool changed', async () => {

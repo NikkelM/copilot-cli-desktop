@@ -1,4 +1,5 @@
-import { countChanges, parsePatch, splitByFile } from './patch';
+import { countChanges, parsePatch } from './patch';
+import { splitByFile } from '../../shared/patch';
 import type { Entry } from './transcriptEntries';
 
 /** One file a turn changed, and how much of it. */

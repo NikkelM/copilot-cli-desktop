@@ -13,7 +13,7 @@ import { createTwoFilesPatch, diffLines } from 'diff';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol.js';
 import { contentHash, fileKey, readBackup, readRewind, type Image, type RewindSnapshot } from './rewind.js';
-import { hasLive, liveChanges } from './liveChanges.js';
+import { hasLive, liveChanges, livePatches } from './liveChanges.js';
 import { gitBlobHash } from './rewindLegacy.js';
 
 /**
@@ -332,8 +332,9 @@ function withLive(sessionId: string, recorded: SessionChange[]): SessionChange[]
       // What the session did to the file overall. A file it created earlier is still a file
       // it created, however many times this turn has rewritten it since.
       status: before.status === 'created' && live.status !== 'deleted' ? 'created' : live.status,
-      // The halves come from different places and only one of them has both ends on disk.
-      diffable: false,
+      // The running turn's writes are in hand, so the row opens onto them. What it shows is
+      // this turn's work rather than the session's, which is what "still working" says.
+      diffable: true,
       running: true,
     });
   }
@@ -352,6 +353,18 @@ function withLive(sessionId: string, recorded: SessionChange[]): SessionChange[]
  * would be answering different questions.
  */
 export function sessionDiff(sessionId: string, path: string, since?: string): FileDiff {
+  /*
+   * What the running turn has written, where that is what is being asked about (#140).
+   *
+   * The store has nothing to say yet - the snapshot is written when the next turn begins -
+   * but the tools reported a diff for every write they made, so the answer is in hand. Sent
+   * as the writes themselves rather than one patch: the second write numbers the file as
+   * the first left it, so they are joined for drawing by the app, with the same code it
+   * uses for the summary at the end of a turn.
+   */
+  const live = livePatches(sessionId, path);
+  if (live) return { patch: null, patches: live, stale: false };
+
   const ends = follow(readRewind(sessionId), since).get(fileKey(path));
   if (!ends) return { patch: null, reason: 'untracked', stale: false };
 

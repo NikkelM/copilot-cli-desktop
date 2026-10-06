@@ -1075,6 +1075,15 @@ export interface FileDiff {
   /** Unified diff from what the session found to what it left. */
   patch: string | null;
   /**
+   * The separate writes a running turn made to this file, newest last (#140).
+   *
+   * Only while the turn is still going, and only instead of `patch`: there is no snapshot
+   * to diff against yet, but the tools reported what each write did. They are kept apart
+   * because each one's line numbers count the file as the write before it left it, and the
+   * app joins them with the same code it uses for the summary at the end of a turn.
+   */
+  patches?: string[];
+  /**
    * Why there is no patch, in terms the reader can go and check for themselves.
    *
    * The store is not self-contained: a version is kept as a blob only when it is not what

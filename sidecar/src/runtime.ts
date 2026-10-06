@@ -1120,15 +1120,22 @@ export class SessionRuntime {
        * empty the panel in the middle of the work it is describing.
        */
       if (event.type === 'tool.execution_start') {
-        noteToolStart(sessionId, event.data.toolCallId, event.data.toolName, event.data.arguments);
+        noteToolStart(sessionId, event.data.toolCallId, event.data.toolName);
       }
 
       if (event.type === 'tool.execution_complete') {
-        // Only when a file actually moved. Most tool calls are reads, and a notification
-        // apiece would be a re-read of the whole store for every grep the agent runs.
-        if (noteToolEnd(sessionId, event.data.toolCallId, event.data.success !== false, new Date().toISOString())) {
-          this.onChangesRecorded?.(sessionId);
-        }
+        // The diff the tool reports, which is what says who changed and by how much. Only
+        // when a file actually moved: most calls are reads, and a notification apiece
+        // would be a re-read of the whole store for every grep the agent runs.
+        const reported = (event.data.result as { detailedContent?: unknown } | undefined)?.detailedContent;
+        const moved = noteToolEnd(
+          sessionId,
+          event.data.toolCallId,
+          event.data.success !== false,
+          typeof reported === 'string' ? reported : undefined,
+          new Date().toISOString(),
+        );
+        if (moved) this.onChangesRecorded?.(sessionId);
       }
 
       // Forgotten before the notification below, so whoever reads the list on it reads the

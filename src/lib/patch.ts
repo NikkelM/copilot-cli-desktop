@@ -69,62 +69,6 @@ function overlap(drawn: PatchLine[], lines: PatchLine[]): number {
   return 0;
 }
 
-export interface PatchFile {
-  path: string;
-  patch: string;
-}
-
-/**
- * The files a patch is about, with each one's own hunks.
- *
- * A patch is not always about one file. `apply_patch` takes a whole envelope, and measured
- * over the 1,273 calls on this machine only two thirds name a single file: a fifth name
- * two, and the rest up to eighteen. The tool also carries no path in its arguments - the
- * paths are inside the patch - so this is the only place they can be read from.
- *
- * Read from the `---` and `+++` lines rather than the `diff --git` line above them. That
- * line holds both paths with only a space between, which is ambiguous for a path that
- * contains one, and on Windows they routinely do.
- */
-export function splitByFile(patch: string): PatchFile[] {
-  const files: PatchFile[] = [];
-  let lines: string[] = [];
-  let before: string | null = null;
-  let after: string | null = null;
-
-  const close = () => {
-    // The `+++` side is where the file ended up, which is its name unless it was deleted.
-    const named = pathOf(after) ?? pathOf(before);
-    if (named && lines.length > 0) files.push({ path: named, patch: lines.join('\n') });
-    lines = [];
-    before = null;
-    after = null;
-  };
-
-  for (const line of patch.split('\n')) {
-    if (line.startsWith('diff --git ')) {
-      close();
-      lines.push(line);
-      continue;
-    }
-
-    if (line.startsWith('--- ')) before = line.slice(4);
-    else if (line.startsWith('+++ ')) after = line.slice(4);
-    lines.push(line);
-  }
-
-  close();
-  return files;
-}
-
-/** A path from a `---` or `+++` line, without its prefix, or null where there is no file. */
-function pathOf(line: string | null): string | null {
-  if (line === null) return null;
-  const path = line.replace(/^[ab]\//, '').trim();
-  // What git writes where a file does not exist at that end: a creation or a deletion.
-  return path === 'dev/null' || path === '/dev/null' ? null : path || null;
-}
-
 /**
  * Part of a line, marked when it is the part that actually changed.
  *

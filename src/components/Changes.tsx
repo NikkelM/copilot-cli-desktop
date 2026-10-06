@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol';
 import { fileBadge } from '../lib/fileBadge';
-import { parsePatch } from '../lib/patch';
+import { mergeEdits, parsePatch } from '../lib/patch';
 import { relativise } from '../lib/paths';
 import { Diff } from './Diff';
 
@@ -88,9 +88,7 @@ export function Changes({
   useEffect(() => {
     if (!open) return;
     if (changes && !changes.some((change) => change.path === open)) setOpen(null);
-    // A row the turn is still writing has no diff to ask for: the before image is written
-    // when the turn ends. Asking anyway is a round trip that can only come back empty.
-    else if (!changes?.find((change) => change.path === open)?.running) onDiff(open);
+    else onDiff(open);
   }, [open, changes, onDiff]);
 
   function toggle(path: string) {
@@ -195,14 +193,16 @@ const WHY: Record<NonNullable<FileDiff['reason']>, string> = {
 };
 
 function Expanded({ diff, running }: { diff: FileDiff | undefined; running?: boolean }) {
+  if (!diff) return <p className="changes-note">{running ? 'Reading what it has written.' : 'Reading the diff.'}</p>;
+
   /*
-   * A row the turn is still writing has no diff and will not have one until the turn ends,
-   * because the before image is the CLI's to write and it writes it then. Saying so here
-   * rather than letting the generic answer stand: "no snapshot was taken of this file" is
-   * about a file nobody recorded, and reads as a fault where this is a matter of waiting.
+   * What a running turn has written so far (#140).
+   *
+   * Joined here rather than in the sidecar, with the same code the summary at the end of a
+   * turn uses, so the two views of one turn's work cannot come out differently.
    */
-  if (running) return <p className="changes-note">Still being written. The diff is here once the turn ends.</p>;
-  if (!diff) return <p className="changes-note">Reading the diff.</p>;
+  if (diff.patches?.length) return <Diff lines={mergeEdits(diff.patches)} />;
+
   if (!diff.patch) return <p className="changes-note">{diff.reason ? WHY[diff.reason] : 'No diff to show.'}</p>;
 
   return (

@@ -563,11 +563,25 @@ describe('the diff for one file', () => {
  * same work appearing twice, once live and once from the store (#140).
  */
 describe('changes while a turn is still running', () => {
-  /** Run a file tool against the live tracker the reader merges from. */
-  async function running(path: string, old_str: string, new_str: string, id = 't1') {
+  /**
+   * Run a file tool against the live tracker the reader merges from.
+   *
+   * Reported as a diff, which is what the tools actually return and what the tracker reads.
+   */
+  async function running(path: string, removed: string, added: string, id = 't1', alsoAdded: string[] = []) {
     const live = await import('./liveChanges.js');
-    live.noteToolStart(SESSION, id, 'edit', { path, old_str, new_str });
-    live.noteToolEnd(SESSION, id, true, '2026-01-01T12:00:00.000Z');
+    const patch = [
+      `diff --git a/${path} b/${path}`,
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      '@@ -1,1 +1,1 @@',
+      `-${removed}`,
+      `+${added}`,
+      ...alsoAdded.map((line) => `+${line}`),
+    ].join('\n');
+
+    live.noteToolStart(SESSION, id, 'edit');
+    live.noteToolEnd(SESSION, id, true, patch, '2026-01-01T12:00:00.000Z');
     return live;
   }
 
@@ -651,7 +665,7 @@ describe('changes while a turn is still running', () => {
       { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
     ]);
     const { sessionChanges } = await load();
-    await running('a.ts', 'b\n', 'c\nd\n');
+    await running('a.ts', 'b', 'c', 't1', ['d']);
 
     const [row] = sessionChanges(SESSION);
     // One line swapped in the store, then one swapped and one added by the running turn.
@@ -669,15 +683,40 @@ describe('changes while a turn is still running', () => {
     expect(sessionChanges(SESSION)[0]?.changedAt).toBe('2026-01-01T12:00:00.000Z');
   });
 
-  /** One end is on disk and the other is not, so the two cannot be diffed against each other. */
-  it('offers no diff for a row the turn is still writing', async () => {
+  /** The tools reported what they wrote, so the row opens onto this turn's work. */
+  it('offers the diff of what the running turn has written', async () => {
     await writeStore([
       { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
     ]);
-    const { sessionChanges } = await load();
-    await running('a.ts', 'b\n', 'c\n');
+    const { sessionChanges, sessionDiff } = await load();
+    await running('a.ts', 'b', 'c');
 
-    expect(sessionChanges(SESSION)[0]?.diffable).toBe(false);
+    expect(sessionChanges(SESSION)[0]?.diffable).toBe(true);
+    expect(sessionDiff(SESSION, 'a.ts').patches).toHaveLength(1);
+  });
+
+  /** The store has nothing for it yet, so the answer has to be the writes themselves. */
+  it('answers a diff for a file only the running turn knows about', async () => {
+    const { sessionDiff } = await load();
+    await running('new.ts', 'b', 'c');
+
+    const diff = sessionDiff(SESSION, 'new.ts');
+
+    expect(diff.patches?.[0]).toContain('+c');
+    expect(diff.reason).toBeUndefined();
+  });
+
+  it('goes back to the store once the turn has handed over', async () => {
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: 'a.ts', preimage: await blob('a\n'), postimage: await blob('b\n') }] },
+    ]);
+    const { sessionDiff } = await load();
+    const live = await running('a.ts', 'b', 'c');
+
+    live.forgetLive(SESSION);
+
+    expect(sessionDiff(SESSION, 'a.ts').patches).toBeUndefined();
+    expect(sessionDiff(SESSION, 'a.ts').patch).toBeTruthy();
   });
 
   /** A file the session created earlier is still a file it created. */
