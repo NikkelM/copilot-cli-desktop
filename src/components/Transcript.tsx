@@ -466,30 +466,30 @@ export function Transcript({
   const ignoreScrollsUntil = useRef(0);
 
   /**
-   * Where this component last put the scroll itself, if that scroll has not been reported yet.
+   * Where this component last put the scroll, while the event for it is still owed.
    *
-   * A scroll event is delivered after the fact, so by the time one arrives more may have been
-   * written and the bottom moved again. Measuring the distance then reads what was written as
-   * the reader having scrolled away from it.
+   * Kept until the reader moves somewhere else rather than spent on the first event that
+   * arrives, because one programmatic scroll does not always report once: the compositor can
+   * raise several as it settles, and each arrives after whatever was written in the meantime.
+   * A claim good for only the first left the rest to be read as the reader walking away from
+   * the work.
    */
-  const scrolledTo = useRef<number | null>(null);
+  const wroteTop = useRef<number | null>(null);
 
   /**
-   * Put the newest work back in view, and remember having done it.
+   * Put the newest work back in view.
    *
-   * Four pixels is all the slack the bottom has, so a single line arriving between this and
-   * the event it raises was enough to look like somebody scrolling off. That is how following
-   * a turn stopped dead whenever a file change was expanded underneath it: expanding one makes
-   * every edit grow the transcript by more than that in a single frame.
+   * Four pixels is all the slack the bottom has, and an expanded file change grows the
+   * transcript by more than that with every edit, so this runs constantly while a turn works.
    */
   const toBottom = useCallback(() => {
     const list = listRef.current;
     if (!list) return;
+    const before = list.scrollTop;
     list.scrollTop = list.scrollHeight;
-    // Only a claim on the next event if something actually moved. A list with nothing to
-    // scroll stays at zero, and zero is also the top - which is what asks for the page
-    // before it, and must keep doing so.
-    scrolledTo.current = list.scrollTop > 0 ? list.scrollTop : null;
+    // Only a claim on an event if there was one to claim. A list already at the bottom, or
+    // with nothing to scroll at all, does not move and so raises nothing.
+    if (list.scrollTop !== before) wroteTop.current = list.scrollTop;
   }, []);
 
   const cancelDrop = () => {
@@ -720,11 +720,16 @@ export function Transcript({
 
     // This component's own scroll to the bottom, catching up with it late. Whatever gap it
     // leaves behind is what was written since, not the reader moving away.
-    const own = scrolledTo.current !== null && list.scrollTop === scrolledTo.current;
-    scrolledTo.current = null;
+    // This component catching up with the work, reported after the fact. Whatever gap is
+    // left by then is what was written since, or height a panel took, not the reader going
+    // anywhere.
+    const mine = list.scrollTop === wroteTop.current;
+    // Let go only once the reader is somewhere else, so a scroll that reports more than once
+    // is still this component's doing on the second report.
+    if (!mine) wroteTop.current = null;
 
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
-    pinned.current = own || distance <= BOTTOM_TOLERANCE_PX;
+    pinned.current = distance <= BOTTOM_TOLERANCE_PX || (pinned.current && mine);
 
     // Back at the bottom and following the reply again, rather than reading somewhere of
     // their own choosing: what is above is no longer being looked at, only paid for.

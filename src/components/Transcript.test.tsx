@@ -2532,3 +2532,91 @@ describe('following work that keeps arriving while the scroll catches up', () =>
     expect(t.list.scrollTop, 'they should be left where they were reading').toBe(0);
   });
 });
+
+/**
+ * One programmatic scroll does not always report once - the compositor can raise several
+ * events as it settles - and each of them arrives after whatever was written in the meantime.
+ * A claim on only the first left the rest to be read as the reader leaving, which is how
+ * following a turn died while a changes panel grew beneath it.
+ */
+describe('following work through a scroll that reports more than once', () => {
+  const VIEWPORT = 300;
+
+  function transcript() {
+    const draw = (text: string) => (
+      <Transcript
+        events={[
+          { type: 'assistant.message', data: { content: 'working on it' }, id: 'e1' },
+          { type: 'assistant.message_delta', data: { messageId: 'm1', deltaContent: text } },
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />
+    );
+
+    const view = render(draw('The'));
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+
+    let height = 1000;
+    let viewport = VIEWPORT;
+    let top = 0;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => viewport });
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (to: number) => { top = Math.max(0, Math.min(to, height - viewport)); },
+    });
+
+    return {
+      list,
+      bottom: () => height - viewport,
+      write: async (by: number, text: string) => {
+        height += by;
+        view.rerender(draw(text));
+        await new Promise((done) => setTimeout(done, 0));
+      },
+      // A panel growing under the transcript takes the height out of its box.
+      panelTakes: (px: number) => { viewport -= px; },
+      // More written between the scroll and the browser getting round to reporting it.
+      grew: (by: number) => { height += by; },
+      reports: () => fireEvent.scroll(list),
+    };
+  }
+
+  it('keeps following when one scroll is reported twice', async () => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    await t.write(300, 'an edit lands');
+    // More arrives before the browser reports the scroll above, so the first report already
+    // shows a gap - and then the same scroll is reported a second time.
+    t.grew(200);
+    t.reports();
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, 'the newest work should still be in view').toBe(t.bottom());
+  });
+
+  it('keeps following when a panel takes height as the work arrives', async () => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    await t.write(300, 'an edit lands');
+    // The changes panel grows by the same edit, so the transcript gets a shorter box.
+    t.panelTakes(120);
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, 'a shorter box should not hide the work').toBe(t.bottom());
+  });
+});
