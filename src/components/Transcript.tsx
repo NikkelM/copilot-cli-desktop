@@ -465,6 +465,33 @@ export function Transcript({
    */
   const ignoreScrollsUntil = useRef(0);
 
+  /**
+   * Where this component last put the scroll itself, if that scroll has not been reported yet.
+   *
+   * A scroll event is delivered after the fact, so by the time one arrives more may have been
+   * written and the bottom moved again. Measuring the distance then reads what was written as
+   * the reader having scrolled away from it.
+   */
+  const scrolledTo = useRef<number | null>(null);
+
+  /**
+   * Put the newest work back in view, and remember having done it.
+   *
+   * Four pixels is all the slack the bottom has, so a single line arriving between this and
+   * the event it raises was enough to look like somebody scrolling off. That is how following
+   * a turn stopped dead whenever a file change was expanded underneath it: expanding one makes
+   * every edit grow the transcript by more than that in a single frame.
+   */
+  const toBottom = useCallback(() => {
+    const list = listRef.current;
+    if (!list) return;
+    list.scrollTop = list.scrollHeight;
+    // Only a claim on the next event if something actually moved. A list with nothing to
+    // scroll stays at zero, and zero is also the top - which is what asks for the page
+    // before it, and must keep doing so.
+    scrolledTo.current = list.scrollTop > 0 ? list.scrollTop : null;
+  }, []);
+
   const cancelDrop = () => {
     if (dropAfter.current === null) return;
     clearTimeout(dropAfter.current);
@@ -506,8 +533,8 @@ export function Transcript({
     // Otherwise follow the newest entry while the user is at the bottom, for both the
     // initial load and streamed events. useLayoutEffect runs before paint, so a long
     // history never flashes at the top before jumping down.
-    if (pinned.current) list.scrollTop = list.scrollHeight;
-  }, [entries.length, shown.length, sessionId]);
+    if (pinned.current) toBottom();
+  }, [entries.length, shown.length, sessionId, toBottom]);
 
   /**
    * Point at the part of the page that was being looked for.
@@ -635,11 +662,11 @@ export function Transcript({
     if (!list) return;
 
     const follow = new MutationObserver(() => {
-      if (pinned.current && restoreFrom.current === null) list.scrollTop = list.scrollHeight;
+      if (pinned.current && restoreFrom.current === null) toBottom();
     });
     follow.observe(list, { childList: true, subtree: true, characterData: true });
     return () => follow.disconnect();
-  }, []);
+  }, [toBottom]);
 
   /**
    * Stay at the bottom when the box itself changes size, not only when its contents do.
@@ -659,11 +686,11 @@ export function Transcript({
     if (!list || typeof ResizeObserver === 'undefined') return;
 
     const resized = new ResizeObserver(() => {
-      if (pinned.current && restoreFrom.current === null) list.scrollTop = list.scrollHeight;
+      if (pinned.current && restoreFrom.current === null) toBottom();
     });
     resized.observe(list);
     return () => resized.disconnect();
-  }, []);
+  }, [toBottom]);
 
   /**
    * Fill the view when a page does not, so what is above it stays reachable.
@@ -691,8 +718,13 @@ export function Transcript({
     // cancelled its own timer on the next render, and left it set for the rest of the run.
     if (Date.now() < ignoreScrollsUntil.current) return;
 
+    // This component's own scroll to the bottom, catching up with it late. Whatever gap it
+    // leaves behind is what was written since, not the reader moving away.
+    const own = scrolledTo.current !== null && list.scrollTop === scrolledTo.current;
+    scrolledTo.current = null;
+
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
-    pinned.current = distance <= BOTTOM_TOLERANCE_PX;
+    pinned.current = own || distance <= BOTTOM_TOLERANCE_PX;
 
     // Back at the bottom and following the reply again, rather than reading somewhere of
     // their own choosing: what is above is no longer being looked at, only paid for.

@@ -2444,3 +2444,91 @@ describe('reaching back for a page that never comes', () => {
     expect(list.scrollTop, 'the newest text should be in view').toBe(height);
   });
 });
+
+/**
+ * A scroll event is delivered after the fact. By the time one arrives, more may have been
+ * written and the bottom moved again - and the four pixels of slack the bottom has is less
+ * than a single line. So the transcript scrolling itself to the bottom raised an event that,
+ * once it arrived, read as the reader having scrolled away from the work.
+ *
+ * Unlike the other suites here, scrollTop clamps the way a browser clamps it. That is the
+ * whole bug: without clamping, scrollTop keeps the height it was given and the distance back
+ * from the bottom is never positive, so this could not happen.
+ */
+describe('following work that keeps arriving while the scroll catches up', () => {
+  const VIEWPORT = 300;
+
+  function transcript() {
+    const draw = (text: string) => (
+      <Transcript
+        events={[
+          { type: 'assistant.message', data: { content: 'working on it' }, id: 'e1' },
+          { type: 'assistant.message_delta', data: { messageId: 'm1', deltaContent: text } },
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />
+    );
+
+    const view = render(draw('The'));
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+
+    let height = 1000;
+    let top = 0;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (to: number) => { top = Math.max(0, Math.min(to, height - VIEWPORT)); },
+    });
+
+    return {
+      list,
+      bottom: () => height - VIEWPORT,
+      // An edit landing: the row is drawn and the expanded change under it grows.
+      write: async (by: number, text: string) => {
+        height += by;
+        view.rerender(draw(text));
+        await new Promise((done) => setTimeout(done, 0));
+      },
+      // More arriving before the browser gets round to reporting the scroll above.
+      grew: (by: number) => { height += by; },
+      reports: () => fireEvent.scroll(list),
+    };
+  }
+
+  it('keeps following when the scroll is reported after more has arrived', async () => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    await t.write(300, 'an edit lands');
+    // The expanded change grows by a line before the scroll above is reported.
+    t.grew(50);
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, 'the newest work should still be in view').toBe(t.bottom());
+  });
+
+  /** The reader moving is still the reader moving, whatever this component did before it. */
+  it('lets go when the reader scrolls away', async () => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    await t.write(300, 'an edit lands');
+    t.list.scrollTop = 0;
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, 'they should be left where they were reading').toBe(0);
+  });
+});
