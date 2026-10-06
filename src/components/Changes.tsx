@@ -82,13 +82,19 @@ export function Changes({
    *
    * The list can be reread underneath the panel - a turn ends, or the span changes - which
    * drops the diffs on hand, since they answered the question the old span asked. A row
-   * left open has to ask again rather than sit on "Reading the diff." for good. A row whose
-   * file has dropped off the list has nothing left to ask about, so it closes.
+   * left open has to ask again rather than sit on "Reading the diff." for good.
+   *
+   * A file that is not in the list right now is remembered rather than closed. It drops out
+   * at the seam between a turn and the store: the running turn's record is let go when the
+   * session goes idle, and the snapshot that replaces it is not written until the moment
+   * the next turn begins. Closing on that emptied the row somebody was reading, twice per
+   * turn, and left it shut when the file came back.
    */
   useEffect(() => {
     if (!open) return;
-    if (changes && !changes.some((change) => change.path === open)) setOpen(null);
-    else onDiff(open);
+    // Nothing to ask about while it is out of the list, but it is still the row somebody
+    // has open, so it is asked again as soon as it is back.
+    if (!changes || changes.some((change) => change.path === open)) onDiff(open);
   }, [open, changes, onDiff]);
 
   function toggle(path: string) {

@@ -378,3 +378,62 @@ describe('opening a row the turn is still writing', () => {
     expect(onDiff).toHaveBeenCalledWith('C:\\work\\repo\\src\\thing.ts');
   });
 });
+
+/**
+ * A row stays open across a turn (#140).
+ *
+ * A file drops out of the list at the seam between a turn and the store: the running turn's
+ * record is let go when the session goes idle, and the snapshot that replaces it is not
+ * written until the next turn begins. Closing the row on that emptied what somebody was
+ * reading, twice a turn, and left it shut when the file came back.
+ */
+describe('a row left open while the agent works', () => {
+  const rowFor = (path: string) => screen.getByRole('button', { name: new RegExp(path.replace(/\./g, '\\.')) });
+
+  const draw = (changes: SessionChange[] | null, onDiff = vi.fn()) => (
+    <Changes {...props} changes={changes} onDiff={onDiff} />
+  );
+
+  it('stays open while the file is out of the list', () => {
+    const { rerender } = render(draw([change()]));
+    fireEvent.click(rowFor('thing.ts'));
+
+    rerender(draw([]));
+    rerender(draw([change()]));
+
+    expect(rowFor('thing.ts').getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('asks again once the file is back', () => {
+    const onDiff = vi.fn();
+    const { rerender } = render(draw([change()], onDiff));
+    fireEvent.click(rowFor('thing.ts'));
+    onDiff.mockClear();
+
+    rerender(draw([], onDiff));
+    rerender(draw([change({ linesAdded: 9 })], onDiff));
+
+    expect(onDiff).toHaveBeenCalledWith('C:\\work\\repo\\src\\thing.ts');
+  });
+
+  /** Nothing to ask about while it is gone, so it does not ask into the void. */
+  it('asks for nothing while the file is out of the list', () => {
+    const onDiff = vi.fn();
+    const { rerender } = render(draw([change()], onDiff));
+    fireEvent.click(rowFor('thing.ts'));
+    onDiff.mockClear();
+
+    rerender(draw([], onDiff));
+
+    expect(onDiff).not.toHaveBeenCalled();
+  });
+
+  it('can still be closed by the reader', () => {
+    render(draw([change()]));
+    fireEvent.click(rowFor('thing.ts'));
+
+    fireEvent.click(rowFor('thing.ts'));
+
+    expect(rowFor('thing.ts').getAttribute('aria-expanded')).toBe('false');
+  });
+});
