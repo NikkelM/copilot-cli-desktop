@@ -1,3 +1,5 @@
+import { sep } from 'node:path';
+
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { forgetLive, hasLive, liveChanges, livePatches, noteToolEnd, noteToolStart } from './liveChanges.js';
@@ -261,5 +263,42 @@ describe('whether anybody needs telling', () => {
 
   it('says so when one file of several moved', () => {
     expect(wrote(`${diff('a.ts', [' same'])}\n${diff('b.ts', ['+one'])}`, { tool: 'apply_patch' })).toBe(true);
+  });
+});
+
+/**
+ * A patch names its files the way git does, with forward slashes, where the store names
+ * them the way the tool was given them. On Windows those are two spellings of one file, and
+ * the list showed it twice - once from here and once from the store.
+ */
+describe('spelling a path the way the rest of the app does', () => {
+  const windows = 'C:/Users/nikke/Downloads/text.txt';
+  const native = windows.split('/').join(sep);
+
+  it('records it the way this platform writes a path', () => {
+    wrote(diff(windows, ['+one']));
+
+    expect(liveChanges(SESSION)[0]?.path).toBe(native);
+  });
+
+  it('is found by that spelling when the diff is asked for', () => {
+    wrote(diff(windows, ['+one']));
+
+    expect(livePatches(SESSION, native)).toHaveLength(1);
+  });
+
+  /** The caller may hold either spelling, and both name the same file. */
+  it('is found by the spelling the patch used as well', () => {
+    wrote(diff(windows, ['+one']));
+
+    expect(livePatches(SESSION, windows)).toHaveLength(1);
+  });
+
+  it('counts two spellings of one file as one file', () => {
+    wrote(diff(windows, ['+one']), { id: 't1' });
+    wrote(diff(native, ['+two']), { id: 't2' });
+
+    expect(liveChanges(SESSION)).toHaveLength(1);
+    expect(liveChanges(SESSION)[0]?.linesAdded).toBe(2);
   });
 });

@@ -1,3 +1,5 @@
+import { normalize } from 'node:path';
+
 import type { SessionChange } from '../../shared/protocol.js';
 import { splitByFile, type PatchStatus } from '../../shared/patch.js';
 
@@ -99,10 +101,20 @@ export function noteToolEnd(
     if (file.added === 0 && file.removed === 0) continue;
     moved = true;
 
-    const before = held.get(file.path);
+    /*
+     * Spelled the way the rest of the app spells it.
+     *
+     * A patch names its files the way git does, with forward slashes, where the store
+     * names them the way the tool was given them. On Windows those are two spellings of
+     * one file, and the list showed it twice - once as `C:/Users/...` from here and once
+     * as `C:\Users\...` from the store.
+     */
+    const path = normalize(file.path);
+
+    const before = held.get(path);
     if (!before) {
-      held.set(file.path, {
-        path: file.path,
+      held.set(path, {
+        path,
         status: file.status,
         added: file.added,
         removed: file.removed,
@@ -149,7 +161,8 @@ export function liveChanges(sessionId: string): SessionChange[] {
 
 /** Every write the running turn made to one file, for the panel to draw as one diff. */
 export function livePatches(sessionId: string, path: string): string[] | null {
-  const file = touched.get(sessionId)?.get(path);
+  // Spelled as it was recorded, so a caller holding the store's spelling still finds it.
+  const file = touched.get(sessionId)?.get(normalize(path));
   return file ? file.patches : null;
 }
 
