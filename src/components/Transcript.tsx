@@ -642,6 +642,30 @@ export function Transcript({
   }, []);
 
   /**
+   * Stay at the bottom when the box itself changes size, not only when its contents do.
+   *
+   * A panel opening under the transcript - what the session changed, its todos, the working
+   * tree - takes its height from the same grid, so the list gets shorter without anything
+   * in it changing. The bottom of the conversation then sits below the fold, and nothing
+   * put it back: the reader was following the work and was left halfway up it.
+   *
+   * The mutation observer above cannot see this. Its contents did not move; the window on
+   * them did.
+   */
+  useEffect(() => {
+    const list = listRef.current;
+    // jsdom has no observer, and a transcript that cannot watch its own box should still
+    // draw and still follow a reply as rows arrive.
+    if (!list || typeof ResizeObserver === 'undefined') return;
+
+    const resized = new ResizeObserver(() => {
+      if (pinned.current && restoreFrom.current === null) list.scrollTop = list.scrollHeight;
+    });
+    resized.observe(list);
+    return () => resized.disconnect();
+  }, []);
+
+  /**
    * Fill the view when a page does not, so what is above it stays reachable.
    *
    * Reaching back is driven by scrolling, and a list shorter than its own box never

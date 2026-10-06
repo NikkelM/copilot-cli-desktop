@@ -2226,3 +2226,96 @@ describe('a turn summary while the turn is still going', () => {
     expect(document.querySelector('.turn-changes.open')).toBeNull();
   });
 });
+
+/**
+ * A panel opening under the transcript - what the session changed, its todos - takes its
+ * height from the same grid, so the list gets shorter without anything in it changing. The
+ * bottom of the conversation then sits below the fold, and the reader who was following the
+ * work is left halfway up it.
+ *
+ * jsdom has no ResizeObserver, so one is supplied here that can be told to fire.
+ */
+describe('following the work when the box changes size', () => {
+  const VIEWPORT = 300;
+  const HEIGHT = 1000;
+  let resize: (() => void) | null = null;
+  const before = globalThis.ResizeObserver;
+
+  beforeEach(() => {
+    resize = null;
+    globalThis.ResizeObserver = class {
+      constructor(run: () => void) {
+        resize = run;
+      }
+      observe() {}
+      disconnect() {
+        resize = null;
+      }
+      unobserve() {}
+    } as unknown as typeof ResizeObserver;
+  });
+
+  afterEach(() => {
+    globalThis.ResizeObserver = before;
+  });
+
+  function transcript() {
+    const view = render(
+      <Transcript
+        events={[{ type: 'assistant.message', data: { content: 'working on it' }, id: 'e1' }]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+
+    let viewport = VIEWPORT;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => HEIGHT });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => viewport });
+
+    return {
+      list,
+      // What opening a panel does to the transcript: the same contents, a shorter window.
+      shrink: (to: number) => {
+        viewport = to;
+        resize?.();
+      },
+    };
+  }
+
+  it('stays at the bottom when a panel takes half the height', () => {
+    const t = transcript();
+    t.list.scrollTop = HEIGHT - VIEWPORT;
+    fireEvent.scroll(t.list);
+
+    t.shrink(150);
+
+    expect(t.list.scrollTop, 'the newest work should still be in view').toBe(HEIGHT);
+  });
+
+  it('leaves a reader where they were when they are not at the bottom', () => {
+    const t = transcript();
+    t.list.scrollTop = 100;
+    fireEvent.scroll(t.list);
+
+    t.shrink(150);
+
+    expect(t.list.scrollTop, 'what they were reading should not be taken away').toBe(100);
+  });
+
+  it('draws and follows a reply where there is no observer at all', async () => {
+    globalThis.ResizeObserver = undefined as unknown as typeof ResizeObserver;
+
+    const t = transcript();
+    t.list.scrollTop = HEIGHT - VIEWPORT;
+    fireEvent.scroll(t.list);
+    t.list.append(document.createElement('li'));
+    await new Promise((done) => setTimeout(done, 0));
+
+    expect(t.list.scrollTop, 'the text observer should still be following').toBe(HEIGHT);
+  });
+});
