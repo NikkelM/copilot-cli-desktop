@@ -8,7 +8,67 @@
  */
 export type PatchLineKind = 'added' | 'removed' | 'context' | 'skip';
 
-/** One file inside a patch, with the part of the patch that is about it. */
+/**
+ * Every edit a turn made to one file, as a single diff.
+ *
+ * The edits cannot simply be laid end to end. Each one carries its own context, and
+ * successive edits to the same part of a file overlap almost entirely: five appends to the
+ * end of a file drew five near-identical blocks, each repeating the lines above it.
+ *
+ * Nor can their hunks be interleaved by line number, because each edit numbers the file as
+ * the edit before it left it. What they do share is the lines themselves, so the join is
+ * made on those: where an edit opens with lines already drawn, it continues them rather
+ * than restating them.
+ *
+ * A line one edit added and the next treats as context keeps the mark the first edit gave
+ * it. It was added by this turn, whatever the later edit thought it was looking at.
+ */
+export function mergeEdits(patches: string[]): PatchLine[] {
+  const out: PatchLine[] = [];
+
+  for (const patch of patches) {
+    const lines = parsePatch(patch);
+    if (lines.length === 0) continue;
+
+    if (out.length === 0) {
+      out.push(...lines);
+      continue;
+    }
+
+    const shared = overlap(out, lines);
+    const rest = lines.slice(shared);
+    // Wholly inside what is already drawn, which is an edit that was undone by a later one.
+    if (rest.length === 0) continue;
+
+    // Nothing in common, so this edit is somewhere else in the file. A gap says the line
+    // numbers do not carry on, which is the same thing it says inside one patch.
+    if (shared === 0) out.push({ kind: 'skip', text: '', before: null, after: null });
+    out.push(...rest);
+  }
+
+  return out;
+}
+
+/**
+ * How many of an edit's opening lines are already drawn at the end of what came before.
+ *
+ * Matched on the text rather than on the numbers: the numbers are what cannot be compared
+ * across edits. The longest run wins, so a file whose lines repeat is joined at the furthest
+ * point the two actually agree.
+ */
+function overlap(drawn: PatchLine[], lines: PatchLine[]): number {
+  // A gap is a hole in the file rather than a line of it, so it can match nothing.
+  const tail = drawn.filter((line) => line.kind !== 'skip');
+  const most = Math.min(tail.length, lines.length);
+
+  for (let size = most; size > 0; size -= 1) {
+    const before = tail.slice(tail.length - size);
+    if (lines.slice(0, size).every((line, at) => line.kind !== 'skip' && line.text === before[at]!.text)) return size;
+  }
+
+  return 0;
+}
+
 export interface PatchFile {
   path: string;
   patch: string;

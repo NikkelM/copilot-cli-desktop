@@ -1,7 +1,7 @@
 import { ChevronIcon } from './Icons';
 import { Diff } from './Diff';
 import { fileBadge } from '../lib/fileBadge';
-import { parsePatch, type PatchLine } from '../lib/patch';
+import { mergeEdits } from '../lib/patch';
 import type { ChangedFile, TurnChanges } from '../lib/turnChanges';
 
 /** How the reader has this summary open, if at all. */
@@ -88,19 +88,6 @@ export function TurnSummary({
   );
 }
 
-/**
- * Every edit the turn made to one file, as one diff.
- *
- * The edits are kept apart until here because each one's line numbers count the file as the
- * edit before it left it, so their hunks cannot be interleaved. Laid end to end with a gap
- * between them they read as one file's worth of change, which is the question being asked -
- * what did this turn do to this file - rather than a list of the writes it took to get there.
- */
-function allEdits(patches: string[]): PatchLine[] {
-  const gap: PatchLine = { kind: 'skip', text: '', before: null, after: null };
-  return patches.flatMap((patch, at) => (at === 0 ? parsePatch(patch) : [gap, ...parsePatch(patch)]));
-}
-
 function FileRow({ file, open, onToggle }: { file: ChangedFile; open: boolean; onToggle: () => void }) {
   const { name, within } = nameOf(file.path);
   const badge = fileBadge(file.path);
@@ -137,7 +124,7 @@ function FileRow({ file, open, onToggle }: { file: ChangedFile; open: boolean; o
 
       {open && (
         <div className="turn-changes-diffs">
-          <Diff lines={allEdits(file.patches)} />
+          <Diff lines={mergeEdits(file.patches)} />
         </div>
       )}
     </li>

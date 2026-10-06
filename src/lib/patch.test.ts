@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { countChanges, parsePatch, splitByFile } from './patch';
+import { countChanges, mergeEdits, parsePatch, splitByFile } from './patch';
 
 const patch = [
   'diff --git a/src/a.ts b/src/a.ts',
@@ -309,5 +309,149 @@ describe('splitByFile', () => {
     const neither = ['diff --git a/dev/null b/dev/null', '--- a/dev/null', '+++ b/dev/null'].join('\n');
 
     expect(splitByFile(neither)).toEqual([]);
+  });
+});
+
+/**
+ * Every edit a turn made to one file, as one diff.
+ *
+ * Laid end to end they are not one diff: each edit carries its own context, and successive
+ * edits to the same part of a file overlap almost entirely. Appending five lines one at a
+ * time drew five near-identical blocks, each restating the lines above it.
+ */
+describe('mergeEdits', () => {
+  /** An append, as the agent makes one: three lines of context and one new line after them. */
+  const append = (at: number) =>
+    [
+      'diff --git a/f.txt b/f.txt',
+      '--- a/f.txt',
+      '+++ b/f.txt',
+      `@@ -${at - 3},3 +${at - 3},4 @@`,
+      ` line ${at - 3}`,
+      ` line ${at - 2}`,
+      ` line ${at - 1}`,
+      `+line ${at}`,
+    ].join('\n');
+
+  const texts = (lines: ReturnType<typeof mergeEdits>) => lines.map((l) => `${l.kind}:${l.text}`);
+
+  it('draws one edit as it stands', () => {
+    expect(texts(mergeEdits([append(21)]))).toEqual([
+      'context:line 18',
+      'context:line 19',
+      'context:line 20',
+      'added:line 21',
+    ]);
+  });
+
+  it('continues the second edit rather than restating the first', () => {
+    expect(texts(mergeEdits([append(21), append(22)]))).toEqual([
+      'context:line 18',
+      'context:line 19',
+      'context:line 20',
+      'added:line 21',
+      'added:line 22',
+    ]);
+  });
+
+  /** The shape that showed the problem: five appends drew five overlapping blocks. */
+  it('draws five appends as five added lines', () => {
+    const merged = texts(mergeEdits([append(21), append(22), append(23), append(24), append(25)]));
+
+    expect(merged).toEqual([
+      'context:line 18',
+      'context:line 19',
+      'context:line 20',
+      'added:line 21',
+      'added:line 22',
+      'added:line 23',
+      'added:line 24',
+      'added:line 25',
+    ]);
+  });
+
+  /** It was added by this turn, whatever a later edit took it for. */
+  it('keeps a line added by one edit marked as added when the next sees it as context', () => {
+    const merged = mergeEdits([append(21), append(22)]);
+
+    expect(merged.find((line) => line.text === 'line 21')?.kind).toBe('added');
+  });
+
+  it('leaves a gap between edits that share nothing', () => {
+    const elsewhere = [
+      'diff --git a/f.txt b/f.txt',
+      '--- a/f.txt',
+      '+++ b/f.txt',
+      '@@ -100,1 +100,2 @@',
+      ' far away',
+      '+and new',
+    ].join('\n');
+
+    const merged = mergeEdits([append(21), elsewhere]);
+    const drawn = texts(merged);
+
+    expect(merged.filter((line) => line.kind === 'skip')).toHaveLength(1);
+    expect(drawn[drawn.length - 1]).toBe('added:and new');
+  });
+
+  it('draws no gap where the edits run on', () => {
+    expect(mergeEdits([append(21), append(22)]).filter((line) => line.kind === 'skip')).toHaveLength(0);
+  });
+
+  it('drops an edit wholly inside what is already drawn', () => {
+    const merged = mergeEdits([append(21), append(21)]);
+
+    expect(texts(merged)).toEqual(['context:line 18', 'context:line 19', 'context:line 20', 'added:line 21']);
+  });
+
+  it('says nothing for no edits at all', () => {
+    expect(mergeEdits([])).toEqual([]);
+  });
+
+  it('ignores a patch with nothing in it', () => {
+    expect(texts(mergeEdits([append(21), 'not a patch']))).toEqual([
+      'context:line 18',
+      'context:line 19',
+      'context:line 20',
+      'added:line 21',
+    ]);
+  });
+
+  /**
+   * Where the lines repeat, more than one join is possible. The longest wins, or the lines
+   * the two edits share get drawn twice over.
+   */
+  it('joins at the longest run the two share, not the first', () => {
+    const hunk = (...body: string[]) =>
+      ['diff --git a/f.txt b/f.txt', '--- a/f.txt', '+++ b/f.txt', '@@ -1,2 +1,3 @@', ...body].join('\n');
+
+    // Both edits sit in a run of identical lines, so a one-line join also matches.
+    const merged = texts(mergeEdits([hunk(' x', ' x', '+x'), hunk(' x', ' x', '+y')]));
+
+    expect(merged).toEqual(['context:x', 'context:x', 'added:x', 'added:y']);
+  });
+
+  /**
+   * Two edits whose lines do not run on are kept apart, even where both are near the top of
+   * the file. The join is made on the lines themselves, so edits that share none are two
+   * places in the file rather than one, and a gap says the numbering does not carry over.
+   */
+  it('keeps apart two edits whose lines do not run on', () => {
+    const atTop = (last: string) =>
+      [
+        'diff --git a/f.txt b/f.txt',
+        '--- a/f.txt',
+        '+++ b/f.txt',
+        '@@ -1,3 +1,4 @@',
+        ' same',
+        ' same',
+        ' same',
+        `+${last}`,
+      ].join('\n');
+
+    const merged = texts(mergeEdits([atTop('first'), atTop('second')]));
+
+    expect(merged.filter((line) => line.startsWith('skip:'))).toHaveLength(1);
+    expect(merged[merged.length - 1]).toBe('added:second');
   });
 });
