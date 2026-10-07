@@ -165,6 +165,7 @@ describe('following a reply as it is written', () => {
     };
 
     const scrollTo = (top: number) => {
+      fireEvent.wheel(list);
       list.scrollTop = top;
       fireEvent.scroll(list);
     };
@@ -796,6 +797,7 @@ describe('giving back history once the reader is following again', () => {
     Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => VIEWPORT });
 
     const scrollTo = (top: number) => {
+      fireEvent.wheel(list);
       list.scrollTop = top;
       fireEvent.scroll(list);
     };
@@ -1065,6 +1067,7 @@ describe('coming back to a workable window while the reader follows along', () =
       rows: () => view.container.querySelectorAll('ol.transcript > li.entry').length,
       grow: (to: number) => view.rerender(<Transcript {...props} events={said(to)} />),
       scrollTo: (top: number) => {
+        fireEvent.wheel(list);
         list.scrollTop = top;
         fireEvent.scroll(list);
       },
@@ -1745,7 +1748,8 @@ describe('holding the reader still when the window widens', () => {
     Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => rows() * ROW });
     list.scrollTop = 0;
 
-    // At the top, which is what asks for more of what is already held.
+    // At the top, under their own hand, which is what asks for more of what is already held.
+    fireEvent.wheel(list);
     fireEvent.scroll(list);
     await new Promise((r) => setTimeout(r, 40));
 
@@ -1860,7 +1864,10 @@ describe('not mistaking where it put the reader for where they went', () => {
     const onLoadOlder = vi.fn();
     show({ onLoadOlder });
 
-    atTop(document.querySelector('.transcript') as HTMLElement);
+    const list = document.querySelector('.transcript') as HTMLElement;
+    // Under their own hand, which is what makes it them arriving rather than this component.
+    fireEvent.wheel(list);
+    atTop(list);
 
     expect(onLoadOlder).toHaveBeenCalled();
   });
@@ -2299,6 +2306,7 @@ describe('following the work when the box changes size', () => {
 
   it('leaves a reader where they were when they are not at the bottom', () => {
     const t = transcript();
+    fireEvent.wheel(t.list);
     t.list.scrollTop = 100;
     fireEvent.scroll(t.list);
 
@@ -2524,6 +2532,7 @@ describe('following work that keeps arriving while the scroll catches up', () =>
     t.reports();
 
     await t.write(300, 'an edit lands');
+    fireEvent.wheel(t.list);
     t.list.scrollTop = 0;
     t.reports();
 
@@ -2618,5 +2627,119 @@ describe('following work through a scroll that reports more than once', () => {
     await t.write(100, 'another edit lands');
 
     expect(t.list.scrollTop, 'a shorter box should not hide the work').toBe(t.bottom());
+  });
+});
+
+/**
+ * The browser moves the scroll as well as the reader. It clamps the position whenever the
+ * list is trimmed from the top or the box grows, landing somewhere this component never wrote
+ * - and if a turn writes anything before that lands, the gap it leaves behind was read as the
+ * reader walking away. From then on nothing followed the work, and rows arrived under the
+ * changes panel instead of pushing the view up.
+ *
+ * Only a wheel, a drag or a key is something a reader produces, so that is what gives the
+ * bottom up. scrollTop clamps the way a browser clamps it, which is the whole subject.
+ */
+describe('following work through a scroll the browser moved', () => {
+  const VIEWPORT = 300;
+
+  function transcript() {
+    const draw = (text: string) => (
+      <Transcript
+        events={[
+          { type: 'assistant.message', data: { content: 'working on it' }, id: 'e1' },
+          { type: 'assistant.message_delta', data: { messageId: 'm1', deltaContent: text } },
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />
+    );
+
+    const view = render(draw('The'));
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+
+    let height = 2000;
+    let top = 0;
+    const clamp = () => { top = Math.max(0, Math.min(top, height - VIEWPORT)); };
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => height });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => VIEWPORT });
+    Object.defineProperty(list, 'scrollTop', {
+      configurable: true,
+      get: () => top,
+      set: (to: number) => { top = Math.max(0, Math.min(to, height - VIEWPORT)); },
+    });
+
+    return {
+      list,
+      bottom: () => height - VIEWPORT,
+      write: async (by: number, text: string) => {
+        height += by;
+        view.rerender(draw(text));
+        await new Promise((done) => setTimeout(done, 0));
+      },
+      // Rows dropped from the top. The list gets shorter and the browser pulls the scroll
+      // back to what is left, which is a position this component never asked for.
+      trimmed: (by: number) => { height -= by; clamp(); },
+      grew: (by: number) => { height += by; },
+      reports: () => fireEvent.scroll(list),
+    };
+  }
+
+  it('keeps following when a trim pulls the scroll back and more then arrives', async () => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    await t.write(400, 'an edit lands');
+    // The window is trimmed from the top, then the turn writes again before the browser
+    // reports where it moved the scroll to.
+    t.trimmed(600);
+    t.grew(200);
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, 'the newest work should still be in view').toBe(t.bottom());
+  });
+
+  it('still lets go when the reader takes the wheel to it', async () => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    await t.write(400, 'an edit lands');
+    fireEvent.wheel(t.list);
+    t.list.scrollTop = 200;
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, 'they should be left where they were reading').toBe(200);
+  });
+
+  /**
+   * Opening a row is a pointer gesture too, and what it opens is drawn a moment later. Without
+   * knowing its own scroll from the reader's, the growth that follows the click reads as the
+   * click having been somebody leaving - which stopped a turn being followed the moment a file
+   * change was expanded under it.
+   */
+  it('keeps following after a click inside it opens something', async () => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    fireEvent.pointerDown(t.list);
+    await t.write(400, 'an edit lands');
+    // What the click opened, finishing being drawn.
+    t.grew(200);
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, 'opening a row is not leaving').toBe(t.bottom());
   });
 });

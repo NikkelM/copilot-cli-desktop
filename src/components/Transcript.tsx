@@ -87,6 +87,14 @@ const DROP_OLDER_AFTER_MS = 10_000;
  */
 const OWN_SCROLL_MS = 150;
 
+/**
+ * How long a wheel, a drag or a key goes on accounting for the scrolls that follow it.
+ *
+ * Long enough to cover the events one flick of a wheel keeps raising as it settles, and short
+ * enough that it has stopped accounting for anything by the time a turn writes again.
+ */
+const GESTURE_MS = 400;
+
 /** Why a skill arrived, for the rows where that is not the reader's own doing. */
 const SKILL_NOTE: Record<string, string> = {
   agent: 'skill invoked by the agent',
@@ -477,6 +485,18 @@ export function Transcript({
   const wroteTop = useRef<number | null>(null);
 
   /**
+   * When the reader last did something that moves a transcript.
+   *
+   * The position alone cannot say who moved the scroll, because the browser moves it too: it
+   * clamps the scroll down whenever the list is trimmed from the top or the box grows, landing
+   * somewhere this component never wrote. If anything is written before that lands, the gap it
+   * leaves was read as the reader walking away - and from then on nothing followed the work.
+   *
+   * A wheel, a drag or a key is the one thing only a reader produces.
+   */
+  const movedAt = useRef(0);
+
+  /**
    * Put the newest work back in view.
    *
    * Four pixels is all the slack the bottom has, and an expanded file change grows the
@@ -584,7 +604,10 @@ export function Transcript({
    * will miss, and this one has been missed.
    */
   const [tookOver, setTookOver] = useState(false);
-  const release = useCallback(() => setTookOver(true), []);
+  const release = useCallback(() => {
+    movedAt.current = Date.now();
+    setTookOver(true);
+  }, []);
 
   /**
    * Arriving somewhere new is arriving.
@@ -718,8 +741,6 @@ export function Transcript({
     // cancelled its own timer on the next render, and left it set for the rest of the run.
     if (Date.now() < ignoreScrollsUntil.current) return;
 
-    // This component's own scroll to the bottom, catching up with it late. Whatever gap it
-    // leaves behind is what was written since, not the reader moving away.
     // This component catching up with the work, reported after the fact. Whatever gap is
     // left by then is what was written since, or height a panel took, not the reader going
     // anywhere.
@@ -729,7 +750,10 @@ export function Transcript({
     if (!mine) wroteTop.current = null;
 
     const distance = list.scrollHeight - list.scrollTop - list.clientHeight;
-    pinned.current = distance <= BOTTOM_TOLERANCE_PX || (pinned.current && mine);
+    // Somebody is at the bottom, or they are where they were and nothing they did put them
+    // there. Only a hand on the wheel gives the bottom up.
+    const byHand = Date.now() - movedAt.current < GESTURE_MS;
+    pinned.current = distance <= BOTTOM_TOLERANCE_PX || (pinned.current && (mine || !byHand));
 
     // Back at the bottom and following the reply again, rather than reading somewhere of
     // their own choosing: what is above is no longer being looked at, only paid for.
