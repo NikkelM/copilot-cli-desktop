@@ -6037,7 +6037,9 @@ pre.fatal,
 /* What a turn changed, gathered where the turn ends. Set apart from the conversation rather
    than inside it: it is the app summarising, not anybody speaking. */
 .turn-summary {
-  padding: 2px 8px 10px;
+  /* Even above and below, so it reads as a thing set between two rows rather than as part
+     of the one it follows. */
+  padding: 10px 8px;
   margin: 0 -8px;
   list-style: none;
 }
