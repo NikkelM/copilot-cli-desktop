@@ -308,11 +308,18 @@ describe('listSessions', () => {
     it('puts it above sessions last used long ago', async () => {
       store.addSession('old', { summary: 'Has a name' });
       store.addTurn('old', 0, 'hi', 'hello', '2020-01-01 10:00:00');
+      // What dates a session is its log, not its turn: the row's time is superseded by the
+      // file's. Left as written, "long ago" is a session last used this millisecond, and
+      // which of the two came first was down to whether the clock had moved between them.
+      store.addState('old', { logMtime: new Date('2020-01-01T10:00:00Z') });
       store.addState('rowless', { cwd: 'C:\\work\\thing' });
 
       const { listSessions } = await loadIndex();
+      const listed = listSessions(['rowless']);
 
-      expect(listSessions(['rowless'])[0]?.sessionId).toBe('rowless');
+      expect(listed[0]?.sessionId).toBe('rowless');
+      // Said out loud so the premise cannot quietly stop being true again.
+      expect(listed.find((s) => s.sessionId === 'old')?.updatedAt).toContain('2020');
     });
   });
 
