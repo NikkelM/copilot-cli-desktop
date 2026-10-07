@@ -53,8 +53,8 @@ interface ComposerProps {
   onError: (message: string) => void;
   /**
    * Takes focus whenever this changes to something other than null, so a session opens
-   * ready to type in. Null while the agent is waiting on a prompt of its own, which has
-   * a better claim on the keyboard.
+   * ready to type in - and so does answering the last thing the agent was waiting on, which
+   * is what draws this box again (#75).
    */
   focusOn: string | null;
   /**

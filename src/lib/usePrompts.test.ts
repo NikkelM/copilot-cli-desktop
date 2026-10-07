@@ -148,6 +148,24 @@ describe('usePrompts', () => {
     expect(resolvePlan).toHaveBeenCalledWith('p1', true, 'autopilot', undefined);
   });
 
+  /**
+   * Several can be waiting at once - a tool asking permission with a question behind it - and
+   * the composer stands down for all of them, so it comes back only when the last is gone (#75).
+   */
+  it('stays blocked until the last of several prompts is answered', async () => {
+    const { result } = renderHook(() => usePrompts('s1', () => {}));
+
+    await emit('permissionRequested', permission('r1'));
+    await emit('elicitationRequested', elicitation('e1'));
+    expect(result.current.blocked).toBe(true);
+
+    act(() => result.current.answerPermission(permission('r1'), 'approve-once'));
+    expect(result.current.blocked, 'the question behind it is still waiting').toBe(true);
+
+    act(() => result.current.answerElicitation(elicitation('e1'), 'accept', {}));
+    expect(result.current.blocked, 'and now nothing is').toBe(false);
+  });
+
   // Turning a plan down is the half that carries something back: the feedback is what the
   // agent plans against on its next attempt.
   it('sends the feedback a refused plan came with', async () => {

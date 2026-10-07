@@ -2005,6 +2005,20 @@ export default function App() {
                 />
               ))}
 
+              {/*
+                * Stood down while the agent is waiting on an answer (#75).
+                *
+                * A permission request, a question and a plan all arrive mid-turn, and all three
+                * draw in the place the composer had - which is where somebody about to type is
+                * already looking. Leaving the box below them put a second thing to do under the
+                * thing actually being asked.
+                *
+                * It costs queueing a message until the answer is given, since the runtime would
+                * have held one. That is the trade, and it is deliberate: stopping the turn does
+                * not go with it, because ctrl+c and escape twice are read from the document
+                * rather than from this box.
+                */}
+              {!prompts.blocked && (
               <Composer
                 disabled={!selectedId}
                 busy={busy}
@@ -2015,9 +2029,9 @@ export default function App() {
                 onPasteFiles={(files) => void handlePaste(selected.sessionId, files)}
                 onPasteText={(text) => holdPaste(selected.sessionId, text)}
                 onError={setError}
-                // A question or a permission request blocks the agent until answered, so
-                // it keeps the keyboard; the composer takes it back once nothing is waiting.
-                focusOn={prompts.blocked ? null : `${selectedId}:${focusAt}`}
+                // Taken as soon as the box comes back, which is the moment the last prompt is
+                // answered: it is only drawn when nothing is waiting on anybody.
+                focusOn={`${selectedId}:${focusAt}`}
                 value={drafts.textOf(selected.sessionId)}
                 onChange={(text) => drafts.write(selected.sessionId, text)}
                 stashed={drafts.hasStash(selected.sessionId)}
@@ -2033,6 +2047,7 @@ export default function App() {
                 onCycleMode={mode.cycle}
                 intent={intent}
               />
+              )}
             </div>
           </>
         ) : (
