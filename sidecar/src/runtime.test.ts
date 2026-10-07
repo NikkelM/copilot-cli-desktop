@@ -142,6 +142,10 @@ function makeSession(id: string) {
           ],
           steeringMessages: [],
         })),
+        removeAt: vi.fn(async (_params: { id: string }) => ({ removed: true })),
+        updateText: vi.fn(async (_params: { id: string; prompt: string; displayPrompt?: string }) => ({ updated: true })),
+        moveItem: vi.fn(async (_params: { id: string; toPosition: number }) => ({ changed: true })),
+        clear: vi.fn(async () => undefined),
       },
       commands: {
         list: vi.fn(async () => ({ commands: [] })),
@@ -4545,5 +4549,73 @@ describe('SessionRuntime flushing while a turn is running', () => {
     await runtime.flushChanges('a');
 
     expect(session.rpc.history.listRewindPoints).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Changing your mind about something already waiting (#76).
+ *
+ * The runtime owns the queue and consumes from it as the turn runs, so everything here asks
+ * rather than decides. A session nobody is holding has no queue at all.
+ */
+describe('changing the queue the runtime owns', () => {
+  it('takes an entry back by the id the queue gave it', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await expect(runtime.queueRemove('s1', 'q1')).resolves.toBe(true);
+    expect(sessions.get('s1')!.rpc.queue.removeAt).toHaveBeenCalledWith({ id: 'q1' });
+  });
+
+  /** What is sent to the model is what was shown, because the reader wrote it. */
+  it('rewrites an entry, shown and sent alike', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await expect(runtime.queueEdit('s1', 'q1', 'something else')).resolves.toBe(true);
+    expect(sessions.get('s1')!.rpc.queue.updateText).toHaveBeenCalledWith({
+      id: 'q1',
+      prompt: 'something else',
+      displayPrompt: 'something else',
+    });
+  });
+
+  it('moves an entry to a position in the queue as it is shown', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await expect(runtime.queueMove('s1', 'q3', 1)).resolves.toBe(true);
+    expect(sessions.get('s1')!.rpc.queue.moveItem).toHaveBeenCalledWith({ id: 'q3', toPosition: 1 });
+  });
+
+  it('drops everything waiting', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await expect(runtime.queueClear('s1')).resolves.toBe(true);
+    expect(sessions.get('s1')!.rpc.queue.clear).toHaveBeenCalled();
+  });
+
+  /** Taken by the turn while the call was on its way, which is changing your mind too late. */
+  it('says so when the entry has already gone', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.queue.removeAt.mockResolvedValueOnce({ removed: false });
+
+    await expect(runtime.queueRemove('s1', 'q1')).resolves.toBe(false);
+  });
+
+  /**
+   * No queue to change, and nothing worth waking a session for: the queue lives in the
+   * running session and a cold one has nothing waiting by definition.
+   */
+  it('changes nothing for a session nobody is holding', async () => {
+    const { runtime, sessions } = makeRuntime();
+
+    await expect(runtime.queueRemove('cold', 'q1')).resolves.toBe(false);
+    await expect(runtime.queueEdit('cold', 'q1', 'x')).resolves.toBe(false);
+    await expect(runtime.queueMove('cold', 'q1', 0)).resolves.toBe(false);
+    await expect(runtime.queueClear('cold')).resolves.toBe(false);
+    expect(sessions.size).toBe(0);
   });
 });

@@ -1759,6 +1759,21 @@ export interface SidecarRequests {
   /** The runtime's own queue. Empty for a session that is not loaded, which is not resumed to ask. */
   'sessions.queue': { params: { sessionId: string }; result: { items: QueuedItem[] } };
   /**
+   * Changing your mind about something already waiting (#76).
+   *
+   * All four address an entry by the id the queue gave it, and all four answer with whether
+   * anything actually moved. The runtime owns the queue and consumes from it as the turn
+   * runs, so an entry can be taken while the answer is on its way: `false` is the ordinary
+   * report that the message has already gone, not a failure worth showing anybody.
+   *
+   * A session that is not loaded has no queue to change, and says so the same way.
+   */
+  'sessions.queueRemove': { params: { sessionId: string; id: string }; result: { removed: boolean } };
+  'sessions.queueEdit': { params: { sessionId: string; id: string; text: string }; result: { updated: boolean } };
+  /** `to` is a position in the queue as it is shown, counting from zero, and clamps to either end. */
+  'sessions.queueMove': { params: { sessionId: string; id: string; to: number }; result: { moved: boolean } };
+  'sessions.queueClear': { params: { sessionId: string }; result: { cleared: boolean } };
+  /**
    * The agent's own todo list, with its dependency edges joined in (#172).
    *
    * Read from the session's database on disk rather than from a running session, so a
@@ -1913,6 +1928,10 @@ export const SIDECAR_METHODS = [
   'skills.disabled',
   'skills.set',
   'sessions.queue',
+  'sessions.queueRemove',
+  'sessions.queueEdit',
+  'sessions.queueMove',
+  'sessions.queueClear',
   'sessions.export',
   'sessions.exportSize',
   'sessions.import',

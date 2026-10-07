@@ -1975,7 +1975,13 @@ export default function App() {
                 </Fragment>
               ))}
 
-              <Queue items={queue.queues[selected.sessionId] ?? []} />
+              <Queue
+                items={queue.queues[selected.sessionId] ?? []}
+                onRemove={(id) => void queue.remove(selected.sessionId, id)}
+                onEdit={(id, text) => void queue.edit(selected.sessionId, id, text)}
+                onMove={(id, to) => void queue.move(selected.sessionId, id, to)}
+                onClear={() => void queue.empty(selected.sessionId)}
+              />
 
               {prompts.mine.elicitations.map((pending) => (
                 <ElicitationPrompt

@@ -361,6 +361,33 @@ export async function sessionQueue(sessionId: string): Promise<QueuedItem[]> {
 }
 
 /**
+ * Changing your mind about something already waiting (#76).
+ *
+ * Each answers with whether anything moved. An entry can be taken by the turn while the
+ * call is on its way, and false is what that looks like: the message has gone to the agent
+ * rather than anything having failed.
+ */
+export async function removeQueued(sessionId: string, id: string): Promise<boolean> {
+  const { removed } = await request('sessions.queueRemove', { sessionId, id });
+  return removed;
+}
+
+export async function editQueued(sessionId: string, id: string, text: string): Promise<boolean> {
+  const { updated } = await request('sessions.queueEdit', { sessionId, id, text });
+  return updated;
+}
+
+export async function moveQueued(sessionId: string, id: string, to: number): Promise<boolean> {
+  const { moved } = await request('sessions.queueMove', { sessionId, id, to });
+  return moved;
+}
+
+export async function clearQueued(sessionId: string): Promise<boolean> {
+  const { cleared } = await request('sessions.queueClear', { sessionId });
+  return cleared;
+}
+
+/**
  * Write a session out as a single file, to move it to another machine (#63).
  *
  * Deflated, so a conversation that is mostly event log travels as a fraction of what it

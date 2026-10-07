@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import type { QueuedItem } from '../../shared/protocol';
 
-import { sessionQueue } from './sidecar';
+import { sessionQueue, clearQueued, editQueued, moveQueued, removeQueued } from './sidecar';
 
 /**
  * What each session has waiting behind the turn it is running.
@@ -64,5 +64,38 @@ export function useQueue() {
     setQueues((current) => (current[sessionId]?.length ? { ...current, [sessionId]: [] } : current));
   }, []);
 
-  return { queues, refresh, clear };
+  /**
+   * Changing your mind about something already waiting (#76).
+   *
+   * Each asks the runtime and then reads the queue back, rather than editing the copy held
+   * here. The runtime owns it and is consuming from it as the turn runs, so the answer to
+   * "what is waiting now" is only ever its own - and an entry taken by the turn while the
+   * call was in flight has to show as gone, not as having failed to move.
+   */
+  const act = useCallback(
+    async (sessionId: string, go: () => Promise<boolean>) => {
+      try {
+        await go();
+      } finally {
+        refresh(sessionId);
+      }
+    },
+    [refresh],
+  );
+
+  const remove = useCallback(
+    (sessionId: string, id: string) => act(sessionId, () => removeQueued(sessionId, id)),
+    [act],
+  );
+  const edit = useCallback(
+    (sessionId: string, id: string, text: string) => act(sessionId, () => editQueued(sessionId, id, text)),
+    [act],
+  );
+  const move = useCallback(
+    (sessionId: string, id: string, to: number) => act(sessionId, () => moveQueued(sessionId, id, to)),
+    [act],
+  );
+  const empty = useCallback((sessionId: string) => act(sessionId, () => clearQueued(sessionId)), [act]);
+
+  return { queues, refresh, clear, remove, edit, move, empty };
 }

@@ -239,6 +239,14 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.queue': async ({ sessionId }) => ({ items: await runtime.queue(sessionId) }),
 
+    'sessions.queueRemove': async ({ sessionId, id }) => ({ removed: await runtime.queueRemove(sessionId, id) }),
+
+    'sessions.queueEdit': async ({ sessionId, id, text }) => ({ updated: await runtime.queueEdit(sessionId, id, text) }),
+
+    'sessions.queueMove': async ({ sessionId, id, to }) => ({ moved: await runtime.queueMove(sessionId, id, to) }),
+
+    'sessions.queueClear': async ({ sessionId }) => ({ cleared: await runtime.queueClear(sessionId) }),
+
     // Minus the ones this app is holding, which are open where the reader is looking rather
     // than somewhere they cannot see (#63).
     'sessions.active': () => ({ sessionIds: heldSessions().filter((id) => !runtime.holdsItself(id)) }),

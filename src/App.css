@@ -2002,6 +2002,90 @@ body {
 }
 
 /*
+ * Taking back, rewriting and reordering what is waiting (#76).
+ *
+ * The text takes the room and the controls sit at the end of the row, out of the way until
+ * the row is under the pointer: a queue is mostly read, and four buttons on every line would
+ * be more of the panel than the messages are.
+ *
+ * Kept when something inside has the keyboard, or tabbing to a button would hide the button
+ * being tabbed to.
+ */
+.queue-text {
+  flex: 1;
+}
+
+.queue-actions {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  align-items: center;
+  opacity: 0;
+}
+
+.queue-item:hover .queue-actions,
+.queue-actions:focus-within {
+  opacity: 1;
+}
+
+.queue-actions button {
+  padding: 1px 5px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  cursor: pointer;
+}
+
+.queue-actions button:hover:not(:disabled) {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Still drawn rather than removed, so the row does not change width at either end of the
+   list and the remaining buttons stay where the hand expects them. */
+.queue-actions button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* Beside the count rather than at the far edge: it acts on the whole list, which is what
+   the count names. */
+.queue-clear {
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  letter-spacing: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.queue-clear:hover {
+  color: var(--text);
+}
+
+/* Sized and set like the line it replaces, so rewriting a message does not move the rest of
+   the list or change how the words look. */
+.queue-edit {
+  flex: 1;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  resize: none;
+}
+
+.queue-edit:focus {
+  outline: none;
+}
+
+/*
  * Copying, which the app is otherwise bad at: selecting a long reply by hand is not really
  * possible, and selecting code catches whatever is around it.
  *

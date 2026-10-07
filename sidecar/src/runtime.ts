@@ -1641,6 +1641,54 @@ export class SessionRuntime {
   }
 
   /**
+   * Changing your mind about something already waiting (#76).
+   *
+   * Each answers with whether anything moved. A queue is consumed as the turn runs, so the
+   * entry being addressed can be taken while the call is in flight - and an entry that has
+   * already gone is the ordinary outcome of changing your mind a moment too late, not a
+   * failure. A session nobody is holding has no queue at all and answers the same way.
+   */
+  async queueRemove(sessionId: string, id: string): Promise<boolean> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return false;
+
+    const { removed } = await live.rpc.queue.removeAt({ id });
+    return removed;
+  }
+
+  async queueEdit(sessionId: string, id: string, text: string): Promise<boolean> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return false;
+
+    // The same text both ways: what is sent to the model is what was shown to the reader,
+    // because they wrote it. The two differ only where this app rewrites a prompt.
+    const { updated } = await live.rpc.queue.updateText({ id, prompt: text, displayPrompt: text });
+    return updated;
+  }
+
+  async queueMove(sessionId: string, id: string, to: number): Promise<boolean> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return false;
+
+    const { changed } = await live.rpc.queue.moveItem({ id, toPosition: to });
+    return changed;
+  }
+
+  /**
+   * Everything waiting, at once.
+   *
+   * Stopping the turn already discards the queue, but it also stops the work - this is for
+   * dropping what is waiting while the turn carries on.
+   */
+  async queueClear(sessionId: string): Promise<boolean> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return false;
+
+    await live.rpc.queue.clear();
+    return true;
+  }
+
+  /**
    * How much of a loaded session's context window is spoken for.
    *
    * Asked of the runtime rather than reconstructed here, because the count depends on the
