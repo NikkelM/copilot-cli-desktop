@@ -1689,6 +1689,21 @@ export class SessionRuntime {
   }
 
   /**
+   * Hand a waiting message to the turn that is already running.
+   *
+   * The queue is for what comes next; this is for what the turn should take account of now,
+   * which is what the CLI calls steering. False where there was no running turn to steer
+   * into, and the message simply stays where it was.
+   */
+  async queueSendNow(sessionId: string, id: string): Promise<boolean> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return false;
+
+    const { steered } = await live.rpc.queue.sendNow({ id });
+    return steered;
+  }
+
+  /**
    * How much of a loaded session's context window is spoken for.
    *
    * Asked of the runtime rather than reconstructed here, because the count depends on the

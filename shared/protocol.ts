@@ -1774,6 +1774,14 @@ export interface SidecarRequests {
   'sessions.queueMove': { params: { sessionId: string; id: string; to: number }; result: { moved: boolean } };
   'sessions.queueClear': { params: { sessionId: string }; result: { cleared: boolean } };
   /**
+   * Hand a waiting message to the turn that is already running, rather than the next one.
+   *
+   * Steering, which is how the CLI describes interrupting a turn with something to take
+   * account of. Answers false where there was no running turn to steer - the message stays
+   * where it was, which is what the list then shows.
+   */
+  'sessions.queueSendNow': { params: { sessionId: string; id: string }; result: { steered: boolean } };
+  /**
    * The agent's own todo list, with its dependency edges joined in (#172).
    *
    * Read from the session's database on disk rather than from a running session, so a
@@ -1932,6 +1940,7 @@ export const SIDECAR_METHODS = [
   'sessions.queueEdit',
   'sessions.queueMove',
   'sessions.queueClear',
+  'sessions.queueSendNow',
   'sessions.export',
   'sessions.exportSize',
   'sessions.import',

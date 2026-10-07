@@ -388,6 +388,16 @@ export async function clearQueued(sessionId: string): Promise<boolean> {
 }
 
 /**
+ * Hand a waiting message to the turn that is already running, rather than the next one.
+ *
+ * False where there was no running turn to steer into, and the message stays where it was.
+ */
+export async function steerQueued(sessionId: string, id: string): Promise<boolean> {
+  const { steered } = await request('sessions.queueSendNow', { sessionId, id });
+  return steered;
+}
+
+/**
  * Write a session out as a single file, to move it to another machine (#63).
  *
  * Deflated, so a conversation that is mostly event log travels as a fraction of what it

@@ -9,6 +9,8 @@ interface QueueProps {
   onEdit?: (id: string, text: string) => void;
   onMove?: (id: string, to: number) => void;
   onClear?: () => void;
+  /** Hand one to the turn already running, rather than waiting for the next. */
+  onSendNow?: (id: string) => void;
 }
 
 /**
@@ -23,7 +25,7 @@ interface QueueProps {
  * consuming from this list the whole time, so an entry can be taken while somebody is
  * deciding. Nothing here warns about that: it simply stops being on the list.
  */
-export function Queue({ items, onRemove, onEdit, onMove, onClear }: QueueProps) {
+export function Queue({ items, onRemove, onEdit, onMove, onClear, onSendNow }: QueueProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 
@@ -71,6 +73,19 @@ export function Queue({ items, onRemove, onEdit, onMove, onClear }: QueueProps) 
                 <span className={item.kind === 'message' ? 'queue-text' : 'queue-text command'}>{item.text}</span>
 
                 <span className="queue-actions">
+                  {/* Into the turn already running rather than the next one, which only a
+                      message can be: a queued command or model change is not something for
+                      the agent to take account of mid-answer. */}
+                  {onSendNow && item.kind === 'message' && (
+                    <button
+                      type="button"
+                      onClick={() => onSendNow(item.id)}
+                      title="Send this into the turn that is running"
+                      aria-label="Send this into the turn that is running"
+                    >
+                      Now
+                    </button>
+                  )}
                   {/* Only a message can be rewritten: a queued command or a model change is
                       not text somebody wrote, and editing one would mean nothing. */}
                   {onEdit && item.kind === 'message' && (

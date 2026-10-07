@@ -1981,6 +1981,7 @@ export default function App() {
                 onEdit={(id, text) => void queue.edit(selected.sessionId, id, text)}
                 onMove={(id, to) => void queue.move(selected.sessionId, id, to)}
                 onClear={() => void queue.empty(selected.sessionId)}
+                onSendNow={(id) => void queue.steer(selected.sessionId, id)}
               />
 
               {prompts.mine.elicitations.map((pending) => (

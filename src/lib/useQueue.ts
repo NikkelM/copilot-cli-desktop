@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import type { QueuedItem } from '../../shared/protocol';
 
-import { sessionQueue, clearQueued, editQueued, moveQueued, removeQueued } from './sidecar';
+import { sessionQueue, clearQueued, editQueued, moveQueued, removeQueued, steerQueued } from './sidecar';
 
 /**
  * What each session has waiting behind the turn it is running.
@@ -96,6 +96,10 @@ export function useQueue() {
     [act],
   );
   const empty = useCallback((sessionId: string) => act(sessionId, () => clearQueued(sessionId)), [act]);
+  const steer = useCallback(
+    (sessionId: string, id: string) => act(sessionId, () => steerQueued(sessionId, id)),
+    [act],
+  );
 
-  return { queues, refresh, clear, remove, edit, move, empty };
+  return { queues, refresh, clear, remove, edit, move, empty, steer };
 }

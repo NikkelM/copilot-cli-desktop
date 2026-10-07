@@ -60,6 +60,7 @@ describe('Queue, changing what is waiting', () => {
     expect(screen.queryByLabelText('Take this back')).toBeNull();
     expect(screen.queryByText('Edit')).toBeNull();
     expect(screen.queryByText('Clear')).toBeNull();
+    expect(screen.queryByLabelText('Send this into the turn that is running')).toBeNull();
   });
 
   it('takes one back', async () => {
@@ -125,6 +126,22 @@ describe('Queue, changing what is waiting', () => {
 
     expect(screen.queryByText('Edit')).toBeNull();
     expect(screen.getByLabelText('Take this back')).toBeTruthy();
+  });
+
+  it('hands one to the turn that is running', async () => {
+    const onSendNow = vi.fn();
+    render(<Queue items={[message('a', 'first thing')]} onSendNow={onSendNow} />);
+
+    await user.click(screen.getByLabelText('Send this into the turn that is running'));
+
+    expect(onSendNow).toHaveBeenCalledWith('a');
+  });
+
+  /** Steering is something for the agent to take account of mid-answer, which a command is not. */
+  it('does not offer to steer a queued command', () => {
+    render(<Queue items={[{ id: 'c', kind: 'command', text: '/model' }]} onSendNow={() => {}} />);
+
+    expect(screen.queryByLabelText('Send this into the turn that is running')).toBeNull();
   });
 
   it('moves one sooner and later, by where it is shown', async () => {

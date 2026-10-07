@@ -145,6 +145,7 @@ function makeSession(id: string) {
         removeAt: vi.fn(async (_params: { id: string }) => ({ removed: true })),
         updateText: vi.fn(async (_params: { id: string; prompt: string; displayPrompt?: string }) => ({ updated: true })),
         moveItem: vi.fn(async (_params: { id: string; toPosition: number }) => ({ changed: true })),
+        sendNow: vi.fn(async (_params: { id: string }) => ({ steered: true })),
         clear: vi.fn(async () => undefined),
       },
       commands: {
@@ -4596,6 +4597,24 @@ describe('changing the queue the runtime owns', () => {
     expect(sessions.get('s1')!.rpc.queue.clear).toHaveBeenCalled();
   });
 
+  /** Steering: something for the running turn to take account of, rather than the next one. */
+  it('hands one to the turn already running', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await expect(runtime.queueSendNow('s1', 'q1')).resolves.toBe(true);
+    expect(sessions.get('s1')!.rpc.queue.sendNow).toHaveBeenCalledWith({ id: 'q1' });
+  });
+
+  /** Nothing to steer into, and the message stays where it was rather than being lost. */
+  it('says so when there is no running turn to steer into', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.queue.sendNow.mockResolvedValueOnce({ steered: false });
+
+    await expect(runtime.queueSendNow('s1', 'q1')).resolves.toBe(false);
+  });
+
   /** Taken by the turn while the call was on its way, which is changing your mind too late. */
   it('says so when the entry has already gone', async () => {
     const { runtime, sessions } = makeRuntime();
@@ -4616,6 +4635,7 @@ describe('changing the queue the runtime owns', () => {
     await expect(runtime.queueEdit('cold', 'q1', 'x')).resolves.toBe(false);
     await expect(runtime.queueMove('cold', 'q1', 0)).resolves.toBe(false);
     await expect(runtime.queueClear('cold')).resolves.toBe(false);
+    await expect(runtime.queueSendNow('cold', 'q1')).resolves.toBe(false);
     expect(sessions.size).toBe(0);
   });
 });
