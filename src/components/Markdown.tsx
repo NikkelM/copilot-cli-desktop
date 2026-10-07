@@ -14,6 +14,10 @@ import { scopeAnchors } from '../lib/scopeAnchors';
 import { aliases, languages } from '../lib/highlight';
 import { CopyButton } from './CopyButton';
 import { Mermaid } from './Mermaid';
+/* One katex renders the maths and dresses it. rehype-katex asks for ^0.16, below the version
+   whose renderer options can be reached through a prototype something else has polluted, and
+   there is no newer release to move to - so package.json pins every copy to the one this
+   stylesheet belongs to. */
 import 'katex/dist/katex.min.css';
 
 /**
