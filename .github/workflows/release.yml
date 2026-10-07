@@ -99,7 +99,7 @@ jobs:
       # Kept even on a dry run, which is most of the point of one: the installer can be
       # downloaded and tried before anything is published.
       - name: Upload installers to the workflow
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installers-${{ inputs.tag }}
           path: ${{ steps.artifacts.outputs.paths }}
