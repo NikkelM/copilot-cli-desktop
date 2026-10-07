@@ -747,3 +747,88 @@ describe('changes while a turn is still running', () => {
     expect(sessionChanges(SESSION).map((c) => c.path)).toEqual(['new.ts', 'old.ts']);
   });
 });
+
+/**
+ * A row already open on a file's whole history, when the running turn starts writing that
+ * same file. The panel answers "since you last reviewed", and that does not stop being the
+ * question because a turn is in progress - but sending only the turn's own writes collapsed
+ * the row to the lines of the edit in progress, and put the rest back when the turn ended.
+ */
+describe('a diff for a file the turn is still writing', () => {
+  afterEach(async () => {
+    const live = await import('./liveChanges.js');
+    live.forgetLive(SESSION);
+  });
+
+  /** A write reported the way the tools report one, against the live tracker. */
+  async function wrote(path: string, lines: string[], id = 't1') {
+    const live = await import('./liveChanges.js');
+    live.noteToolStart(SESSION, id, 'edit');
+    live.noteToolEnd(
+      SESSION,
+      id,
+      true,
+      [`--- a/${path}`, `+++ b/${path}`, '@@ -1,1 +1,3 @@', ' one', ...lines.map((l) => `+${l}`)].join('\n'),
+      '2026-01-01T12:00:00.000Z',
+    );
+    return live;
+  }
+
+  it('reaches from the review mark to the file as it stands', async () => {
+    const file = join(home, 'f.ts');
+    // What the session had already done to it before this turn started.
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: file, preimage: await blob('one\n'), postimage: await blob('one\ntwo\n') }] },
+    ]);
+    // And what the turn has written since, which only the file itself has.
+    writeFileSync(file, 'one\ntwo\nthree\n');
+
+    const { sessionDiff } = await load();
+    await wrote(file, ['three']);
+    const diff = sessionDiff(SESSION, file);
+
+    expect(diff.patch, 'the earlier work should still be there').toContain('+two');
+    expect(diff.patch, 'along with what is being written now').toContain('+three');
+  });
+
+  it('says nothing is stale about a file it has just read', async () => {
+    const file = join(home, 'f.ts');
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: file, preimage: await blob('one\n'), postimage: await blob('one\ntwo\n') }] },
+    ]);
+    writeFileSync(file, 'one\ntwo\nthree\n');
+
+    const { sessionDiff } = await load();
+    await wrote(file, ['three']);
+
+    expect(sessionDiff(SESSION, file).stale).toBe(false);
+  });
+
+  /** Gone from disk, so the writes themselves are all there is to draw. */
+  it('falls back to what the turn wrote when the file cannot be read', async () => {
+    const file = join(home, 'missing.ts');
+    await writeStore([
+      { at: '2026-01-01T10:00:00.000Z', files: [{ path: file, preimage: await blob('one\n'), postimage: await blob('one\ntwo\n') }] },
+    ]);
+
+    const { sessionDiff } = await load();
+    await wrote(file, ['three']);
+    const diff = sessionDiff(SESSION, file);
+
+    expect(diff.patch).toBeNull();
+    expect(diff.patches).toHaveLength(1);
+  });
+
+  /** Nothing recorded for it at all: this turn is the first to touch it. */
+  it('sends the writes themselves for a file the store has not seen', async () => {
+    const file = join(home, 'new.ts');
+    writeFileSync(file, 'one\nthree\n');
+
+    const { sessionDiff } = await load();
+    await wrote(file, ['three']);
+    const diff = sessionDiff(SESSION, file);
+
+    expect(diff.patches).toHaveLength(1);
+    expect(diff.reason).toBeUndefined();
+  });
+});

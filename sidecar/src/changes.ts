@@ -353,22 +353,46 @@ function withLive(sessionId: string, recorded: SessionChange[]): SessionChange[]
  * would be answering different questions.
  */
 export function sessionDiff(sessionId: string, path: string, since?: string): FileDiff {
-  /*
-   * What the running turn has written, where that is what is being asked about (#140).
-   *
-   * The store has nothing to say yet - the snapshot is written when the next turn begins -
-   * but the tools reported a diff for every write they made, so the answer is in hand. Sent
-   * as the writes themselves rather than one patch: the second write numbers the file as
-   * the first left it, so they are joined for drawing by the app, with the same code it
-   * uses for the summary at the end of a turn.
-   */
   const live = livePatches(sessionId, path);
-  if (live) return { patch: null, patches: live, stale: false };
-
   const ends = follow(readRewind(sessionId), since).get(fileKey(path));
-  if (!ends) return { patch: null, reason: 'untracked', stale: false };
+
+  /*
+   * What the running turn has written, where there is nothing else to go on (#140).
+   *
+   * The store is a turn behind - a turn's snapshot is written when the next one begins - so
+   * a file this turn is the first to touch has no ends to diff between. The tools reported a
+   * diff for every write they made, so the answer is still in hand. Sent as the writes
+   * themselves rather than one patch: the second write numbers the file as the first left
+   * it, so they are joined for drawing by the app, with the same code it uses for the
+   * summary at the end of a turn.
+   */
+  if (!ends) {
+    if (live) return { patch: null, patches: live, stale: false };
+    return { patch: null, reason: 'untracked', stale: false };
+  }
 
   const before = contentsOf(sessionId, ends.first, ends.path);
+
+  /*
+   * While a turn is writing, the far end of the change is the file itself.
+   *
+   * The store's last image predates what is being written now, so it cannot answer what the
+   * panel is asking - everything since the review mark, including what has just been written.
+   * The file on disk can, in one piece. Sending only the turn's own writes made a row that
+   * was already open on a file's whole history collapse to the three lines of the edit in
+   * progress, and put them back again when the turn ended.
+   */
+  if (live) {
+    const now = currentContents(path);
+    if (before && now && !tooLarge(before, now)) {
+      const whole = diffOf(ends.path, before, now);
+      // Nothing stale about it: the file was read now, and now is what it is being compared to.
+      if (whole) return { patch: whole, stale: false };
+    }
+    // Unreadable, too big, or not text. The writes themselves are still worth drawing.
+    return { patch: null, patches: live, stale: false };
+  }
+
   const after = contentsOf(sessionId, ends.last, ends.path);
   if (!before || !after) return { patch: null, reason: lost(ends.path), stale: false };
   if (tooLarge(before, after)) return { patch: null, reason: 'too-large', stale: false };
@@ -377,6 +401,15 @@ export function sessionDiff(sessionId: string, path: string, since?: string): Fi
   if (!patch) return { patch: null, reason: 'binary', stale: false };
 
   return { patch, stale: !matchesDisk(ends.last, path) };
+}
+
+/** The file as it stands, which is where a change still being written reaches to. */
+function currentContents(path: string): Buffer | null {
+  try {
+    return readFileSync(path);
+  } catch {
+    return null;
+  }
 }
 
 /**
