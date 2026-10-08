@@ -480,6 +480,45 @@ export function Sidebar({
    */
   const nodes = useRef(new Map<string, HTMLElement>());
 
+  /** The filter box, which is both where the list is narrowed and what sits above the rows. */
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  /** The row of controls along the top, for the arrows that move between them. */
+  const headerRef = useRef<HTMLElement>(null);
+
+  /** Up out of the filter row is the row of buttons above it, starting at the fold control. */
+  const toHeader = useCallback(() => {
+    headerRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+  }, []);
+
+  /**
+   * What an arrow means among the buttons along the top.
+   *
+   * Left and right walk them, which is what a row of controls does everywhere else, and down
+   * carries on into the filter box and then the list - so the whole sidebar is one column to
+   * walk down rather than three places that each have to be found. Tab still steps through
+   * them one at a time; these are the shorter way, not the only way.
+   */
+  const onHeaderKey = useCallback((event: ReactKeyboardEvent) => {
+    const buttons = [...(headerRef.current?.querySelectorAll<HTMLButtonElement>('button') ?? [])];
+    const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (at === -1) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      searchRef.current?.focus();
+      return;
+    }
+
+    const by = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (by === 0) return;
+
+    event.preventDefault();
+    // Wraps, because a row this short is quicker to reach round the end than back through
+    // the middle - the same reasoning the menus already use.
+    buttons[(at + by + buttons.length) % buttons.length]?.focus();
+  }, []);
+
   /**
    * Hand a row to whoever is watching which of them are on screen.
    *
@@ -557,11 +596,18 @@ export function Sidebar({
     (sessionId: string, open: () => void, event: ReactKeyboardEvent) => {
       const from = order.indexOf(sessionId);
       const step = (to: number) => {
-        // Off either end is nothing rather than the other end: a list that wraps takes the
-        // reader somewhere they did not ask to go. `order[-1]` is already undefined, and
-        // moving to nothing leaves the focus where it was.
-        const next = order[to];
         event.preventDefault();
+        // Above the first row is the box that narrowed the list down to it. Going back up
+        // into it is how a search is changed without reaching for the mouse, and it makes
+        // the way in and the way out the same pair of keys.
+        if (to < 0) {
+          searchRef.current?.focus();
+          return;
+        }
+
+        // Off the bottom is nothing rather than the top: a list that wraps takes the reader
+        // somewhere they did not ask to go, and `order[length]` is already undefined.
+        const next = order[to];
         // Shift extends as it moves, so a range is gathered by holding it down rather than
         // by marking each row on the way.
         if (event.shiftKey && next) onMark?.(next, { toggle: false, range: true }, drawn);
@@ -595,13 +641,13 @@ export function Sidebar({
 
   return (
     <nav className="sidebar" data-region="sidebar">
-      <header className="sidebar-header">
+      <header className="sidebar-header" ref={headerRef} onKeyDown={onHeaderKey}>
         {onToggle && <SidebarToggle hidden={false} onToggle={onToggle} />}
         {/* On the left with the fold control: both are about the app rather than about any
             session, and neither is something you reach for often enough to want it under
             the hand that is starting sessions. */}
         {onSettings && (
-          <button type="button" className="icon-button" onClick={onSettings} title="Settings" aria-label="Settings">
+          <button type="button" className="icon-button" onClick={onSettings} data-tip="Settings" aria-label="Settings">
             <GearIcon />
           </button>
         )}
@@ -615,7 +661,7 @@ export function Sidebar({
             type="button"
             className="new-session"
             onClick={onWiki}
-            title="Browse your local knowledge base"
+            data-tip="Browse your local knowledge base"
           >
             Wiki
           </button>
@@ -627,7 +673,7 @@ export function Sidebar({
               type="button"
               className="new-session"
               onClick={onImport}
-              title="Import a .zip file containing a Copilot session"
+              data-tip="Import a .zip file containing a Copilot session"
             >
               Import
             </button>
@@ -637,16 +683,29 @@ export function Sidebar({
             className="new-session"
             onClick={onCreate}
             disabled={creating}
-            title="Start a new session"
+            data-tip="Start a new session"
           >
             {creating ? 'Starting…' : 'New'}
           </button>
         </div>
       </header>
 
-      <div className="search">
+      <div
+        className="search"
+        // Up out of either control here is the row of buttons above, which makes the sidebar
+        // one column to walk rather than three places that each have to be found.
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowUp') return;
+          // Not from inside the open tag list, where an arrow belongs to the list itself.
+          if ((event.target as HTMLElement).closest('.tag-filter-menu')) return;
+
+          event.preventDefault();
+          toHeader();
+        }}
+      >
         <input
           type="search"
+          ref={searchRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter by title, tag, folder or id"

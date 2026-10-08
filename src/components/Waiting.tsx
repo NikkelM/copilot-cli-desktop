@@ -16,7 +16,9 @@ export function Waiting({ count, onJump }: { count: number; onJump: () => void }
       type="button"
       className="waiting-count"
       onClick={onJump}
-      title={count === 1 ? 'Go to the session waiting for an answer' : 'Go to the next session waiting for an answer'}
+      data-tip={
+        count === 1 ? 'Go to the session waiting for an answer' : 'Go to the next session waiting for an answer'
+      }
     >
       {/* The same warning square the rows use, so the count and the row it leads to are
           recognisably about the same thing. */}

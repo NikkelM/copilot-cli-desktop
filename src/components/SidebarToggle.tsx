@@ -36,7 +36,7 @@ export function SidebarToggle({
       onClick={onToggle}
       aria-expanded={!hidden}
       aria-label={marked ? `${what}, ${waiting} waiting for an answer` : what}
-      title={why}
+      data-tip={why}
     >
       {/* Rotated a quarter turn by the stylesheet: the shape already means "this way". */}
       <ChevronIcon open={!hidden} />

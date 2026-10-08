@@ -86,7 +86,11 @@ describe('TagFilter', () => {
     const button = screen.getByRole('button');
     expect(button.classList.contains('on')).toBe(true);
     expect(button.textContent).toContain('2');
-    expect(button.getAttribute('title')).toBe('Filtering by bug, spike');
+    expect(button.getAttribute('aria-label')).toBe('Filtering by bug, spike');
+    // Drawn by the page rather than by `title`, so that arriving here with the keyboard does
+    // not pop up a label nobody asked for.
+    expect(button.getAttribute('data-tip')).toBe('Filtering by bug, spike');
+    expect(button.getAttribute('title'), 'a native tooltip cannot be told when to appear').toBeNull();
   });
 
   it('says nothing is on when nothing is', () => {
@@ -94,7 +98,8 @@ describe('TagFilter', () => {
 
     const button = screen.getByRole('button');
     expect(button.classList.contains('on')).toBe(false);
-    expect(button.getAttribute('title')).toBe('Filter by tag');
+    expect(button.getAttribute('aria-label')).toBe('Filter by tag');
+    expect(button.getAttribute('data-tip')).toBe('Filter by tag');
   });
 
   it('offers a way out only once there is something to clear', async () => {

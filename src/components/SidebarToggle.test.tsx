@@ -35,7 +35,7 @@ describe('SidebarToggle', () => {
   });
 
   it('names the key that does the same thing, so the shortcut is not a secret', () => {
-    expect(show(false).button.getAttribute('title')).toContain('Ctrl+B');
+    expect(show(false).button.getAttribute('data-tip')).toContain('Ctrl+B');
   });
 
   it('reports whether the sidebar is open, rather than only looking like it', () => {
@@ -79,9 +79,9 @@ describe('marking that something is waiting', () => {
   });
 
   it('says how many, since the mark alone cannot', () => {
-    expect(at(true, 2).getAttribute('title')).toContain('2 sessions waiting');
+    expect(at(true, 2).getAttribute('data-tip')).toContain('2 sessions waiting');
     cleanup();
-    expect(at(true, 1).getAttribute('title')).toContain('1 session waiting');
+    expect(at(true, 1).getAttribute('data-tip')).toContain('1 session waiting');
   });
 
   it('says it where a screen reader will reach it too', () => {

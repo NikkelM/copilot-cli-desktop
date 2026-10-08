@@ -56,7 +56,7 @@ export function TagFilter({
         aria-haspopup="true"
         onClick={() => setOpen((showing) => !showing)}
         aria-label={chosen.length > 0 ? `Filtering by ${chosen.join(', ')}` : 'Filter by tag'}
-        title={chosen.length > 0 ? `Filtering by ${chosen.join(', ')}` : 'Filter by tag'}
+        data-tip={chosen.length > 0 ? `Filtering by ${chosen.join(', ')}` : 'Filter by tag'}
       >
         Tags
         {chosen.length > 0 && <span className="tag-filter-count">{chosen.length}</span>}

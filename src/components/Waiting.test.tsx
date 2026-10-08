@@ -31,11 +31,11 @@ describe('Waiting', () => {
 
   it('offers the next one when there are several, and the one when there is one', () => {
     render(<Waiting count={1} onJump={() => {}} />);
-    expect(screen.getByRole('button').getAttribute('title')).toBe('Go to the session waiting for an answer');
+    expect(screen.getByRole('button').getAttribute('data-tip')).toBe('Go to the session waiting for an answer');
 
     cleanup();
     render(<Waiting count={2} onJump={() => {}} />);
-    expect(screen.getByRole('button').getAttribute('title')).toBe('Go to the next session waiting for an answer');
+    expect(screen.getByRole('button').getAttribute('data-tip')).toBe('Go to the next session waiting for an answer');
   });
 
   it('wears the mark the rows wear, so the count and the row read as one thing', () => {

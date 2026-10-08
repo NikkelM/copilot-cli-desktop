@@ -2785,14 +2785,28 @@ describe('reaching the session list without a mouse', () => {
     expect(document.activeElement).toBe(rows()[0]);
   });
 
-  /** Running off either end would take the focus out of the list and lose the reader. */
-  it('stays put at the ends rather than wrapping', () => {
+  /** Running off the bottom would take the focus out of the list and lose the reader. */
+  it('stays on the last row rather than wrapping to the top', () => {
+    render(<Harness />);
+    const last = rows()[rows().length - 1]!;
+    last.focus();
+
+    fireEvent.keyDown(last, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(last);
+  });
+
+  /**
+   * Up out of the top row is the box that narrowed the list down to it, which makes the way
+   * in and the way out the same pair of keys.
+   */
+  it('goes back up into the filter box from the first row', () => {
     render(<Harness />);
     rows()[0]!.focus();
 
     fireEvent.keyDown(rows()[0]!, { key: 'ArrowUp' });
 
-    expect(document.activeElement).toBe(rows()[0]);
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'));
   });
 
   it('jumps to the last row on End and back on Home', () => {
@@ -2857,5 +2871,144 @@ describe('reaching the session list without a mouse', () => {
 
     expect(screen.getByRole('listbox', { name: 'Sessions' })).toBeTruthy();
     expect(screen.getAllByRole('option')).toHaveLength(rows().length);
+  });
+
+  /**
+   * A native tooltip is drawn by the window manager rather than by the page, so no selector
+   * reaches one and nothing can say when it should appear. These carry their label in
+   * `data-tip`, which the page draws on hover and on nothing else, so arriving at one with
+   * the keyboard does not pop up a label nobody asked for. The name stays on the button for
+   * anyone being read to.
+   */
+  it.each(['Settings', 'Wiki', 'Import', 'New'])('draws its own tooltip for %s', (name) => {
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        onSettings={() => {}}
+        onImport={() => {}}
+        creating={false}
+        activity={{}}
+      />,
+    );
+    const button = screen.getByRole('button', { name });
+
+    expect(button.getAttribute('title'), 'the browser cannot be told when to draw one').toBeNull();
+    expect(button.getAttribute('data-tip')).toBeTruthy();
+  });
+});
+
+/**
+ * The buttons along the top, which Tab reaches one at a time and the arrows walk as a row.
+ *
+ * Together with the list below them this makes the sidebar one column to walk down - the fold
+ * control, then the filter box, then the sessions - rather than three places that each have
+ * to be found.
+ */
+describe('reaching the buttons above the list', () => {
+  const header = () => document.querySelector('.sidebar-header')!;
+  const buttons = () => [...header().querySelectorAll('button')];
+
+  const show = () =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        onSettings={() => {}}
+        onImport={() => {}}
+        onToggle={() => {}}
+        creating={false}
+        activity={{}}
+        // The tag button only exists once something has been tagged, and it is one of the
+        // two controls this is about.
+        tags={{ [sessions[0]!.sessionId]: ['hades'] }}
+      />,
+    );
+
+  it('goes up out of the filter box to the fold control', () => {
+    show();
+    const box = screen.getByRole('searchbox');
+    box.focus();
+
+    fireEvent.keyDown(box, { key: 'ArrowUp' });
+
+    expect(document.activeElement, 'the first button along the top').toBe(buttons()[0]);
+  });
+
+  it('goes up out of the tag button to the same place', () => {
+    show();
+    const tags = screen.getByRole('button', { name: /Filter by tag/ });
+    tags.focus();
+
+    fireEvent.keyDown(tags, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(buttons()[0]);
+  });
+
+  it('walks right along the row', () => {
+    show();
+    buttons()[0]!.focus();
+
+    fireEvent.keyDown(buttons()[0]!, { key: 'ArrowRight' });
+
+    expect(document.activeElement).toBe(buttons()[1]);
+  });
+
+  it('walks back left again', () => {
+    show();
+    buttons()[1]!.focus();
+
+    fireEvent.keyDown(buttons()[1]!, { key: 'ArrowLeft' });
+
+    expect(document.activeElement).toBe(buttons()[0]);
+  });
+
+  /** A row this short is quicker to reach round the end than back through the middle. */
+  it('comes round the end of the row', () => {
+    show();
+    const last = buttons()[buttons().length - 1]!;
+    last.focus();
+
+    fireEvent.keyDown(last, { key: 'ArrowRight' });
+
+    expect(document.activeElement).toBe(buttons()[0]);
+  });
+
+  it('carries on down into the filter box', () => {
+    show();
+    buttons()[0]!.focus();
+
+    fireEvent.keyDown(buttons()[0]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(screen.getByRole('searchbox'));
+  });
+
+  it('leaves every one of them reachable by Tab as well', () => {
+    show();
+
+    expect(buttons().every((button) => button.tabIndex >= 0), 'the arrows are the shorter way, not the only one').toBe(
+      true,
+    );
+  });
+
+  /** An arrow inside the open tag list belongs to that list, not to the row behind it. */
+  it('leaves the open tag list alone', () => {
+    show();
+    fireEvent.click(screen.getByRole('button', { name: /Filter by tag/ }));
+    // Scoped to the menu: the rows carry chips for the same tag, named the same way.
+    const tag = within(document.querySelector('.tag-filter-menu') as HTMLElement).getByRole('button', {
+      name: /hades/,
+    });
+    tag.focus();
+
+    fireEvent.keyDown(tag, { key: 'ArrowUp' });
+
+    expect(document.activeElement, 'still in the list it was opened to').toBe(tag);
   });
 });
