@@ -2742,4 +2742,54 @@ describe('following work through a scroll the browser moved', () => {
 
     expect(t.list.scrollTop, 'opening a row is not leaving').toBe(t.bottom());
   });
+
+  it('lets go when a key that scrolls is pressed in it', async () => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    await t.write(400, 'an edit lands');
+    fireEvent.keyDown(t.list, { key: 'ArrowUp' });
+    t.list.scrollTop = 200;
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, 'an arrow is the reader scrolling').toBe(200);
+  });
+
+  /**
+   * The list is focusable, so the keys that move focus somewhere else arrive here on the way
+   * out. Treating those as taking over would give up the bottom on a transcript nobody had
+   * scrolled - the reader presses Escape to get back to the composer and the turn they were
+   * watching stops following them.
+   *
+   * The scroll has to be moved away from the bottom for this to say anything: sitting at the
+   * bottom is pinned whatever happened, so a version of this that never scrolls passes no
+   * matter which keys are treated as a gesture.
+   */
+  it.each(['Tab', 'Escape', 'F6', 'a'])('keeps following when %s is pressed in it', async (key) => {
+    const t = transcript();
+    t.list.scrollTop = t.bottom();
+    t.reports();
+
+    await t.write(400, 'an edit lands');
+    fireEvent.keyDown(t.list, { key });
+    // Something moved the scroll, and it was not the reader: the key they pressed does not
+    // scroll anything.
+    t.list.scrollTop = 200;
+    t.reports();
+
+    await t.write(100, 'another edit lands');
+
+    expect(t.list.scrollTop, `${key} is not a reader scrolling`).toBe(t.bottom());
+  });
+
+  it('can be focused, so a region key has something to aim at', () => {
+    const t = transcript();
+
+    t.list.focus();
+
+    expect(document.activeElement, 'the transcript should take focus').toBe(t.list);
+  });
 });

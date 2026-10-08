@@ -1,4 +1,4 @@
-import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createContext, Fragment, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
@@ -24,6 +24,9 @@ import { Markdown } from './Markdown';
  * fractional and an exact comparison would come loose at some zoom levels.
  */
 const BOTTOM_TOLERANCE_PX = 4;
+
+/** The keys that move a scroll box, and so the only ones that count as taking it over. */
+const SCROLLS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ']);
 
 /** How close to the top triggers loading the previous page. */
 const LOAD_OLDER_THRESHOLD_PX = 120;
@@ -610,6 +613,21 @@ export function Transcript({
   }, []);
 
   /**
+   * The same, for a key, but only one that actually moves the transcript.
+   *
+   * The list is focusable so a reader can reach it and scroll it, which also means Tab, F6
+   * and Escape arrive here on their way somewhere else. Treating those as taking over would
+   * unpin a transcript that nobody had scrolled, and giving up the bottom is meant to take
+   * a gesture.
+   */
+  const releaseOnKey = useCallback(
+    (event: ReactKeyboardEvent) => {
+      if (SCROLLS.has(event.key)) release();
+    },
+    [release],
+  );
+
+  /**
    * Arriving somewhere new is arriving.
    *
    * Done while rendering rather than in an effect, which runs after the effects that act on
@@ -819,11 +837,18 @@ export function Transcript({
         className="transcript"
         ref={listRef}
         onScroll={onScroll}
+        // Focusable so it can be reached and scrolled without a mouse, and so there is
+        // something for a region key to aim at. -1 rather than 0: Tab already has every
+        // link and button inside to walk through, and a reader stepping through those does
+        // not want the whole list as a stop of its own first.
+        tabIndex={-1}
+        data-region="transcript"
+        aria-label="Transcript"
         // Unambiguous ways of taking over, none of which `scrollIntoView` raises - unlike a
         // scroll event, which says nothing about who caused it.
         onWheel={release}
         onPointerDown={release}
-        onKeyDown={release}
+        onKeyDown={releaseOnKey}
       >
         <li className="history-edge">
           {loadingOlder ? 'Loading earlier messages…' : more ? 'Scroll up for earlier messages' : 'Start of session'}
