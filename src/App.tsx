@@ -123,7 +123,8 @@ import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
 import { useSessions } from './lib/useSessions';
 import { useShortcuts } from './lib/useShortcuts';
-import { focusRegion, stepRegion } from './lib/regions';
+import { useKeying } from './lib/useKeying';
+import { focusRegion, focusToggle, inSidebar, stepRegion } from './lib/regions';
 import { useTaskbar } from './lib/useTaskbar';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
@@ -660,6 +661,28 @@ export default function App() {
   );
 
   /**
+   * Fold the sidebar away, or bring it back, keeping the keyboard on the control that did it.
+   *
+   * The two chevrons are different elements - one in the sidebar's header, one holding the
+   * corner of the window once there is no header - so folding unmounts the very button that
+   * was just pressed. Hiding takes the rows with it as well, so a keyboard anywhere in there
+   * would be left on nothing at all.
+   */
+  const toggleSidebar = useCallback(() => {
+    // Only when what is being folded away is where the keyboard already was. Ctrl+B pressed
+    // while writing a message is about the view rather than about going anywhere, and moving
+    // the focus out of the box would be the opposite of what was asked.
+    const following = inSidebar(document.activeElement);
+    const away = !width.hidden;
+
+    width.toggle();
+    if (!following) return;
+
+    // On the next frame: the control to hand the keyboard to is not drawn yet.
+    requestAnimationFrame(() => focusToggle(away));
+  }, [width]);
+
+  /**
    * What each running subagent is called, by its id.
    *
    * Only `subagent.started` names an agent; the events that drive the status line carry the
@@ -831,6 +854,13 @@ export default function App() {
     if (forSession) abortSession(forSession).catch((e: unknown) => setError(explain(e)));
   }, []);
 
+  /**
+   * Keep the mouse's affordances out of the way while the keyboard is working.
+   *
+   * Arrowing through the sidebar scrolls it, which drags rows under a pointer nobody moved.
+   */
+  useKeying();
+
   useShortcuts(
     useCallback(
       (shortcut) => {
@@ -853,7 +883,7 @@ export default function App() {
         }
 
         if (shortcut === 'sidebar') {
-          width.toggle();
+          toggleSidebar();
           return;
         }
 
@@ -897,7 +927,7 @@ export default function App() {
         if (busyRef.current) interrupt();
         else if (selectedRef.current) drafts.clear(selectedRef.current);
       },
-      [interrupt, drafts, settings.scale, applySettings, width, toSidebar],
+      [interrupt, drafts, settings.scale, applySettings, width, toSidebar, toggleSidebar],
     ),
     // The composer's own text, rather than what a key event can be asked about the field it
     // landed in: this is where it is actually kept.
@@ -1745,7 +1775,7 @@ export default function App() {
         onFavourite={toggleFavourite}
         actionsFor={sessionMenu}
         onMenuOpened={hasSubagents.check}
-        onToggle={width.toggle}
+        onToggle={toggleSidebar}
         onDismissSubagent={(agentId) => {
           subagents.dismiss(agentId);
         }}
@@ -1789,6 +1819,7 @@ export default function App() {
       />
 
       <SidebarGrip
+        hidden={width.hidden}
         dragging={width.dragging}
         onStart={width.start}
         onNudge={width.nudge}
@@ -1797,7 +1828,7 @@ export default function App() {
 
       {/* The sidebar takes its own control with it, so the way back is drawn here instead,
           at the corner the reader was already looking at. */}
-      {width.hidden && <SidebarToggle hidden waiting={waitingCount} onToggle={width.toggle} />}
+      {width.hidden && <SidebarToggle hidden waiting={waitingCount} onToggle={toggleSidebar} />}
 
       <main className="main">
         {/* Nothing here works once the sidecar is gone, so it says so instead of showing

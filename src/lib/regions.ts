@@ -70,8 +70,7 @@ export function regionOf(node: Element | null): Region | null {
  * anybody at the end of a list. Answers whether it found somewhere to go, so a key can be
  * left alone when there is nowhere.
  */
-export function stepRegion(by: 1 | -1, root: ParentNode = document): boolean {
-  const from = regionOf(root instanceof Document ? root.activeElement : document.activeElement);
+export function stepRegion(by: 1 | -1, root: ParentNode = document): boolean {  const from = regionOf(root instanceof Document ? root.activeElement : document.activeElement);
   // Nowhere in particular sits just outside the ring, at whichever end the first press is
   // heading away from, so that press lands somewhere rather than doing nothing.
   const at = from !== null ? REGIONS.indexOf(from) : by === 1 ? -1 : REGIONS.length;
@@ -83,4 +82,32 @@ export function stepRegion(by: 1 | -1, root: ParentNode = document): boolean {
   }
 
   return false;
+}
+
+/**
+ * Whether the keyboard is somewhere that folding the sidebar away would take with it.
+ *
+ * Either of the fold controls, or anything inside the sidebar itself - a session row is as
+ * much about to be unmounted as the chevron that unmounts it.
+ */
+export function inSidebar(node: Element | null): boolean {
+  return Boolean(node?.closest('.sidebar-toggle, [data-region="sidebar"]'));
+}
+
+/**
+ * Put the keyboard on whichever fold control is on screen.
+ *
+ * There are two of them and both are always in the document: the one in the sidebar's header,
+ * and the one that holds the corner of the window once there is no header. A hidden sidebar is
+ * only `display: none`, so asking for the first of them would find the one nobody can see and
+ * focus nothing at all. `away` is the state being moved to, not the one being left.
+ */
+export function focusToggle(away: boolean, root: ParentNode = document): boolean {
+  const target = root.querySelector<HTMLElement>(
+    away ? '.sidebar-toggle.away' : '.sidebar-toggle:not(.away)',
+  );
+  if (!target) return false;
+
+  target.focus();
+  return true;
 }

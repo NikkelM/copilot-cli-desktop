@@ -14,11 +14,14 @@ const STEP = 1;
  * the app's own width, which is also what double-clicking does (#189).
  */
 export function SidebarGrip({
+  hidden = false,
   dragging,
   onStart,
   onNudge,
   onReset,
 }: {
+  /** Whether the sidebar is folded away, leaving no edge between two panes to take hold of. */
+  hidden?: boolean;
   dragging: boolean;
   onStart: () => void;
   onNudge: (steps: number) => void;
@@ -44,10 +47,14 @@ export function SidebarGrip({
   return (
     <div
       className={dragging ? 'sidebar-grip dragging' : 'sidebar-grip'}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label="Resize the sidebar"
-      tabIndex={0}
+      // Folded away there is no boundary to describe and no width to nudge: all that is left
+      // is pulling the sidebar back, and the chevron beside it already offers the keyboard
+      // that. So it stops being a stop on the way round, while a pointer can still take hold
+      // of the edge to ask for the sidebar again (#190).
+      role={hidden ? undefined : 'separator'}
+      aria-orientation={hidden ? undefined : 'vertical'}
+      aria-label={hidden ? undefined : 'Resize the sidebar'}
+      tabIndex={hidden ? -1 : 0}
       onPointerDown={grab}
       onDoubleClick={onReset}
       onKeyDown={key}

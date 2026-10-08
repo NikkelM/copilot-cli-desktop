@@ -94,3 +94,37 @@ describe('SidebarGrip', () => {
     expect(grip.getAttribute('aria-label')).toBe('Resize the sidebar');
   });
 });
+
+/**
+ * Folded away there is no boundary between two panes to take hold of, and nothing to nudge.
+ * Pulling the sidebar back is all that is left, and the chevron at the same corner already
+ * offers the keyboard that - so a second stop on the way round that looks like nothing is one
+ * stop too many (#247).
+ */
+describe('once the sidebar is folded away', () => {
+  const folded = () => {
+    const props = { hidden: true, dragging: false, onStart: vi.fn(), onNudge: vi.fn(), onReset: vi.fn() };
+    const view = render(<SidebarGrip {...props} />);
+    return { ...props, grip: view.container.querySelector('.sidebar-grip') as HTMLElement };
+  };
+
+  it('is no longer a stop on the way round', () => {
+    expect(folded().grip.tabIndex).toBe(-1);
+  });
+
+  it('stops calling itself the edge between two panes', () => {
+    const { grip } = folded();
+
+    expect(grip.getAttribute('role'), 'there is nothing left for it to separate').toBeNull();
+    expect(grip.getAttribute('aria-label')).toBeNull();
+  });
+
+  /** The visible way back that a shortcut on its own would not be (#190). */
+  it('can still be taken hold of, which is what asks for the sidebar back', () => {
+    const { onStart, grip } = folded();
+
+    fireEvent.pointerDown(grip);
+
+    expect(onStart).toHaveBeenCalledOnce();
+  });
+});
