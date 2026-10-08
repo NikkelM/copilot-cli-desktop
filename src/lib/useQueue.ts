@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 
 import type { QueuedItem } from '../../shared/protocol';
 
-import { sessionQueue, clearQueued, editQueued, moveQueued, removeQueued, steerQueued } from './sidecar';
+import { sessionQueue, clearQueued, editQueued, holdQueue, moveQueued, removeQueued, steerQueued, withdrawMessage } from './sidecar';
 
 /**
  * What each session has waiting behind the turn it is running.
@@ -101,5 +101,38 @@ export function useQueue() {
     [act],
   );
 
-  return { queues, refresh, clear, remove, edit, move, empty, steer };
+  /**
+   * Whether each session's queue is being held rather than drained.
+   *
+   * The hold is the runtime's and outlives this app, so what is shown is what was last
+   * asked for rather than what is remembered from a previous run.
+   */
+  const [held, setHeld] = useState<Record<string, boolean>>({});
+
+  const hold = useCallback(
+    async (sessionId: string, paused: boolean) => {
+      const ok = await holdQueue(sessionId, paused);
+      if (ok) setHeld((current) => ({ ...current, [sessionId]: paused }));
+      refresh(sessionId);
+    },
+    [refresh],
+  );
+
+  /**
+   * Take back a message already sent, answering with whether the words are the caller's
+   * again. A turn stopped without the message leaving it is not a withdrawal.
+   */
+  const withdraw = useCallback(
+    async (sessionId: string, messageId: string) => {
+      try {
+        const { removed } = await withdrawMessage(sessionId, messageId);
+        return removed;
+      } finally {
+        refresh(sessionId);
+      }
+    },
+    [refresh],
+  );
+
+  return { queues, refresh, clear, remove, edit, move, empty, steer, held, hold, withdraw };
 }

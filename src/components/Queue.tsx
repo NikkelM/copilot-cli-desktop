@@ -10,6 +10,9 @@ interface QueueProps {
   onClear?: () => void;
   /** Hand one to the turn already running, rather than waiting for the next. */
   onSendNow?: (id: string) => void;
+  /** Hold the queue where it is, or let it go again. */
+  onHold?: (paused: boolean) => void;
+  held?: boolean;
   /** Which message is being rewritten in the composer, if any. */
   editing?: string | null;
 }
@@ -26,13 +29,23 @@ interface QueueProps {
  * consuming from this list the whole time, so an entry can be taken while somebody is
  * deciding. Nothing here warns about that: it simply stops being on the list.
  */
-export function Queue({ items, onRemove, onEdit, onMove, onClear, onSendNow, editing }: QueueProps) {
+export function Queue({ items, onRemove, onEdit, onMove, onClear, onSendNow, onHold, held, editing }: QueueProps) {
   if (!items.length) return null;
 
   return (
-    <div className="queue">
+    <div className={held ? 'queue held' : 'queue'}>
       <p className="queue-head">
-        {items.length} queued, run when the agent finishes
+        {held ? `${items.length} held, nothing will run until released` : `${items.length} queued, run when the agent finishes`}
+        {onHold && (
+          <button
+            type="button"
+            className="queue-clear"
+            onClick={() => onHold(!held)}
+            title={held ? 'Let the queue run again' : 'Stop anything else starting until released'}
+          >
+            {held ? 'Release' : 'Hold'}
+          </button>
+        )}
         {onClear && (
           <button type="button" className="queue-clear" onClick={onClear} title="Drop everything waiting">
             Clear
@@ -49,7 +62,17 @@ export function Queue({ items, onRemove, onEdit, onMove, onClear, onSendNow, edi
             <span className="queue-position">{index === 0 ? 'Next' : index + 1}</span>
 
             {/* A queued command is not a message, and reads as one without saying so. */}
-            <span className={item.kind === 'message' ? 'queue-text' : 'queue-text command'}>{item.text}</span>
+            <span className={item.kind === 'message' ? 'queue-text' : 'queue-text command'}>
+              {item.text}
+              {/* Only ever said where it is known. The runtime does not report what a
+                  waiting message carries, so nothing is claimed about one sent from a
+                  terminal attached to the same session. */}
+              {item.attachments ? (
+                <span className="queue-attached" title={`${item.attachments} attached, which cannot be changed from here`}>
+                  {item.attachments === 1 ? '1 file' : `${item.attachments} files`}
+                </span>
+              ) : null}
+            </span>
 
             <span className="queue-actions">
               {/* Into the turn already running rather than the next one, which only a
@@ -99,8 +122,7 @@ export function Queue({ items, onRemove, onEdit, onMove, onClear, onSendNow, edi
                   ✕
                 </button>
               )}
-            </span>
-          </li>
+            </span>          </li>
         ))}
       </ol>
     </div>

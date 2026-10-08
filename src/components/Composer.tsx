@@ -114,6 +114,14 @@ interface ComposerProps {
    * what is coming rather than a place to write (#76).
    */
   rewriting?: { onCancel: () => void } | null;
+  /**
+   * Undo the message that started the turn now running, where that is still possible.
+   *
+   * Not the same as stopping it: the turn goes, and so does the record of ever having
+   * asked, and the words come back. Absent unless the runtime would still take it back -
+   * which it will not once the model has answered, or for a message this app did not send.
+   */
+  onTakeBack?: () => void;
   /** How the session is working, shown beside the box as the CLI shows it. */
   mode: SessionMode;
   /** Advance to the next mode, which Shift+Tab asks for. */
@@ -178,6 +186,7 @@ export function Composer({
   onRewindNeeded,
   rewindNotice,
   rewriting,
+  onTakeBack,
   mode,
   onCycleMode,
   intent,
@@ -859,6 +868,15 @@ export function Composer({
                 <span className="composer-spinner" aria-hidden="true" />
                 <span className="composer-intent">{intent ?? 'Working'}</span>
                 <Elapsed since={busySince ?? undefined} />
+                {/* Not stopping the turn but undoing the message that started it, while the
+                    model has not answered yet: the turn goes and so does the record of ever
+                    having asked, and the words come back to be written again. Offered only
+                    while the runtime would still take it back. */}
+                {onTakeBack && (
+                  <button type="button" className="composer-take-back" onClick={onTakeBack} title="Unsend this message and take the words back">
+                    Take back
+                  </button>
+                )}
               </span>
             )}
           </div>

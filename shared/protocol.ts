@@ -920,6 +920,14 @@ export interface QueuedItem {
   text: string;
   /** Present for messages only, and the same id the `user.message` event carries. */
   messageId?: string;
+  /**
+   * How many files went with it, where that is known.
+   *
+   * The runtime does not report what a waiting message carries, so this is only here for
+   * messages this app sent. Absent means "nothing known", which is not the same as none -
+   * a message sent from a terminal attached to the same session says nothing either way.
+   */
+  attachments?: number;
 }
 
 /**
@@ -1782,6 +1790,28 @@ export interface SidecarRequests {
    */
   'sessions.queueSendNow': { params: { sessionId: string; id: string }; result: { steered: boolean } };
   /**
+   * Take back a message that has already been sent.
+   *
+   * Reaches further than removing a queued one: a message still waiting leaves the queue,
+   * and one that has already started a turn leaves that turn, which is stopped and its
+   * events taken off the record. `interrupted` without `removed` means the turn was stopped
+   * but the message stays in it, because the model had already answered.
+   *
+   * Only for messages this app sent, since the runtime will not withdraw one without the
+   * words it was sent with.
+   */
+  'sessions.withdraw': {
+    params: { sessionId: string; messageId: string };
+    result: { removed: boolean; interrupted: boolean };
+  };
+  /**
+   * Hold the queue where it is, or let it go again.
+   *
+   * The hold is the runtime's and is not tied to this app's lifetime, so a queue left held
+   * stays held - which is why the only thing that takes it is a control that shows it.
+   */
+  'sessions.queueHold': { params: { sessionId: string; paused: boolean }; result: { held: boolean } };
+  /**
    * The agent's own todo list, with its dependency edges joined in (#172).
    *
    * Read from the session's database on disk rather than from a running session, so a
@@ -1941,6 +1971,8 @@ export const SIDECAR_METHODS = [
   'sessions.queueMove',
   'sessions.queueClear',
   'sessions.queueSendNow',
+  'sessions.withdraw',
+  'sessions.queueHold',
   'sessions.export',
   'sessions.exportSize',
   'sessions.import',

@@ -682,6 +682,11 @@ export default function App() {
       // ends and starts a turn many times over, and clearing the flag in those gaps offered
       // a Send button for a session that was still working.
       if (event.type === 'session.idle' || event.type === 'abort') setBusy(false);
+      // Nothing left to take back once the answer is in: the message has been answered and
+      // is part of the record, which is exactly when the runtime stops withdrawing it.
+      if (event.type === 'session.idle' || event.type === 'abort') {
+        setLastSent(({ [sessionId]: _answered, ...rest }) => rest);
+      }
       // When this answer started, which is not the same as when the reader last waited: a
       // queued prompt begins a new answer without the runtime going idle in between (#70).
       setBusySince((current) => clockFrom(event, current));
@@ -869,6 +874,14 @@ export default function App() {
    * drawn differently for it, and a render on every arrow key would be a lot of renders.
    */
   const caretIn = useRef<Record<string, number>>({});
+  /**
+   * The message that started the turn now running, where this app sent it.
+   *
+   * Kept so it can be taken back: the runtime will withdraw a message only when told the
+   * words it was sent with, and only while the model has not answered. Forgotten the moment
+   * the session falls idle, since by then it has been answered and is part of the record.
+   */
+  const [lastSent, setLastSent] = useState<Record<string, { messageId: string; prompt: string }>>({});
   const toComposer = useCallback(() => setFocusAt((n) => n + 1), []);
 
   /** Open the panel and read the list, from wherever the request came from. */
@@ -1301,11 +1314,15 @@ export default function App() {
     setBusy(true);
 
     try {
-      const { queued } = await sendMessage({ sessionId, prompt: whole, attachments: sent });
+      const { messageId, queued } = await sendMessage({ sessionId, prompt: whole, attachments: sent });
 
       // The pastes it carried are gone for good only now. Until the send came back this
       // message could still have been handed to the box to try again (#55).
       drafts.release(sessionId, prompt);
+
+      // Remembered only when it started a turn rather than joining the queue: a queued one
+      // is already listed, with its own way of being taken back.
+      if (!queued) setLastSent((held) => ({ ...held, [sessionId]: { messageId, prompt: whole } }));
 
       // The runtime decides, and a turn can end while the message is on its way, so the
       // guess above is reconciled with what actually happened. Nothing is recorded for a
@@ -2050,6 +2067,8 @@ export default function App() {
                 onMove={(id, to) => void queue.move(selected.sessionId, id, to)}
                 onClear={() => void queue.empty(selected.sessionId)}
                 onSendNow={(id) => void queue.steer(selected.sessionId, id)}
+                held={queue.held[selected.sessionId] ?? false}
+                onHold={(paused) => void queue.hold(selected.sessionId, paused)}
               />
 
               {prompts.mine.elicitations.map((pending) => (
@@ -2134,6 +2153,24 @@ export default function App() {
                         },
                       }
                     : null
+                }
+                onTakeBack={
+                  lastSent[selected.sessionId]
+                    ? () => {
+                        const held = lastSent[selected.sessionId];
+                        if (!held) return;
+                        void (async () => {
+                          const removed = await queue.withdraw(selected.sessionId, held.messageId);
+                          setLastSent(({ [selected.sessionId]: _gone, ...rest }) => rest);
+                          // Only when it was actually withdrawn. Handing the words back for a
+                          // message still going to be answered would be the worse mistake.
+                          if (!removed) return;
+                          drafts.write(selected.sessionId, held.prompt);
+                          caretIn.current[selected.sessionId] = held.prompt.length;
+                          toComposer();
+                        })();
+                      }
+                    : undefined
                 }
                 mode={mode.mode}
                 onCycleMode={mode.cycle}

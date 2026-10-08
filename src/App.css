@@ -2116,6 +2116,45 @@ body {
   color: var(--text);
 }
 
+/* A file count on a waiting message, said only where it is known. Set apart from the words
+   so it reads as a fact about the message rather than part of it. */
+.queue-attached {
+  margin-left: 8px;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  white-space: nowrap;
+}
+
+/* A queue that will not drain until somebody says so. The whole panel says it, because it
+   is true of all of it rather than of any one row. */
+.queue.held {
+  border-color: var(--accent);
+}
+
+.queue.held .queue-head {
+  color: var(--accent);
+}
+
+/* Undoing the message that started the turn, which is not the same as stopping it. Beside
+   the elapsed time, where somebody who has just pressed Enter is already looking. */
+.composer-take-back {
+  margin-left: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.composer-take-back:hover {
+  color: var(--text);
+}
+
 /* Beside the count rather than at the far edge: it acts on the whole list, which is what
    the count names. */
 .queue-clear {

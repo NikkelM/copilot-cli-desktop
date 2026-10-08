@@ -419,6 +419,18 @@ export class SessionRuntime {
   private readonly callerOf = new Map<string, string>();
   /** What each subagent is called, keyed `sessionId:agentId`, for naming it in a prompt. */
   private readonly agentNames = new Map<string, string>();
+  /**
+   * What this app sent with each message, by the id the queue knows it by.
+   *
+   * Two things the runtime does not report. It never says what a waiting message carries,
+   * so a row could not tell one with three files on it from one with none. And withdrawing
+   * a message means naming the prompt it was sent with, so that a message edited since
+   * cannot be taken back using the words it no longer has.
+   *
+   * Only grows while a message is waiting: an entry is dropped once the queue stops listing
+   * it, which is the moment it stopped being something anybody can ask about.
+   */
+  private readonly sent = new Map<string, { prompt: string; attachments: number }>();
   private readonly onElicitationRequest?: (
     sessionId: string,
     requestId: string,
@@ -1459,6 +1471,20 @@ export class SessionRuntime {
       ...(attachments?.length ? { attachments } : {}),
     });
 
+    /*
+     * What went with it, against the id the queue will know it by.
+     *
+     * The runtime does not say what a waiting message carries - `pendingItems` reports an
+     * id, a kind and the text to show, and nothing about attachments - nor will it withdraw
+     * a message without being told the words it was sent with. This is where the id, the
+     * prompt and the files are all in hand.
+     *
+     * Only for what this app sent. A message sent from a terminal attached to the same
+     * session is still listed, still removable and still editable; it just cannot say
+     * whether anything came with it, and cannot be taken back.
+     */
+    this.sent.set(messageId, { prompt, attachments: attachments?.length ?? 0 });
+
     // The work starts here rather than at the first `assistant.turn_start`, so that nothing
     // in the moment before the runtime announces the turn can evict the session or mistake
     // a second message for an interruption.
@@ -1632,12 +1658,23 @@ export class SessionRuntime {
     if (!live) return [];
 
     const { items } = await live.rpc.queue.pendingItems();
-    return items.map((item) => ({
-      id: item.id,
-      kind: item.kind === 'message' ? 'message' : item.kind === 'command' ? 'command' : 'other',
-      text: stripAnsi(item.displayText),
-      ...(item.messageId ? { messageId: item.messageId } : {}),
-    }));
+    const queued = items.map((item) => {
+      const mine = item.messageId ? this.sent.get(item.messageId) : undefined;
+      return {
+        id: item.id,
+        kind: item.kind === 'message' ? 'message' : item.kind === 'command' ? 'command' : 'other',
+        text: stripAnsi(item.displayText),
+        ...(item.messageId ? { messageId: item.messageId } : {}),
+        ...(mine?.attachments ? { attachments: mine.attachments } : {}),
+      };
+    }) as QueuedItem[];
+
+    // Forgotten as soon as the queue stops listing it, which is the moment nobody can ask
+    // about it any more. Without this the map would grow for as long as the app is open.
+    const waiting = new Set(items.map((item) => item.messageId).filter(Boolean));
+    for (const id of this.sent.keys()) if (!waiting.has(id)) this.sent.delete(id);
+
+    return queued;
   }
 
   /**
@@ -1701,6 +1738,55 @@ export class SessionRuntime {
 
     const { steered } = await live.rpc.queue.sendNow({ id });
     return steered;
+  }
+
+  /**
+   * Take back a message that has already been sent.
+   *
+   * Reaches further than removing a queued one: a message still waiting comes out of the
+   * queue, and one that has already started a turn comes out of that turn, which is stopped
+   * and its events taken off the record. Only while the model has not answered it and
+   * nothing sent after it is still pending - the runtime decides, and says which it did.
+   *
+   * Named by the words it was sent with, which the runtime insists on so that a message
+   * edited since cannot be taken back using the words it no longer has. Only this app's own
+   * messages can be, since only for those are the original words known.
+   *
+   * `interrupted` without `removed` is worth telling apart: the turn was stopped but the
+   * message stays in it, because the model had already answered.
+   */
+  async withdraw(sessionId: string, messageId: string): Promise<{ removed: boolean; interrupted: boolean }> {
+    const live = this.loaded.get(sessionId)?.session;
+    const mine = this.sent.get(messageId);
+    if (!live || !mine) return { removed: false, interrupted: false };
+
+    const { removed, interrupted } = await live.rpc.queue.withdrawMessage({
+      messageId,
+      expectedPrompt: mine.prompt,
+    });
+    if (removed) this.sent.delete(messageId);
+    return { removed, interrupted };
+  }
+
+  /**
+   * Hold the queue where it is, or let it go again.
+   *
+   * Acquiring is exclusive and asking twice is an error, so a hold that is already held is
+   * reported as held rather than raised: the reader asked for the queue to stop draining and
+   * it has. Releasing is unowned and always allowed.
+   */
+  async queueHold(sessionId: string, paused: boolean): Promise<boolean> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return false;
+
+    try {
+      await live.rpc.queue.setDrainPaused({ paused });
+      return true;
+    } catch (e: unknown) {
+      // Already paused is the state being asked for, so it is not a failure to report.
+      if (paused && String(e).includes('queue_already_paused')) return true;
+      throw e;
+    }
   }
 
   /**

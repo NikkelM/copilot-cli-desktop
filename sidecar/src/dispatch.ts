@@ -249,6 +249,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.queueSendNow': async ({ sessionId, id }) => ({ steered: await runtime.queueSendNow(sessionId, id) }),
 
+    'sessions.withdraw': ({ sessionId, messageId }) => runtime.withdraw(sessionId, messageId),
+
+    'sessions.queueHold': async ({ sessionId, paused }) => ({ held: await runtime.queueHold(sessionId, paused) }),
+
     // Minus the ones this app is holding, which are open where the reader is looking rather
     // than somewhere they cannot see (#63).
     'sessions.active': () => ({ sessionIds: heldSessions().filter((id) => !runtime.holdsItself(id)) }),

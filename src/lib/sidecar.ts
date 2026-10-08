@@ -398,6 +398,27 @@ export async function steerQueued(sessionId: string, id: string): Promise<boolea
 }
 
 /**
+ * Take back a message that has already been sent.
+ *
+ * Reaches further than removing a queued one: one that has already started a turn leaves
+ * that turn, which is stopped and its events taken off the record. `interrupted` without
+ * `removed` means the turn was stopped but the message stays in it, because the model had
+ * already answered - so the words are not the caller's to put back.
+ */
+export function withdrawMessage(
+  sessionId: string,
+  messageId: string,
+): Promise<{ removed: boolean; interrupted: boolean }> {
+  return request('sessions.withdraw', { sessionId, messageId });
+}
+
+/** Hold the queue where it is, or let it go again. */
+export async function holdQueue(sessionId: string, paused: boolean): Promise<boolean> {
+  const { held } = await request('sessions.queueHold', { sessionId, paused });
+  return held;
+}
+
+/**
  * Write a session out as a single file, to move it to another machine (#63).
  *
  * Deflated, so a conversation that is mostly event log travels as a fraction of what it

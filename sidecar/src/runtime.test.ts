@@ -146,6 +146,8 @@ function makeSession(id: string) {
         updateText: vi.fn(async (_params: { id: string; prompt: string; displayPrompt?: string }) => ({ updated: true })),
         moveItem: vi.fn(async (_params: { id: string; toPosition: number }) => ({ changed: true })),
         sendNow: vi.fn(async (_params: { id: string }) => ({ steered: true })),
+        withdrawMessage: vi.fn(async (_params: { messageId: string; expectedPrompt: string }) => ({ removed: true, interrupted: false })),
+        setDrainPaused: vi.fn(async (_params: { paused: boolean }) => undefined),
         clear: vi.fn(async () => undefined),
       },
       commands: {
@@ -4669,5 +4671,92 @@ describe('changing the queue the runtime owns', () => {
     await expect(runtime.queueClear('cold')).resolves.toBe(false);
     await expect(runtime.queueSendNow('cold', 'q1')).resolves.toBe(false);
     expect(sessions.size).toBe(0);
+  });
+});
+
+/**
+ * Two things the runtime does not report: what a waiting message carries, and the words a
+ * message was sent with. Both are known at the moment of sending, and `send` answers with
+ * the id the queue will know it by - so they are kept against it.
+ */
+describe('what this app knows about the messages it sent', () => {
+  it('says how many files went with a waiting message', async () => {
+    const { runtime, sessions } = makeRuntime();
+    const { messageId } = await runtime.send('s1', 'look at these', 'enqueue', [
+      { type: 'file', path: 'a.png' },
+      { type: 'file', path: 'b.png' },
+    ] as never);
+    sessions.get('s1')!.rpc.queue.pendingItems.mockResolvedValueOnce({
+      items: [{ id: 'q1', messageId, kind: 'message', displayText: 'look at these', agentMode: 'agent' }],
+      steeringMessages: [],
+    });
+
+    const [item] = await runtime.queue('s1');
+
+    expect(item?.attachments).toBe(2);
+  });
+
+  /** Nothing known is not nothing attached, and a row must not claim otherwise. */
+  it('says nothing about a message it did not send', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.queue.pendingItems.mockResolvedValueOnce({
+      items: [{ id: 'q1', messageId: 'from-a-terminal', kind: 'message', displayText: 'elsewhere', agentMode: 'agent' }],
+      steeringMessages: [],
+    });
+
+    const [item] = await runtime.queue('s1');
+
+    expect(item?.attachments).toBeUndefined();
+  });
+
+  /** Named by the words it was sent with, which is what stops an edited message being undone. */
+  it('takes a message back using the words it was sent with', async () => {
+    const { runtime, sessions } = makeRuntime();
+    const { messageId } = await runtime.send('s1', 'the thing I regret');
+    sessions.get('s1')!.rpc.queue.withdrawMessage.mockResolvedValueOnce({ removed: true, interrupted: true });
+
+    await expect(runtime.withdraw('s1', messageId)).resolves.toEqual({ removed: true, interrupted: true });
+    expect(sessions.get('s1')!.rpc.queue.withdrawMessage).toHaveBeenCalledWith({
+      messageId,
+      expectedPrompt: 'the thing I regret',
+    });
+  });
+
+  it('cannot take back a message it did not send', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await expect(runtime.withdraw('s1', 'from-a-terminal')).resolves.toEqual({ removed: false, interrupted: false });
+    expect(sessions.get('s1')!.rpc.queue.withdrawMessage).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The turn was stopped but the message stays in it, because the model answered first. The
+   * words are not the reader's to have back, and this is what says so.
+   */
+  it('reports a turn stopped without the message leaving it', async () => {
+    const { runtime, sessions } = makeRuntime();
+    const { messageId } = await runtime.send('s1', 'too late');
+    sessions.get('s1')!.rpc.queue.withdrawMessage.mockResolvedValueOnce({ removed: false, interrupted: true });
+
+    await expect(runtime.withdraw('s1', messageId)).resolves.toEqual({ removed: false, interrupted: true });
+  });
+
+  /** Holding is the state being asked for, so finding it already held is not a failure. */
+  it('treats an already held queue as held', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.queue.setDrainPaused.mockRejectedValueOnce(new Error('queue_already_paused'));
+
+    await expect(runtime.queueHold('s1', true)).resolves.toBe(true);
+  });
+
+  it('lets a held queue go again', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await expect(runtime.queueHold('s1', false)).resolves.toBe(true);
+    expect(sessions.get('s1')!.rpc.queue.setDrainPaused).toHaveBeenCalledWith({ paused: false });
   });
 });

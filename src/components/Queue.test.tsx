@@ -161,3 +161,62 @@ describe('Queue, changing what is waiting', () => {
     expect(rows[1]?.className).toContain('editing');
   });
 });
+
+/**
+ * The runtime does not report what a waiting message carries, so a row can only say so for
+ * a message this app sent. Saying nothing is not the same as saying none.
+ */
+describe('Queue, what a waiting message carries', () => {
+  it('says how many files went with it', () => {
+    render(<Queue items={[{ id: 'a', kind: 'message', text: 'look at these', attachments: 3 }]} />);
+
+    expect(screen.getByText('3 files')).toBeTruthy();
+  });
+
+  it('counts one file as one rather than as a number of them', () => {
+    render(<Queue items={[{ id: 'a', kind: 'message', text: 'look at this', attachments: 1 }]} />);
+
+    expect(screen.getByText('1 file')).toBeTruthy();
+  });
+
+  /** Nothing known is not nothing attached, and a row must not claim otherwise. */
+  it('says nothing about a message it knows nothing about', () => {
+    const { container } = render(<Queue items={[message('a', 'from somewhere else')]} />);
+
+    expect(container.querySelector('.queue-attached')).toBeNull();
+  });
+});
+
+/**
+ * Holding stops the queue draining without stopping the turn, so several things can be
+ * lined up and let go deliberately.
+ */
+describe('Queue, holding what is waiting', () => {
+  const user = userEvent.setup();
+
+  it('asks for the hold when it is not held', async () => {
+    const onHold = vi.fn();
+    render(<Queue items={[message('a', 'first')]} onHold={onHold} />);
+
+    await user.click(screen.getByText('Hold'));
+
+    expect(onHold).toHaveBeenCalledWith(true);
+  });
+
+  it('offers to let it go again once held, and says that it is', async () => {
+    const onHold = vi.fn();
+    render(<Queue items={[message('a', 'first')]} onHold={onHold} held />);
+
+    expect(screen.getByText(/held, nothing will run/)).toBeTruthy();
+    await user.click(screen.getByText('Release'));
+
+    expect(onHold).toHaveBeenCalledWith(false);
+  });
+
+  it('offers neither where the queue cannot be held', () => {
+    render(<Queue items={[message('a', 'first')]} />);
+
+    expect(screen.queryByText('Hold')).toBeNull();
+    expect(screen.queryByText('Release')).toBeNull();
+  });
+});
