@@ -107,7 +107,17 @@ export function Attachments({
           {onChange && (
             <button
               type="button"
-              onClick={() => onChange(attached.filter((other) => other.path !== file.path))}
+              // A cross beside the words is not somewhere to be: taking the file off should
+              // leave the caret where it was, mid-sentence, rather than moving it out of the
+              // box and back. Pressing a button focuses it first, and this is what stops
+              // that happening - the click still arrives.
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(attached.filter((other) => other.path !== file.path));
+                // For the reader who got here by tabbing: the chip goes with the file, and
+                // focus would go with the chip.
+                onFocusBack?.();
+              }}
               aria-label={`Remove ${file.displayName ?? file.path}`}
             >
               ×

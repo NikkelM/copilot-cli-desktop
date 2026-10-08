@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -197,5 +197,37 @@ describe('looking at what is attached', () => {
 
     await vi.waitFor(() => expect(previewImage).toHaveBeenCalled());
     expect(screen.queryByRole('img')).toBeNull();
+  });
+});
+
+/**
+ * A cross beside the words is not somewhere to be. Taking a file off should leave the caret
+ * where it was, mid-sentence, rather than moving it out of the box and back.
+ */
+describe('Attachments, keeping the keyboard where it was', () => {
+  it('does not take focus when a file is taken off with the pointer', () => {
+    show([file('C:\\a.png')]);
+
+    const cross = screen.getByLabelText('Remove a.png');
+    const taken = fireEvent.mouseDown(cross);
+
+    expect(taken, 'the press was refused, so focus never moved').toBe(false);
+  });
+
+  it('still takes the file off', async () => {
+    const { onChange } = show([file('C:\\a.png'), file('C:\\b.png')]);
+
+    await userEvent.click(screen.getByLabelText('Remove a.png'));
+
+    expect(onChange).toHaveBeenCalledWith([file('C:\\b.png')]);
+  });
+
+  /** The chip goes with the file, and focus would go with the chip. */
+  it('hands the keyboard back for a reader who got there by tabbing', async () => {
+    const { onFocusBack } = show([file('C:\\a.png')]);
+
+    await userEvent.click(screen.getByLabelText('Remove a.png'));
+
+    expect(onFocusBack).toHaveBeenCalled();
   });
 });
