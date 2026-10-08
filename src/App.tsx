@@ -298,9 +298,13 @@ export default function App() {
    *
    * The displaced draft is held here rather than put in the stash. The stash has one slot
    * and swaps rather than stacks, so borrowing it would throw away whatever was already
-   * there - and a key whose job is not to lose writing has no business losing any.
+   * there - and a key whose job is not to lose writing has no business losing any. Its
+   * caret comes with it, so a sentence interrupted to fix a queued message is resumed
+   * where it was rather than at its end.
    */
-  const [editingQueued, setEditingQueued] = useState<Record<string, { id: string; displaced: string }>>({});
+  const [editingQueued, setEditingQueued] = useState<
+    Record<string, { id: string; displaced: string; caret: number }>
+  >({});
   const model = useModel(selectedId, setError);
   // A restored session is back on disk but not in the list, which is built from what is
   // there: nothing notices a directory reappearing until it is looked at again.
@@ -858,12 +862,13 @@ export default function App() {
    */
   const [focusAt, setFocusAt] = useState(0);
   /**
-   * Where the caret was in each session's box when it last stood down.
+   * Where the caret is in each session's box, kept as it moves.
    *
-   * Kept out here because the box itself is not drawn while the agent is waiting on an
-   * answer (#75), so it has nowhere of its own to remember it.
+   * Out here because the box itself is not drawn while the agent is waiting on an answer
+   * (#75), so it has nowhere of its own to remember it. A ref rather than state: nothing is
+   * drawn differently for it, and a render on every arrow key would be a lot of renders.
    */
-  const [caret, setCaret] = useState<Record<string, number>>({});
+  const caretIn = useRef<Record<string, number>>({});
   const toComposer = useCallback(() => setFocusAt((n) => n + 1), []);
 
   /** Open the panel and read the list, from wherever the request came from. */
@@ -1028,8 +1033,11 @@ export default function App() {
     if (rewriting !== undefined) {
       const text = prompt.trim();
       setEditingQueued(({ [selectedId]: _gone, ...rest }) => rest);
-      // Whatever was being written before the edit took the box, given back.
+      // Whatever was being written before the edit took the box, given back where it was
+      // left: a sentence interrupted to fix a queued message is resumed mid-word if that is
+      // where the caret was.
       drafts.write(selectedId, rewriting.displaced);
+      caretIn.current[selectedId] = rewriting.caret;
       if (text) await queue.edit(selectedId, rewriting.id, text);
       else await queue.remove(selectedId, rewriting.id);
       return;
@@ -2018,11 +2026,21 @@ export default function App() {
                 // Into the composer, which is where it is rewritten. What was being written
                 // is held aside and given back when the edit is finished or abandoned.
                 onEdit={(item) => {
+                  const displaced = drafts.textOf(selected.sessionId);
                   setEditingQueued((held) => ({
                     ...held,
-                    [selected.sessionId]: { id: item.id, displaced: drafts.textOf(selected.sessionId) },
+                    [selected.sessionId]: {
+                      id: item.id,
+                      displaced,
+                      // Where the caret was in what is being put aside, so it can be given
+                      // back there rather than at the end of it.
+                      caret: caretIn.current[selected.sessionId] ?? displaced.length,
+                    },
                   }));
                   drafts.write(selected.sessionId, item.text);
+                  // At the end of what is being rewritten, which is where somebody about to
+                  // add to a sentence already wants to be.
+                  caretIn.current[selected.sessionId] = item.text.length;
                   toComposer();
                 }}
                 onMove={(id, to) => void queue.move(selected.sessionId, id, to)}
@@ -2085,8 +2103,10 @@ export default function App() {
                 // Taken as soon as the box comes back, which is the moment the last prompt is
                 // answered: it is only drawn when nothing is waiting on anybody.
                 focusOn={`${selectedId}:${focusAt}`}
-                caretAt={caret[selected.sessionId]}
-                onCaret={(at) => setCaret((held) => ({ ...held, [selected.sessionId]: at }))}
+                caretAt={caretIn.current[selected.sessionId]}
+                onCaret={(at) => {
+                  caretIn.current[selected.sessionId] = at;
+                }}
                 value={drafts.textOf(selected.sessionId)}
                 onChange={(text) => drafts.write(selected.sessionId, text)}
                 stashed={drafts.hasStash(selected.sessionId)}
@@ -2105,6 +2125,7 @@ export default function App() {
                           const held = editingQueued[selected.sessionId];
                           setEditingQueued(({ [selected.sessionId]: _gone, ...rest }) => rest);
                           drafts.write(selected.sessionId, held?.displaced ?? '');
+                          caretIn.current[selected.sessionId] = held?.caret ?? 0;
                           toComposer();
                         },
                       }

@@ -1644,3 +1644,80 @@ describe('naming an MCP server', () => {
     expect(listMcpServers).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The box is not drawn at all while the agent is waiting on an answer (#75), and a textarea
+ * drawn again starts at the beginning however much text it is handed back - so somebody
+ * mid-sentence when a permission request arrived came back to find the caret in front of
+ * everything they had written.
+ */
+describe('Composer, the caret it comes back with', () => {
+  const props = {
+    disabled: false,
+    busy: false,
+    busySince: null,
+    resuming: false,
+    attached: [],
+    onAttach: () => {},
+    onPasteFiles: () => {},
+    stashed: false,
+    onError: () => {},
+    onChange: () => {},
+    onSend: () => {},
+    onAbort: () => {},
+    history: [],
+    commands: [],
+    cwd: 'C:\\repo',
+    onCommandsNeeded: () => {},
+    mode: 'interactive' as const,
+    onCycleMode: () => {},
+    intent: null,
+  };
+
+  it('puts it back where it was left', () => {
+    render(<Composer {...props} focusOn="s1" value="hello there" caretAt={5} />);
+
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+    expect(box.selectionStart).toBe(5);
+    expect(box.selectionEnd).toBe(5);
+  });
+
+  /** A draft restored shorter than it was would otherwise put the caret past the end of it. */
+  it('clamps it to the words that are actually there', () => {
+    render(<Composer {...props} focusOn="s1" value="short" caretAt={400} />);
+
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).selectionStart).toBe(5);
+  });
+
+  it('leaves it alone when nothing was remembered', () => {
+    render(<Composer {...props} focusOn="s1" value="hello there" />);
+
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).selectionStart).toBe(0);
+  });
+
+  /** Reported on the way out, since by then the box is the only thing that knows. */
+  it('says where the caret was as it goes away', () => {
+    const onCaret = vi.fn();
+    const { unmount } = render(<Composer {...props} focusOn="s1" value="hello there" caretAt={7} onCaret={onCaret} />);
+
+    unmount();
+
+    expect(onCaret).toHaveBeenCalledWith(7);
+  });
+
+  /**
+   * Followed as it moves, not only read on the way out: the position has to be known already
+   * when the box is asked to stand aside for a queued message being rewritten, which it is
+   * not told about in advance.
+   */
+  it('says where the caret is as it moves', () => {
+    const onCaret = vi.fn();
+    render(<Composer {...props} focusOn="s1" value="hello there" onCaret={onCaret} />);
+
+    const box = screen.getByRole('textbox') as HTMLTextAreaElement;
+    box.setSelectionRange(4, 4);
+    fireEvent.select(box);
+
+    expect(onCaret).toHaveBeenLastCalledWith(4);
+  });
+});

@@ -58,7 +58,7 @@ interface ComposerProps {
    */
   focusOn: string | null;
   /**
-   * Where the caret was when this box last stood down, and a way to say so on the way out.
+   * Where the caret was when this box last stood down, and a way to say so as it moves.
    *
    * The box is not drawn at all while the agent is waiting on an answer (#75), and a
    * textarea that is drawn again starts at the beginning however much text it is handed
@@ -259,10 +259,10 @@ export function Composer({
     if (!box) return;
 
     box.focus();
-    // Clamped, since the words can have changed since: a draft restored shorter than it was
-    // would otherwise put the caret past the end of it.
+    // Clamping is the platform's: setSelectionRange already pins a position past the end to
+    // the end, so a draft restored shorter than it was needs nothing said about it here.
     const at = caretWas.current;
-    if (at !== undefined) box.setSelectionRange(Math.min(at, box.value.length), Math.min(at, box.value.length));
+    if (at !== undefined) box.setSelectionRange(at, at);
   }, [focusOn]);
 
   const typed = typedCommand(value);
@@ -728,6 +728,9 @@ export function Composer({
               write(e.target.value);
             }}
             onKeyDown={onKeyDown}
+            // Followed as it moves rather than only read on the way out, so the position is
+            // already known when the box is asked to stand aside for a queued message.
+            onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
             onPaste={(event) => {
               // Files first: the clipboard carries them only when files were copied, and a
               // screenshot is a different thing to a wall of text.
