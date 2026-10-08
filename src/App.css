@@ -12,6 +12,17 @@
    */
   --text-dim: #767e88;
   --accent: #2f81f7;
+  /*
+   * Where the sidebar's own controls begin.
+   *
+   * Shared by the header, the filter row under it, and the fold control once there is no
+   * header for it to sit in. Named rather than written out three times because the chevron
+   * holds the same corner whether the sidebar is there or not - and written out separately
+   * the two drifted, so it moved four pixels across and two up the moment it was pressed.
+   */
+  --sidebar-inset: 10px;
+  /** The header's own padding above and below, which is what the fold control sits against. */
+  --header-inset: 12px;
   --success: #3fb950;
   /** Red, for a failure or a destructive action. */
   --danger: #f85149;
@@ -84,6 +95,19 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+}
+
+/*
+ * Where the keyboard is, for everything that has not said otherwise.
+ *
+ * The webview's own focus ring is a thin dark line, which against this palette reads as a
+ * black border and is all but invisible - so every control that had not written a rule of
+ * its own was showing nothing useful. Said once here rather than on each of them, and early
+ * enough that anything with a better idea of how to show it still wins.
+ */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .app {
@@ -200,7 +224,7 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 12px 10px;
+  padding: var(--header-inset) var(--sidebar-inset);
   border-bottom: 1px solid var(--border);
   font-weight: 600;
 }
@@ -229,7 +253,7 @@ body {
      one of the two font sizes changed. */
   align-items: stretch;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 8px var(--sidebar-inset);
   border-bottom: 1px solid var(--border);
 }
 
@@ -363,6 +387,39 @@ body {
 .session-row.selected {
   background: #1f2937;
   box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/*
+ * Where the keyboard is in the list (#247).
+ *
+ * Drawn as a block of colour rather than as a ring, because the browser's own focus outline
+ * is a thin dark line that is invisible against this column, and a cursor stepping down a
+ * long list has to be findable without looking for it. A lighter blue than the accent the
+ * other two states use: having the cursor on a row is a weaker claim than reading it or
+ * marking it, and all three can be true of the same row at once.
+ *
+ * `:focus` rather than `:focus-visible`, which is a heuristic about how the focus arrived:
+ * after a row is clicked it does not match, so arrowing away from a clicked row would move
+ * a cursor nobody could see. A row only ever takes focus because somebody put it there, so
+ * saying where it is is right however they did it.
+ *
+ * Named through `.sidebar` only to outrank `.selected` and `.marked` wherever they happen to
+ * sit in this file - matching their specificity would leave it to source order, and the two
+ * of them are six thousand lines apart.
+ */
+.sidebar .session-row:focus {
+  outline: none;
+  background: rgba(88, 166, 255, 0.28);
+}
+
+/* The open session keeps its edge while the cursor passes over it, and a marked one keeps
+   its ring: stepping through the list should not make the reader lose which is which. */
+.sidebar .session-row.selected:focus {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.sidebar .session-row.marked:focus {
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .session-line .session {
@@ -3418,7 +3475,8 @@ pre.fatal,
   cursor: pointer;
 }
 
-.icon-button:hover {
+.icon-button:hover,
+.icon-button:focus-visible {
   border-color: var(--accent);
   color: var(--text);
 }
@@ -3434,7 +3492,8 @@ pre.fatal,
   cursor: pointer;
 }
 
-.new-session:hover:not(:disabled) {
+.new-session:hover:not(:disabled),
+.new-session:focus-visible:not(:disabled) {
   border-color: var(--accent);
 }
 
@@ -4922,8 +4981,11 @@ pre.fatal,
 }
 
 /* Wider when there is no sidebar to point at, since it is the only thing at that edge and
-   there is no line under it to aim for. */
+   there is no line under it to aim for. At the window's edge rather than where the sidebar's
+   own edge used to be: `--sidebar-used` still measures the width it would take if it came
+   back, which left the grip floating in the middle of the session with nothing beside it. */
 .sidebar-hidden .sidebar-grip {
+  left: 0;
   width: 12px;
   margin-left: 0;
 }
@@ -4966,12 +5028,14 @@ pre.fatal,
 }
 
 /* Once the sidebar is gone there is no header to sit in, so it holds the same corner of the
-   window instead. Clear of the grip, which keeps the very edge. */
+   window instead - the same inset, so the chevron does not move the moment it is pressed.
+   It overlaps the grip's outermost couple of pixels along its own height and sits above it;
+   the grip keeps the rest of that band and its full width everywhere below. */
 .sidebar-toggle.away {
   position: fixed;
   z-index: 30;
-  top: 10px;
-  left: 14px;
+  top: var(--header-inset);
+  left: var(--sidebar-inset);
 }
 
 /* And the session title makes room for it, rather than being written underneath it. Only the
@@ -5191,6 +5255,7 @@ pre.fatal,
 
 .tag-filter-button:hover,
 .tag-filter-button:focus-visible {
+  border-color: var(--accent);
   color: var(--text);
 }
 
@@ -6708,6 +6773,71 @@ pre.fatal,
 .session-row.marked {
   background: rgba(47, 129, 247, 0.16);
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/*
+ * While the keyboard is doing the work, the mouse is not.
+ *
+ * Arrowing through the list scrolls it to keep up, which drags rows under a pointer that has
+ * not moved: the row beneath it lights up and offers its tooltip while the cursor the reader
+ * is actually moving is somewhere else. Two rows claim to be the current one and only one of
+ * them is.
+ *
+ * The list alone, not the whole sidebar. Only a list that scrolls can move under a still
+ * pointer, so the buttons above it have no stale hover to suppress - and taking them out of
+ * reach as well would swallow a click aimed at one of them. A row still carries its title in
+ * a `title` attribute, which no selector can reach, so putting the rows beyond the pointer is
+ * the only thing that stops the browser drawing it. The first real movement hands it back.
+ */
+[data-keying] .session-list {
+  pointer-events: none;
+}
+
+/*
+ * A tooltip the page draws, for the controls the keyboard walks through.
+ *
+ * `title` hands the job to the browser: it decides on its own when to show one, and gives
+ * the page no way to say otherwise, because there is no selector that reaches a native
+ * tooltip - it is drawn by the window manager rather than by the document. That is why hover
+ * and focus could not be told apart while the label was the browser's to draw.
+ *
+ * These appear on hover and on nothing else, which is the whole of the point: arriving at a
+ * control with the keyboard should not pop up a label nobody asked for. The text stays in
+ * `aria-label` for anyone being read to, so nothing is lost by the browser not drawing it.
+ */
+[data-tip] {
+  position: relative;
+}
+
+[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: max-content;
+  /* The sidebar is `overflow: hidden`, so anything wider than its column is simply cut off.
+     Wrapping is what keeps a long description readable inside it. */
+  max-width: 210px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 400;
+  white-space: normal;
+  /* The label is not a target. Without this it would take the hover from the control it
+     describes the moment it was drawn under the pointer, and flicker. */
+  pointer-events: none;
+}
+
+/* Anchored to whichever edge leaves it inside the column: a tooltip hanging right from a
+   button already at the right of the sidebar would be cut in half. */
+.sidebar-actions [data-tip]:hover::after,
+.tag-filter [data-tip]:hover::after {
+  left: auto;
+  right: 0;
 }
 
 /* What is about to be deleted, named rather than counted. */
