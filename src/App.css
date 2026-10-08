@@ -1969,9 +1969,13 @@ body {
    * rather than each row placing its own. The middle column takes the width of the longest
    * message, which is what puts every row's controls at the same place - and shrinks rather
    * than pushing them off when one message is longer than the panel is wide.
+   *
+   * The last track takes the slack, and takes all of it. Left as `auto` it shared the
+   * leftover width with the first track, which pushed the messages into the middle of the
+   * panel and left their turn numbers behind on the left.
    */
   display: grid;
-  grid-template-columns: auto minmax(0, max-content) auto;
+  grid-template-columns: auto minmax(0, max-content) 1fr;
 }
 
 .queue-item {
@@ -2038,6 +2042,9 @@ body {
   flex: none;
   gap: 2px;
   align-items: center;
+  /* At the start of the slack rather than spread across it, so they sit against the longest
+     message instead of at the far edge of the panel. */
+  justify-self: start;
   opacity: 0;
 }
 
