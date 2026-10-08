@@ -2163,8 +2163,21 @@ export class SessionRuntime {
     const entry = this.loaded.get(sessionId);
     // Stopped work is not work: a session left marked busy would never be released.
     if (entry) entry.busy = false;
+    if (!entry) return;
 
-    await entry?.session.abort();
+    /*
+     * Interrupted rather than aborted, so what is waiting survives it (#76).
+     *
+     * A plain abort clears the queue, so stopping one turn threw away every message written
+     * behind it - a lot to lose for pressing stop once, and nothing about stopping says the
+     * next thing is no longer wanted. `flushQueued` keeps them and runs the next one as the
+     * following turn.
+     *
+     * Background work is left alive by that call and is stopped here, because stop means
+     * stop: the queue is the only thing that was ever meant to outlive it.
+     */
+    await entry.session.rpc.interruptMainTurn({ flushQueued: true });
+    await entry.session.rpc.cancelAllBackgroundAgents().catch(() => undefined);
   }
 
   /** Release every session and stop the shared server. */

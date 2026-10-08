@@ -1964,14 +1964,33 @@ body {
   margin: 0;
   padding: 0;
   list-style: none;
+  /*
+   * One grid for the whole list, so the three parts of every row line up with each other
+   * rather than each row placing its own. The middle column takes the width of the longest
+   * message, which is what puts every row's controls at the same place - and shrinks rather
+   * than pushing them off when one message is longer than the panel is wide.
+   */
+  display: grid;
+  grid-template-columns: auto minmax(0, max-content) auto;
 }
 
 .queue-item {
-  display: flex;
+  display: grid;
+  /* The row keeps the list's columns rather than making its own, which is what lets it be a
+     box in its own right - something to mark under the pointer - while still lining up. */
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
   gap: 8px;
   align-items: baseline;
-  padding: 3px 0;
+  padding: 3px 6px;
+  margin: 0 -6px;
+  border-radius: 4px;
   font-size: var(--font-md);
+}
+
+/* Which row the pointer is on, said by the row rather than only by its controls appearing. */
+.queue-item:hover {
+  background: rgba(110, 118, 129, 0.12);
 }
 
 .queue-position {
@@ -2004,15 +2023,14 @@ body {
 /*
  * Taking back, rewriting and reordering what is waiting (#76).
  *
- * The text takes the room and the controls sit at the end of the row, out of the way until
- * the row is under the pointer: a queue is mostly read, and four buttons on every line would
- * be more of the panel than the messages are.
- *
- * Kept when something inside has the keyboard, or tabbing to a button would hide the button
- * being tabbed to.
+ * In a column of their own, immediately after the longest message rather than at the far
+ * edge, so the hand finds them in the same place on every row. Out of the way until the row
+ * is under the pointer: a queue is mostly read, and four buttons on every line would be more
+ * of the panel than the messages are.
  */
 .queue-text {
-  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .queue-actions {
@@ -2023,8 +2041,13 @@ body {
   opacity: 0;
 }
 
+/*
+ * Kept while a button is reached by keyboard, but not merely because one was clicked:
+ * `:focus-within` left a row lit after its button was pressed, and a row moved by that press
+ * stayed lit under a pointer that had gone elsewhere. `:focus-visible` is the distinction.
+ */
 .queue-item:hover .queue-actions,
-.queue-actions:focus-within {
+.queue-actions:has(:focus-visible) {
   opacity: 1;
 }
 
@@ -2050,6 +2073,36 @@ body {
   cursor: default;
 }
 
+/* The row whose words are in the composer, so the two are read as the same message. */
+.queue-item.editing {
+  background: rgba(110, 118, 129, 0.12);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+/* Above the box, saying what the words in it now are. */
+.composer-rewriting {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 2px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.composer-rewriting button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.composer-rewriting button:hover {
+  color: var(--text);
+}
+
 /* Beside the count rather than at the far edge: it acts on the whole list, which is what
    the count names. */
 .queue-clear {
@@ -2068,22 +2121,6 @@ body {
   color: var(--text);
 }
 
-/* Sized and set like the line it replaces, so rewriting a message does not move the rest of
-   the list or change how the words look. */
-.queue-edit {
-  flex: 1;
-  padding: 0;
-  border: none;
-  border-bottom: 1px solid var(--accent);
-  background: none;
-  color: var(--text);
-  font: inherit;
-  resize: none;
-}
-
-.queue-edit:focus {
-  outline: none;
-}
 
 /*
  * Copying, which the app is otherwise bad at: selecting a long reply by hand is not really

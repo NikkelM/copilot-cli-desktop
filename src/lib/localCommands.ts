@@ -408,6 +408,46 @@ export function withTagChoices(
   return commands.map((command) => (command.name === TAG.name ? { ...command, choices } : command));
 }
 
+/**
+ * Whether a command written now has to wait for the turn that is already running.
+ *
+ * `allowDuringTurn` is the runtime's answer and is usually taken as given: refusing a
+ * command it would have accepted was this app's own rule once, and turned away 14 of 32
+ * commands for no reason (#147).
+ *
+ * `/model` is the exception. The runtime reports it as allowed mid-turn and will indeed
+ * apply it there, so the model answering a turn changes underneath it - and the runtime
+ * keeps a `model-change` kind in its own queue, so being able to wait is not in question.
+ * Asking for a different model is asking for the next answer to come from it, not this one.
+ */
+export function queuesBehindTurn(command: SlashCommand, busy: boolean): boolean {
+  if (!busy) return false;
+  return !command.allowDuringTurn || command.name === 'model';
+}
+
+/**
+ * Offer the models there are as arguments to `/model`.
+ *
+ * The runtime describes `/model` with a hint and nothing else - measured: its `input` is
+ * `{ hint: "model" }`, with no choices and no completion kind, where thirteen other commands
+ * do report choices. So typing the command and a space offered an empty list, as though
+ * there were no models rather than no answer.
+ *
+ * This app already holds the catalogue for its own picker, so the list is folded in here.
+ * Named by id, which is what the command takes, and described by the name a person would
+ * recognise it from.
+ */
+export function withModelChoices(
+  commands: SlashCommand[],
+  models: readonly { id: string; name: string }[] | null,
+): SlashCommand[] {
+  if (!models?.length) return commands;
+
+  const choices: CommandChoice[] = models.map((model) => ({ name: model.id, description: model.name }));
+
+  return commands.map((command) => (command.name === 'model' ? { ...command, choices } : command));
+}
+
 /** What `/mcp` was asked to do, once its line has been read. */
 export type McpAction =
   | { kind: 'panel' }

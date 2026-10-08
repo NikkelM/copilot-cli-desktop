@@ -58,6 +58,16 @@ interface ComposerProps {
    */
   focusOn: string | null;
   /**
+   * Where the caret was when this box last stood down, and a way to say so on the way out.
+   *
+   * The box is not drawn at all while the agent is waiting on an answer (#75), and a
+   * textarea that is drawn again starts at the beginning however much text it is handed
+   * back - so somebody who was mid-sentence when a permission request arrived came back to
+   * find the caret in front of everything they had written.
+   */
+  caretAt?: number;
+  onCaret?: (at: number) => void;
+  /**
    * The text being written. Held outside, because an unsent message belongs to the
    * session it was meant for rather than to the box it was typed in.
    */
@@ -96,6 +106,14 @@ interface ComposerProps {
    * to. Null once there is something to show, which is the menu's job rather than this one's.
    */
   rewindNotice?: string | null;
+  /**
+   * Set while the box holds a message that is already waiting, rather than a new one.
+   *
+   * The composer is where a queued message is rewritten, because it is the only box in the
+   * app that handles several lines and attachments - the row it came from is a reminder of
+   * what is coming rather than a place to write (#76).
+   */
+  rewriting?: { onCancel: () => void } | null;
   /** How the session is working, shown beside the box as the CLI shows it. */
   mode: SessionMode;
   /** Advance to the next mode, which Shift+Tab asks for. */
@@ -146,6 +164,8 @@ export function Composer({
   onPasteText,
   onError,
   focusOn,
+  caretAt,
+  onCaret,
   value,
   onChange,
   stashed,
@@ -157,6 +177,7 @@ export function Composer({
   onCommandsNeeded,
   onRewindNeeded,
   rewindNotice,
+  rewriting,
   mode,
   onCycleMode,
   intent,
@@ -214,8 +235,34 @@ export function Composer({
   // so it cannot outlive either.
   useEffect(() => setSearch(null), [focusOn]);
 
+  /**
+   * Taken when the box is drawn, and given back where it was rather than at the beginning.
+   *
+   * Read through refs because both happen outside the render that knows them: the caret is
+   * reported as the box goes away, and restored as it comes back.
+   */
+  const caretWas = useRef(caretAt);
+  caretWas.current = caretAt;
+  const reportCaret = useRef(onCaret);
+  reportCaret.current = onCaret;
+
   useEffect(() => {
-    if (focusOn) inputRef.current?.focus();
+    const box = inputRef.current;
+    return () => {
+      if (box) reportCaret.current?.(box.selectionStart);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!focusOn) return;
+    const box = inputRef.current;
+    if (!box) return;
+
+    box.focus();
+    // Clamped, since the words can have changed since: a draft restored shorter than it was
+    // would otherwise put the caret past the end of it.
+    const at = caretWas.current;
+    if (at !== undefined) box.setSelectionRange(Math.min(at, box.value.length), Math.min(at, box.value.length));
   }, [focusOn]);
 
   const typed = typedCommand(value);
@@ -636,6 +683,19 @@ export function Composer({
               {match.after}
             </span>
           )}
+        </div>
+      )}
+
+      {/* The box holds a message that is already waiting, not a new one, and Enter saves it
+          back rather than sending it. Said above the box because that is what the words in it
+          now are, and with a way out, since a rewrite is the one edit nobody can undo by
+          typing. */}
+      {rewriting && (
+        <div className="composer-rewriting" role="status">
+          <span>Rewriting a message that is waiting</span>
+          <button type="button" onClick={rewriting.onCancel}>
+            Cancel
+          </button>
         </div>
       )}
 

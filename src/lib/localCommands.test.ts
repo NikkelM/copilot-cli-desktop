@@ -6,12 +6,14 @@ import {
   REWIND,
   TAG,
   isLocal,
+  queuesBehindTurn,
   readMcpCommand,
   readRewindCommand,
   typedRewindScope,
   typedServerName,
   wantsDirectory,
   withLocalChoices,
+  withModelChoices,
   withRewindChoices,
   withTagChoices,
 } from './localCommands';
@@ -416,5 +418,70 @@ describe('the rewind command', () => {
     it('asks for nothing when the turn is not a number', () => {
       expect(readRewindCommand('files', points)).toBeNull();
     });
+  });
+});
+
+/**
+ * The runtime describes `/model` with a hint and nothing else - measured: its `input` is
+ * `{ hint: "model" }`, with no choices and no completion kind - so typing the command and a
+ * space offered an empty list, as though there were no models rather than no answer.
+ */
+describe('withModelChoices', () => {
+  const commands = [command({ name: 'model' }), command({ name: 'git' })];
+  const models = [
+    { id: 'claude-opus-5', name: 'Claude Opus 5' },
+    { id: 'gpt-6-sol', name: 'GPT-6 Sol' },
+  ];
+
+  /** Named by what the command takes, described by what a person would recognise. */
+  it('offers each model by the id the command accepts', () => {
+    const [model] = withModelChoices(commands, models);
+
+    expect(model?.choices).toEqual([
+      { name: 'claude-opus-5', description: 'Claude Opus 5' },
+      { name: 'gpt-6-sol', description: 'GPT-6 Sol' },
+    ]);
+  });
+
+  it('leaves every other command alone', () => {
+    const [, git] = withModelChoices(commands, models);
+
+    expect(git?.choices).toBeUndefined();
+  });
+
+  /** The catalogue is fetched lazily, so there is a while when there is nothing to offer. */
+  it('changes nothing before the catalogue has been read', () => {
+    expect(withModelChoices(commands, null)).toBe(commands);
+    expect(withModelChoices(commands, [])).toBe(commands);
+  });
+});
+
+/**
+ * `allowDuringTurn` is the runtime's answer and is usually taken as given. `/model` is the
+ * exception: the runtime reports it as allowed mid-turn and will apply it there, changing
+ * the model answering a turn underneath it.
+ */
+describe('queuesBehindTurn', () => {
+  const free = command({ name: 'usage', allowDuringTurn: true });
+  const waits = command({ name: 'compact', allowDuringTurn: false });
+  const model = command({ name: 'model', allowDuringTurn: true });
+
+  it('keeps nothing waiting while no turn is running', () => {
+    expect(queuesBehindTurn(free, false)).toBe(false);
+    expect(queuesBehindTurn(waits, false)).toBe(false);
+    expect(queuesBehindTurn(model, false)).toBe(false);
+  });
+
+  it('waits for a command the runtime will not run mid-turn', () => {
+    expect(queuesBehindTurn(waits, true)).toBe(true);
+  });
+
+  it('lets a command the runtime allows mid-turn go straight through', () => {
+    expect(queuesBehindTurn(free, true)).toBe(false);
+  });
+
+  /** Asking for a different model is asking for the next answer to come from it. */
+  it('waits for a model change, whatever the runtime says about it', () => {
+    expect(queuesBehindTurn(model, true)).toBe(true);
   });
 });

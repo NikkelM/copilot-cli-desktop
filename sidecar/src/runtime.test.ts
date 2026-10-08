@@ -236,6 +236,13 @@ function makeSession(id: string) {
           },
         })),
       },
+      /*
+       * Stopping a turn without throwing away what is waiting behind it (#76).
+       *
+       * A plain abort clears the queue, so this is what the runtime asks for instead.
+       */
+      interruptMainTurn: vi.fn(async (_params: { flushQueued?: boolean }) => ({ interrupted: true })),
+      cancelAllBackgroundAgents: vi.fn(async () => ({ cancelled: 0 })),
     },
     abort: vi.fn(async function (this: { aborted: boolean }) {
       this.aborted = true;
@@ -4613,6 +4620,31 @@ describe('changing the queue the runtime owns', () => {
     sessions.get('s1')!.rpc.queue.sendNow.mockResolvedValueOnce({ steered: false });
 
     await expect(runtime.queueSendNow('s1', 'q1')).resolves.toBe(false);
+  });
+
+  /**
+   * Stopping a turn used to throw away every message written behind it, which is a lot to
+   * lose for pressing stop once - and nothing about stopping says the next thing is no
+   * longer wanted.
+   */
+  it('keeps what is waiting when the turn is stopped', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await runtime.abort('s1');
+
+    expect(sessions.get('s1')!.rpc.interruptMainTurn).toHaveBeenCalledWith({ flushQueued: true });
+    expect(sessions.get('s1')!.abort, 'a plain abort would have cleared the queue').not.toHaveBeenCalled();
+  });
+
+  /** Stop means stop: the queue is the only thing meant to outlive it. */
+  it('stops the background work the interrupt leaves running', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await runtime.abort('s1');
+
+    expect(sessions.get('s1')!.rpc.cancelAllBackgroundAgents).toHaveBeenCalled();
   });
 
   /** Taken by the turn while the call was on its way, which is changing your mind too late. */

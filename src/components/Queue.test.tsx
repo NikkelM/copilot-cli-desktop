@@ -81,45 +81,6 @@ describe('Queue, changing what is waiting', () => {
     expect(onClear).toHaveBeenCalled();
   });
 
-  it('rewrites one, keeping the words that were there to start from', async () => {
-    const onEdit = vi.fn();
-    render(<Queue items={[message('a', 'first thing')]} onEdit={onEdit} />);
-
-    await user.click(screen.getByText('Edit'));
-    const box = screen.getByRole('textbox') as HTMLTextAreaElement;
-    expect(box.value).toBe('first thing');
-
-    await user.clear(box);
-    await user.type(box, 'something else{Enter}');
-
-    expect(onEdit).toHaveBeenCalledWith('a', 'something else');
-  });
-
-  it('leaves it alone when the rewrite is abandoned', async () => {
-    const onEdit = vi.fn();
-    render(<Queue items={[message('a', 'first thing')]} onEdit={onEdit} />);
-
-    await user.click(screen.getByText('Edit'));
-    await user.type(screen.getByRole('textbox'), ' and more{Escape}');
-
-    expect(onEdit).not.toHaveBeenCalled();
-    expect(screen.getByText('first thing')).toBeTruthy();
-  });
-
-  /** Emptying the box is the other way of saying you no longer want it. */
-  it('takes one back when it is rewritten to nothing', async () => {
-    const onEdit = vi.fn();
-    const onRemove = vi.fn();
-    render(<Queue items={[message('a', 'first thing')]} onEdit={onEdit} onRemove={onRemove} />);
-
-    await user.click(screen.getByText('Edit'));
-    await user.clear(screen.getByRole('textbox'));
-    await user.keyboard('{Enter}');
-
-    expect(onRemove).toHaveBeenCalledWith('a');
-    expect(onEdit).not.toHaveBeenCalled();
-  });
-
   /** A queued command or a model change is not text somebody wrote, so there is nothing to rewrite. */
   it('does not offer to rewrite a queued command', () => {
     render(<Queue items={[{ id: 'c', kind: 'command', text: '/model' }]} onEdit={() => {}} onRemove={() => {}} />);
@@ -175,18 +136,28 @@ describe('Queue, changing what is waiting', () => {
   });
 
   /**
-   * The turn can take the entry being rewritten while somebody is still typing into it. The
-   * box goes with the row it belongs to, so there is nothing left to save words into.
+   * The composer is where a queued message is rewritten, because it is the only box in the
+   * app that handles several lines and attachments. The row hands over the whole message
+   * rather than only its id, so nothing has to be looked up again to fill the box.
    */
-  it('closes the box when the turn takes the entry being rewritten', async () => {
+  it('hands the message to the composer rather than opening a box of its own', async () => {
     const onEdit = vi.fn();
-    const { rerender } = render(<Queue items={[message('a', 'first'), message('b', 'second')]} onEdit={onEdit} />);
+    render(<Queue items={[message('a', 'first thing')]} onEdit={onEdit} />);
 
-    await user.click(screen.getAllByText('Edit')[0]!);
-    expect(screen.getByRole('textbox')).toBeTruthy();
+    await user.click(screen.getByText('Edit'));
 
-    rerender(<Queue items={[message('b', 'second')]} onEdit={onEdit} />);
+    expect(onEdit).toHaveBeenCalledWith({ id: 'a', kind: 'message', text: 'first thing' });
+    expect(screen.queryByRole('textbox'), 'nothing is typed into the row itself').toBeNull();
+  });
 
-    expect(screen.queryByRole('textbox')).toBeNull();
+  /** So the row and the words in the composer are read as the same message. */
+  it('marks the row whose message is in the composer', () => {
+    const { container } = render(
+      <Queue items={[message('a', 'first'), message('b', 'second')]} onEdit={() => {}} editing="b" />,
+    );
+
+    const rows = container.querySelectorAll('.queue-item');
+    expect(rows[0]?.className).not.toContain('editing');
+    expect(rows[1]?.className).toContain('editing');
   });
 });

@@ -55,7 +55,7 @@ import {
   exportSize,
   importSession,
 } from './lib/sidecar';
-import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, readRewindCommand, SUBAGENTS, wantsDirectory, withRewindChoices, withTagChoices } from './lib/localCommands';
+import { CHANGES, ENVIRONMENT, GIT, MCP, REWIND, TAG, USAGE, WIKI, readMcpCommand, readRewindCommand, SUBAGENTS, queuesBehindTurn, wantsDirectory, withModelChoices, withRewindChoices, withTagChoices } from './lib/localCommands';
 import { copyText } from './lib/clipboard';
 import { sessionActions } from './lib/sessionActions';
 import { useArchived } from './lib/useArchived';
@@ -288,6 +288,19 @@ export default function App() {
   const transcript = useTranscript(selectedId, setError, jump?.sessionId === selectedId ? jump.cursor : null);
   const tree = useTreeState(selected?.cwd ?? null);
   const queue = useQueue();
+  /**
+   * The queued message being rewritten, if any, and the draft it displaced.
+   *
+   * Rewritten in the composer rather than in the row: the composer already handles several
+   * lines and attachments, and the row is a reminder of what is coming rather than a place
+   * to write. Keyed by session, since a message belongs to the one it was meant for and
+   * switching away must not carry the edit with it.
+   *
+   * The displaced draft is held here rather than put in the stash. The stash has one slot
+   * and swaps rather than stacks, so borrowing it would throw away whatever was already
+   * there - and a key whose job is not to lose writing has no business losing any.
+   */
+  const [editingQueued, setEditingQueued] = useState<Record<string, { id: string; displaced: string }>>({});
   const model = useModel(selectedId, setError);
   // A restored session is back on disk but not in the list, which is built from what is
   // there: nothing notices a directory reappearing until it is looked at again.
@@ -844,6 +857,13 @@ export default function App() {
    * rather than set, since returning focus twice to the same session is a real request.
    */
   const [focusAt, setFocusAt] = useState(0);
+  /**
+   * Where the caret was in each session's box when it last stood down.
+   *
+   * Kept out here because the box itself is not drawn while the agent is waiting on an
+   * answer (#75), so it has nowhere of its own to remember it.
+   */
+  const [caret, setCaret] = useState<Record<string, number>>({});
   const toComposer = useCallback(() => setFocusAt((n) => n + 1), []);
 
   /** Open the panel and read the list, from wherever the request came from. */
@@ -997,6 +1017,24 @@ export default function App() {
   async function handleSend(prompt: string) {
     if (!selectedId) return;
 
+    /*
+     * Rewriting a message that is still waiting, rather than sending a new one (#76).
+     *
+     * Taken before anything else, because what is in the box is that message: a slash at the
+     * front of it is text that was queued, not a command to run now, and emptying the box is
+     * the other way of saying the message is no longer wanted.
+     */
+    const rewriting = editingQueued[selectedId];
+    if (rewriting !== undefined) {
+      const text = prompt.trim();
+      setEditingQueued(({ [selectedId]: _gone, ...rest }) => rest);
+      // Whatever was being written before the edit took the box, given back.
+      drafts.write(selectedId, rewriting.displaced);
+      if (text) await queue.edit(selectedId, rewriting.id, text);
+      else await queue.remove(selectedId, rewriting.id);
+      return;
+    }
+
     // A leading `!` is a shell command, which the runtime runs in the session's own shell.
     // Checked before the slash dispatch, since `!/usr/bin/env` is a path, not a command.
     if (prompt.startsWith('!')) {
@@ -1110,15 +1148,10 @@ export default function App() {
     /**
      * A command the runtime will not run mid-turn joins the queue behind it.
      *
-     * `allowDuringTurn` says whether a command may jump the turn, not whether it may be
-     * asked for. Refusing it was this app's own rule and not the runtime's: the CLI queues
-     * it, and 14 of the 32 commands - `/review` and `/compact` among them - do not carry
-     * the flag, so nearly half were being turned away for no reason (#147).
-     *
      * Nothing is echoed here. The queue row is the record of what is waiting, and the
      * runtime writes the conversation's own record when it finally runs.
      */
-    if (busy && !command.allowDuringTurn) {
+    if (queuesBehindTurn(command, busy)) {
       drafts.clear(sessionId);
       try {
         const queued = await enqueueCommand(sessionId, typed, typed);
@@ -1362,10 +1395,13 @@ export default function App() {
   const commands = useMemo(
     () =>
       withRewindChoices(
-        withTagChoices(slash.commands, knownTags, selectedId ? (tags[selectedId] ?? []) : []),
+        withModelChoices(
+          withTagChoices(slash.commands, knownTags, selectedId ? (tags[selectedId] ?? []) : []),
+          model.models,
+        ),
         [...rewind.points.values()],
       ),
-    [slash.commands, knownTags, tags, selectedId, rewind.points],
+    [slash.commands, knownTags, tags, selectedId, rewind.points, model.models],
   );
 
   /**
@@ -1977,8 +2013,18 @@ export default function App() {
 
               <Queue
                 items={queue.queues[selected.sessionId] ?? []}
+                editing={editingQueued[selected.sessionId]?.id ?? null}
                 onRemove={(id) => void queue.remove(selected.sessionId, id)}
-                onEdit={(id, text) => void queue.edit(selected.sessionId, id, text)}
+                // Into the composer, which is where it is rewritten. What was being written
+                // is held aside and given back when the edit is finished or abandoned.
+                onEdit={(item) => {
+                  setEditingQueued((held) => ({
+                    ...held,
+                    [selected.sessionId]: { id: item.id, displaced: drafts.textOf(selected.sessionId) },
+                  }));
+                  drafts.write(selected.sessionId, item.text);
+                  toComposer();
+                }}
                 onMove={(id, to) => void queue.move(selected.sessionId, id, to)}
                 onClear={() => void queue.empty(selected.sessionId)}
                 onSendNow={(id) => void queue.steer(selected.sessionId, id)}
@@ -2039,6 +2085,8 @@ export default function App() {
                 // Taken as soon as the box comes back, which is the moment the last prompt is
                 // answered: it is only drawn when nothing is waiting on anybody.
                 focusOn={`${selectedId}:${focusAt}`}
+                caretAt={caret[selected.sessionId]}
+                onCaret={(at) => setCaret((held) => ({ ...held, [selected.sessionId]: at }))}
                 value={drafts.textOf(selected.sessionId)}
                 onChange={(text) => drafts.write(selected.sessionId, text)}
                 stashed={drafts.hasStash(selected.sessionId)}
@@ -2050,6 +2098,18 @@ export default function App() {
                 onCommandsNeeded={slash.open}
                 onRewindNeeded={rewind.load}
                 rewindNotice={rewindNotice}
+                rewriting={
+                  editingQueued[selected.sessionId]
+                    ? {
+                        onCancel: () => {
+                          const held = editingQueued[selected.sessionId];
+                          setEditingQueued(({ [selected.sessionId]: _gone, ...rest }) => rest);
+                          drafts.write(selected.sessionId, held?.displaced ?? '');
+                          toComposer();
+                        },
+                      }
+                    : null
+                }
                 mode={mode.mode}
                 onCycleMode={mode.cycle}
                 intent={intent}
