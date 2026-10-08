@@ -13,6 +13,14 @@ const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = 
 
 let on: Mock<(shortcut: Shortcut) => void>;
 
+/**
+ * How many times one shortcut was reported.
+ *
+ * A single Escape now reports `go-composer` as well as starting the double-press window, so
+ * a test about interrupting has to name what it is counting rather than count every call.
+ */
+const fired = (what: Shortcut) => on.mock.calls.filter(([shortcut]) => shortcut === what).length;
+
 beforeEach(() => {
   on = vi.fn();
   vi.useRealTimers();
@@ -22,14 +30,36 @@ beforeEach(() => {
 
 describe('useShortcuts', () => {
   describe('Escape', () => {
-    // One Escape is how a menu closes and how a field is left. Acting on it would make
-    // every dismissal stop the agent as well.
-    it('does nothing on its own', () => {
+    // One Escape is how a menu closes and how a field is left. Stopping the agent on it
+    // would make every dismissal an interruption, so that is left to the second press.
+    it('does not interrupt on its own', () => {
       renderHook(() => useShortcuts(on));
 
       press('Escape');
 
-      expect(on).not.toHaveBeenCalled();
+      expect(on).not.toHaveBeenCalledWith('escape-twice');
+    });
+
+    /**
+     * A reader who has finished looking around wants to be back where they were writing, and
+     * before this there was no key at all that moved the focus anywhere (#250).
+     */
+    it('goes back to the message box when pressed outside it', () => {
+      renderHook(() => useShortcuts(on));
+
+      press('Escape');
+
+      expect(on).toHaveBeenCalledWith('go-composer');
+    });
+
+    it('does nothing on its own inside the message box', () => {
+      document.body.innerHTML = '<textarea data-region="composer"></textarea>';
+      const box = document.querySelector('textarea')!;
+      renderHook(() => useShortcuts(on));
+
+      press('Escape', {}, box);
+
+      expect(on, 'already there, so the press belongs to the second').not.toHaveBeenCalled();
     });
 
     it('acts when pressed twice', () => {
@@ -38,7 +68,7 @@ describe('useShortcuts', () => {
       press('Escape');
       press('Escape');
 
-      expect(on).toHaveBeenCalledExactlyOnceWith('escape-twice');
+      expect(fired('escape-twice')).toBe(1);
     });
 
     it('does not act on a second press long afterwards', () => {
@@ -49,7 +79,7 @@ describe('useShortcuts', () => {
       vi.setSystemTime(Date.now() + 5000);
       press('Escape');
 
-      expect(on).not.toHaveBeenCalled();
+      expect(fired('escape-twice')).toBe(0);
     });
 
     // Three presses are one pair and a fresh start, not two overlapping pairs.
@@ -60,7 +90,7 @@ describe('useShortcuts', () => {
       press('Escape');
       press('Escape');
 
-      expect(on).toHaveBeenCalledTimes(1);
+      expect(fired('escape-twice')).toBe(1);
     });
 
     // A prompt or a menu that handled the press owns it; the turn behind it is not what
@@ -75,7 +105,7 @@ describe('useShortcuts', () => {
         window.dispatchEvent(claimed);
       });
 
-      expect(on).not.toHaveBeenCalled();
+      expect(fired('escape-twice')).toBe(0);
     });
 
     // Stopping a turn is exactly what someone typing a follow-up wants to be able to do.
@@ -366,26 +396,90 @@ describe('useShortcuts', () => {
       expect(on).not.toHaveBeenCalled();
     });
 
+    // Stashing is ctrl+s alone. The shifted form is the key for the session list, which is
+    // a different thing entirely, so this says only that it is not mistaken for a stash.
     it('ignores the shifted form', () => {
       renderHook(() => useShortcuts(on));
 
       press('s', { ctrlKey: true, shiftKey: true });
 
-      expect(on).not.toHaveBeenCalled();
+      expect(fired('stash')).toBe(0);
     });
   });
 });
 
-describe('BINDINGS', () => {
-  // The list a reader sees is built from these, so a shortcut this hook reports must be
+/**
+ * Getting from one part of the window to another (#250).
+ *
+ * All of these are claimed whatever has the keyboard, because the whole point of them is to
+ * work from inside the box that currently holds it. Shift is reported as an upper case
+ * letter by every browser, which is what these press.
+ */
+describe('moving about the window', () => {
+  const cases: [string, string, KeyboardEventInit, Shortcut][] = [
+    ['ctrl+n', 'n', { ctrlKey: true }, 'new-session'],
+    ['ctrl+shift+p', 'P', { ctrlKey: true, shiftKey: true }, 'find-session'],
+    ['ctrl+shift+s', 'S', { ctrlKey: true, shiftKey: true }, 'go-sessions'],
+    ['ctrl+shift+m', 'M', { ctrlKey: true, shiftKey: true }, 'go-composer'],
+    ['f6', 'F6', {}, 'next-region'],
+    ['shift+f6', 'F6', { shiftKey: true }, 'previous-region'],
+  ];
+
+  it.each(cases)('reports %s', (_name, key, init, shortcut) => {
+    renderHook(() => useShortcuts(on));
+
+    press(key, init);
+
+    expect(on).toHaveBeenCalledWith(shortcut);
+  });
+
+  /**
+   * Ctrl+N is the webview's own "new window" and F6 is its address bar, so leaving the press
+   * alone would do this app's thing and the browser's at once.
+   */
+  it.each(cases)('claims %s rather than leaving it to the webview', (_name, key, init) => {
+    renderHook(() => useShortcuts(on));
+
+    const event = press(key, init);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it.each(cases)('answers %s while a message is being written', (_name, key, init, shortcut) => {
+    document.body.innerHTML = '<textarea data-region="composer">half a thought</textarea>';
+    const box = document.querySelector('textarea')!;
+    renderHook(() => useShortcuts(on));
+
+    press(key, init, box);
+
+    expect(on).toHaveBeenCalledWith(shortcut);
+  });
+
+  // Ctrl+Shift+N opens a private window in a browser, and is not this.
+  it('does not start a session on the shifted form', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('N', { ctrlKey: true, shiftKey: true });
+
+    expect(fired('new-session')).toBe(0);
+  });
+});
+
+describe('BINDINGS', () => {  // The list a reader sees is built from these, so a shortcut this hook reports must be
   // described, and nothing described as this hook's may do nothing.
   it('describes every shortcut the hook can report', () => {
     const mine = BINDINGS.map((binding) => binding.id).filter(Boolean);
     expect(mine.sort()).toEqual([
       'escape-twice',
+      'find-session',
+      'go-composer',
+      'go-sessions',
       'help',
       'interrupt',
       'larger',
+      'new-session',
+      'next-region',
+      'previous-region',
       'reasoning',
       'reset-size',
       'sidebar',

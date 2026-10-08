@@ -335,7 +335,7 @@ export function Repository({
   };
 
   return (
-    <div className="changes">
+    <div className="changes" data-region="panel" tabIndex={-1}>
       {/* A question rather than a failure, and asked where nothing else can be pressed:
           the pull it belongs to has already stopped, and the branch is where it found it. */}
       {diverged && (

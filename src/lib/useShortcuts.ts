@@ -14,7 +14,13 @@ export type Shortcut =
   | 'larger'
   | 'smaller'
   | 'reset-size'
-  | 'sidebar';
+  | 'sidebar'
+  | 'new-session'
+  | 'find-session'
+  | 'go-sessions'
+  | 'go-composer'
+  | 'next-region'
+  | 'previous-region';
 
 export interface Binding {
   /**
@@ -61,6 +67,12 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'smaller', keys: 'ctrl+minus', what: 'draw everything smaller' },
   { id: 'reset-size', keys: 'ctrl+0', what: 'back to the default size' },
   { id: 'sidebar', keys: 'ctrl+b', what: 'show or hide the sidebar' },
+  { id: 'new-session', keys: 'ctrl+n', what: 'start a new session' },
+  { id: 'find-session', keys: 'ctrl+shift+p', what: 'find a session' },
+  { id: 'go-sessions', keys: 'ctrl+shift+s', what: 'go to the session list' },
+  { id: 'go-composer', keys: 'ctrl+shift+m', what: 'go to the message box' },
+  { id: 'next-region', keys: 'f6', what: 'next part of the window' },
+  { id: 'previous-region', keys: 'shift+f6', what: 'previous part of the window' },
   { keys: 'ctrl+wheel', what: 'draw everything larger or smaller' },
   { keys: 'shift+enter', what: 'insert newline' },
   { keys: 'up/down', what: 'previous or next prompt' },
@@ -150,7 +162,17 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
 
         // One Escape is how a menu closes and how a field is left, so only the second does
         // anything: the same layering the CLI uses.
-        if (again) handler.current('escape-twice');
+        if (again) {
+          handler.current('escape-twice');
+          return;
+        }
+
+        // A first Escape from anywhere else is the way back to what was being written, which
+        // is where a reader who has finished looking around wants to be. Inside the box it
+        // means the double press, so there it is left to the second. A menu or a prompt that
+        // wanted this press has already taken it, above.
+        const held = event.target as HTMLElement | null;
+        if (!held?.closest?.('[data-region="composer"]')) handler.current('go-composer');
         return;
       }
 
@@ -201,6 +223,34 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
         event.preventDefault();
         handler.current('sidebar');
         return;
+      }
+
+      // Moving about the window. Claimed whatever has the keyboard, because the whole point
+      // of them is to be reachable from inside the box that currently holds it - and
+      // prevented, since ctrl+n is the webview's own "new window" and f6 is the address bar.
+      if (event.key === 'F6') {
+        event.preventDefault();
+        handler.current(event.shiftKey ? 'previous-region' : 'next-region');
+        return;
+      }
+
+      if (event.ctrlKey && !event.altKey) {
+        const going =
+          !event.shiftKey && (event.key === 'n' || event.key === 'N')
+            ? 'new-session'
+            : event.shiftKey && (event.key === 'P' || event.key === 'p')
+              ? 'find-session'
+              : event.shiftKey && (event.key === 'S' || event.key === 's')
+                ? 'go-sessions'
+                : event.shiftKey && (event.key === 'M' || event.key === 'm')
+                  ? 'go-composer'
+                  : null;
+
+        if (going) {
+          event.preventDefault();
+          handler.current(going);
+          return;
+        }
       }
 
       // Only useful while typing, so it has to fire there. Prevented in any case: the

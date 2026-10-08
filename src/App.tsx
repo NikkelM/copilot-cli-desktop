@@ -123,6 +123,7 @@ import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
 import { useSessions } from './lib/useSessions';
 import { useShortcuts } from './lib/useShortcuts';
+import { focusRegion, stepRegion } from './lib/regions';
 import { useTaskbar } from './lib/useTaskbar';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
@@ -633,6 +634,31 @@ export default function App() {
   /** Read by a shortcut handler registered once, which would otherwise hold the first render's answer. */
   const busyRef = useRef(false);
   busyRef.current = busy;
+
+  /** Read the same way and for the same reason: the function is built afresh every render. */
+  const createRef = useRef(handleCreate);
+  createRef.current = handleCreate;
+
+  /**
+   * Show the sidebar if it is away, then put the focus in it.
+   *
+   * Folded away it draws nothing at all, so there is no row and no filter box to aim at
+   * until it has been drawn again - which is a frame later, not now.
+   */
+  const toSidebar = useCallback(
+    (what: 'search' | 'list') => {
+      const go = () => focusRegion(what === 'search' ? 'sidebar-search' : 'sidebar');
+      if (!width.hidden) {
+        go();
+        return;
+      }
+
+      width.toggle();
+      requestAnimationFrame(go);
+    },
+    [width],
+  );
+
   /**
    * What each running subagent is called, by its id.
    *
@@ -831,6 +857,26 @@ export default function App() {
           return;
         }
 
+        if (shortcut === 'next-region' || shortcut === 'previous-region') {
+          stepRegion(shortcut === 'next-region' ? 1 : -1);
+          return;
+        }
+
+        if (shortcut === 'go-composer') {
+          focusRegion('composer');
+          return;
+        }
+
+        if (shortcut === 'find-session' || shortcut === 'go-sessions') {
+          toSidebar(shortcut === 'find-session' ? 'search' : 'list');
+          return;
+        }
+
+        if (shortcut === 'new-session') {
+          void createRef.current();
+          return;
+        }
+
         if (shortcut === 'reasoning') {
           setDisplay('showReasoning', !display.showReasoning);
           return;
@@ -851,7 +897,7 @@ export default function App() {
         if (busyRef.current) interrupt();
         else if (selectedRef.current) drafts.clear(selectedRef.current);
       },
-      [interrupt, drafts, settings.scale, applySettings, width],
+      [interrupt, drafts, settings.scale, applySettings, width, toSidebar],
     ),
     // The composer's own text, rather than what a key event can be asked about the field it
     // landed in: this is where it is actually kept.

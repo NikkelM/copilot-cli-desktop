@@ -55,7 +55,7 @@ export function Todos({ todos, onClose }: TodosProps) {
   const titles = new Map(todos.map((todo) => [todo.id, todo.title]));
 
   return (
-    <div className="todos">
+    <div className="todos" data-region="panel" tabIndex={-1}>
       <div className="todos-head">
         <span className="todos-title">
           {done} of {todos.length} done

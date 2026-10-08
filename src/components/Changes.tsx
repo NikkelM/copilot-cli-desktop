@@ -106,7 +106,7 @@ export function Changes({
   const since = reviewedAt !== null && !showAll;
 
   return (
-    <div className="changes">
+    <div className="changes" data-region="panel" tabIndex={-1}>
       <div className="changes-head">
         <span className="changes-title">
           {changes ? `${changes.length} ${changes.length === 1 ? 'file' : 'files'} changed` : 'Changes'}

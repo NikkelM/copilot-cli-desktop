@@ -728,6 +728,7 @@ export function Composer({
         <div className="composer-field">
           <textarea
             ref={inputRef}
+            data-region="composer"
             value={text}
             className={shell ? 'shell' : undefined}
             onChange={(e) => {
