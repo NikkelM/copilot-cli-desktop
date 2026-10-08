@@ -1720,4 +1720,17 @@ describe('Composer, the caret it comes back with', () => {
 
     expect(onCaret).toHaveBeenLastCalledWith(4);
   });
+
+  /**
+   * Finishing a rewrite hands the earlier draft back to a box that never went away, so there
+   * is no remount to put the caret where it belongs - only a fresh focus does that, and
+   * without one the words came back with the caret stranded at the end of them.
+   */
+  it('puts it back again when the box is focused afresh', () => {
+    const { rerender } = render(<Composer {...props} focusOn="s1:1" value="hello there" caretAt={11} />);
+
+    rerender(<Composer {...props} focusOn="s1:2" value="an earlier draft" caretAt={3} />);
+
+    expect((screen.getByRole('textbox') as HTMLTextAreaElement).selectionStart).toBe(3);
+  });
 });

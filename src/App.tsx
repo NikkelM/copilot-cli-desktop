@@ -1038,6 +1038,10 @@ export default function App() {
       // where the caret was.
       drafts.write(selectedId, rewriting.displaced);
       caretIn.current[selectedId] = rewriting.caret;
+      // Asked for, because only a fresh focus applies the caret: the box is not remounting
+      // here the way it does when it stands down for a prompt, so without this the words
+      // come back and the caret stays at the end of them.
+      toComposer();
       if (text) await queue.edit(selectedId, rewriting.id, text);
       else await queue.remove(selectedId, rewriting.id);
       return;
