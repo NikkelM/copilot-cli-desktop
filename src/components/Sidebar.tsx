@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
 
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
@@ -473,6 +473,14 @@ export function Sidebar({
   );
 
   /**
+   * Every drawn row, by session, so the cursor has something to move focus to.
+   *
+   * Outside the callback that fills it: that one is rebuilt whenever the watcher changes
+   * identity, and a map rebuilt with it would lose every row already on screen.
+   */
+  const nodes = useRef(new Map<string, HTMLElement>());
+
+  /**
    * Hand a row to whoever is watching which of them are on screen.
    *
    * One callback per session, kept and handed back again, because React detaches a ref
@@ -485,15 +493,108 @@ export function Sidebar({
     return (sessionId: string) => {
       let ref = held.get(sessionId);
       if (!ref) {
-        ref = (node: Element | null) => onWatchRow?.(sessionId, node);
+        ref = (node: Element | null) => {
+          // Kept here as well as handed on, because moving the cursor has to focus a row
+          // and a row is only reachable through the ref that drew it.
+          if (node) nodes.current.set(sessionId, node as HTMLElement);
+          else nodes.current.delete(sessionId);
+          onWatchRow?.(sessionId, node);
+        };
         held.set(sessionId, ref);
       }
       return ref;
     };
   }, [onWatchRow]);
 
+  /**
+   * The rows the keyboard can reach, top to bottom.
+   *
+   * `drawn` is the same question asked for a Shift range, but it stops at the groups: the
+   * sessions found by id are drawn below them and are just as reachable, so the cursor has
+   * to know about them too. Kept separate rather than widening `drawn`, because a range is
+   * measured over the groups it was dragged across and those rows are not in one.
+   */
+  const order = useMemo(
+    () => [...drawn, ...hidden.map((session) => session.sessionId)],
+    [drawn, hidden],
+  );
+
+  /**
+   * Which row carries the tab stop.
+   *
+   * A list of hundreds that each took a stop of their own would bury everything after it, so
+   * one row holds it and the arrows move it - the roving tabindex every list on the machine
+   * uses. Worked out rather than only stored, because the row it was left on can be
+   * filtered away, archived or deleted while the cursor sits there, and a tab stop on a row
+   * that is gone is no tab stop at all.
+   */
+  const [cursor, setCursor] = useState<string | null>(null);
+  const at =
+    (cursor !== null && order.includes(cursor) && cursor) ||
+    (selectedId !== null && order.includes(selectedId) && selectedId) ||
+    order[0] ||
+    null;
+
+  /** Move the cursor to a row and take the focus there with it. */
+  const goTo = useCallback((sessionId: string | undefined) => {
+    if (!sessionId) return;
+    setCursor(sessionId);
+    nodes.current.get(sessionId)?.focus();
+  }, []);
+
+  /**
+   * What a key pressed on a row means.
+   *
+   * Enter opens, which is what the row is for. Space marks, as it does in every multi-select
+   * list, and Shift with an arrow extends the range the same way dragging with Shift does -
+   * both routed through the same `onMark` the mouse uses, so the two cannot drift apart.
+   *
+   * Opening is handed in rather than worked out here, because the two lists open a row on
+   * different terms: a row the name found carries the search term and the words it matched,
+   * and a row found by its id has neither.
+   */
+  const onRowKey = useCallback(
+    (sessionId: string, open: () => void, event: ReactKeyboardEvent) => {
+      const from = order.indexOf(sessionId);
+      const step = (to: number) => {
+        // Off either end is nothing rather than the other end: a list that wraps takes the
+        // reader somewhere they did not ask to go. `order[-1]` is already undefined, and
+        // moving to nothing leaves the focus where it was.
+        const next = order[to];
+        event.preventDefault();
+        // Shift extends as it moves, so a range is gathered by holding it down rather than
+        // by marking each row on the way.
+        if (event.shiftKey && next) onMark?.(next, { toggle: false, range: true }, drawn);
+        goTo(next);
+      };
+
+      switch (event.key) {
+        case 'ArrowDown':
+          return step(from + 1);
+        case 'ArrowUp':
+          return step(from - 1);
+        case 'Home':
+          return step(0);
+        case 'End':
+          return step(order.length - 1);
+        case 'Enter':
+          event.preventDefault();
+          return open();
+        case ' ':
+          // Claimed, or the list would scroll a page down underneath the row being marked.
+          event.preventDefault();
+          onMark?.(sessionId, { toggle: true, range: false }, drawn);
+          return;
+        default:
+          return;
+      }
+    },
+    [order, drawn, goTo, onMark],
+  );
+
+
   return (
-    <nav className="sidebar">
+    <nav className="sidebar" data-region="sidebar">
       <header className="sidebar-header">
         {onToggle && <SidebarToggle hidden={false} onToggle={onToggle} />}
         {/* On the left with the fold control: both are about the app rather than about any
@@ -550,6 +651,14 @@ export function Sidebar({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Filter by title, tag, folder or id"
           spellCheck={false}
+          data-region="sidebar-search"
+          // The way out of the box and into what it found. Without it the filter could be
+          // typed but never acted on: the rows it narrowed down to were unreachable.
+          onKeyDown={(event) => {
+            if (event.key !== 'ArrowDown') return;
+            event.preventDefault();
+            goTo(order[0]);
+          }}
         />
         {/* Beside the box rather than in the header: it narrows the list, which is what the
             box does, and the two are read together. */}
@@ -610,6 +719,7 @@ export function Sidebar({
                   <button
                     type="button"
                     className="group"
+                    id={`sessions-${group.key}`}
                     aria-expanded={!shut}
                     onClick={() => toggle(group.key, shut)}
                     title={
@@ -645,14 +755,46 @@ export function Sidebar({
                   </button>
                 )}
 
+                {/* A listbox per group rather than one over the whole sidebar: the group
+                    headers are real buttons, and a button is not something a listbox is
+                    allowed to contain. Labelled by its own header, so what is being
+                    stepped through is still named. */}
                 {shown.length > 0 && (
-                  <ul className="session-list">
+                  <ul
+                    className="session-list"
+                    role="listbox"
+                    aria-multiselectable
+                    {...(group.label === null
+                      ? { 'aria-label': 'Sessions' }
+                      : { 'aria-labelledby': `sessions-${group.key}` })}
+                  >
                     {shown.map((session) => (
-                      <li key={session.sessionId}>
+                      <li key={session.sessionId} role="presentation">
                         <div
                           // Watched so the app can ask what this session last said only
                           // while the row is somewhere a reader could read it (#240).
                           ref={rowRef(session.sessionId)}
+                          role="option"
+                          aria-selected={session.sessionId === selectedId}
+                          // One stop for the whole list, moved by the arrows (#247).
+                          tabIndex={session.sessionId === at ? 0 : -1}
+                          onKeyDown={(event) =>
+                            onRowKey(
+                              session.sessionId,
+                              () =>
+                                onSelect(
+                                  session.sessionId,
+                                  session,
+                                  named?.has(session.sessionId) ? undefined : said.get(session.sessionId),
+                                  parseQuery(query).text,
+                                ),
+                              event,
+                            )
+                          }
+                          // Reached by Tab or by a click rather than by an arrow, so the
+                          // cursor follows: leaving it behind would send the next arrow
+                          // press back to wherever it used to be.
+                          onFocus={() => setCursor(session.sessionId)}
                           className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}`}
                           // A row the name did not find was found by something said in it,
                           // so opening it means opening it there rather than at the end.
@@ -737,16 +879,27 @@ export function Sidebar({
             <li>
               {/* Named for why they were missing rather than for what they are: the reader
                   typed an id, got nothing, and needs to know these were found anyway. */}
-              <p className="group" title="Found by id. These sessions have no title and no turns.">
+              <p
+                className="group"
+                id="sessions-not-listed"
+                title="Found by id. These sessions have no title and no turns."
+              >
                 Not in the list
               </p>
-              <ul className="session-list">
+              <ul className="session-list" role="listbox" aria-multiselectable aria-labelledby="sessions-not-listed">
                 {hidden.map((session) => (
-                  <li key={session.sessionId}>
+                  <li key={session.sessionId} role="presentation">
                     <div
                       // Watched like the rows above it: a session found by id has no title,
                       // so what it last said is the only thing identifying it (#240).
                       ref={rowRef(session.sessionId)}
+                      role="option"
+                      aria-selected={session.sessionId === selectedId}
+                      tabIndex={session.sessionId === at ? 0 : -1}
+                      onKeyDown={(event) =>
+                        onRowKey(session.sessionId, () => onSelect(session.sessionId, session), event)
+                      }
+                      onFocus={() => setCursor(session.sessionId)}
                       className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}`}
                       onClick={(event) => {
                         if (clicked(session.sessionId, event)) return;

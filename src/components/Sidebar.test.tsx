@@ -2719,3 +2719,143 @@ describe('the last reply on a row', () => {
     expect(parts.indexOf('session-said')).toBeGreaterThan(parts.indexOf('session-tags'));
   });
 });
+/**
+ * The sidebar is the app's primary navigation, and until now none of it could be reached
+ * without a mouse: the rows were plain divs carrying a click (#247). The list holds one tab
+ * stop and the arrows move it, which is what every list on the machine does.
+ */
+describe('reaching the session list without a mouse', () => {
+  const rows = () => [...document.querySelectorAll('.session-row')] as HTMLElement[];
+  const marks = () => document.querySelectorAll('.session-row.marked').length;
+
+  function Harness({
+    onSelect = () => {},
+    selected = null as string | null,
+  }: {
+    onSelect?: ComponentProps<typeof Sidebar>['onSelect'];
+    selected?: string | null;
+  }) {
+    const listed = sessions.map((s) => s.sessionId);
+    const { marked, click } = useMarked(listed, selected);
+    return (
+      <Sidebar
+        sessions={sessions}
+        selectedId={selected}
+        onSelect={onSelect}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        marked={marked}
+        onMark={click}
+      />
+    );
+  }
+
+  it('holds one tab stop for the whole list rather than one per row', () => {
+    render(<Harness />);
+
+    expect(rows().length, 'the fixture needs more than one row to say anything').toBeGreaterThan(1);
+    expect(rows().filter((row) => row.tabIndex === 0)).toHaveLength(1);
+  });
+
+  it('starts the cursor on the session being read', () => {
+    render(<Harness selected={sessions[1]!.sessionId} />);
+
+    const stop = rows().find((row) => row.tabIndex === 0);
+
+    expect(stop?.getAttribute('aria-selected'), 'the stop should be on the open session').toBe('true');
+  });
+
+  it('moves down the list on an arrow', () => {
+    render(<Harness />);
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(rows()[1]);
+  });
+
+  it('moves back up again', () => {
+    render(<Harness />);
+    rows()[1]!.focus();
+
+    fireEvent.keyDown(rows()[1]!, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  /** Running off either end would take the focus out of the list and lose the reader. */
+  it('stays put at the ends rather than wrapping', () => {
+    render(<Harness />);
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  it('jumps to the last row on End and back on Home', () => {
+    render(<Harness />);
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'End' });
+    expect(document.activeElement).toBe(rows()[rows().length - 1]);
+
+    fireEvent.keyDown(document.activeElement!, { key: 'Home' });
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  it('opens the row on Enter', () => {
+    const onSelect = vi.fn();
+    render(<Harness onSelect={onSelect} />);
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'Enter' });
+
+    expect(onSelect).toHaveBeenCalledWith(sessions[0]!.sessionId, expect.anything(), undefined, '');
+  });
+
+  it('marks the row on Space, having opened nothing', () => {
+    const onSelect = vi.fn();
+    render(<Harness onSelect={onSelect} />);
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: ' ' });
+
+    expect(marks()).toBe(1);
+    expect(onSelect, 'marking a row is not going to it').not.toHaveBeenCalled();
+  });
+
+  /** The same range the mouse gathers by dragging with Shift held, routed through onMark. */
+  it('gathers a range as Shift holds the arrow down', () => {
+    render(<Harness />);
+    rows()[0]!.focus();
+    fireEvent.keyDown(rows()[0]!, { key: ' ' });
+
+    fireEvent.keyDown(rows()[0]!, { key: 'ArrowDown', shiftKey: true });
+
+    expect(marks()).toBe(2);
+  });
+
+  /**
+   * The journey that was severed outright: the box narrowed the list down and then there was
+   * no way to act on what it found.
+   */
+  it('steps out of the filter box and into what it found', () => {
+    render(<Harness />);
+    const box = screen.getByRole('searchbox');
+    box.focus();
+
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  it('offers the rows as options of a named list', () => {
+    render(<Harness />);
+
+    expect(screen.getByRole('listbox', { name: 'Sessions' })).toBeTruthy();
+    expect(screen.getAllByRole('option')).toHaveLength(rows().length);
+  });
+});
