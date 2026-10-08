@@ -851,7 +851,29 @@ export function Transcript({
         onKeyDown={releaseOnKey}
       >
         <li className="history-edge">
-          {loadingOlder ? 'Loading earlier messages…' : more ? 'Scroll up for earlier messages' : 'Start of session'}
+          {loadingOlder ? (
+            'Loading earlier messages…'
+          ) : more ? (
+            /* Asked for rather than only scrolled to. Reaching back is driven by scrolling,
+               and a page too short to scroll raises no scroll event at all - the effect that
+               fills such a page is capped, deliberately, so a session that is mostly
+               delegated work does not load all of itself. Past that cap the reader was told
+               to scroll up a list that could not move. */
+            <button
+              type="button"
+              className="settings-reset"
+              onClick={() => {
+                // The entries already built come first: they cost nothing to show, where an
+                // older page costs a read and a parse.
+                if (budgeted.hasMore) budgeted.showMore();
+                else onLoadOlder?.();
+              }}
+            >
+              Show earlier messages
+            </button>
+          ) : (
+            'Start of session'
+          )}
         </li>
         {shown.map((entry, index) => (
           <Fragment key={entry.key}>

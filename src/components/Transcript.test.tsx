@@ -2793,3 +2793,54 @@ describe('following work through a scroll the browser moved', () => {
     expect(document.activeElement, 'the transcript should take focus').toBe(t.list);
   });
 });
+
+/**
+ * A page too short to scroll raises no scroll event, so scrolling cannot be the only way to
+ * reach what is above it. The effect that fills such a page is capped on purpose - a session
+ * that is mostly delegated work would otherwise load all of itself - and past that cap the
+ * reader was told to scroll up a list that could not move (#247).
+ */
+describe('asking for earlier messages rather than scrolling to them', () => {
+  const draw = (over: Partial<ComponentProps<typeof Transcript>> = {}) => (
+    <Transcript
+      events={[{ type: 'assistant.message', data: { content: 'the only thing on this page' }, id: 'e1' }]}
+      sessionId="s1"
+      cwd={null}
+      hasOlder
+      loadingOlder={false}
+      display={ASSUMED_DISPLAY}
+      {...over}
+    />
+  );
+
+  const back = () => screen.queryByRole('button', { name: 'Show earlier messages' });
+
+  it('offers the way back as something that can be pressed', () => {
+    render(draw());
+
+    expect(back(), 'a list that cannot scroll still has to have a way up').toBeTruthy();
+  });
+
+  it('reads the page above when pressed', () => {
+    const onLoadOlder = vi.fn();
+    render(draw({ onLoadOlder }));
+
+    fireEvent.click(back()!);
+
+    expect(onLoadOlder).toHaveBeenCalledOnce();
+  });
+
+  it('says so while that page is on its way, offering nothing to press twice', () => {
+    render(draw({ loadingOlder: true }));
+
+    expect(back()).toBeNull();
+    expect(screen.getByText('Loading earlier messages…')).toBeTruthy();
+  });
+
+  it('says where the start is once there is nothing above', () => {
+    render(draw({ hasOlder: false }));
+
+    expect(back()).toBeNull();
+    expect(screen.getByText('Start of session')).toBeTruthy();
+  });
+});
