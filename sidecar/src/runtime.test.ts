@@ -146,6 +146,7 @@ function makeSession(id: string) {
         updateText: vi.fn(async (_params: { id: string; prompt: string; displayPrompt?: string }) => ({ updated: true })),
         moveItem: vi.fn(async (_params: { id: string; toPosition: number }) => ({ changed: true })),
         sendNow: vi.fn(async (_params: { id: string }) => ({ steered: true })),
+        insertAt: vi.fn(async (_params: unknown) => ({ id: 'q-new' })),
         withdrawMessage: vi.fn(async (_params: { messageId: string; expectedPrompt: string }) => ({ removed: true, interrupted: false })),
         setDrainPaused: vi.fn(async (_params: { paused: boolean }) => undefined),
         clear: vi.fn(async () => undefined),
@@ -4693,7 +4694,7 @@ describe('what this app knows about the messages it sent', () => {
 
     const [item] = await runtime.queue('s1');
 
-    expect(item?.attachments).toBe(2);
+    expect(item?.attachments).toHaveLength(2);
   });
 
   /** Nothing known is not nothing attached, and a row must not claim otherwise. */
@@ -4758,5 +4759,112 @@ describe('what this app knows about the messages it sent', () => {
 
     await expect(runtime.queueHold('s1', false)).resolves.toBe(true);
     expect(sessions.get('s1')!.rpc.queue.setDrainPaused).toHaveBeenCalledWith({ paused: false });
+  });
+});
+
+/**
+ * `updateText` changes words and nothing else, so changing what a waiting message carries
+ * means taking it out and putting it back with the files it should have. Only where those
+ * files are known, which means a message this app sent.
+ */
+describe('rewriting what a waiting message carries', () => {
+  const file = (path: string) => ({ type: 'file' as const, path });
+
+  /** Queue one and tell the mock to list it, as the runtime would. */
+  async function queued(
+    runtime: SessionRuntime,
+    sessions: Map<string, ReturnType<typeof makeSession>>,
+    files: ReturnType<typeof file>[],
+  ) {
+    const { messageId } = await runtime.send('s1', 'first words', 'enqueue', files as never);
+    sessions.get('s1')!.rpc.queue.pendingItems.mockResolvedValue({
+      items: [{ id: 'q1', messageId, kind: 'message', displayText: 'first words', agentMode: 'agent' }],
+      steeringMessages: [],
+    });
+    return messageId;
+  }
+
+  it('changes only the words when the files are the same', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await queued(runtime, sessions, [file('a.png')]);
+
+    await expect(runtime.queueEdit('s1', 'q1', 'better words', [file('a.png')])).resolves.toBe(true);
+
+    expect(sessions.get('s1')!.rpc.queue.updateText).toHaveBeenCalled();
+    expect(sessions.get('s1')!.rpc.queue.removeAt, 'nothing needed taking apart').not.toHaveBeenCalled();
+  });
+
+  it('puts the message back with different files, where it was', async () => {
+    const { runtime, sessions } = makeRuntime();
+    const messageId = await queued(runtime, sessions, [file('a.png')]);
+    // Second in the queue, so putting it back at the front would be putting it somewhere else.
+    sessions.get('s1')!.rpc.queue.pendingItems.mockResolvedValue({
+      items: [
+        { id: 'q0', messageId: 'earlier', kind: 'message', displayText: 'ahead of it', agentMode: 'agent' },
+        { id: 'q1', messageId, kind: 'message', displayText: 'first words', agentMode: 'agent' },
+      ],
+      steeringMessages: [],
+    });
+
+    await expect(runtime.queueEdit('s1', 'q1', 'better words', [file('a.png'), file('b.png')])).resolves.toBe(true);
+
+    expect(sessions.get('s1')!.rpc.queue.removeAt).toHaveBeenCalledWith({ id: 'q1' });
+    const [insert] = sessions.get('s1')!.rpc.queue.insertAt.mock.calls[0] as [
+      { position: number; message: { prompt: string; attachments?: unknown[]; agentMode?: string } },
+    ];
+    expect(insert.position, 'back in the place it had').toBe(1);
+    expect(insert.message.prompt).toBe('better words');
+    expect(insert.message.attachments).toHaveLength(2);
+    expect(insert.message.agentMode, 'the way it was sent').toBe('agent');
+  });
+
+  /** The runtime insists on a display name where this app's own shape leaves it optional. */
+  it('names a file the runtime was given no name for', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await queued(runtime, sessions, []);
+
+    await runtime.queueEdit('s1', 'q1', 'words', [file('C:\\work\\picture.png')]);
+
+    const [insert] = sessions.get('s1')!.rpc.queue.insertAt.mock.calls[0] as [
+      { message: { attachments?: { displayName?: string }[] } },
+    ];
+    expect(insert.message.attachments?.[0]?.displayName).toBe('picture.png');
+  });
+
+  /**
+   * Taking a message apart and putting it back without its files would drop whatever it had,
+   * and a message this app did not send cannot say what that was.
+   */
+  it('changes only the words of a message it did not send', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.queue.pendingItems.mockResolvedValue({
+      items: [{ id: 'q1', messageId: 'from-a-terminal', kind: 'message', displayText: 'elsewhere', agentMode: 'agent' }],
+      steeringMessages: [],
+    });
+
+    await expect(runtime.queueEdit('s1', 'q1', 'words', [file('a.png')])).resolves.toBe(true);
+
+    expect(sessions.get('s1')!.rpc.queue.updateText).toHaveBeenCalled();
+    expect(sessions.get('s1')!.rpc.queue.insertAt).not.toHaveBeenCalled();
+  });
+
+  /** A message taken out and put back has a new identity, and what is known moves with it. */
+  it('keeps track of the message under the identity it comes back with', async () => {
+    const { runtime, sessions } = makeRuntime();
+    const messageId = await queued(runtime, sessions, [file('a.png')]);
+
+    // Read twice over the edit: once to find where the message is, once to pair the id the
+    // insert assigned with the message id the queue gives it.
+    const listing = sessions.get('s1')!.rpc.queue.pendingItems;
+    const before = { items: [{ id: 'q1', messageId, kind: 'message', displayText: 'first words', agentMode: 'agent' }], steeringMessages: [] };
+    const after = { items: [{ id: 'q-new', messageId: 'msg-after', kind: 'message', displayText: 'words', agentMode: 'agent' }], steeringMessages: [] };
+    listing.mockReset();
+    listing.mockResolvedValueOnce(before).mockResolvedValue(after);
+
+    await runtime.queueEdit('s1', 'q1', 'words', [file('a.png'), file('b.png')]);
+    const [item] = await runtime.queue('s1');
+
+    expect(item?.attachments).toHaveLength(2);
   });
 });

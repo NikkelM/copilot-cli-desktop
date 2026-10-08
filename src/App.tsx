@@ -303,7 +303,7 @@ export default function App() {
    * where it was rather than at its end.
    */
   const [editingQueued, setEditingQueued] = useState<
-    Record<string, { id: string; displaced: string; caret: number }>
+    Record<string, { id: string; displaced: string; caret: number; files: Attachment[]; known: boolean }>
   >({});
   const model = useModel(selectedId, setError);
   // A restored session is back on disk but not in the list, which is built from what is
@@ -1045,17 +1045,22 @@ export default function App() {
     const rewriting = editingQueued[selectedId];
     if (rewriting !== undefined) {
       const text = prompt.trim();
+      // What the box is carrying now is what the message should carry. Only sent where the
+      // message's own files are known: putting one back without them would drop whatever it
+      // had, and a message this app did not send cannot say what that was.
+      const files = attachments[selectedId] ?? [];
       setEditingQueued(({ [selectedId]: _gone, ...rest }) => rest);
       // Whatever was being written before the edit took the box, given back where it was
       // left: a sentence interrupted to fix a queued message is resumed mid-word if that is
-      // where the caret was.
+      // where the caret was, carrying whatever it had attached.
       drafts.write(selectedId, rewriting.displaced);
+      setAttachments((current) => ({ ...current, [selectedId]: rewriting.files }));
       caretIn.current[selectedId] = rewriting.caret;
       // Asked for, because only a fresh focus applies the caret: the box is not remounting
       // here the way it does when it stands down for a prompt, so without this the words
       // come back and the caret stays at the end of them.
       toComposer();
-      if (text) await queue.edit(selectedId, rewriting.id, text);
+      if (text) await queue.edit(selectedId, rewriting.id, text, rewriting.known ? files : undefined);
       else await queue.remove(selectedId, rewriting.id);
       return;
     }
@@ -2056,9 +2061,18 @@ export default function App() {
                       // Where the caret was in what is being put aside, so it can be given
                       // back there rather than at the end of it.
                       caret: caretIn.current[selected.sessionId] ?? displaced.length,
+                      // What the box was carrying, which is not this message's and has to
+                      // be given back with the words.
+                      files: attachments[selected.sessionId] ?? [],
+                      // Whether its files can be changed at all. Only this app's own
+                      // messages report any, and a message whose files are unknown would
+                      // lose them by being taken apart and put back.
+                      known: item.attachments !== undefined,
                     },
                   }));
                   drafts.write(selected.sessionId, item.text);
+                  // The message's own files, so what is on screen is what it is carrying.
+                  setAttachments((current) => ({ ...current, [selected.sessionId]: item.attachments ?? [] }));
                   // At the end of what is being rewritten, which is where somebody about to
                   // add to a sentence already wants to be.
                   caretIn.current[selected.sessionId] = item.text.length;
@@ -2148,6 +2162,7 @@ export default function App() {
                           const held = editingQueued[selected.sessionId];
                           setEditingQueued(({ [selected.sessionId]: _gone, ...rest }) => rest);
                           drafts.write(selected.sessionId, held?.displaced ?? '');
+                          setAttachments((current) => ({ ...current, [selected.sessionId]: held?.files ?? [] }));
                           caretIn.current[selected.sessionId] = held?.caret ?? 0;
                           toComposer();
                         },

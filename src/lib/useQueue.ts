@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 
-import type { QueuedItem } from '../../shared/protocol';
+import type { Attachment, QueuedItem } from '../../shared/protocol';
 
 import { sessionQueue, clearQueued, editQueued, holdQueue, moveQueued, removeQueued, steerQueued, withdrawMessage } from './sidecar';
 
@@ -88,7 +88,8 @@ export function useQueue() {
     [act],
   );
   const edit = useCallback(
-    (sessionId: string, id: string, text: string) => act(sessionId, () => editQueued(sessionId, id, text)),
+    (sessionId: string, id: string, text: string, attachments?: Attachment[]) =>
+      act(sessionId, () => editQueued(sessionId, id, text, attachments)),
     [act],
   );
   const move = useCallback(

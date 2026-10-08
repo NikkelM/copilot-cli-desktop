@@ -921,13 +921,14 @@ export interface QueuedItem {
   /** Present for messages only, and the same id the `user.message` event carries. */
   messageId?: string;
   /**
-   * How many files went with it, where that is known.
+   * What went with it, where that is known.
    *
    * The runtime does not report what a waiting message carries, so this is only here for
    * messages this app sent. Absent means "nothing known", which is not the same as none -
-   * a message sent from a terminal attached to the same session says nothing either way.
+   * a message sent from a terminal attached to the same session says nothing either way,
+   * and is the one kind whose files cannot be changed from here.
    */
-  attachments?: number;
+  attachments?: Attachment[];
 }
 
 /**
@@ -1777,7 +1778,10 @@ export interface SidecarRequests {
    * A session that is not loaded has no queue to change, and says so the same way.
    */
   'sessions.queueRemove': { params: { sessionId: string; id: string }; result: { removed: boolean } };
-  'sessions.queueEdit': { params: { sessionId: string; id: string; text: string }; result: { updated: boolean } };
+  'sessions.queueEdit': {
+    params: { sessionId: string; id: string; text: string; attachments?: Attachment[] };
+    result: { updated: boolean };
+  };
   /** `to` is a position in the queue as it is shown, counting from zero, and clamps to either end. */
   'sessions.queueMove': { params: { sessionId: string; id: string; to: number }; result: { moved: boolean } };
   'sessions.queueClear': { params: { sessionId: string }; result: { cleared: boolean } };

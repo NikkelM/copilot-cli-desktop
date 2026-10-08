@@ -8,6 +8,7 @@ import type { QueuedItem } from '../../shared/protocol';
 import { Queue } from './Queue';
 
 const message = (id: string, text: string): QueuedItem => ({ id, kind: 'message', text });
+const file = (path: string) => ({ type: 'file' as const, path });
 
 describe('Queue', () => {
   // The row is a frame around what is waiting; with nothing it is a frame around nothing.
@@ -168,13 +169,13 @@ describe('Queue, changing what is waiting', () => {
  */
 describe('Queue, what a waiting message carries', () => {
   it('says how many files went with it', () => {
-    render(<Queue items={[{ id: 'a', kind: 'message', text: 'look at these', attachments: 3 }]} />);
+    render(<Queue items={[{ id: 'a', kind: 'message', text: 'look at these', attachments: [file('a.png'), file('b.png'), file('c.png')] }]} />);
 
     expect(screen.getByText('3 files')).toBeTruthy();
   });
 
   it('counts one file as one rather than as a number of them', () => {
-    render(<Queue items={[{ id: 'a', kind: 'message', text: 'look at this', attachments: 1 }]} />);
+    render(<Queue items={[{ id: 'a', kind: 'message', text: 'look at this', attachments: [file('a.png')] }]} />);
 
     expect(screen.getByText('1 file')).toBeTruthy();
   });

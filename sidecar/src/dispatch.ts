@@ -241,7 +241,9 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.queueRemove': async ({ sessionId, id }) => ({ removed: await runtime.queueRemove(sessionId, id) }),
 
-    'sessions.queueEdit': async ({ sessionId, id, text }) => ({ updated: await runtime.queueEdit(sessionId, id, text) }),
+    'sessions.queueEdit': async ({ sessionId, id, text, attachments }) => ({
+      updated: await runtime.queueEdit(sessionId, id, text, attachments),
+    }),
 
     'sessions.queueMove': async ({ sessionId, id, to }) => ({ moved: await runtime.queueMove(sessionId, id, to) }),
 

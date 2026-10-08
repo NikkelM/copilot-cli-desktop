@@ -67,9 +67,12 @@ export function Queue({ items, onRemove, onEdit, onMove, onClear, onSendNow, onH
               {/* Only ever said where it is known. The runtime does not report what a
                   waiting message carries, so nothing is claimed about one sent from a
                   terminal attached to the same session. */}
-              {item.attachments ? (
-                <span className="queue-attached" title={`${item.attachments} attached, which cannot be changed from here`}>
-                  {item.attachments === 1 ? '1 file' : `${item.attachments} files`}
+              {item.attachments?.length ? (
+                <span
+                  className="queue-attached"
+                  title={item.attachments.map((file) => file.displayName ?? file.path).join('\n')}
+                >
+                  {item.attachments.length === 1 ? '1 file' : `${item.attachments.length} files`}
                 </span>
               ) : null}
             </span>

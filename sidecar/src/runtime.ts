@@ -35,7 +35,7 @@ import type {  McpServerState,
 import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol.js';
 import type { BinnedSession } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 
 import { resolveCliPath } from './paths.js';
 import { stripAnsi } from '../../shared/ansi.js';
@@ -422,15 +422,17 @@ export class SessionRuntime {
   /**
    * What this app sent with each message, by the id the queue knows it by.
    *
-   * Two things the runtime does not report. It never says what a waiting message carries,
-   * so a row could not tell one with three files on it from one with none. And withdrawing
-   * a message means naming the prompt it was sent with, so that a message edited since
-   * cannot be taken back using the words it no longer has.
+   * Three things the runtime does not report. It never says what a waiting message carries,
+   * so a row could not tell one with three files on it from one with none. Withdrawing a
+   * message means naming the prompt it was sent with, so that a message edited since cannot
+   * be taken back using the words it no longer has. And `updateText` changes only words, so
+   * rewriting one with different files means putting it back with them - which needs the
+   * files themselves, not a count of them.
    *
    * Only grows while a message is waiting: an entry is dropped once the queue stops listing
    * it, which is the moment it stopped being something anybody can ask about.
    */
-  private readonly sent = new Map<string, { prompt: string; attachments: number }>();
+  private readonly sent = new Map<string, { prompt: string; attachments: Attachment[] }>();
   private readonly onElicitationRequest?: (
     sessionId: string,
     requestId: string,
@@ -1483,7 +1485,7 @@ export class SessionRuntime {
      * session is still listed, still removable and still editable; it just cannot say
      * whether anything came with it, and cannot be taken back.
      */
-    this.sent.set(messageId, { prompt, attachments: attachments?.length ?? 0 });
+    this.sent.set(messageId, { prompt, attachments: attachments ?? [] });
 
     // The work starts here rather than at the first `assistant.turn_start`, so that nothing
     // in the moment before the runtime announces the turn can evict the session or mistake
@@ -1665,7 +1667,7 @@ export class SessionRuntime {
         kind: item.kind === 'message' ? 'message' : item.kind === 'command' ? 'command' : 'other',
         text: stripAnsi(item.displayText),
         ...(item.messageId ? { messageId: item.messageId } : {}),
-        ...(mine?.attachments ? { attachments: mine.attachments } : {}),
+        ...(mine?.attachments.length ? { attachments: mine.attachments } : {}),
       };
     }) as QueuedItem[];
 
@@ -1693,14 +1695,75 @@ export class SessionRuntime {
     return removed;
   }
 
-  async queueEdit(sessionId: string, id: string, text: string): Promise<boolean> {
+  /**
+   * Rewrite a message that is still waiting.
+   *
+   * Words alone are `updateText`, which is atomic and keeps the entry where it is. Changing
+   * what it carries is not something the runtime will do to a queued message, so that is a
+   * remove and a fresh insert at the same position, carrying the files and the mode it had.
+   *
+   * Only for a message whose files are known, which means one this app sent: taking a
+   * message apart and putting it back without them would quietly drop whatever it had.
+   */
+  async queueEdit(sessionId: string, id: string, text: string, attachments?: Attachment[]): Promise<boolean> {
     const live = this.loaded.get(sessionId)?.session;
     if (!live) return false;
 
+    const { items } = await live.rpc.queue.pendingItems();
+    const at = items.findIndex((item) => item.id === id);
+    const item = at === -1 ? undefined : items[at];
+    const mine = item?.messageId ? this.sent.get(item.messageId) : undefined;
+
+    const had = mine?.attachments ?? [];
+    const wants = attachments ?? had;
+    const sameFiles =
+      wants.length === had.length && wants.every((file, index) => JSON.stringify(file) === JSON.stringify(had[index]));
+
     // The same text both ways: what is sent to the model is what was shown to the reader,
     // because they wrote it. The two differ only where this app rewrites a prompt.
-    const { updated } = await live.rpc.queue.updateText({ id, prompt: text, displayPrompt: text });
-    return updated;
+    if (sameFiles || !mine) {
+      const { updated } = await live.rpc.queue.updateText({ id, prompt: text, displayPrompt: text });
+      if (updated && mine && item?.messageId) this.sent.set(item.messageId, { ...mine, prompt: text });
+      return updated;
+    }
+
+    const { removed } = await live.rpc.queue.removeAt({ id });
+    if (!removed) return false;
+
+    // Built up rather than spread together, because an optional property explicitly set to
+    // undefined is not the same as one left out, and the runtime's shape says so.
+    type InsertMessage = Parameters<typeof live.rpc.queue.insertAt>[0]['message'];
+    const message: InsertMessage = { prompt: text, displayPrompt: text };
+    // Named, because the runtime insists on a display name where this app's own shape
+    // leaves it optional - and what a file is called is what it is called.
+    if (wants.length) {
+      message.attachments = wants.map((file) => ({
+        type: 'file' as const,
+        path: file.path,
+        displayName: file.displayName ?? basename(file.path),
+      }));
+    }
+    // As the queue reported it, so the message goes back the way it was sent rather than as
+    // whatever the default happens to be.
+    if (item?.agentMode) message.agentMode = item.agentMode;
+
+    const { id: fresh } = await live.rpc.queue.insertAt({ position: at, message });
+
+    /*
+     * Under a new identity, so what is remembered about it has to move with it.
+     *
+     * `insertAt` answers with the queue id it assigned and nothing else, and it is the
+     * message id that this map is keyed by - so the list is read once more to pair them.
+     * Without it the message would be listed as carrying nothing a moment after being
+     * given its files.
+     */
+    if (item?.messageId) this.sent.delete(item.messageId);
+    const { items: after } = await live.rpc.queue.pendingItems();
+    const landed = after.find((entry) => entry.id === fresh);
+    if (landed?.messageId) {
+      this.sent.set(landed.messageId, { prompt: text, attachments: wants });
+    }
+    return true;
   }
 
   async queueMove(sessionId: string, id: string, to: number): Promise<boolean> {

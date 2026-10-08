@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 
 import type {
   AgentSummary,
+  Attachment,
   BinnedSession,
   CliSetting,
   CommandOutcome,
@@ -372,8 +373,18 @@ export async function removeQueued(sessionId: string, id: string): Promise<boole
   return removed;
 }
 
-export async function editQueued(sessionId: string, id: string, text: string): Promise<boolean> {
-  const { updated } = await request('sessions.queueEdit', { sessionId, id, text });
+export async function editQueued(
+  sessionId: string,
+  id: string,
+  text: string,
+  attachments?: Attachment[],
+): Promise<boolean> {
+  const { updated } = await request('sessions.queueEdit', {
+    sessionId,
+    id,
+    text,
+    ...(attachments ? { attachments } : {}),
+  });
   return updated;
 }
 
