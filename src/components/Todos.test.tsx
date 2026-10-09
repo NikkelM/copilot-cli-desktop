@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { Todo } from '../../shared/protocol';
 import { Todos } from './Todos';
+import { resetStores, save } from '../lib/store';
+
+// The panel remembers how it was last read, so one test's choice is another's starting
+// point unless the store is put back between them.
+beforeEach(resetStores);
 
 const todo = (over: Partial<Todo> & { id: string }): Todo => ({
   title: `Todo ${over.id}`,
@@ -143,5 +148,91 @@ describe('the agent’s todo list', () => {
     await user.click(screen.getByRole('button', { name: 'Close' }));
 
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Reading a plan after the fact (#253, #255).
+ *
+ * A long plan ends up mostly finished, so the part that is still live gets harder to find as
+ * the work goes on - which is exactly when the panel is most worth opening.
+ */
+describe('how the list is read', () => {
+  const names = () => [...document.querySelectorAll('.todo-name')].map((node) => node.textContent);
+  const sort = () => screen.getByLabelText('Order') as HTMLSelectElement;
+  const hide = () => screen.getByRole('checkbox', { name: 'Hide done' }) as HTMLInputElement;
+
+  const plan = () => [
+    todo({ id: 'a', title: 'First', status: 'done', createdAt: '2026-01-01 00:00:01' }),
+    todo({ id: 'b', title: 'Second', status: 'pending', createdAt: '2026-01-01 00:00:02' }),
+    todo({ id: 'c', title: 'Third', status: 'in_progress', createdAt: '2026-01-01 00:00:03' }),
+  ];
+
+  /** What the agent wrote, which is also what the CLI draws: changing it would surprise. */
+  it('opens in the order the agent planned', () => {
+    shown(plan());
+
+    expect(sort().value).toBe('planned');
+    expect(names()).toEqual(['First', 'Second', 'Third']);
+  });
+
+  it('reorders when another order is chosen', async () => {
+    const { user } = shown(plan());
+
+    await user.selectOptions(sort(), 'open');
+
+    expect(names()).toEqual(['Third', 'Second', 'First']);
+  });
+
+  it('leaves out what is done when asked', async () => {
+    const { user } = shown(plan());
+
+    await user.click(hide());
+
+    expect(names()).toEqual(['Second', 'Third']);
+  });
+
+  /**
+   * The count is the one line saying how much of the plan is finished. Hiding the finished
+   * rows and the count together would take that away.
+   */
+  it('goes on counting what it is no longer showing', async () => {
+    const { user } = shown(plan());
+
+    await user.click(hide());
+
+    expect(document.querySelector('.todos-title')?.textContent).toBe('1 of 3 done');
+  });
+
+  /** A box answers Space and nothing else, which surprises beside controls that take Enter. */
+  it('takes Enter on the box as well as Space', async () => {
+    const { user } = shown(plan());
+    hide().focus();
+
+    await user.keyboard('{Enter}');
+
+    expect(names()).toEqual(['Second', 'Third']);
+  });
+
+  it('opens the way it was last read', async () => {
+    const { user } = shown(plan());
+    await user.selectOptions(sort(), 'created');
+    await user.click(hide());
+
+    cleanup();
+    render(<Todos todos={plan()} onClose={vi.fn()} />);
+
+    expect(sort().value).toBe('created');
+    expect(hide().checked).toBe(true);
+  });
+
+  /** A stored order from a later version should leave the panel readable, not empty. */
+  it('opens on the planned order when the stored one means nothing', () => {
+    save('sessions', 'todoOrder', 'from-the-future');
+
+    render(<Todos todos={plan()} onClose={vi.fn()} />);
+
+    expect(sort().value).toBe('planned');
+    expect(names()).toEqual(['First', 'Second', 'Third']);
   });
 });

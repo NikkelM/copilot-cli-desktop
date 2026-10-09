@@ -366,6 +366,18 @@ export interface Todo {
    * list is dropped for the same reason: it can only be drawn as a dangling id.
    */
   dependsOn: string[];
+  /**
+   * When it was written and when it last moved, as the table keeps them (#253).
+   *
+   * Both are `datetime('now')` strings in UTC rather than instants, so they are carried as
+   * they were written and compared as text - which sorts correctly for this format and
+   * avoids parsing something the panel only ever needs to order by.
+   *
+   * Optional because every failure in this reader is a quieter list rather than no list: a
+   * schema that has moved should cost the orders that need these, not the rows.
+   */
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 /** What a set of dropped paths turned out to be, for the window that cannot look (#231). */export interface Dropped {

@@ -6800,8 +6800,7 @@ pre.fatal,
 
 .todos-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 10px;
   flex: none;
   padding: 8px 10px;
@@ -6811,6 +6810,38 @@ pre.fatal,
 .todos-title {
   font-size: var(--font-md);
   font-weight: 600;
+}
+
+/* Takes the space, so the controls sit together at the far end rather than spread across. */
+.todos-sort {
+  margin-left: auto;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.todos-sort:hover {
+  color: var(--text);
+}
+
+/* The box and its word read as one control, which is what clicking either of them gets. */
+.todos-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.todos-filter:hover {
+  color: var(--text);
 }
 
 .todos-action {

@@ -33,8 +33,15 @@ function makeDb(sessionId: string, build: (db: DatabaseSync) => void): void {
 
 const add = (db: DatabaseSync, id: string, over: Record<string, string> = {}) =>
   db
-    .prepare('INSERT INTO todos (id, title, description, status, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(id, over.title ?? `Todo ${id}`, over.description ?? null, over.status ?? 'pending', over.created_at ?? `2026-01-01 00:00:0${id.length}`);
+    .prepare('INSERT INTO todos (id, title, description, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(
+      id,
+      over.title ?? `Todo ${id}`,
+      over.description ?? null,
+      over.status ?? 'pending',
+      over.created_at ?? `2026-01-01 00:00:0${id.length}`,
+      over.updated_at ?? over.created_at ?? `2026-01-01 00:00:0${id.length}`,
+    );
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'todos-'));
@@ -77,8 +84,26 @@ describe('reading the agent’s todo list', () => {
     makeDb('s1', (db) => add(db, 'a', { title: 'Read the log', description: 'from the end', status: 'in_progress' }));
 
     expect(readTodos('s1')).toEqual([
-      { id: 'a', title: 'Read the log', description: 'from the end', status: 'in_progress', dependsOn: [] },
+      {
+        id: 'a',
+        title: 'Read the log',
+        description: 'from the end',
+        status: 'in_progress',
+        dependsOn: [],
+        createdAt: '2026-01-01 00:00:01',
+        updatedAt: '2026-01-01 00:00:01',
+      },
     ]);
+  });
+
+  /**
+   * What the panel orders by, which is the only reason these are carried (#253). Written
+   * and changed are two columns and have to arrive as two, or one of the orders is a lie.
+   */
+  it('carries when a row was written and when it last moved', () => {
+    makeDb('s1', (db) => add(db, 'a', { created_at: '2026-01-01 00:00:01', updated_at: '2026-03-04 05:06:07' }));
+
+    expect(readTodos('s1')[0]).toMatchObject({ createdAt: '2026-01-01 00:00:01', updatedAt: '2026-03-04 05:06:07' });
   });
 
   it('puts them in the order they were planned', () => {
@@ -124,7 +149,12 @@ describe('reading the agent’s todo list', () => {
     expect(readTodos('s1')[0]?.dependsOn).toEqual([]);
   });
 
-  /** A list without dependencies is still a list worth drawing. */
+  /**
+   * A list without dependencies is still a list worth drawing - and so is one from a
+   * database written without a column this reader would like. The table belongs to the CLI
+   * and has gained columns before, so naming them all would mean one missing costs the
+   * whole plan rather than the order that wanted it.
+   */
   it('still reads the rows when the edges table is missing', () => {
     const dir = join(home, 'session-state', 's1');
     mkdirSync(dir, { recursive: true });
@@ -133,7 +163,9 @@ describe('reading the agent’s todo list', () => {
     db.prepare('INSERT INTO todos VALUES (?, ?, ?, ?, ?)').run('a', 'Alone', null, 'pending', '2026-01-01 00:00:01');
     db.close();
 
-    expect(readTodos('s1')).toEqual([{ id: 'a', title: 'Alone', status: 'pending', dependsOn: [] }]);
+    expect(readTodos('s1')).toEqual([
+      { id: 'a', title: 'Alone', status: 'pending', dependsOn: [], createdAt: '2026-01-01 00:00:01' },
+    ]);
   });
 
   it('leaves out a description the row did not have', () => {

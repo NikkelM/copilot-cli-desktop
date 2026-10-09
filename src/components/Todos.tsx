@@ -1,10 +1,33 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
+import { TickIcon } from './Icons';
+import { TODO_ORDERS, isDone, ordered, type TodoOrder } from '../lib/todoOrder';
+import { read, save } from '../lib/store';
 import type { Todo } from '../../shared/protocol';
 
 interface TodosProps {
   todos: Todo[];
   onClose: () => void;
+}
+
+/**
+ * How the panel was last read, which it opens the same way next time.
+ *
+ * In the sessions store rather than the settings one: this is where somebody left a panel,
+ * not a decision they made about the app, and it is written whenever they change their mind
+ * about a list rather than when they open a settings window.
+ *
+ * One answer for every session rather than one each. A reader who does not want to see
+ * finished work does not want to see it in the next session either, and a per-session
+ * answer would mean setting it again for every plan they open.
+ */
+const ORDER_KEY = 'todoOrder';
+const HIDE_DONE_KEY = 'todoHideDone';
+
+/** The order to open on, which is the one the agent wrote unless something else was chosen. */
+function openingOrder(): TodoOrder {
+  const last = read('sessions', ORDER_KEY);
+  return TODO_ORDERS.some((one) => one.value === last) ? (last as TodoOrder) : 'planned';
 }
 
 /**
@@ -51,7 +74,20 @@ export function Todos({ todos, onClose }: TodosProps) {
     return () => document.removeEventListener('keydown', escape);
   }, [onClose]);
 
-  const done = todos.filter((todo) => todo.status === 'done').length;
+  const [order, setOrder] = useState<TodoOrder>(openingOrder);
+  const [hideDone, setHideDone] = useState(() => read('sessions', HIDE_DONE_KEY) === 'true');
+
+  const toggleDone = () =>
+    setHideDone((was) => {
+      save('sessions', HIDE_DONE_KEY, String(!was));
+      return !was;
+    });
+
+  const shown = useMemo(() => ordered(todos, order, hideDone), [todos, order, hideDone]);
+
+  // Counted over everything, not over what is drawn. This is the one line saying how much of
+  // the plan is finished, and hiding the finished rows should not take that away as well.
+  const done = todos.filter(isDone).length;
   const titles = new Map(todos.map((todo) => [todo.id, todo.title]));
 
   return (
@@ -60,13 +96,51 @@ export function Todos({ todos, onClose }: TodosProps) {
         <span className="todos-title">
           {done} of {todos.length} done
         </span>
+
+        <select
+          className="todos-sort"
+          aria-label="Order"
+          value={order}
+          onChange={(event) => {
+            const chosen = event.target.value as TodoOrder;
+            setOrder(chosen);
+            save('sessions', ORDER_KEY, chosen);
+          }}
+        >
+          {TODO_ORDERS.map((one) => (
+            <option key={one.value} value={one.value}>
+              {one.label}
+            </option>
+          ))}
+        </select>
+
+        {/* Drawn the way the settings boxes are, which is the only checkbox style this app
+            has. A box answers Space and nothing else, which is a surprise beside controls
+            that both answer Enter. */}
+        <label className="todos-filter">
+          <span className="tickbox">
+            <input
+              type="checkbox"
+              checked={hideDone}
+              onChange={toggleDone}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return;
+                event.preventDefault();
+                toggleDone();
+              }}
+            />
+            <TickIcon />
+          </span>
+          Hide done
+        </label>
+
         <button type="button" className="todos-action" onClick={onClose}>
           Close
         </button>
       </div>
 
       <ol className="todos-list">
-        {todos.map((todo) => {
+        {shown.map((todo) => {
           // What it waits on that is not finished yet. Everything it waits on is still
           // named on a finished item, but only an unmet one explains why nothing is
           // happening - which is the question the list is being read to answer.

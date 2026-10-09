@@ -32,7 +32,16 @@ export function readTodos(sessionId: string): Todo[] {
   try {
     // Oldest first, which is the order they were planned in and the order the CLI draws
     // them. The runtime's own reader orders by the same column.
-    const rows = db.prepare('SELECT id, title, description, status FROM todos ORDER BY created_at').all();
+    /*
+     * Everything the row has, rather than the columns named one by one. The table belongs to
+     * the CLI and has already gained columns once; naming them means a database written
+     * without one of them throws here, and every failure in this reader is an empty list.
+     * Losing the whole plan because a timestamp is missing is a poor trade for a sort.
+     *
+     * `created_at` is named in the order, which the reader has always depended on: it is
+     * what makes this the order the agent planned in.
+     */
+    const rows = db.prepare('SELECT * FROM todos ORDER BY created_at').all();
 
     const listed = new Set(rows.flatMap((row) => (typeof row.id === 'string' ? [row.id] : [])));
     const waitsOn = new Map<string, string[]>();
@@ -66,6 +75,8 @@ export function readTodos(sessionId: string): Todo[] {
           title: typeof row.title === 'string' ? row.title : '',
           status: typeof row.status === 'string' ? row.status : '',
           ...(typeof row.description === 'string' && row.description ? { description: row.description } : {}),
+          ...(typeof row.created_at === 'string' ? { createdAt: row.created_at } : {}),
+          ...(typeof row.updated_at === 'string' ? { updatedAt: row.updated_at } : {}),
           dependsOn: waitsOn.get(row.id) ?? [],
         },
       ];
