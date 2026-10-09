@@ -231,3 +231,61 @@ describe('Attachments, keeping the keyboard where it was', () => {
     expect(onFocusBack).toHaveBeenCalled();
   });
 });
+
+/**
+ * A name is a poor way to identify a picture, which is the whole reason the preview exists -
+ * and no less true for somebody who never touches the mouse. Bound to hover alone, it was the
+ * one thing in the app a keyboard could not get to at all (#252).
+ */
+describe('reaching a picture without a mouse', () => {
+  const picture: Attachment = { type: 'file', path: 'C:\\work\\shot.png', displayName: 'shot.png' };
+  const text: Attachment = { type: 'file', path: 'C:\\work\\notes.txt', displayName: 'notes.txt' };
+
+  const chip = (name: string) => screen.getByRole('button', { name });
+  const preview = () => document.querySelector('.attachment-preview');
+
+  it('shows it when the chip is reached with the keyboard', async () => {
+    show([picture]);
+
+    await act(async () => fireEvent.focus(chip('shot.png')));
+
+    expect(preview(), 'the same picture a pointer would have shown').toBeTruthy();
+  });
+
+  it('takes it away again when the keyboard moves on', async () => {
+    show([picture]);
+    await act(async () => fireEvent.focus(chip('shot.png')));
+
+    await act(async () => fireEvent.blur(chip('shot.png')));
+
+    expect(preview()).toBeNull();
+  });
+
+  it('still shows it to a pointer', async () => {
+    show([picture]);
+
+    await act(async () => fireEvent.mouseEnter(chip('shot.png')));
+
+    expect(preview()).toBeTruthy();
+  });
+
+  /** Nothing to draw for a file that is not a picture, however it is arrived at. */
+  it('says nothing about a file that has no picture', async () => {
+    show([text]);
+
+    await act(async () => fireEvent.focus(chip('notes.txt')));
+
+    expect(previewImage, 'not worth asking the sidecar').not.toHaveBeenCalled();
+    expect(preview()).toBeNull();
+  });
+
+  it('asks for the bytes once however many times it is looked at', async () => {
+    show([picture]);
+
+    await act(async () => fireEvent.focus(chip('shot.png')));
+    await act(async () => fireEvent.blur(chip('shot.png')));
+    await act(async () => fireEvent.mouseEnter(chip('shot.png')));
+
+    expect(previewImage).toHaveBeenCalledTimes(1);
+  });
+});

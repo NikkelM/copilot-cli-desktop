@@ -17,9 +17,10 @@ import { PREVIEWABLE, type Attachment } from '../../shared/protocol';
  * The button that opens the picker lives with the other buttons rather than here, so a
  * message with several files attached grows upwards instead of pushing Send off the line.
  *
- * A name is a poor way to identify a picture, so hovering an image shows it. Clicking any
- * chip reveals the file in its folder rather than opening it, which would hand it to
- * whatever application claims the extension - rarely what was wanted, and not undoable.
+ * A name is a poor way to identify a picture, so pointing at an image or reaching it with
+ * the keyboard shows it. Clicking any chip reveals the file in its folder rather than
+ * opening it, which would hand it to whatever application claims the extension - rarely
+ * what was wanted, and not undoable.
  */
 export function Attachments({
   attached,
@@ -38,12 +39,12 @@ export function Attachments({
   onError: (message: string) => void;
 }) {
   /**
-   * The chip being hovered, and where to put its preview.
+   * The chip whose picture is up, and where to put it.
    *
    * Held here rather than in each chip so only one preview can be open, and so a preview
    * cannot outlive the chip that opened it.
    */
-  const [hovered, setHovered] = useState<{ path: string; top: number; left: number } | null>(null);
+  const [showing, setShowing] = useState<{ path: string; top: number; left: number } | null>(null);
   /** Bytes already fetched, so moving along a row of chips asks the sidecar once each. */
   const [previews, setPreviews] = useState<Record<string, string | null>>({});
 
@@ -73,13 +74,20 @@ export function Attachments({
 
   if (attached.length === 0) return null;
 
-  const enter = (file: Attachment, chip: HTMLElement) => {
+  /**
+   * Show a chip's picture, whether it was pointed at or reached with the keyboard.
+   *
+   * A name is a poor way to identify a picture, which is the whole reason this exists - and
+   * that is no less true for somebody who never touches the mouse. Bound to hover alone, the
+   * picture was the one thing in the app a keyboard could not get to at all.
+   */
+  const show = (file: Attachment, chip: HTMLElement) => {
     if (!isPreviewable(file.path)) return;
 
     const box = chip.getBoundingClientRect();
     // Anchored to the chip's top edge: the composer sits at the bottom of the window, so a
     // preview below it would be off the screen.
-    setHovered({ path: file.path, top: box.top, left: box.left });
+    setShowing({ path: file.path, top: box.top, left: box.left });
 
     if (!(file.path in previews)) {
       previewImage(file.path)
@@ -97,8 +105,10 @@ export function Attachments({
             className="attachment-name"
             title={`Show ${file.path} in its folder`}
             onClick={() => revealItemInDir(file.path).catch((e: unknown) => onError(String(e)))}
-            onMouseEnter={(event) => enter(file, event.currentTarget)}
-            onMouseLeave={() => setHovered(null)}
+            onMouseEnter={(event) => show(file, event.currentTarget)}
+            onMouseLeave={() => setShowing(null)}
+            onFocus={(event) => show(file, event.currentTarget)}
+            onBlur={() => setShowing(null)}
           >
             {file.displayName ?? file.path}
           </button>
@@ -125,12 +135,12 @@ export function Attachments({
           )}
         </span>
       ))}
-      {hovered && previews[hovered.path] && (
+      {showing && previews[showing.path] && (
         <img
           className="attachment-preview"
-          style={{ top: hovered.top, left: hovered.left }}
-          src={previews[hovered.path] ?? undefined}
-          alt={nameOf(hovered.path)}
+          style={{ top: showing.top, left: showing.left }}
+          src={previews[showing.path] ?? undefined}
+          alt={nameOf(showing.path)}
         />
       )}
     </div>

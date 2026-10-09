@@ -785,6 +785,28 @@ describe('the buttons in the box', () => {
   });
 
   /**
+   * Attaching is something done to the message being written, and the only route was tabbing
+   * out of the box to the plus and back again - a lot of keystrokes mid-sentence (#252).
+   */
+  it('opens the picker on Ctrl+Shift+A without leaving the box', () => {
+    bare({ value: 'half a thought' });
+    box().focus();
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'A',
+      code: 'KeyA',
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    box().dispatchEvent(event);
+
+    expect(event.defaultPrevented, 'claimed rather than left to the box').toBe(true);
+    expect(document.activeElement, 'still mid-sentence').toBe(box());
+  });
+
+  /**
    * Both, not one or the other. Send stays live so a message typed during a turn goes on
    * the queue rather than being refused, and it says so rather than still reading "Send".
    */

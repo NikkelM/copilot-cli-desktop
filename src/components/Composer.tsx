@@ -479,6 +479,15 @@ export function Composer({
       return;
     }
 
+    // Ctrl+Shift+A attaches a file. Here rather than on the window because attaching is
+    // something done to the message being written, and the only route before this was
+    // tabbing out of the box to the plus and back again.
+    if (!event.altKey && event.ctrlKey && event.shiftKey && (event.code === 'KeyA' || event.key === 'A')) {
+      event.preventDefault();
+      attacher.current?.();
+      return;
+    }
+
     // Alt+M cycles the mode. The CLI uses shift+tab for this, which here would mean giving
     // up the one key that walks backwards out of the composer - and this app has a whole
     // window to walk, where the CLI has a prompt. Ahead of everything except the search
@@ -813,7 +822,7 @@ export function Composer({
           <button
             type="button"
             onClick={() => attacher.current?.()}
-            title="Attach files"
+            title="Attach files (Ctrl+Shift+A)"
             aria-label="Attach files"
           >
             <PlusIcon />

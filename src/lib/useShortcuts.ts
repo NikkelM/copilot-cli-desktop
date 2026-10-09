@@ -99,6 +99,7 @@ export const BINDINGS: readonly Binding[] = [
    * walk, and taking the key back is worth more than matching it.
    */
   { keys: 'alt+m', what: 'switch modes' },
+  { keys: 'ctrl+shift+a', what: 'attach files' },
   { keys: 'shift+enter', what: 'insert newline' },
   { keys: 'up/down', what: 'previous or next prompt' },
   { keys: 'ctrl+r', what: 'reverse search history' },
