@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -164,5 +164,50 @@ describe('a picker with nothing in it yet', () => {
     await open({ branches: [], reading: true });
 
     expect(screen.getByPlaceholderText(/new branch/i)).toBeTruthy();
+  });
+});
+
+/** A menu is where a reader reaches for an arrow hardest of all (#249). */
+describe('walking the branches with the arrows', () => {
+  const items = () => [...document.querySelectorAll('.repo-branch-item')] as HTMLElement[];
+  const open = async () => {
+    const user = userEvent.setup();
+    render(<Picker />);
+    await user.click(screen.getByRole('button', { name: /Switch branch/ }));
+    return user;
+  };
+
+  /** The keyboard is still on the control that opened it, which is beside the menu. */
+  it('walks in from the control that opened it', async () => {
+    await open();
+
+    fireEvent.keyDown(screen.getByRole('button', { name: /Switch branch/ }), { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(items()[0]);
+  });
+
+  it.each([
+    ['ArrowDown', 0, 1],
+    ['ArrowUp', 1, 0],
+    ['End', 0, 1],
+    ['Home', 1, 0],
+  ])('moves on %s', async (key, from, to) => {
+    await open();
+    items()[from]!.focus();
+
+    fireEvent.keyDown(items()[from]!, { key });
+
+    expect(document.activeElement).toBe(items()[to]);
+  });
+
+  it('leaves the arrow alone while the menu is shut', () => {
+    render(<Picker />);
+    const button = screen.getByRole('button', { name: /Switch branch/ });
+    button.focus();
+
+    const event = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    button.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
   });
 });

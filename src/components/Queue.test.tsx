@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -219,5 +219,97 @@ describe('Queue, holding what is waiting', () => {
 
     expect(screen.queryByText('Hold')).toBeNull();
     expect(screen.queryByText('Release')).toBeNull();
+  });
+});
+
+/**
+ * Up to five controls on a row, so walking them one at a time meant pressing Tab five times
+ * to reach the message below (#249).
+ */
+describe('walking the queue with the arrows', () => {
+  const three = [message('a', 'first'), message('b', 'second'), message('c', 'third')];
+  const full = () =>
+    render(
+      <Queue
+        items={three}
+        onRemove={() => {}}
+        onEdit={() => {}}
+        onMove={() => {}}
+        onSendNow={() => {}}
+      />,
+    );
+
+  const rows = () => [...document.querySelectorAll('.queue-item')] as HTMLElement[];
+  const buttonsIn = (row: HTMLElement) => [...row.querySelectorAll('button')] as HTMLElement[];
+
+  it('goes to the first control of the message below', () => {
+    full();
+    const first = rows()[0]!;
+    buttonsIn(first)[1]!.focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+
+    expect(document.activeElement, 'the row below, from its start').toBe(buttonsIn(rows()[1]!)[0]);
+  });
+
+  it('goes to the message above', () => {
+    full();
+    buttonsIn(rows()[2]!)[0]!.focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(buttonsIn(rows()[1]!)[0]);
+  });
+
+  it('walks along the controls of one message', () => {
+    full();
+    const row = rows()[1]!;
+    buttonsIn(row)[0]!.focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+
+    expect(document.activeElement, 'still the same message').toBe(buttonsIn(row)[1]);
+  });
+
+  it('comes back along them', () => {
+    full();
+    const row = rows()[1]!;
+    buttonsIn(row)[1]!.focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowLeft' });
+
+    expect(document.activeElement).toBe(buttonsIn(row)[0]);
+  });
+
+  /**
+   * Left and right stay on the message they were pressed on.
+   *
+   * Asked of the row rather than of the list, so the end of one row comes round to its own
+   * start rather than running on into the next message's controls - which is the difference
+   * between moving the keyboard and losing it.
+   */
+  it('comes round within the one message rather than running into the next', () => {
+    full();
+    const row = rows()[1]!;
+    const buttons = buttonsIn(row);
+    buttons[buttons.length - 1]!.focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight' });
+
+    expect(document.activeElement).toBe(buttons[0]);
+  });
+
+  /**
+   * Ctrl and an arrow is how a message is moved up or down the queue, which is a different
+   * thing from moving the keyboard to it.
+   */
+  it('leaves a held arrow to whatever else wanted it', () => {
+    full();
+    buttonsIn(rows()[0]!)[0]!.focus();
+
+    const event = new KeyboardEvent('keydown', { key: 'ArrowDown', ctrlKey: true, bubbles: true, cancelable: true });
+    document.activeElement!.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
   });
 });

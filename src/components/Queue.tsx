@@ -1,4 +1,7 @@
+import { useRef } from 'react';
+
 import type { QueuedItem } from '../../shared/protocol';
+import { step, stepRows } from '../lib/roving';
 
 interface QueueProps {
   items: QueuedItem[];
@@ -30,6 +33,7 @@ interface QueueProps {
  * deciding. Nothing here warns about that: it simply stops being on the list.
  */
 export function Queue({ items, onRemove, onEdit, onMove, onClear, onSendNow, onHold, held, editing }: QueueProps) {
+  const list = useRef<HTMLOListElement>(null);
   if (!items.length) return null;
 
   return (
@@ -52,7 +56,29 @@ export function Queue({ items, onRemove, onEdit, onMove, onClear, onSendNow, onH
           </button>
         )}
       </p>
-      <ol className="queue-list">
+      <ol
+        className="queue-list"
+        ref={list}
+        // Up and down are about which message, left and right about what to do to it - the
+        // rows carry up to five controls each, and walking them one at a time was the whole
+        // of the complaint. Arrows that move the message itself are ctrl+up and ctrl+down on
+        // the buttons, which are left alone here.
+        onKeyDown={(event) => {
+          if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+          if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            if (stepRows(list.current, '.queue-item', 'button', event.key === 'ArrowDown' ? 1 : -1)) {
+              event.preventDefault();
+            }
+            return;
+          }
+
+          if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+            const row = (event.target as HTMLElement).closest<HTMLElement>('.queue-item');
+            if (step(row, 'button', event.key === 'ArrowRight' ? 1 : -1)) event.preventDefault();
+          }
+        }}
+      >
         {items.map((item, index) => (
           <li
             key={item.id}

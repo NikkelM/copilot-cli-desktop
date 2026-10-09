@@ -437,3 +437,63 @@ describe('a row left open while the agent works', () => {
     expect(rowFor('thing.ts').getAttribute('aria-expanded')).toBe('false');
   });
 });
+
+/**
+ * The files had to be tabbed through one at a time, which on a turn that touched a dozen of
+ * them is a long way to the one being looked for (#249).
+ */
+describe('walking the files with the arrows', () => {
+  const three = [
+    change({ path: 'C:\\work\\repo\\a.ts' }),
+    change({ path: 'C:\\work\\repo\\b.ts' }),
+    change({ path: 'C:\\work\\repo\\c.ts' }),
+  ];
+
+  const rows = () => [...document.querySelectorAll('.changes-row')] as HTMLElement[];
+  const show = () => render(<Changes {...props} changes={three} />);
+
+  it.each([
+    ['ArrowDown', 0, 1],
+    ['ArrowUp', 1, 0],
+    ['Home', 2, 0],
+    ['End', 0, 2],
+  ])('moves on %s', (key, from, to) => {
+    show();
+    rows()[from]!.focus();
+
+    fireEvent.keyDown(rows()[from]!, { key });
+
+    expect(document.activeElement).toBe(rows()[to]);
+  });
+
+  it('comes round the end', () => {
+    show();
+    rows()[2]!.focus();
+
+    fireEvent.keyDown(rows()[2]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  it('claims the press, so the panel does not scroll under it as well', () => {
+    show();
+    rows()[0]!.focus();
+
+    const event = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    rows()[0]!.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  /** Nothing to walk, so the key belongs to whatever else wanted it. */
+  it('leaves the press alone when there are no files', () => {
+    render(<Changes {...props} changes={[]} />);
+    const panel = document.querySelector('.changes') as HTMLElement;
+    panel.focus();
+
+    const event = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    panel.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
+  });
+});

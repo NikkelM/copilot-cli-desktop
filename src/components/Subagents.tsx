@@ -4,6 +4,7 @@ import type { DelegatedTask } from '../../shared/protocol';
 import { sessionAgents } from '../lib/sidecar';
 import { explain } from '../lib/errors';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { step, stepRows } from '../lib/roving';
 
 /** How long ago, in the shortest form that is still true. */
 function since(at: string): string {
@@ -65,6 +66,7 @@ export function Subagents({
   /** Which session the answer on its way belongs to, so a late one cannot land on another. */
   const asked = useRef(0);
   const box = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
   useFocusTrap(box);
 
   // Closed the way every other panel is closed, which is the key a reader reaches for.
@@ -143,7 +145,26 @@ export function Subagents({
         )}
 
         {tasks.length > 0 && (
-          <ul className="subagents-list">
+          <ul
+            className="subagents-list"
+            ref={list}
+            // Up and down are about which task, left and right about what to do with it: a
+            // row carries a box to show it in the sidebar, a way in to what it did, and the
+            // mark that stops it ageing out.
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                if (stepRows(list.current, '.subagents-row', 'input, button', event.key === 'ArrowDown' ? 1 : -1)) {
+                  event.preventDefault();
+                }
+                return;
+              }
+
+              if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+                const row = (event.target as HTMLElement).closest<HTMLElement>('.subagents-row');
+                if (step(row, 'input, button', event.key === 'ArrowRight' ? 1 : -1)) event.preventDefault();
+              }
+            }}
+          >
             {tasks.map((task) => (
               <li key={task.agentId} className="subagents-row">
                 {/* Shown is about the sidebar now, kept is about surviving a restart. A kept

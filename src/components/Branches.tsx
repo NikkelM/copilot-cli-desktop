@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ChevronIcon } from './Icons';
+import { step } from '../lib/roving';
 
 /**
  * How many changed files a switch would carry across, said rather than warned about.
@@ -92,7 +93,27 @@ export function Branches({
   }, [open]);
 
   return (
-    <span className="repo-branches" ref={held}>
+    <span
+      className="repo-branches"
+      ref={held}
+      // A menu, which is where a reader reaches for an arrow hardest of all. Held here
+      // rather than on the menu itself so that the first press counts: the keyboard is still
+      // on the control that opened it, which is beside the menu rather than inside it.
+      onKeyDown={(event) => {
+        const by =
+          event.key === 'ArrowDown'
+            ? 1
+            : event.key === 'ArrowUp'
+              ? -1
+              : event.key === 'Home'
+                ? 'first'
+                : event.key === 'End'
+                  ? 'last'
+                  : null;
+        if (by === null) return;
+        if (step(held.current, '.repo-branch-item', by)) event.preventDefault();
+      }}
+    >
       <button
         type="button"
         className={className}

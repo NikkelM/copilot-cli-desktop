@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { FileDiff, SessionChange } from '../../shared/protocol';
 import { fileBadge } from '../lib/fileBadge';
 import { mergeEdits, parsePatch } from '../lib/patch';
 import { relativise } from '../lib/paths';
+import { step } from '../lib/roving';
 import { Diff } from './Diff';
 
 interface ChangesProps {
@@ -104,9 +105,24 @@ export function Changes({
   const added = changes?.reduce((n, change) => n + change.linesAdded, 0) ?? 0;
   const removed = changes?.reduce((n, change) => n + change.linesRemoved, 0) ?? 0;
   const since = reviewedAt !== null && !showAll;
+  const box = useRef<HTMLDivElement>(null);
 
   return (
-    <div className="changes" data-region="panel" tabIndex={-1}>
+    <div
+      className="changes"
+      data-region="panel"
+      tabIndex={-1}
+      ref={box}
+      // Up and down walk the files, as they walk the sessions in the sidebar. Claimed rather
+      // than left to the panel's own scrolling, since moving between the rows is what a
+      // reader means by an arrow on a list.
+      onKeyDown={(event) => {
+        const by =
+          event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : event.key === 'Home' ? 'first' : event.key === 'End' ? 'last' : null;
+        if (by === null) return;
+        if (step(box.current, '.changes-row', by)) event.preventDefault();
+      }}
+    >
       <div className="changes-head">
         <span className="changes-title">
           {changes ? `${changes.length} ${changes.length === 1 ? 'file' : 'files'} changed` : 'Changes'}
