@@ -50,6 +50,22 @@ function FileBadge({ path }: { path: string }) {
 }
 
 /**
+ * Put the whole path on a row whose path did not fit, and take it off one whose did.
+ *
+ * The browser trims it with an ellipsis, so whether anything was lost is a fact about the
+ * layout rather than about the change - it depends on how wide the panel has been dragged.
+ * Asked when the row is reached rather than held, since the answer changes with the window
+ * and a label that repeats what is already written helps nobody.
+ */
+function sayIfCut(event: { currentTarget: HTMLElement }) {
+  const path = event.currentTarget.querySelector<HTMLElement>('.changes-path');
+  if (!path) return;
+
+  if (path.scrollWidth > path.clientWidth) path.title = path.dataset.full ?? '';
+  else path.removeAttribute('title');
+}
+
+/**
  * Everything this session changed, and the diff for any of it.
  *
  * The session's own work and nothing else - the rewind snapshots are written around the
@@ -117,6 +133,10 @@ export function Changes({
       // than left to the panel's own scrolling, since moving between the rows is what a
       // reader means by an arrow on a list.
       onKeyDown={(event) => {
+        // Inside an open diff the arrows belong to the diff: somebody who has gone in to
+        // read it means to scroll it, not to be taken back out to the next file.
+        if ((event.target as HTMLElement).closest('.changes-diff, .tool-diff, pre, code')) return;
+
         const by =
           event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : event.key === 'Home' ? 'first' : event.key === 'End' ? 'last' : null;
         if (by === null) return;
@@ -180,11 +200,18 @@ export function Changes({
                 className={open === change.path ? 'changes-row open' : 'changes-row'}
                 onClick={() => toggle(change.path)}
                 aria-expanded={open === change.path}
-                title={change.path}
+                // Named only when the name on screen is not the whole of it. Whether it was
+                // cut is a fact about the layout - the path is trimmed with an ellipsis by
+                // the stylesheet - so it can only be asked once the row is being looked at,
+                // which is the moment a label would be drawn anyway.
+                onMouseEnter={sayIfCut}
+                onFocus={sayIfCut}
               >
                 <span className={`changes-status ${change.status}`}>{GLYPH[change.status]}</span>
                 <FileBadge path={change.path} />
-                <span className="changes-path">{relativise(change.path, cwd)}</span>
+                <span className="changes-path" data-full={change.path}>
+                  {relativise(change.path, cwd)}
+                </span>
                 {change.turns > 1 && <span className="changes-turns">{change.turns} turns</span>}
                 {/* A count that is about to change must not read as final, and the row has
                     no diff behind it yet: the before image is the CLI's to write, and it

@@ -189,7 +189,6 @@ describe('walking the branches with the arrows', () => {
   it.each([
     ['ArrowDown', 0, 1],
     ['ArrowUp', 1, 0],
-    ['End', 0, 1],
     ['Home', 1, 0],
   ])('moves on %s', async (key, from, to) => {
     await open();
@@ -198,6 +197,29 @@ describe('walking the branches with the arrows', () => {
     fireEvent.keyDown(items()[from]!, { key });
 
     expect(document.activeElement).toBe(items()[to]);
+  });
+
+  /**
+   * Starting a branch is the other half of what this menu is for, so the box belongs to it
+   * rather than sitting after it - which is where End lands and where down from the last
+   * branch carries on to.
+   */
+  it('carries on into the box that starts a branch', async () => {
+    await open();
+    items()[items().length - 1]!.focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(screen.getByLabelText('New branch name'));
+  });
+
+  it('comes back out of the box to the branches', async () => {
+    await open();
+    screen.getByLabelText('New branch name').focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(items()[items().length - 1]);
   });
 
   it('leaves the arrow alone while the menu is shut', () => {

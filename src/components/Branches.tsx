@@ -111,7 +111,11 @@ export function Branches({
                   ? 'last'
                   : null;
         if (by === null) return;
-        if (step(held.current, '.repo-branch-item', by)) event.preventDefault();
+        // The box that starts a branch is part of the menu rather than something after it:
+        // starting one is the other half of what this is for, so the arrows reach it. Named
+        // by where it sits rather than given the branches' own class, which would dress a
+        // text box as one of them.
+        if (step(held.current, '.repo-branch-item, .repo-branch-new input', by)) event.preventDefault();
       }}
     >
       <button

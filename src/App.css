@@ -34,6 +34,17 @@
   --header-row: calc(var(--font-base) * 1.6);
   /** The fold control, which is square and the same size in both of its two homes. */
   --toggle-size: calc(var(--font-base) * 1.35);
+  /*
+   * Where the keyboard is, on anything that is a row of a list.
+   *
+   * A ring is the wrong shape for a row: wide and short, it reads as a rule drawn above the
+   * list rather than as a place somebody is. Lighter than the accent, because being on a row
+   * is a weaker claim than having opened it or marked it, and all three can be true at once.
+   *
+   * Discrete controls - a button, a box to tick - keep the ring, which is the right shape
+   * for them.
+   */
+  --cursor-wash: rgba(88, 166, 255, 0.28);
   --success: #3fb950;
   /** Red, for a failure or a destructive action. */
   --danger: #f85149;
@@ -119,6 +130,24 @@ body {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/*
+ * The rows of a list, which take the wash rather than the ring.
+ *
+ * Gathered in one place so that every list in the app says where the keyboard is the same
+ * way: a reader moving from the sidebar into a panel should not have to learn a second
+ * cursor halfway across. `:focus` rather than `:focus-visible`, as the session rows do -
+ * the latter is a guess about how the focus arrived and stops matching once a row has been
+ * clicked, which would leave somebody arrowing away from a clicked row with no cursor.
+ */
+.changes-row:focus,
+.repo-branch-item:focus,
+.subagents-open:focus,
+.subagent:focus {
+  outline: none;
+  background: var(--cursor-wash);
+  color: var(--text);
 }
 
 .app {
@@ -423,7 +452,7 @@ body {
  */
 .sidebar .session-row:focus {
   outline: none;
-  background: rgba(88, 166, 255, 0.28);
+  background: var(--cursor-wash);
 }
 
 /* The open session keeps its edge while the cursor passes over it, and a marked one keeps
@@ -2485,7 +2514,7 @@ button.group:hover {
  */
 .sidebar button.group:focus {
   outline: none;
-  background: rgba(88, 166, 255, 0.28);
+  background: var(--cursor-wash);
   color: var(--text);
 }
 
@@ -3706,6 +3735,19 @@ pre.fatal,
 .changes-action:hover {
   border-color: var(--text-muted);
   color: var(--text);
+}
+
+/* Refused rather than missing, so the row does not change shape as a name is typed - but it
+   has to look refused, or a button that does nothing when pressed reads as broken. */
+.changes-action:disabled {
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+  color: var(--text-dim);
+  cursor: default;
+}
+
+.changes-action:disabled:hover {
+  border-color: color-mix(in srgb, var(--border) 55%, transparent);
+  color: var(--text-dim);
 }
 
 .changes-action.primary {
@@ -6504,12 +6546,10 @@ pre.fatal,
   min-width: 0;
 }
 
+/* The box alone now: the name moved into the control that opens the task, since clicking a
+   task's name should go to it rather than tick something beside it. Sized by `.tickbox`. */
 .subagents-show {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  cursor: pointer;
+  flex-shrink: 0;
 }
 
 .subagents-name {
@@ -6520,6 +6560,12 @@ pre.fatal,
 }
 
 /* What it came to, which reads as one line rather than as a row of fields. */
+/* The name leads the row and takes what room is left, so what it came to sits at the end. */
+.subagents-open .subagents-name {
+  flex: 1;
+  color: var(--text);
+}
+
 .subagents-open {
   display: flex;
   flex: 1;

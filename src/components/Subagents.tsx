@@ -4,6 +4,7 @@ import type { DelegatedTask } from '../../shared/protocol';
 import { sessionAgents } from '../lib/sidecar';
 import { explain } from '../lib/errors';
 import { useFocusTrap } from '../lib/useFocusTrap';
+import { TickIcon } from './Icons';
 import { step, stepRows } from '../lib/roving';
 
 /** How long ago, in the shortest form that is still true. */
@@ -168,16 +169,30 @@ export function Subagents({
             {tasks.map((task) => (
               <li key={task.agentId} className="subagents-row">
                 {/* Shown is about the sidebar now, kept is about surviving a restart. A kept
-                    task cannot be un-shown, since keeping something unreachable means nothing. */}
-                <label className="subagents-show">
+                    task cannot be un-shown, since keeping something unreachable means nothing.
+
+                    The box is its own control rather than a label wrapped round the name:
+                    the name belongs to the task, and clicking it should go there rather than
+                    tick something. Drawn the way the settings boxes are, which is the only
+                    checkbox style this app has. */}
+                <span className="tickbox subagents-show">
                   <input
                     type="checkbox"
+                    aria-label={`Show ${task.name} in the sidebar`}
                     checked={isShown(task.agentId)}
                     disabled={isKept(task.agentId)}
                     onChange={() => onToggleShown(task)}
+                    // A box answers Space and nothing else, which is a surprise on a row
+                    // being walked with the keyboard - the controls either side of it both
+                    // answer Enter.
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' || isKept(task.agentId)) return;
+                      event.preventDefault();
+                      onToggleShown(task);
+                    }}
                   />
-                  <span className="subagents-name">{task.name}</span>
-                </label>
+                  <TickIcon />
+                </span>
 
                 <button
                   type="button"
@@ -186,6 +201,7 @@ export function Subagents({
                   aria-label={`Read what ${task.name} did`}
                   title={`Read what ${task.name} did`}
                 >
+                  <span className="subagents-name">{task.name}</span>
                   <span className="subagents-when">{since(task.startedAt)}</span>
                   {/* Why it failed rather than only that it did, which is what sent a
                       reader to the log to find out what the event already said. */}

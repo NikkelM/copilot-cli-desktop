@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -300,16 +301,103 @@ describe('walking the queue with the arrows', () => {
   });
 
   /**
-   * Ctrl and an arrow is how a message is moved up or down the queue, which is a different
-   * thing from moving the keyboard to it.
+   * Moving a message was offered only as a pair of buttons to find and press. Ctrl and an
+   * arrow is the shorter way, and the one a reader already holding the keyboard reaches for.
    */
-  it('leaves a held arrow to whatever else wanted it', () => {
-    full();
-    buttonsIn(rows()[0]!)[0]!.focus();
+  it('moves the message itself on a held arrow', () => {
+    const onMove = vi.fn();
+    render(<Queue items={three} onRemove={() => {}} onEdit={() => {}} onMove={onMove} onSendNow={() => {}} />);
+    const buttons = [...rows()[0]!.querySelectorAll('button')] as HTMLElement[];
+    buttons[0]!.focus();
 
-    const event = new KeyboardEvent('keydown', { key: 'ArrowDown', ctrlKey: true, bubbles: true, cancelable: true });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown', ctrlKey: true });
+
+    expect(onMove).toHaveBeenCalledWith('a', 1);
+  });
+
+  /** Off the end there is nowhere to go, so the press belongs to whatever else wanted it. */
+  it('leaves a held arrow alone at the end it is already at', () => {
+    const onMove = vi.fn();
+    render(<Queue items={three} onRemove={() => {}} onEdit={() => {}} onMove={onMove} onSendNow={() => {}} />);
+    const buttons = [...rows()[0]!.querySelectorAll('button')] as HTMLElement[];
+    buttons[0]!.focus();
+
+    const event = new KeyboardEvent('keydown', { key: 'ArrowUp', ctrlKey: true, bubbles: true, cancelable: true });
     document.activeElement!.dispatchEvent(event);
 
+    expect(onMove).not.toHaveBeenCalled();
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('does not move the keyboard when it moves the message', () => {
+    const onMove = vi.fn();
+    render(<Queue items={three} onRemove={() => {}} onEdit={() => {}} onMove={onMove} onSendNow={() => {}} />);
+    const buttons = [...rows()[0]!.querySelectorAll('button')] as HTMLElement[];
+    buttons[0]!.focus();
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown', ctrlKey: true });
+
+    expect(document.activeElement, 'the list has not been told to redraw here').toBe(buttons[0]);
+  });
+});
+
+/**
+ * Moving redraws the list with the rows in a new order, and the button that was pressed can
+ * be refused in its new place - a message moved to the front has nothing above it - so the
+ * keyboard was dropped on the floor.
+ */
+describe('after a queued message is moved', () => {
+  function Harness() {
+    const [order, setOrder] = useState([message('a', 'first'), message('b', 'second'), message('c', 'third')]);
+    return (
+      <Queue
+        items={order}
+        onRemove={() => {}}
+        onEdit={() => {}}
+        onSendNow={() => {}}
+        onMove={(id, to) => {
+          setOrder((was) => {
+            const from = was.findIndex((item) => item.id === id);
+            const left = was.filter((item) => item.id !== id);
+            left.splice(to, 0, was[from]!);
+            return left;
+          });
+        }}
+      />
+    );
+  }
+
+  const rows = () => [...document.querySelectorAll('.queue-item')] as HTMLElement[];
+  const way = (row: HTMLElement, which: 'up' | 'down') =>
+    row.querySelector<HTMLElement>(`[data-way="${which}"]`)!;
+
+  it('keeps the keyboard on the message, on the button that moved it', () => {
+    render(<Harness />);
+    way(rows()[2]!, 'up').focus();
+
+    fireEvent.click(document.activeElement!);
+
+    expect(rows()[1]!.textContent, 'the third message is now second').toContain('third');
+    expect(document.activeElement).toBe(way(rows()[1]!, 'up'));
+  });
+
+  /** At either end one of the two is refused, and the keyboard still has to land somewhere. */
+  it('lands on the other button when the one it used is now refused', () => {
+    render(<Harness />);
+    way(rows()[1]!, 'up').focus();
+
+    fireEvent.click(document.activeElement!);
+
+    expect(rows()[0]!.textContent, 'the second message is now first').toContain('second');
+    expect(way(rows()[0]!, 'up').hasAttribute('disabled'), 'nothing above the front').toBe(true);
+    expect(document.activeElement).toBe(way(rows()[0]!, 'down'));
+  });
+
+  it('leaves the keyboard alone when nothing was moved', () => {
+    render(<Harness />);
+    const sendNow = rows()[0]!.querySelector('button')!;
+    sendNow.focus();
+
+    expect(document.activeElement).toBe(sendNow);
   });
 });
