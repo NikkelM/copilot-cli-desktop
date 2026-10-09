@@ -4818,12 +4818,22 @@ describe('rewriting what a waiting message carries', () => {
     expect(insert.message.agentMode, 'the way it was sent').toBe('agent');
   });
 
-  /** The runtime insists on a display name where this app's own shape leaves it optional. */
-  it('names a file the runtime was given no name for', async () => {
+  /**
+   * The runtime insists on a display name where this app's own shape leaves it optional.
+   *
+   * Both separators, and on whatever platform this is running. The path arrives over the
+   * wire from a window that may have taken it from a paste or a picker, so which way its
+   * separators lean is not this process's business - asking `basename` meant asking about
+   * the platform instead, which passed here and failed on a Linux runner.
+   */
+  it.each([
+    ['a Windows path', 'C:\\work\\picture.png'],
+    ['a POSIX path', '/home/work/picture.png'],
+  ])('names a file the runtime was given no name for, from %s', async (_what, path) => {
     const { runtime, sessions } = makeRuntime();
     await queued(runtime, sessions, []);
 
-    await runtime.queueEdit('s1', 'q1', 'words', [file('C:\\work\\picture.png')]);
+    await runtime.queueEdit('s1', 'q1', 'words', [file(path)]);
 
     const [insert] = sessions.get('s1')!.rpc.queue.insertAt.mock.calls[0] as [
       { message: { attachments?: { displayName?: string }[] } },

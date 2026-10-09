@@ -35,7 +35,7 @@ import type {  McpServerState,
 import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol.js';
 import type { BinnedSession } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
-import { basename, dirname } from 'node:path';
+import { dirname } from 'node:path';
 
 import { resolveCliPath } from './paths.js';
 import { stripAnsi } from '../../shared/ansi.js';
@@ -1740,7 +1740,11 @@ export class SessionRuntime {
       message.attachments = wants.map((file) => ({
         type: 'file' as const,
         path: file.path,
-        displayName: file.displayName ?? basename(file.path),
+        // Split on both separators rather than handed to `basename`, which answers for the
+        // platform this is running on. The path came over the wire from a window that may
+        // have taken it from a paste or a picker, so it is not this process's business which
+        // way its separators lean - the same reasoning `nameOf` carries on the other side.
+        displayName: file.displayName ?? file.path.split(/[\\/]/).filter(Boolean).pop() ?? file.path,
       }));
     }
     // As the queue reported it, so the message goes back the way it was sent rather than as
