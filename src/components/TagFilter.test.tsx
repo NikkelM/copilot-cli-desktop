@@ -166,11 +166,9 @@ describe('reaching the tags without a mouse', () => {
   });
 
   it.each([
-    ['ArrowDown', 1],
     ['ArrowRight', 1],
-    ['ArrowUp', 2],
     ['ArrowLeft', 2],
-  ])('walks the tags on %s', (key, landing) => {
+  ])('walks one tag along on %s', (key, landing) => {
     show();
     openIt();
 
@@ -195,5 +193,117 @@ describe('reaching the tags without a mouse', () => {
     chips()[0]!.dispatchEvent(event);
 
     expect(event.defaultPrevented, 'the list owns an arrow pressed inside it').toBe(true);
+  });
+});
+
+/**
+ * The tags wrap across however many lines the column allows, so down is not the next tag in
+ * the list - it is the one below, which depends on where they happened to break.
+ *
+ * jsdom lays nothing out, so the lines are described here instead: six tags, three to a row,
+ * each 60 wide and 20 tall.
+ *
+ *   0  1  2
+ *   3  4  5
+ */
+describe('moving a line at a time through the tags', () => {
+  const known = ['one', 'two', 'three', 'four', 'five', 'six'].map((tag, count) => ({ tag, count }));
+
+  const chips = () => [...document.querySelectorAll('.tag-filter-menu button.tag')] as HTMLElement[];
+
+  const laidOut = () => {
+    render(<TagFilter known={known} chosen={[]} onToggle={() => {}} onClear={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Filter by tag/ }));
+
+    chips().forEach((chip, index) => {
+      const left = (index % 3) * 60;
+      const top = Math.floor(index / 3) * 20;
+      chip.getBoundingClientRect = () =>
+        ({ left, top, width: 60, height: 20, right: left + 60, bottom: top + 20, x: left, y: top }) as DOMRect;
+    });
+    return chips();
+  };
+
+  it('goes to the tag below rather than the one after', () => {
+    const all = laidOut();
+    all[1]!.focus();
+
+    fireEvent.keyDown(all[1]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement, 'the one under it, not the next in the list').toBe(all[4]);
+  });
+
+  it('goes to the tag above', () => {
+    const all = laidOut();
+    all[5]!.focus();
+
+    fireEvent.keyDown(all[5]!, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(all[2]);
+  });
+
+  it('comes round to the first line from the last', () => {
+    const all = laidOut();
+    all[3]!.focus();
+
+    fireEvent.keyDown(all[3]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(all[0]);
+  });
+
+  it('comes round to the last line from the first', () => {
+    const all = laidOut();
+    all[0]!.focus();
+
+    fireEvent.keyDown(all[0]!, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(all[3]);
+  });
+
+  /**
+   * Three lines, because with only two of them up and down land in the same place and a test
+   * over such a list cannot tell the one from the other.
+   *
+   *   0  1  2
+   *   3  4  5
+   *   6  7  8
+   */
+  it.each([
+    ['ArrowDown', 7],
+    ['ArrowUp', 1],
+  ])('goes the way it was asked on %s', (key, landing) => {
+    const nine = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'].map((tag, count) => ({ tag, count }));
+    render(<TagFilter known={nine} chosen={[]} onToggle={() => {}} onClear={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Filter by tag/ }));
+    const all = chips();
+    all.forEach((chip, index) => {
+      const left = (index % 3) * 60;
+      const top = Math.floor(index / 3) * 20;
+      chip.getBoundingClientRect = () =>
+        ({ left, top, width: 60, height: 20, right: left + 60, bottom: top + 20, x: left, y: top }) as DOMRect;
+    });
+    all[4]!.focus();
+
+    fireEvent.keyDown(all[4]!, { key });
+
+    expect(document.activeElement).toBe(all[landing]);
+  });
+
+  /** A short last line is the usual case, and down from above it has to land somewhere. */
+  it('lands on the nearest tag when the line below is shorter', () => {
+    render(<TagFilter known={known.slice(0, 5)} chosen={[]} onToggle={() => {}} onClear={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: /Filter by tag/ }));
+    const all = chips();
+    all.forEach((chip, index) => {
+      const left = (index % 3) * 60;
+      const top = Math.floor(index / 3) * 20;
+      chip.getBoundingClientRect = () =>
+        ({ left, top, width: 60, height: 20, right: left + 60, bottom: top + 20, x: left, y: top }) as DOMRect;
+    });
+    all[2]!.focus();
+
+    fireEvent.keyDown(all[2]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement, 'the end of the line below, being nearest').toBe(all[4]);
   });
 });

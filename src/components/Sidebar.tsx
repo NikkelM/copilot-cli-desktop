@@ -669,7 +669,7 @@ export function Sidebar({
    * landed on is a row.
    */
   const stepTo = useCallback(
-    (to: number, event: ReactKeyboardEvent) => {
+    (leaving: string, to: number, event: ReactKeyboardEvent) => {
       event.preventDefault();
       // Above the first stop is the box that narrowed the list down to it. Going back up
       // into it is how a search is changed without reaching for the mouse, and it makes the
@@ -683,11 +683,18 @@ export function Sidebar({
       // somewhere they did not ask to go, and `stops[length]` is already undefined.
       const next = stops[to];
       if (event.shiftKey && next && !next.startsWith('group:')) {
+        // A range with nothing marked yet is measured from the session being read, which is
+        // what a Shift-click after opening one means - but an arrow is pressed on a row the
+        // cursor is already on, and that row may be the length of the list away from the
+        // open one. Marking where it is leaving from says where this range starts.
+        if (!marked?.length && !leaving.startsWith('group:')) {
+          onMark?.(leaving, { toggle: true, range: false }, drawn);
+        }
         onMark?.(next, { toggle: false, range: true }, drawn);
       }
       goTo(next);
     },
-    [stops, drawn, goTo, onMark],
+    [stops, drawn, goTo, onMark, marked],
   );
 
   /**
@@ -698,16 +705,17 @@ export function Sidebar({
    */
   const onGroupKey = useCallback(
     (key: string, event: ReactKeyboardEvent) => {
-      const from = stops.indexOf(`group:${key}`);
+      const me = `group:${key}`;
+      const from = stops.indexOf(me);
       switch (event.key) {
         case 'ArrowDown':
-          return stepTo(from + 1, event);
+          return stepTo(me, from + 1, event);
         case 'ArrowUp':
-          return stepTo(from - 1, event);
+          return stepTo(me, from - 1, event);
         case 'Home':
-          return stepTo(0, event);
+          return stepTo(me, 0, event);
         case 'End':
-          return stepTo(stops.length - 1, event);
+          return stepTo(me, stops.length - 1, event);
         default:
           return;
       }
@@ -731,13 +739,13 @@ export function Sidebar({
 
       switch (event.key) {
         case 'ArrowDown':
-          return stepTo(from + 1, event);
+          return stepTo(sessionId, from + 1, event);
         case 'ArrowUp':
-          return stepTo(from - 1, event);
+          return stepTo(sessionId, from - 1, event);
         case 'Home':
-          return stepTo(0, event);
+          return stepTo(sessionId, 0, event);
         case 'End':
-          return stepTo(stops.length - 1, event);
+          return stepTo(sessionId, stops.length - 1, event);
         case 'Enter':
           event.preventDefault();
           return open();

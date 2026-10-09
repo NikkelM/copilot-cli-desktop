@@ -1,6 +1,42 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 /**
+ * The tag a line above or below this one.
+ *
+ * Worked out from where the tags actually are rather than from how many fit on a line: they
+ * wrap across however many the column allows, and that changes with the text size, with the
+ * width somebody dragged the sidebar to, and with every name in the list.
+ *
+ * Lines are gathered by the tops they sit on. The nearest one across is what a reader means
+ * by down - the tag under the one they were on, not the one that happens to come next in the
+ * list. Wraps top to bottom, as every other list here does end to end.
+ */
+function aLineAway(all: HTMLElement[], from: number, by: 1 | -1): HTMLElement | undefined {
+  const middle = (node: HTMLElement) => {
+    const box = node.getBoundingClientRect();
+    return box.left + box.width / 2;
+  };
+  const top = (node: HTMLElement) => Math.round(node.getBoundingClientRect().top);
+
+  const here = all[from];
+  if (!here) return undefined;
+
+  const lines = [...new Set(all.map(top))].sort((a, b) => a - b);
+  const at = lines.indexOf(top(here));
+  const line = lines[(at + by + lines.length) % lines.length];
+  if (line === undefined) return undefined;
+
+  const wanted = middle(here);
+  return all
+    .filter((node) => top(node) === line)
+    .reduce<HTMLElement | undefined>(
+      (best, node) =>
+        best === undefined || Math.abs(middle(node) - wanted) < Math.abs(middle(best) - wanted) ? node : best,
+      undefined,
+    );
+}
+
+/**
  * Narrow the list to sessions carrying every chosen tag.
  *
  * Beside the filter box rather than inside it. `tag:bug` works for someone who remembers the
@@ -37,27 +73,30 @@ export function TagFilter({
   }, [open]);
 
   /**
-   * Up and down walk the tags; Tab is left alone and walks them too.
+   * Left and right walk the tags one at a time; up and down move a line.
    *
-   * Wrapping, as the other menus in the app do. Left and right as well as up and down,
-   * because the tags wrap across several lines and which of the two a reader reaches for
-   * depends on how the list happens to have broken.
+   * The tags wrap across however many lines the column allows, so down is not the next tag -
+   * it is the one below, which depends entirely on where they happened to break. Tab is left
+   * alone and walks them one at a time too.
    */
   function onKeyDown(event: ReactKeyboardEvent) {
-    const by =
-      event.key === 'ArrowDown' || event.key === 'ArrowRight'
-        ? 1
-        : event.key === 'ArrowUp' || event.key === 'ArrowLeft'
-          ? -1
-          : 0;
-    if (by === 0) return;
-
     const all = chips();
     const from = all.indexOf(document.activeElement as HTMLButtonElement);
     if (from === -1) return;
 
+    const along = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (along !== 0) {
+      event.preventDefault();
+      // Wrapping, as the other menus in the app do.
+      all[(from + along + all.length) % all.length]?.focus();
+      return;
+    }
+
+    const down = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+    if (down === 0) return;
+
     event.preventDefault();
-    all[(from + by + all.length) % all.length]?.focus();
+    aLineAway(all, from, down)?.focus();
   }
 
   useEffect(() => {

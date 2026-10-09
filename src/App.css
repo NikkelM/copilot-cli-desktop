@@ -2464,9 +2464,28 @@ button.group {
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+  /* The room above the label is taken as margin rather than padding, so that the highlight
+     below covers the words and not a tall empty box above them. The space between one group
+     and the rows before it is what it always was. */
+  margin-top: 6px;
+  padding: 4px 14px;
 }
 
 button.group:hover {
+  color: var(--text);
+}
+
+/*
+ * Where the keyboard is, drawn the way it is drawn on a session row.
+ *
+ * The ring the browser puts round a focused control is the wrong shape here: the heading is
+ * a wide, short box, so a ring round it reads as a rule above the list rather than as a row
+ * somebody is on. Same colour and same rule as the rows, because moving between the two is a
+ * single press and the cursor should not change character halfway down the column.
+ */
+.sidebar button.group:focus {
+  outline: none;
+  background: rgba(88, 166, 255, 0.28);
   color: var(--text);
 }
 

@@ -928,6 +928,14 @@ export default function App() {
         }
 
         if (shortcut === 'wiki') {
+          // The same key both ways: a reader who opened the wiki to look something up gets
+          // back to the session with the key they arrived by, rather than hunting for a way
+          // out of a place a single press put them in.
+          if (showWiki) {
+            setShowWiki(false);
+            return;
+          }
+
           setWikiScope(null);
           setShowWiki(true);
           return;
@@ -958,7 +966,7 @@ export default function App() {
         if (busyRef.current) interrupt();
         else if (selectedRef.current) drafts.clear(selectedRef.current);
       },
-      [interrupt, drafts, settings.scale, applySettings, width, toSidebar, toggleSidebar],
+      [interrupt, drafts, settings.scale, applySettings, width, toSidebar, toggleSidebar, showWiki],
     ),
     // The composer's own text, rather than what a key event can be asked about the field it
     // landed in: this is where it is actually kept.

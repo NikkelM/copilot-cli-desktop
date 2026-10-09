@@ -3306,3 +3306,102 @@ describe('F10 on a session row', () => {
     expect(document.querySelector('.session-menu')).toBeTruthy();
   });
 });
+
+/**
+ * A range with nothing marked yet is measured from the session being read, which is what a
+ * Shift-click after opening one means. An arrow is different: it is pressed on a row the
+ * cursor is already on, and that row can be the length of the list away from the open one -
+ * so Shift and an arrow swept up everything in between.
+ */
+describe('extending a selection with Shift and an arrow', () => {
+  const many = ['One', 'Two', 'Three', 'Four', 'Five'].map((title, index) =>
+    session({ sessionId: `0000000${index}-0000-4000-8000-00000000000${index}`, title }),
+  );
+
+  const rows = () => [...document.querySelectorAll('.session-row')] as HTMLElement[];
+  const markedTitles = () =>
+    [...document.querySelectorAll('.session-row.marked .session-title')].map((n) => n.textContent?.trim());
+
+  function Harness({ open }: { open: string | null }) {
+    const { marked, click } = useMarked(
+      many.map((s) => s.sessionId),
+      open,
+    );
+    return (
+      <Sidebar
+        sessions={many}
+        selectedId={open}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        marked={marked}
+        onMark={click}
+      />
+    );
+  }
+
+  it('takes only the row it came from and the one it reached', () => {
+    render(<Harness open={many[0]!.sessionId} />);
+    // Four rows away from the session being read, which is the whole point.
+    rows()[4]!.focus();
+
+    fireEvent.keyDown(rows()[4]!, { key: 'ArrowUp', shiftKey: true });
+
+    expect(markedTitles(), 'not everything back to the open one').toEqual(['Four', 'Five']);
+  });
+
+  it('carries on from there rather than starting again', () => {
+    render(<Harness open={many[0]!.sessionId} />);
+    rows()[4]!.focus();
+
+    fireEvent.keyDown(rows()[4]!, { key: 'ArrowUp', shiftKey: true });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp', shiftKey: true });
+
+    expect(markedTitles()).toEqual(['Three', 'Four', 'Five']);
+  });
+
+  /**
+   * Marking by hand first is the other way in, and it says where the range starts too. The
+   * row the cursor is on is not the anchor then - the one that was marked is, which is how
+   * the same gesture behaves with a pointer.
+   */
+  it('measures from a row that was marked with Space', () => {
+    render(<Harness open={many[0]!.sessionId} />);
+    rows()[2]!.focus();
+    fireEvent.keyDown(rows()[2]!, { key: ' ' });
+
+    fireEvent.keyDown(rows()[2]!, { key: 'ArrowDown', shiftKey: true });
+
+    expect(markedTitles()).toEqual(['Three', 'Four']);
+  });
+
+  it('keeps measuring from there after the cursor has moved on alone', () => {
+    render(<Harness open={many[0]!.sessionId} />);
+    rows()[1]!.focus();
+    fireEvent.keyDown(rows()[1]!, { key: ' ' });
+    // Moved without Shift, which is a change of where the keyboard is rather than of what
+    // is picked out - so the row marked a moment ago is still the end being measured from.
+    fireEvent.keyDown(rows()[1]!, { key: 'ArrowDown' });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown', shiftKey: true });
+
+    expect(markedTitles(), 'the whole span back to the row that was marked').toEqual([
+      'Two',
+      'Three',
+      'Four',
+      'Five',
+    ]);
+  });
+
+  it('leaves the selection alone when no shift is held', () => {
+    render(<Harness open={many[0]!.sessionId} />);
+    rows()[4]!.focus();
+
+    fireEvent.keyDown(rows()[4]!, { key: 'ArrowUp' });
+
+    expect(markedTitles()).toEqual([]);
+  });
+});
