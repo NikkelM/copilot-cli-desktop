@@ -6868,14 +6868,22 @@ pre.fatal,
 .sidebar-header [data-tip]:hover::after,
 .search [data-tip]:hover::after {
   top: calc(100% + 4px);
-  /* Only as wide as the words, but never wider than the column it has to stay inside: the
-     sidebar clips what leaves it, so a label hung from a button near either edge was cut in
-     half or pushed off the window. Measured against the row rather than the button, which
-     is the only thing here that knows how much room there is. */
+  /* Only as wide as the words, and never wider than the column it has to stay inside: the
+     sidebar clips what leaves it. Measured against the row rather than the button, which is
+     the only thing here that knows how much room there is either side. */
   left: var(--sidebar-inset);
   right: auto;
   width: max-content;
   max-width: calc(100% - var(--sidebar-inset) * 2);
+}
+
+/* The controls that sit at the right of their row have their labels there too, so a label
+   reads as belonging to the button above it. Measured from the row for the same reason: hung
+   from the button, the leftmost of them ran a long label off the side of the window. */
+.sidebar-actions [data-tip]:hover::after,
+.tag-filter [data-tip]:hover::after {
+  left: auto;
+  right: var(--sidebar-inset);
 }
 
 /* What is about to be deleted, named rather than counted. */
