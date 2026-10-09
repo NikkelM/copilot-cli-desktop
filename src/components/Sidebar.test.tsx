@@ -654,8 +654,9 @@ describe('Sidebar subagents', () => {
   });
 
   /**
-   * Subagents delegate in turn, so the list is a tree (#178). Drawn by the same rows at
-   * every level, which is what lets it go as deep as the work did.
+   * Subagents delegate in turn, so the list is a tree (#178). Drawn flat with the indent
+   * carrying the nesting rather than as lists inside lists: a task is one option of the
+   * sessions listbox now, and an option cannot hold a list of other options (#254).
    */
   describe('one delegated by another', () => {
     const family = [
@@ -663,25 +664,32 @@ describe('Sidebar subagents', () => {
       watched({ agentId: 'inner', name: 'inner-agent', parentAgentId: 'outer' }),
     ];
 
-    it('draws it inside the task that delegated it', () => {
+    const named = (container: HTMLElement, name: string) =>
+      [...container.querySelectorAll('.subagent-item')].find(
+        (li) => li.querySelector('.subagent-name')?.textContent === name,
+      ) as HTMLElement | undefined;
+
+    it('draws it under the task that delegated it', () => {
       const { container } = shown({ subagents: family });
 
       const rows = [...container.querySelectorAll('.subagent-item')];
-      const outer = rows.find((li) => li.querySelector('.subagent-name')?.textContent === 'outer-agent');
-
-      // Scoped, or the ancestor part of the selector matches the list this row sits in.
-      expect(outer?.querySelector(':scope > .subagent-list .subagent-name')?.textContent).toBe('inner-agent');
+      expect(rows.indexOf(named(container, 'inner-agent')!), 'after the one that sent it').toBe(
+        rows.indexOf(named(container, 'outer-agent')!) + 1,
+      );
     });
 
-    it('draws the one the session delegated outside it', () => {
+    it('sets it in from the task that delegated it, which is what says who sent it', () => {
       const { container } = shown({ subagents: family });
 
-      const inner = [...container.querySelectorAll('.subagent-item')].find(
-        (li) => li.querySelector('.subagent-name')?.textContent === 'inner-agent',
-      );
+      expect(named(container, 'outer-agent')!.style.paddingLeft).toBe('');
+      expect(named(container, 'inner-agent')!.style.paddingLeft).toBe('12px');
+    });
 
-      expect(inner?.querySelector('.subagent-name')?.textContent).toBe('inner-agent');
-      expect(inner?.querySelectorAll('.subagent-list')).toHaveLength(0);
+    /** One run of rows, not lists inside lists: an option cannot hold a list of options. */
+    it('holds no list inside a task', () => {
+      const { container } = shown({ subagents: family });
+
+      expect(named(container, 'outer-agent')!.querySelectorAll('.subagent-list')).toHaveLength(0);
     });
 
     /** A parent that aged out or was never watched leaves its task with nowhere to sit. */
@@ -3460,5 +3468,140 @@ describe('what a session row holds', () => {
       (node) => node.tabIndex === 0,
     );
     expect(stops.every((node) => node.classList.contains('session-row'))).toBe(true);
+  });
+});
+
+/**
+ * A session's delegated tasks are drawn under it, and the arrows used to step over them: the
+ * cursor walked a list of stops that sessions were in and tasks were not. They are options of
+ * the same listbox now, which is also what makes the markup valid - the buttons used to sit
+ * inside the listbox belonging to no option at all (#254).
+ */
+describe('walking into what a session delegated', () => {
+  const watched = (over: Record<string, unknown> = {}) => ({
+    agentId: 'a1',
+    sessionId: sessions[0]!.sessionId,
+    name: 'deep-audit',
+    events: [],
+    ...over,
+  });
+
+  const family = [
+    watched({ agentId: 'outer', name: 'outer-agent', sessionId: sessions[0]!.sessionId }),
+    watched({ agentId: 'inner', name: 'inner-agent', parentAgentId: 'outer', sessionId: sessions[0]!.sessionId }),
+  ];
+
+  const show = (over: Partial<ComponentProps<typeof Sidebar>> = {}) =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        subagents={family}
+        onSelectSubagent={() => {}}
+        {...over}
+      />,
+    );
+
+  const rows = () => [...document.querySelectorAll('.session-row')] as HTMLElement[];
+  const tasks = () => [...document.querySelectorAll('.subagent-item')] as HTMLElement[];
+
+  it('reaches the first task from the session that delegated it', () => {
+    show();
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(tasks()[0]);
+  });
+
+  it('walks from one task to the next', () => {
+    show();
+    tasks()[0]!.focus();
+
+    fireEvent.keyDown(tasks()[0]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(tasks()[1]);
+  });
+
+  it('comes back up out of them to the session', () => {
+    show();
+    tasks()[0]!.focus();
+
+    fireEvent.keyDown(tasks()[0]!, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  it('carries on past them to the next session', () => {
+    show();
+    tasks()[1]!.focus();
+
+    fireEvent.keyDown(tasks()[1]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(rows()[1]);
+  });
+
+  it('opens what a task did on Enter', () => {
+    const onSelectSubagent = vi.fn();
+    show({ onSelectSubagent });
+    tasks()[0]!.focus();
+
+    fireEvent.keyDown(tasks()[0]!, { key: 'Enter' });
+
+    expect(onSelectSubagent).toHaveBeenCalledWith('outer');
+  });
+
+  /** A range is a range of sessions, and a task is not one of those. */
+  it('steps over them when Shift carries the arrow down', () => {
+    const marked: string[] = [];
+    show({
+      marked,
+      onMark: (id) => {
+        marked.push(id);
+        return true;
+      },
+    });
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'ArrowDown', shiftKey: true });
+
+    expect(marked, 'nothing gathered for a task').toEqual([]);
+  });
+
+  it('holds the one tab stop between the sessions and their tasks', () => {
+    show();
+
+    const stops = [...rows(), ...tasks()].filter((node) => node.tabIndex === 0);
+    expect(stops).toHaveLength(1);
+  });
+
+  it('offers them as a group of the same list rather than loose inside it', () => {
+    show();
+
+    const group = document.querySelector('.subagent-list');
+    expect(group?.getAttribute('role'), 'a listbox may hold groups of options').toBe('group');
+    expect(tasks().every((task) => task.getAttribute('role') === 'option')).toBe(true);
+  });
+
+  it('keeps their own controls out of the way of Tab', () => {
+    show({ onKeepSubagent: () => {}, keepableSubagent: () => true, onDismissSubagent: () => {} });
+
+    const inside = tasks().flatMap((task) => [...task.querySelectorAll<HTMLElement>('button')]);
+    expect(inside.length, 'the fixture needs controls inside a task to say anything').toBeGreaterThan(0);
+    expect(inside.filter((node) => node.tabIndex >= 0)).toEqual([]);
+  });
+
+  it('opens a task menu from the keyboard, since its controls are no longer stops', () => {
+    show({ subagentActionsFor: () => [{ id: 'keep', label: 'Keep', run: vi.fn() }] });
+    tasks()[0]!.focus();
+
+    fireEvent.keyDown(tasks()[0]!, { key: 'ContextMenu' });
+
+    expect(document.querySelector('.session-menu')).toBeTruthy();
   });
 });

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react';
 
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
@@ -429,17 +429,55 @@ export function Sidebar({
     : undefined;
 
   /** The delegated task a menu is open on, which is a different list from the sessions (#225). */
-  const [agentMenu, setAgentMenu] = useState<{ agentId: string; at: { x: number; y: number } } | null>(null);
+  const [agentMenu, setAgentMenu] = useState<{ agentId: string; at: { x: number; y: number }; byKey?: boolean } | null>(
+    null,
+  );
   const openAgentMenu = useCallback(
     (agentId: string) => (event: ReactMouseEvent) => {
       event.preventDefault();
       // Stops the session row underneath opening its own menu for the session this belongs
       // to, which is a different thing being right-clicked.
       event.stopPropagation();
-      setAgentMenu({ agentId, at: { x: event.clientX, y: event.clientY } });
+      // Shift+F10 and the Menu key raise this too, with nothing useful in the coordinates,
+      // so a press with no pointer behind it is placed against the row - as the session
+      // rows' own menu is.
+      const byKey = event.button !== 2 && event.clientX === 0 && event.clientY === 0;
+      const row = byKey ? (event.currentTarget as HTMLElement).getBoundingClientRect() : null;
+
+      setAgentMenu({
+        agentId,
+        at: row ? { x: row.left + 12, y: row.top + 12 } : { x: event.clientX, y: event.clientY },
+        byKey: byKey || undefined,
+      });
     },
     [],
   );
+
+  /** The same menu, asked for by a key: placed against the task it is about. */
+  const menuForAgent = useCallback((agentId: string) => {
+    const row = nodes.current.get(`agent:${agentId}`);
+    if (!row) return;
+
+    const box = row.getBoundingClientRect();
+    setAgentMenu({ agentId, at: { x: box.left + 12, y: box.top + 12 }, byKey: true });
+  }, []);
+
+  /** Give the task back the keyboard, for a menu that took it from there. */
+  const closeAgentMenu = useCallback(() => {
+    setAgentMenu((open) => {
+      if (open?.byKey) {
+        const was = `agent:${open.agentId}`;
+        // A frame later and looked up again: keeping or hiding a task redraws the list, so
+        // the element focused in this tick is replaced by the render that follows.
+        requestAnimationFrame(() => {
+          const row = nodes.current.get(was);
+          if (row?.isConnected) row.focus();
+          else nodes.current.get(stopsRef.current[0] ?? '')?.focus();
+        });
+      }
+      return null;
+    });
+  }, []);
   // Read from the list as it is now, for the same reason the session above is: a task can
   // finish, be kept, or age out while its menu is open.
   const menuAgent = agentMenu ? subagents?.find((entry) => entry.agentId === agentMenu.agentId) : undefined;
@@ -613,19 +651,26 @@ export function Sidebar({
    */
   const stops = useMemo(() => {
     const list: string[] = [];
+    const withTasks = (sessionId: string) => {
+      list.push(sessionId);
+      // Drawn under their session and reachable the same way, so the arrows walk the column
+      // as it reads rather than stepping over whatever a session delegated.
+      for (const { entry } of delegatedOrder(subagents, sessionId)) list.push(`agent:${entry.agentId}`);
+    };
+
     for (const group of groups) {
       const shut = group.label !== null && (folded[group.key] ?? group.foldedByDefault === true);
       if (group.label !== null) list.push(`group:${group.key}`);
       // A folded group still shows the open session, and a row on screen is a row the
       // arrows have to reach.
       for (const session of shut ? group.sessions.filter((s) => s.sessionId === selectedId) : group.sessions) {
-        list.push(session.sessionId);
+        withTasks(session.sessionId);
       }
     }
     // Found by id, drawn below every group and under a heading that is not a control.
-    for (const session of hidden) list.push(session.sessionId);
+    for (const session of hidden) withTasks(session.sessionId);
     return list;
-  }, [groups, folded, selectedId, hidden]);
+  }, [groups, folded, selectedId, hidden, subagents]);
 
   /**
    * The same list, readable from a callback that must not be rebuilt when it changes.
@@ -682,12 +727,15 @@ export function Sidebar({
       // Off the bottom is nothing rather than the top: a list that wraps takes the reader
       // somewhere they did not ask to go, and `stops[length]` is already undefined.
       const next = stops[to];
-      if (event.shiftKey && next && !next.startsWith('group:')) {
+      // A range is a range of sessions. A group heading is not one, and neither is a task a
+      // session delegated - both are stepped over rather than gathered.
+      const gatherable = next !== undefined && !next.startsWith('group:') && !next.startsWith('agent:');
+      if (event.shiftKey && gatherable) {
         // A range with nothing marked yet is measured from the session being read, which is
         // what a Shift-click after opening one means - but an arrow is pressed on a row the
         // cursor is already on, and that row may be the length of the list away from the
         // open one. Marking where it is leaving from says where this range starts.
-        if (!marked?.length && !leaving.startsWith('group:')) {
+        if (!marked?.length && !leaving.startsWith('group:') && !leaving.startsWith('agent:')) {
           onMark?.(leaving, { toggle: true, range: false }, drawn);
         }
         onMark?.(next, { toggle: false, range: true }, drawn);
@@ -721,6 +769,44 @@ export function Sidebar({
       }
     },
     [stops, stepTo],
+  );
+
+  /**
+   * What a key pressed on a delegated task means.
+   *
+   * The arrows, and Enter to open what it did. Not Space: marking is about sessions, and a
+   * task is not one of those - it has no part in a set something is going to be done to.
+   */
+  const onAgentKey = useCallback(
+    (stop: string, open: () => void, event: ReactKeyboardEvent) => {
+      const from = stops.indexOf(stop);
+      switch (event.key) {
+        case 'ArrowDown':
+          return stepTo(stop, from + 1, event);
+        case 'ArrowUp':
+          return stepTo(stop, from - 1, event);
+        case 'Home':
+          return stepTo(stop, 0, event);
+        case 'End':
+          return stepTo(stop, stops.length - 1, event);
+        case 'Enter':
+          event.preventDefault();
+          return open();
+        case 'ContextMenu':
+          event.preventDefault();
+          return menuForAgent(stop.slice('agent:'.length));
+        case 'F10':
+          // Claimed whether shifted or not, for the reason the session rows claim it: the
+          // window has no menu bar for the plain one to reach, so all it did was take the
+          // keyboard away.
+          event.preventDefault();
+          if (event.shiftKey) menuForAgent(stop.slice('agent:'.length));
+          return;
+        default:
+          return;
+      }
+    },
+    [stops, stepTo, menuForAgent],
   );
 
   /**
@@ -1070,6 +1156,13 @@ export function Sidebar({
                           keepable={keepableSubagent}
                           isKept={isKeptSubagent}
                           onMenu={openAgentMenu}
+                          at={at}
+                          onStopKey={onAgentKey}
+                          onStopFocus={setCursor}
+                          hold={(stop, node) => {
+                            if (node) nodes.current.set(stop, node);
+                            else nodes.current.delete(stop);
+                          }}
                         />
                       </li>
                     ))}
@@ -1150,7 +1243,8 @@ export function Sidebar({
         <SessionMenu
           at={agentMenu.at}
           actions={subagentActionsFor(menuAgent)}
-          onClose={() => setAgentMenu(null)}
+          focusFirst={agentMenu.byKey}
+          onClose={closeAgentMenu}
         />
       )}
     </nav>
@@ -1164,6 +1258,39 @@ export function Sidebar({
  * everything that ever did - which is also what keeps it affordable, since the alternative
  * is reading the session's whole log (#178).
  */
+/**
+ * A session's delegated tasks, flattened into the order they are drawn.
+ *
+ * Depth-first, each task followed by whatever it delegated in turn, which is how the list
+ * reads - the indent is what says who sent what. A task whose parent is not in the list is
+ * drawn at the top rather than hidden: the parent may have aged out, been hidden, or never
+ * been watched, and a task that exists with nowhere to sit is still a task somebody wants.
+ *
+ * Shared by the rows and by the cursor that walks them, so what is on screen and what the
+ * arrows step through cannot drift apart.
+ */
+export function delegatedOrder(
+  subagents: readonly WatchedSubagent[] | undefined,
+  sessionId: string,
+): { entry: WatchedSubagent; depth: number }[] {
+  const mine = subagents?.filter((entry) => entry.sessionId === sessionId) ?? [];
+  const held = new Set(mine.map((entry) => entry.agentId));
+  const out: { entry: WatchedSubagent; depth: number }[] = [];
+
+  const walk = (parent: string | undefined, depth: number) => {
+    const under = mine.filter((entry) =>
+      parent === undefined ? !entry.parentAgentId || !held.has(entry.parentAgentId) : entry.parentAgentId === parent,
+    );
+    for (const entry of under) {
+      out.push({ entry, depth });
+      walk(entry.agentId, depth + 1);
+    }
+  };
+
+  walk(undefined, 0);
+  return out;
+}
+
 function Delegated({
   subagents,
   sessionId,
@@ -1174,6 +1301,10 @@ function Delegated({
   keepable,
   isKept,
   onMenu,
+  at,
+  onStopKey,
+  onStopFocus,
+  hold,
 }: {
   subagents?: WatchedSubagent[];
   sessionId: string;
@@ -1186,89 +1317,99 @@ function Delegated({
   isKept?: (agentId: string) => boolean;
   /** Opens this row's own menu, so a right-click is answered by the app rather than the webview. */
   onMenu?: (agentId: string) => (event: ReactMouseEvent) => void;
+  /** Which stop the sidebar's cursor is on, so one row of the whole list carries the tab stop. */
+  at?: string | null;
+  onStopKey?: (stop: string, open: () => void, event: ReactKeyboardEvent) => void;
+  onStopFocus?: (stop: string) => void;
+  /** Holds each row, so the cursor has somewhere to send the keyboard. */
+  hold?: (stop: string, node: HTMLElement | null) => void;
 }) {
-  const mine = subagents?.filter((entry) => entry.sessionId === sessionId) ?? [];
-  if (mine.length === 0 || !onSelectSubagent) return null;
+  const drawn = delegatedOrder(subagents, sessionId);
+  if (drawn.length === 0 || !onSelectSubagent) return null;
 
-  /**
-   * The tasks a given agent delegated, or the session's own when asked for nobody's.
-   *
-   * A task whose parent is not in the list is drawn at the top rather than hidden: the
-   * parent may have aged out, been hidden, or never been watched, and a task that exists
-   * with nowhere to sit is still a task somebody may want.
-   */
-  const held = new Set(mine.map((entry) => entry.agentId));
-  const under = (parent?: string) =>
-    mine.filter((entry) =>
-      parent === undefined
-        ? !entry.parentAgentId || !held.has(entry.parentAgentId)
-        : entry.parentAgentId === parent,
-    );
+  return (
+    /* A group of the sessions listbox rather than a list of its own. A listbox may hold
+       options and groups of them, and these buttons used to sit inside it belonging to
+       neither - the same thing #247 fixed one level up.
 
-  const rows = (parent: string | undefined, depth: number): ReactNode =>
-    under(parent).map((entry) => (
-      <li key={entry.agentId} className="subagent-item" onContextMenu={onMenu?.(entry.agentId)}>
-        <Task entry={entry} depth={depth} />
-        {/* Subagents delegate in turn, and a list of them is a tree. Drawn by the same
-            rows at every level, so how deep it goes is nobody's business here. */}
-        {under(entry.agentId).length > 0 && <ul className="subagent-list">{rows(entry.agentId, depth + 1)}</ul>}
-      </li>
-    ));
+       Flat, with the indent carrying the nesting. A task that delegated others cannot hold
+       them as a list inside its own option, and the indent was already what said who sent
+       what, so nothing is lost by drawing them in one run. */
+    <ul className="subagent-list" role="group" aria-label="Delegated tasks">
+      {drawn.map(({ entry, depth }) => {
+        const stop = `agent:${entry.agentId}`;
+        const open = () => onSelectSubagent(entry.agentId);
 
-  /** One task's own row, which is the same however deep it sits. */
-  function Task({ entry, depth }: { entry: WatchedSubagent; depth: number }) {
-    return (
-      <>
-        <button
-          type="button"
-          className={`subagent${entry.agentId === selectedSubagentId ? ' selected' : ''}`}
-          onClick={() => onSelectSubagent?.(entry.agentId)}
-          title={`Open what ${entry.name} did`}
-          // Indented by how far down it sits, since the nesting is what says who sent it.
-          style={depth > 0 ? { paddingLeft: `${12 + depth * 12}px` } : undefined}
-        >
-          {/* Running, finished or failed, in the shape the session rows already use for
-              the same question - a reader who can read one can read the other. */}
-          <span className={`activity activity-${entry.outcome === undefined ? 'working' : 'idle'}`} aria-hidden />
-          <span className="subagent-name">{entry.name}</span>
-          {entry.outcome === 'failed' && (
-            <span className="subagent-failed" title={entry.error}>
-              failed
-            </span>
-          )}
-        </button>
-        {/* Kept tasks stop ageing out, which is the whole point: the long audit worth
-            coming back to is the first one the conversation leaves behind (#180). Only
-            offered once the log holds its work, since that is what makes keeping it cost
-            a name rather than its megabytes. */}
-        {onKeepSubagent && keepable?.(entry.agentId) && (
-          <button
-            type="button"
-            className={`subagent-keep${isKept?.(entry.agentId) ? ' kept' : ''}`}
-            onClick={() => onKeepSubagent(entry.agentId)}
-            title={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
-            aria-label={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
-            aria-pressed={isKept?.(entry.agentId) ?? false}
+        return (
+          <li
+            key={entry.agentId}
+            className="subagent-item"
+            role="option"
+            aria-selected={entry.agentId === selectedSubagentId}
+            aria-label={entry.name}
+            tabIndex={stop === at ? 0 : -1}
+            ref={(node) => hold?.(stop, node)}
+            onKeyDown={(event) => onStopKey?.(stop, open, event)}
+            onFocus={() => onStopFocus?.(stop)}
+            onContextMenu={onMenu?.(entry.agentId)}
+            // Indented by how far down it sits, since that is what says who sent it.
+            style={depth > 0 ? { paddingLeft: `${depth * 12}px` } : undefined}
           >
-            ★
-          </button>
-        )}
-        {onDismissSubagent && (
-          <button
-            type="button"
-            className="subagent-dismiss"
-            onClick={() => onDismissSubagent(entry.agentId)}
-            title={`Hide ${entry.name}`}
-            aria-label={`Hide ${entry.name}`}
-          >
-            ×
-          </button>
-        )}
-      </>
-    );
-  }
+            <button
+              type="button"
+              className={`subagent${entry.agentId === selectedSubagentId ? ' selected' : ''}`}
+              tabIndex={-1}
+              onClick={open}
+              title={`Open what ${entry.name} did`}
+            >
+              {/* Running, finished or failed, in the shape the session rows already use for
+                  the same question - a reader who can read one can read the other. */}
+              <span className={`activity activity-${entry.outcome === undefined ? 'working' : 'idle'}`} aria-hidden />
+              <span className="subagent-name">{entry.name}</span>
+              {entry.outcome === 'failed' && (
+                <span className="subagent-failed" title={entry.error}>
+                  failed
+                </span>
+              )}
+            </button>
 
-  return <ul className="subagent-list">{rows(undefined, 0)}</ul>;
+            {/* Kept tasks stop ageing out, which is the whole point: the long audit worth
+                coming back to is the first one the conversation leaves behind (#180). Only
+                offered once the log holds its work, since that is what makes keeping it cost
+                a name rather than its megabytes.
+
+                Out of the tab order like the session rows' own controls, and on the row's
+                menu for a reader without a pointer. */}
+            {onKeepSubagent && keepable?.(entry.agentId) && (
+              <button
+                type="button"
+                className={`subagent-keep${isKept?.(entry.agentId) ? ' kept' : ''}`}
+                tabIndex={-1}
+                onClick={() => onKeepSubagent(entry.agentId)}
+                title={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
+                aria-label={isKept?.(entry.agentId) ? `Stop keeping ${entry.name}` : `Keep ${entry.name}`}
+                aria-pressed={isKept?.(entry.agentId) ?? false}
+              >
+                ★
+              </button>
+            )}
+            {onDismissSubagent && (
+              <button
+                type="button"
+                className="subagent-dismiss"
+                tabIndex={-1}
+                onClick={() => onDismissSubagent(entry.agentId)}
+                title={`Hide ${entry.name}`}
+                aria-label={`Hide ${entry.name}`}
+              >
+                ×
+              </button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 /**
