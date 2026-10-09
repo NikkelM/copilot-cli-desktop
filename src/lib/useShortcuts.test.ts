@@ -483,11 +483,87 @@ describe('moving about the window', () => {
   });
 });
 
+/**
+ * A key a reader moved (#246).
+ *
+ * The point of matching against a table rather than a chain of conditions: the hook answers
+ * whatever the bindings say, so a changed key works and the one it replaced stops.
+ */
+describe('keys a reader changed', () => {
+  it('answers the key they chose', () => {
+    renderHook(() => useShortcuts(on, undefined, { sidebar: 'ctrl+shift+b' }));
+
+    press('B', { ctrlKey: true, shiftKey: true });
+
+    expect(fired('sidebar')).toBe(1);
+  });
+
+  it('stops answering the one it replaced', () => {
+    renderHook(() => useShortcuts(on, undefined, { sidebar: 'ctrl+shift+b' }));
+
+    press('b', { ctrlKey: true });
+
+    expect(fired('sidebar')).toBe(0);
+  });
+
+  /** Cleared on purpose means nothing answers it, which is not the same as left alone. */
+  it('answers nothing for a key that was cleared', () => {
+    renderHook(() => useShortcuts(on, undefined, { sidebar: '' }));
+
+    press('b', { ctrlKey: true });
+
+    expect(fired('sidebar')).toBe(0);
+  });
+
+  it('leaves the keys they did not change where they were', () => {
+    renderHook(() => useShortcuts(on, undefined, { sidebar: 'ctrl+shift+b' }));
+
+    press('t', { ctrlKey: true });
+
+    expect(fired('reasoning')).toBe(1);
+  });
+
+  /**
+   * The listener is registered once and reads the bindings through a ref, so a change made
+   * while the app is open has to reach it without the effect running again.
+   */
+  it('takes effect without waiting for a restart', () => {
+    const { rerender } = renderHook(({ overrides }) => useShortcuts(on, undefined, overrides), {
+      initialProps: { overrides: {} as Record<string, string> },
+    });
+
+    rerender({ overrides: { sidebar: 'ctrl+shift+b' } });
+    press('B', { ctrlKey: true, shiftKey: true });
+
+    expect(fired('sidebar')).toBe(1);
+  });
+
+  /** Still swallowed, since the webview would otherwise do its own thing with the press. */
+  it('takes the press it answers', () => {
+    renderHook(() => useShortcuts(on, undefined, { sidebar: 'ctrl+shift+b' }));
+
+    expect(press('B', { ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(true);
+  });
+
+  /** A moved key keeps whatever else it asks. Copy still comes first for interrupting. */
+  it('keeps the rule that goes with the key rather than the chord', () => {
+    const selected = vi.spyOn(window, 'getSelection').mockReturnValue({ toString: () => 'picked' } as Selection);
+    renderHook(() => useShortcuts(on, undefined, { interrupt: 'ctrl+shift+c' }));
+
+    press('C', { ctrlKey: true, shiftKey: true });
+
+    expect(fired('interrupt')).toBe(0);
+    selected.mockRestore();
+  });
+});
+
 describe('BINDINGS', () => {  // The list a reader sees is built from these, so a shortcut this hook reports must be
-  // described, and nothing described as this hook's may do nothing.
-  it('describes every shortcut the hook can report', () => {
+  // described, and nothing described as the app's may do nothing.
+  it('describes every shortcut the app can report', () => {
     const mine = BINDINGS.map((binding) => binding.id).filter(Boolean);
     expect(mine.sort()).toEqual([
+      'attach',
+      'cycle-mode',
       'escape-twice',
       'find-session',
       'go-composer',
@@ -506,6 +582,19 @@ describe('BINDINGS', () => {  // The list a reader sees is built from these, so 
       'stash',
       'wiki',
     ]);
+  });
+
+  /**
+   * The composer answers these two itself, since both are about what is being written. They
+   * carry an id even so, because that is what makes a key changeable (#246) and a reader
+   * cannot tell which part of the app answers a key.
+   */
+  it.each<Shortcut>(['cycle-mode', 'attach'])('leaves %s to the composer', (id) => {
+    renderHook(() => useShortcuts(on));
+
+    press(id === 'attach' ? 'A' : 'm', id === 'attach' ? { ctrlKey: true, shiftKey: true } : { altKey: true });
+
+    expect(fired(id)).toBe(0);
   });
 
   // The rest are the composer's and the menu's. They are listed because the reader does not

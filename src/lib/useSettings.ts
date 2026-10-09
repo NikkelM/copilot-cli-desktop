@@ -53,6 +53,9 @@ export const SIDEBAR_TAGS = 'sidebarTags';
 /** How many lines of what a session last said to draw under its name. Zero draws none. */
 export const SIDEBAR_PREVIEW_LINES = 'sidebarPreviewLines';
 
+/** The keys a reader moved, as JSON of shortcut to chord. Empty means none were moved. */
+export const SHORTCUTS = 'shortcuts';
+
 /**
  * The most lines of a reply a sidebar row will give up.
  *
@@ -152,6 +155,14 @@ export interface Settings {
   scale: number;
   /** How large the letters are, on top of the app scale. One rather than the other. */
   textScale: number;
+  /**
+   * The keys a reader moved, as JSON of shortcut to chord (#246).
+   *
+   * One setting rather than one per key, so the settings window's save-or-discard works on
+   * the whole set the way it works on everything else, and so adding a shortcut does not add
+   * a settings key. Parsed by `readOverrides`, which drops anything it cannot make sense of.
+   */
+  shortcuts: string;
 }
 
 /** The ten minutes the runtime uses when nobody has said otherwise. */
@@ -204,6 +215,7 @@ export function readSettings(): Settings {
     // Its own reader: a scale is a fraction, and the one above floors what it is given.
     scale: readScale(),
     textScale: readTextScale(),
+    shortcuts: read('settings', SHORTCUTS) ?? '',
   };
 }
 
@@ -348,4 +360,5 @@ const KEYS: Record<keyof Settings, string> = {
   sidebarPreviewLines: SIDEBAR_PREVIEW_LINES,
   scale: SCALE_KEY,
   textScale: TEXT_SCALE_KEY,
+  shortcuts: SHORTCUTS,
 };

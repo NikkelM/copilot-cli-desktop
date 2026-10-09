@@ -28,6 +28,7 @@ const SAVED: Settings = {
     turnSummary: 'always',
   sidebarTags: true,
   sidebarPreviewLines: 2,
+  shortcuts: '',
   };
 
 const show = (over: Partial<Settings> = {}) => {
@@ -1865,7 +1866,14 @@ describe('searching the settings', () => {
   it('lists every category before anything is typed', () => {
     show();
 
-    expect(categories()).toEqual(['Appearance', 'Copilot CLI', 'New sessions', 'Session management', 'Transcript']);
+    expect(categories()).toEqual([
+      'Appearance',
+      'Copilot CLI',
+      'Keyboard',
+      'New sessions',
+      'Session management',
+      'Transcript',
+    ]);
   });
 
   /**
@@ -1935,7 +1943,7 @@ describe('searching the settings', () => {
 
     await userEvent.clear(search());
 
-    expect(categories()).toHaveLength(5);
+    expect(categories()).toHaveLength(6);
     expect(screen.getByLabelText('Sessions kept in memory')).toBeTruthy();
   });
 

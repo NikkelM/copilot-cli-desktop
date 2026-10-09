@@ -1,112 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
+import { chordsOf, type Overrides, type Shortcut } from './bindings';
+import { matchesChord } from './chords';
 import { useHotGeneration } from './hotGeneration';
+
+export { BINDINGS, type Binding, type Shortcut } from './bindings';
 
 /** How long a second Escape still counts as part of the first. */
 const DOUBLE_ESCAPE_MS = 800;
 
-export type Shortcut =
-  | 'interrupt'
-  | 'escape-twice'
-  | 'help'
-  | 'reasoning'
-  | 'stash'
-  | 'larger'
-  | 'smaller'
-  | 'reset-size'
-  | 'sidebar'
-  | 'new-session'
-  | 'find-session'
-  | 'go-sessions'
-  | 'go-composer'
-  | 'wiki'
-  | 'import'
-  | 'next-region'
-  | 'previous-region';
-
 /**
- * Where ctrl and shift and a letter go.
+ * The two the composer answers itself.
  *
- * Gathered rather than written as a chain of questions, because there are now enough of them
- * that the chain was longer than the rest of the handler. The letter is read folded to lower
- * case, since shift is what makes it upper.
+ * Both are about what is being written, and both have to reach the box without the window
+ * taking the press first. They are rebindable with the rest because a reader cannot tell
+ * which part of the app answers a key, and should not have to.
  */
-const GOES_TO: Record<string, Shortcut> = {
-  p: 'find-session',
-  s: 'go-sessions',
-  m: 'go-composer',
-  k: 'wiki',
-  o: 'import',
-};
-
-export interface Binding {
-  /**
-   * Set when this hook is what implements the key.
-   *
-   * Absent for the ones the composer or the menu owns. The reader does not care which part
-   * of the app answers a key, so the list covers all of them - but only this hook's can be
-   * held to reporting a `Shortcut`.
-   */
-  id?: Shortcut;
-  /** As a reader would press it, for the list they can call up. */
-  keys: string;
-  what: string;
-}
-
-/**
- * Every key worth telling someone about, in one list.
- *
- * The list the reader sees is built from this rather than written beside it, so a key cannot
- * be described here without working. Unlike the CLI there is no status line to put a hint
- * in, which makes the list the only way to find them.
- *
- * Two things are deliberately absent. Ordinary text editing, because a text box already has
- * what this platform uses - the CLI documents ctrl+a and ctrl+e only for want of a terminal
- * that provides them. And plain navigation - Tab, a single Escape - which is what a list on
- * screen already invites; a reference that spends its rows on them buries the keys nothing
- * else would reveal.
- *
- * The arrows are listed even so, because stepping through history is not what an arrow does
- * anywhere else, and ctrl+u and ctrl+k because readline gives them and a textarea does not.
- *
- * Worded and ordered as the CLI words and orders its own, down to the lower case, so the two
- * read as one tool.
- */
-export const BINDINGS: readonly Binding[] = [
-  { keys: '/help', what: 'show full help' },
-  { id: 'help', keys: '?', what: 'show quick help' },
-  { keys: '/', what: 'commands' },
-  { id: 'interrupt', keys: 'ctrl+c', what: 'cancel' },
-  { id: 'escape-twice', keys: 'esc esc', what: 'clear input or interrupt' },
-  { id: 'reasoning', keys: 'ctrl+t', what: 'show or hide reasoning' },
-  { id: 'stash', keys: 'ctrl+s', what: 'stash or pop the prompt' },
-  { id: 'larger', keys: 'ctrl+plus', what: 'draw everything larger' },
-  { id: 'smaller', keys: 'ctrl+minus', what: 'draw everything smaller' },
-  { id: 'reset-size', keys: 'ctrl+0', what: 'back to the default size' },
-  { id: 'sidebar', keys: 'ctrl+b', what: 'show or hide the sidebar' },
-  { id: 'new-session', keys: 'ctrl+n', what: 'start a new session' },
-  { id: 'find-session', keys: 'ctrl+shift+p', what: 'find a session' },
-  { id: 'go-sessions', keys: 'ctrl+shift+s', what: 'go to the session list' },
-  { id: 'go-composer', keys: 'ctrl+shift+m', what: 'go to the message box' },
-  { id: 'wiki', keys: 'ctrl+shift+k', what: 'browse your knowledge base' },
-  { id: 'import', keys: 'ctrl+shift+o', what: 'import a session' },
-  { id: 'next-region', keys: 'f6', what: 'next part of the window' },
-  { id: 'previous-region', keys: 'shift+f6', what: 'previous part of the window' },
-  { keys: 'ctrl+wheel', what: 'draw everything larger or smaller' },
-  /*
-   * The CLI asks for this with shift+tab, which here would mean giving up the one key that
-   * walks backwards out of the composer. The CLI has a prompt to leave; this has a window to
-   * walk, and taking the key back is worth more than matching it.
-   */
-  { keys: 'alt+m', what: 'switch modes' },
-  { keys: 'ctrl+shift+a', what: 'attach files' },
-  { keys: 'shift+enter', what: 'insert newline' },
-  { keys: 'up/down', what: 'previous or next prompt' },
-  { keys: 'ctrl+r', what: 'reverse search history' },
-  { keys: 'alt+left', what: 'back a page in the wiki' },
-  { keys: 'ctrl+u', what: 'delete to start of line' },
-  { keys: 'ctrl+k', what: 'delete to end of line' },
-];
+const COMPOSER_OWNED: readonly Shortcut[] = ['cycle-mode', 'attach'];
 
 /** Whether a key press belongs to whatever is being typed into. */
 function typing(target: EventTarget | null): boolean {
@@ -147,6 +57,25 @@ function nothingWritten(target: EventTarget | null, writing?: () => string): boo
 }
 
 /**
+ * Whether a shortcut should fire for this press, beyond the chord matching.
+ *
+ * Only two have anything more to ask. Everything else fires wherever the keyboard is, which
+ * is the point of them: a key that works only outside the message box is a key that works
+ * almost nowhere, since the box holds the keyboard whenever a session is open.
+ */
+function allowed(id: Shortcut, event: KeyboardEvent, writing?: () => string): boolean {
+  // Copy first. Taking this from a reader with something selected would lose them the thing
+  // they were copying, which is worse than making them press Stop.
+  if (id === 'interrupt') return !window.getSelection()?.toString();
+
+  // A question mark as the first character of a message is one nobody types, so it is
+  // claimed - and swallowed, rather than left in the box behind the list.
+  if (id === 'help') return !typing(event.target) || nothingWritten(event.target, writing);
+
+  return true;
+}
+
+/**
  * The keys a terminal reflex expects to work.
  *
  * This app replaces a terminal, and the muscle memory comes with the reader: reaching for
@@ -154,10 +83,14 @@ function nothingWritten(target: EventTarget | null, writing?: () => string): boo
  * Bound on the window rather than on a component, so they work wherever the focus happens
  * to be - including inside the composer for the ones that make sense there.
  *
+ * Matched against a table rather than asked as a chain of questions, so a reader can change
+ * any of them (#246): a key written into a condition is a key nobody can move.
+ *
  * @param writing what has been typed but not sent, since the app knows that better than the
  *   field does: a shortcut that has to sniff the DOM for it is guessing.
+ * @param overrides the keys a reader changed, if any.
  */
-export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => string) {
+export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => string, overrides: Overrides = {}) {
   // Held in refs so a caller passing a fresh function does not re-register the listener,
   // and so the double-press window survives a render.
   const handler = useRef(on);
@@ -165,6 +98,21 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
   const written = useRef(writing);
   written.current = writing;
   const lastEscape = useRef(0);
+
+  /**
+   * What each key answers to, with the composer's own left out.
+   *
+   * Held in a ref for the same reason as the handlers: a change to a binding has to reach
+   * the listener already registered, not wait for it to be registered again.
+   */
+  const chords = useMemo(() => {
+    const all = chordsOf(overrides);
+    for (const id of COMPOSER_OWNED) all.delete(id);
+    return [...all];
+  }, [overrides]);
+  const bound = useRef(chords);
+  bound.current = chords;
+
   /**
    * Re-registers the listeners after every hot update, and never in a built app.
    *
@@ -181,6 +129,11 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
       // means, not stopping the turn behind it.
       if (event.defaultPrevented) return;
 
+      /*
+       * Escape is the one key not in the table, because it is not a chord: it is a press
+       * repeated, and what the first one does depends on where it came from. That is also
+       * why it is the one key a reader cannot move, which the settings window says outright.
+       */
       if (event.key === 'Escape') {
         const now = Date.now();
         const again = now - lastEscape.current < DOUBLE_ESCAPE_MS;
@@ -202,93 +155,20 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
         return;
       }
 
-      if (event.key === 'c' && event.ctrlKey && !event.shiftKey && !event.altKey) {
-        // Ctrl+C is copy first. Taking it from a reader with something selected would lose
-        // them the thing they were copying, which is worse than making them press Stop.
-        if (!window.getSelection()?.toString()) {
-          event.preventDefault();
-          handler.current('interrupt');
-        }
-        return;
-      }
+      for (const [id, chord] of bound.current) {
+        if (!matchesChord(chord, event)) continue;
+        // Nothing else can match, so a shortcut that declines the press lets it through as
+        // the key it is rather than falling on to the next row.
+        if (!allowed(id, event, written.current)) return;
 
-      // Fired even while typing, since it changes what is on screen rather than what is
-      // being written, and a terminal answers it wherever the cursor is.
-      if (event.key === 't' && event.ctrlKey && !event.shiftKey && !event.altKey) {
+        /*
+         * Always taken, because the webview has its own ideas about most of these: ctrl+n
+         * opens a window, f6 goes to the address bar, ctrl+s offers to save the page, and
+         * the zoom keys scale the app a second time on top of this one.
+         */
         event.preventDefault();
-        handler.current('reasoning');
+        handler.current(id);
         return;
-      }
-
-      // Fired while typing like ctrl+t, and for the same reason: it changes how the app is
-      // drawn rather than what is being written. Both the main row and the numeric keypad
-      // are answered, and `=` is taken as plus because that is the unshifted key every
-      // browser and editor accepts for this - requiring shift would be the odd one out.
-      if (event.ctrlKey && !event.altKey) {
-        const zoom =
-          event.key === '+' || event.key === '=' || event.code === 'NumpadAdd'
-            ? 'larger'
-            : event.key === '-' || event.key === '_' || event.code === 'NumpadSubtract'
-              ? 'smaller'
-              : event.key === '0' || event.code === 'Numpad0'
-                ? 'reset-size'
-                : null;
-
-        if (zoom) {
-          // The webview's own zoom would otherwise fire as well, which scales the app a
-          // second time on top of this one and cannot be put back by ctrl+0 alone.
-          event.preventDefault();
-          handler.current(zoom);
-          return;
-        }
-      }
-
-      // Fired while typing for the same reason the others are: it changes how the app is
-      // drawn rather than what is being written. Ctrl+B is what editors use for this.
-      if (event.key === 'b' && event.ctrlKey && !event.shiftKey && !event.altKey) {
-        event.preventDefault();
-        handler.current('sidebar');
-        return;
-      }
-
-      // Moving about the window. Claimed whatever has the keyboard, because the whole point
-      // of them is to be reachable from inside the box that currently holds it - and
-      // prevented, since ctrl+n is the webview's own "new window" and f6 is the address bar.
-      if (event.key === 'F6') {
-        event.preventDefault();
-        handler.current(event.shiftKey ? 'previous-region' : 'next-region');
-        return;
-      }
-
-      if (event.ctrlKey && !event.altKey) {
-        // Shift makes the letter upper case, which is why these are read folded rather than
-        // listed twice - and why none of them can be confused with the composer's own
-        // readline keys, where `k` and `u` are the unshifted ones.
-        const letter = event.key.toLowerCase();
-        const going = event.shiftKey ? GOES_TO[letter] : letter === 'n' ? 'new-session' : undefined;
-
-        if (going) {
-          event.preventDefault();
-          handler.current(going);
-          return;
-        }
-      }
-
-      // Only useful while typing, so it has to fire there. Prevented in any case: the
-      // webview would otherwise offer to save the page, which is not a thing this app has.
-      if (event.key === 's' && event.ctrlKey && !event.shiftKey && !event.altKey) {
-        event.preventDefault();
-        handler.current('stash');
-        return;
-      }
-
-      // The composer holds the keyboard whenever a session is open, so refusing to fire
-      // while a field has focus would put this out of reach almost all of the time. A
-      // question mark as the first character of a message is one nobody types, so it is
-      // claimed - and swallowed, rather than left in the box behind the list.
-      if (event.key === '?' && (!typing(event.target) || nothingWritten(event.target, written.current))) {
-        event.preventDefault();
-        handler.current('help');
       }
     }
 
@@ -312,12 +192,8 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('wheel', onWheel);
     };
-    // Only the hot counter, which stands still outside development: the handlers are read
-    // through refs, so nothing else this closure sees can go stale.
+    // Only the hot counter, which stands still outside development: the handlers and the
+    // bindings are read through refs, so nothing else this closure sees can go stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hot]);
 }
-
-
-
-

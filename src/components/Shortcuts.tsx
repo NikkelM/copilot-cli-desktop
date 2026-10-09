@@ -1,6 +1,9 @@
 import { Menu } from './Menu';
-import { BINDINGS } from '../lib/useShortcuts';
+import { BINDINGS, type Binding } from '../lib/useShortcuts';
 import type { SlashCommand } from '../../shared/protocol';
+
+/** What stands in the keys column for a shortcut somebody turned off. */
+const CLEARED = 'not set';
 
 /**
  * The keys there are, and on request everything else there is.
@@ -15,18 +18,30 @@ import type { SlashCommand } from '../../shared/protocol';
  *
  * Drawn as the same menu the composer uses rather than as a dialogue over the top: a list of
  * keys is the last thing that should take the keyboard away in order to be read.
+ *
+ * @param bindings the keys as they actually are, which is not the same as the defaults once
+ *   a reader has moved one (#246). A list showing what the keys used to be would be worse
+ *   than no list.
  */
-export function Shortcuts({ commands, onClose }: { commands?: SlashCommand[]; onClose: () => void }) {
-  const keys = BINDINGS.map((binding) => ({
-    // Keyed by the keys themselves: most bindings belong to the composer or the menu
-    // rather than to the shortcut hook, so there is no id to key them by.
-    id: binding.keys,
-    label: binding.keys,
+export function Shortcuts({
+  commands,
+  onClose,
+  bindings = BINDINGS,
+}: {
+  commands?: SlashCommand[];
+  onClose: () => void;
+  bindings?: readonly Binding[];
+}) {
+  const keys = bindings.map((binding) => ({
+    // By the id where there is one, since two shortcuts a reader has cleared both show the
+    // same empty keys column and a list cannot have two rows under one key.
+    id: binding.id ?? binding.keys,
+    label: binding.keys || CLEARED,
     description: binding.what,
   }));
 
   // The quick list names /help so it can be found from `?`, which would say it twice here.
-  const named = new Set(keys.map((row) => row.id));
+  const named = new Set(bindings.map((binding) => binding.keys));
   const slashes = (commands ?? [])
     .map((command) => ({
       id: `/${command.name}`,

@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { Shortcuts } from './Shortcuts';
 import { BINDINGS } from '../lib/useShortcuts';
+import { resolveBindings } from '../lib/bindings';
 import type { SlashCommand } from '../../shared/protocol';
 
 describe('Shortcuts', () => {
@@ -18,8 +19,33 @@ describe('Shortcuts', () => {
     }
   });
 
-  it('closes on Escape', async () => {
-    const onClose = vi.fn();
+  /**
+   * A list showing what the keys used to be would be worse than no list at all, so this is
+   * built from the keys as they are rather than from the defaults (#246).
+   */
+  it('shows a key a reader moved', () => {
+    render(<Shortcuts onClose={() => {}} bindings={resolveBindings({ sidebar: 'ctrl+shift+b' })} />);
+
+    expect(screen.getByText('ctrl+shift+b')).toBeTruthy();
+    expect(screen.queryByText('ctrl+b')).toBeNull();
+  });
+
+  /** The row stays, so a reader can see what the key would do if they gave it one back. */
+  it('says so for a key a reader turned off', () => {
+    render(<Shortcuts onClose={() => {}} bindings={resolveBindings({ sidebar: '' })} />);
+
+    expect(screen.getByText('show or hide the sidebar')).toBeTruthy();
+    expect(screen.getAllByText('not set')).toHaveLength(1);
+  });
+
+  /** Two cleared keys are two rows, not one: a list cannot have two rows under one key. */
+  it('keeps both rows when two keys were turned off', () => {
+    render(<Shortcuts onClose={() => {}} bindings={resolveBindings({ sidebar: '', wiki: '' })} />);
+
+    expect(screen.getAllByText('not set')).toHaveLength(2);
+  });
+
+  it('closes on Escape', async () => {    const onClose = vi.fn();
     render(<Shortcuts onClose={onClose} />);
 
     await userEvent.keyboard('{Escape}');

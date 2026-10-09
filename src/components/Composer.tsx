@@ -18,6 +18,8 @@ import { useDirectoryCompletion } from '../lib/useDirectoryCompletion';
 import { useMcpServers } from '../lib/useMcpServers';
 import { REWIND, REWIND_SCOPES, takesServerName, typedRewindScope, typedServerName } from '../lib/localCommands';
 import { MODE_LABELS } from '../lib/useMode';
+import { chordsOf, type Overrides } from '../lib/bindings';
+import { matchesChord } from '../lib/chords';
 import type { Attachment, SessionMode, SlashCommand } from '../../shared/protocol';
 
 interface ComposerProps {
@@ -126,6 +128,13 @@ interface ComposerProps {
   mode: SessionMode;
   /** Advance to the next mode, which Alt+M asks for. */
   onCycleMode: () => void;
+  /**
+   * The keys a reader moved, if any (#246).
+   *
+   * This box answers two of them itself, so it has to be told what they are now rather than
+   * assume the defaults it was written with.
+   */
+  shortcuts?: Overrides;
   /** What the agent says it is doing right now, when it has said. */
   intent: string | null;
 }
@@ -189,9 +198,12 @@ export function Composer({
   onTakeBack,
   mode,
   onCycleMode,
+  shortcuts,
   intent,
 }: ComposerProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** What the two keys this box answers itself are bound to, which a reader may have moved. */
+  const bindings = useMemo(() => chordsOf(shortcuts ?? {}), [shortcuts]);
   /** The picker lives with the chips; the button that opens it lives with the buttons. */
   const attacher = useRef<(() => void) | null>(null);
   const focusBack = useCallback(() => inputRef.current?.focus(), []);
@@ -479,25 +491,21 @@ export function Composer({
       return;
     }
 
-    // Ctrl+Shift+A attaches a file. Here rather than on the window because attaching is
-    // something done to the message being written, and the only route before this was
-    // tabbing out of the box to the plus and back again.
-    if (!event.altKey && event.ctrlKey && event.shiftKey && (event.code === 'KeyA' || event.key === 'A')) {
-      event.preventDefault();
-      attacher.current?.();
-      return;
-    }
+    /*
+     * The two keys this box answers itself, both because they are about the message being
+     * written: attaching a file, and switching modes. Matched against the bindings rather
+     * than written as conditions, so a reader can move them with the rest (#246).
+     *
+     * Ahead of everything except the search, because they mean the same thing wherever the
+     * caret is.
+     */
+    for (const id of ['attach', 'cycle-mode'] as const) {
+      const chord = bindings.get(id);
+      if (!chord || !matchesChord(chord, event)) continue;
 
-    // Alt+M cycles the mode. The CLI uses shift+tab for this, which here would mean giving
-    // up the one key that walks backwards out of the composer - and this app has a whole
-    // window to walk, where the CLI has a prompt. Ahead of everything except the search
-    // because it means the same thing wherever the caret is.
-    //
-    // Read from the code rather than the character: Alt leaves the letter alone on Windows
-    // but not everywhere, and the key this is named after is the one with M on it.
-    if (event.altKey && !event.ctrlKey && (event.code === 'KeyM' || event.key === 'm' || event.key === 'M')) {
       event.preventDefault();
-      onCycleMode();
+      if (id === 'attach') attacher.current?.();
+      else onCycleMode();
       return;
     }
 

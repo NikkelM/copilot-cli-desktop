@@ -5998,6 +5998,97 @@ pre.fatal,
   cursor: default;
 }
 
+/*
+ * One key and what it does, in the settings window (#246).
+ *
+ * The description leads rather than the chord: somebody looking for a key to move knows what
+ * they want it to do, and the chord is the answer rather than the question.
+ */
+.shortcut-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 4px 10px;
+  margin-bottom: 8px;
+}
+
+.shortcut-what {
+  font-size: var(--font-md);
+}
+
+/*
+ * The chord itself, which is a button because pressing it is how you change it.
+ *
+ * Monospace and wide enough for the longest of them, so a column of these lines up and
+ * nothing to the right of it moves when one of them changes.
+ */
+.shortcut-keys {
+  min-width: calc(var(--font-base) * 9);
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  text-align: center;
+  cursor: pointer;
+}
+
+.shortcut-keys:hover {
+  border-color: var(--text-muted);
+}
+
+/* Waiting for a press, which should look unmistakably different from showing one. */
+.shortcut-keys.listening {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Turned off on purpose, which is a state rather than a key: not drawn as one. */
+.shortcut-keys.cleared {
+  color: var(--text-dim);
+  font-family: inherit;
+  font-style: italic;
+}
+
+.shortcut-act,
+.settings-reset-all {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.shortcut-act:hover,
+.settings-reset-all:hover {
+  border-color: var(--text-muted);
+}
+
+/* Nothing to undo, which a button should look like as well as behave like. */
+.shortcut-act:disabled,
+.settings-reset-all:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.settings-reset-all {
+  margin-top: 14px;
+}
+
+/* Under the row it belongs to rather than beside it, so it reads as being about that key. */
+.shortcut-problem {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--font-sm);
+}
+
 .mcp-action:disabled:hover {
   border-color: var(--border);
 }

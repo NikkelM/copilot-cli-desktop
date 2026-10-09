@@ -276,7 +276,9 @@ from one should not have to reach for the mouse. Buttons and menus are welcome, 
 capability may exist only as a click target: whatever a widget does must also be invocable
 by keyboard, and in time by slash command
 ([#72](https://github.com/NikkelM/copilot-cli-desktop/issues/72),
-[#19](https://github.com/NikkelM/copilot-cli-desktop/issues/19)).
+[#19](https://github.com/NikkelM/copilot-cli-desktop/issues/19)). Press `?` for the list,
+and change any of them under Settings > Keyboard
+([#246](https://github.com/NikkelM/copilot-cli-desktop/issues/246)).
 
 ## Notes
 

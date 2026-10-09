@@ -123,6 +123,7 @@ import { usePrompts } from './lib/usePrompts';
 import { useQueue } from './lib/useQueue';
 import { useSessions } from './lib/useSessions';
 import { useShortcuts } from './lib/useShortcuts';
+import { readOverrides, resolveBindings } from './lib/bindings';
 import { useKeying } from './lib/useKeying';
 import { focusRegion, focusToggle, inSidebar, stepRegion } from './lib/regions';
 import { useTaskbar } from './lib/useTaskbar';
@@ -881,6 +882,16 @@ export default function App() {
    */
   useKeying();
 
+  /**
+   * The keys as this reader has them, which is not the same as the defaults (#246).
+   *
+   * Worked out once and handed to all three places that need it - the window's listener, the
+   * list a reader can call up, and the composer, which answers two of them itself. Three
+   * readers of one setting rather than three parsings of one string.
+   */
+  const shortcutOverrides = useMemo(() => readOverrides(settings.shortcuts), [settings.shortcuts]);
+  const bindings = useMemo(() => resolveBindings(shortcutOverrides), [shortcutOverrides]);
+
   useShortcuts(
     useCallback(
       (shortcut) => {
@@ -971,6 +982,7 @@ export default function App() {
     // The composer's own text, rather than what a key event can be asked about the field it
     // landed in: this is where it is actually kept.
     useCallback(() => drafts.written(selectedRef.current), [drafts]),
+    shortcutOverrides,
   );
 
   /**
@@ -2073,7 +2085,11 @@ export default function App() {
               {/* Above the composer and below everything else, because that is where the
                   CLI puts it and where someone typing is already looking. */}
               {help && (
-                <Shortcuts commands={help === 'full' ? commands : undefined} onClose={() => setHelp(null)} />
+                <Shortcuts
+                  commands={help === 'full' ? commands : undefined}
+                  onClose={() => setHelp(null)}
+                  bindings={bindings}
+                />
               )}
 
               {/* In the order they were opened, so the newest is nearest the composer -
@@ -2296,6 +2312,7 @@ export default function App() {
                 }
                 mode={mode.mode}
                 onCycleMode={mode.cycle}
+                shortcuts={shortcutOverrides}
                 intent={intent}
               />
               )}

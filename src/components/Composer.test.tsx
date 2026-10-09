@@ -1346,6 +1346,38 @@ describe('the mode indicator', () => {
   });
 
   /**
+   * The box answers two keys itself, and a reader can move either of them (#246). Checked
+   * here as well as in the hook because the box is the one place they are not matched by
+   * the window's own listener.
+   */
+  it('cycles on whatever key the reader moved it to', async () => {
+    const onCycleMode = vi.fn();
+    const { user } = bare({ onCycleMode, shortcuts: { 'cycle-mode': 'alt+j' } });
+
+    await user.keyboard('{Alt>}j{/Alt}');
+
+    expect(onCycleMode).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops answering the key it was moved from', async () => {
+    const onCycleMode = vi.fn();
+    const { user } = bare({ onCycleMode, shortcuts: { 'cycle-mode': 'alt+j' } });
+
+    await user.keyboard('{Alt>}m{/Alt}');
+
+    expect(onCycleMode).not.toHaveBeenCalled();
+  });
+
+  it('answers nothing once the key is turned off', async () => {
+    const onCycleMode = vi.fn();
+    const { user } = bare({ onCycleMode, shortcuts: { 'cycle-mode': '' } });
+
+    await user.keyboard('{Alt>}m{/Alt}');
+
+    expect(onCycleMode).not.toHaveBeenCalled();
+  });
+
+  /**
    * The key the CLI uses for this, which this app needs back: it is the browser's own "focus
    * the previous thing", and here there is a whole window to walk backwards through rather
    * than a prompt to leave.

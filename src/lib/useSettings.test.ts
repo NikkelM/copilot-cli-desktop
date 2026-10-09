@@ -52,6 +52,7 @@ const SAVED_SHAPE = {
   turnSummary: 'always' as const,
   sidebarTags: true,
   sidebarPreviewLines: 2,
+  shortcuts: '',
 };
 
 beforeEach(() => {
@@ -240,6 +241,7 @@ describe('changing a setting', () => {
       turnSummary: 'always',
       sidebarTags: true,
       sidebarPreviewLines: 2,
+      shortcuts: '',
     });
   });
 
@@ -276,6 +278,7 @@ describe('changing a setting', () => {
       turnSummary: 'always',
       sidebarTags: true,
       sidebarPreviewLines: 2,
+      shortcuts: '',
     });
   });
 

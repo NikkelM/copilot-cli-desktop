@@ -3,6 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
 import { ModelPicker } from './ModelPicker';
 import { DiskUsage } from './DiskUsage';
+import { ShortcutSettings } from './ShortcutSettings';
+import { REBINDABLE } from '../lib/bindings';
 import { LARGEST, SMALLEST, STEP, applyScale, clampScale } from '../lib/scale';
 import type { BinnedSession, CliSetting, ModelChoice, SessionDisk } from '../../shared/protocol';
 import type { CliSettingsState } from '../lib/useCliSettings';
@@ -338,6 +340,7 @@ function ScaleField({
 const CATEGORIES = [
   { id: 'appearance', label: 'Appearance' },
   { id: 'cli', label: 'Copilot CLI' },
+  { id: 'keyboard', label: 'Keyboard' },
   { id: 'sessions', label: 'New sessions' },
   { id: 'management', label: 'Session management' },
   { id: 'transcript', label: 'Transcript' },
@@ -402,6 +405,15 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Lines of the last reply in the sidebar', keywords: 'preview excerpt message said rows quote' },
   ],
   cli: [{ label: 'Update the CLI when the app starts', keywords: 'upgrade version auto' }],
+  /*
+   * One row per key, taken from the bindings rather than written out, so a key added one day
+   * is searchable the same day. The keys themselves are the keywords: somebody who knows
+   * what ctrl+b does and wants it elsewhere looks for ctrl+b.
+   */
+  keyboard: REBINDABLE.map((binding) => ({
+    label: binding.what,
+    keywords: `${binding.keys} shortcut key binding keyboard`,
+  })),
   transcript: [
     { label: 'Summarise what a turn changed', keywords: 'diff files changed turn summary edits hide' },
   ],
@@ -1071,8 +1083,11 @@ export function SettingsWindow({
                 )}
               </>
             )}
-            {shown.id === 'cli' && (
-              <>
+            {shown.id === 'keyboard' && (
+              <ShortcutSettings value={draft.shortcuts} onChange={(next) => edit('shortcuts', next)} shows={shows} />
+            )}
+
+            {shown.id === 'cli' && (              <>
                 {shows('Update the CLI when the app starts') && (
                   <TickField
                     label="Update the CLI when the app starts"
