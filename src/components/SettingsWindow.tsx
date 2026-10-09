@@ -10,6 +10,7 @@ import { DEFAULT_BIN_RETENTION_DAYS } from '../../shared/protocol';
 import type { Settings } from '../lib/useSettings';
 import { DEFAULT_IDLE_MINUTES, DEFAULT_PERMISSION_MINUTES, MOST_PREVIEW_LINES } from '../lib/useSettings';
 import { formatRelative } from '../lib/time';
+import { useFocusTrap } from '../lib/useFocusTrap';
 import type { ShowTurnChanges } from '../lib/turnChanges';
 import { anyMatch, matches, type Searchable } from '../lib/settingsSearch';
 import { groupCliSettings, leafName } from '../lib/cliGroups';
@@ -525,6 +526,17 @@ export function SettingsWindow({
   // are editing, and closing the window without saving still leaves them where they were.
   useEffect(() => save('sessions', LAST_CATEGORY, category), [category]);
   const [pending, setPending] = useState<Pending | null>(null);
+  /**
+   * The window itself, and the question it can raise about leaving.
+   *
+   * Two surfaces, one inside the other, and both declare themselves modal. The question is
+   * the innermost while it is up, so it is the one that holds the keyboard - which is worked
+   * out from where they sit rather than from which registered first.
+   */
+  const box = useRef<HTMLDivElement>(null);
+  const asking = useRef<HTMLDivElement>(null);
+  useFocusTrap(box);
+  useFocusTrap(asking, pending !== null);
   const [query, setQuery] = useState('');
   /**
    * Which nested groups of CLI settings are open. Closed to begin with, which is the point
@@ -698,6 +710,8 @@ export function SettingsWindow({
     <div className="confirm-backdrop" onMouseDown={() => leave({ go: 'close' })}>
       <div
         className="settings"
+        ref={box}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Settings"
@@ -1167,7 +1181,14 @@ export function SettingsWindow({
         </div>
 
         {pending && (
-          <div className="settings-pending" role="alertdialog" aria-modal="true" aria-label="Unsaved changes">
+          <div
+            className="settings-pending"
+            ref={asking}
+            tabIndex={-1}
+            role="alertdialog"
+            aria-modal="true"
+            aria-label="Unsaved changes"
+          >
             <p>
               {pending.go === 'close'
                 ? 'This window has unsaved changes.'

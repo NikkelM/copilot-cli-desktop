@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { useFocusTrap } from '../lib/useFocusTrap';
+
 import type { MergeStrategy } from '../../shared/protocol';
 
 /**
@@ -24,6 +26,8 @@ export function MergeChoice({
 }) {
   const [remember, setRemember] = useState(false);
   const cancel = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useFocusTrap(box);
 
   // As with every other question here: a reader dismissing by reflex lands on the way out.
   useEffect(() => cancel.current?.focus(), []);
@@ -40,6 +44,8 @@ export function MergeChoice({
     <div className="confirm-backdrop" onMouseDown={onCancel}>
       <div
         className="confirm"
+        ref={box}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Choose how to pull"

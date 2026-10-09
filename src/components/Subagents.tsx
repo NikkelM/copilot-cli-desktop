@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DelegatedTask } from '../../shared/protocol';
 import { sessionAgents } from '../lib/sidecar';
 import { explain } from '../lib/errors';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 /** How long ago, in the shortest form that is still true. */
 function since(at: string): string {
@@ -63,6 +64,8 @@ export function Subagents({
   const [failed, setFailed] = useState<string | null>(null);
   /** Which session the answer on its way belongs to, so a late one cannot land on another. */
   const asked = useRef(0);
+  const box = useRef<HTMLDivElement>(null);
+  useFocusTrap(box);
 
   // Closed the way every other panel is closed, which is the key a reader reaches for.
   useEffect(() => {
@@ -115,6 +118,8 @@ export function Subagents({
       {/* Stops a click inside the panel reaching the backdrop, which would close it. */}
       <div
         className="subagents"
+        ref={box}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Subagents"

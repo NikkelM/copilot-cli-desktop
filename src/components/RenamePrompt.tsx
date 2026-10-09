@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { useFocusTrap } from '../lib/useFocusTrap';
+
 /**
  * Give a session a name of somebody's choosing.
  *
@@ -22,6 +24,8 @@ export function RenamePrompt({
 }) {
   const [draft, setDraft] = useState(current);
   const field = useRef<HTMLInputElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useFocusTrap(box);
 
   useEffect(() => {
     field.current?.focus();
@@ -44,6 +48,8 @@ export function RenamePrompt({
     <div className="confirm-backdrop" onMouseDown={onClose}>
       <div
         className="confirm"
+        ref={box}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Rename this session"

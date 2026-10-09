@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { normalise } from '../lib/useTags';
 import type { WikiTag } from '../lib/useWikiTags';
+import { useFocusTrap } from '../lib/useFocusTrap';
 
 /**
  * How many words from the wiki to offer at once.
@@ -85,6 +86,8 @@ export function TagPicker({
   }, [held, known, order]);
 
   useEffect(() => field.current?.focus(), []);
+  const box = useRef<HTMLDivElement>(null);
+  useFocusTrap(box);
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -140,6 +143,8 @@ export function TagPicker({
     <div className="confirm-backdrop" onMouseDown={onClose}>
       <div
         className="confirm tag-picker"
+        ref={box}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={`Tags for ${title}`}

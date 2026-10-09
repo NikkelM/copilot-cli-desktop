@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { useFocusTrap } from '../lib/useFocusTrap';
+
 /**
  * The question asked before something irreversible happens.
  *
@@ -30,6 +32,8 @@ export function Confirm({
 }) {
   const [dontAsk, setDontAsk] = useState(false);
   const cancel = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useFocusTrap(box);
 
   useEffect(() => cancel.current?.focus(), []);
 
@@ -47,6 +51,8 @@ export function Confirm({
           at the dialog that happens to finish outside it. */}
       <div
         className="confirm"
+        ref={box}
+        tabIndex={-1}
         role="alertdialog"
         aria-modal="true"
         aria-label={title}
