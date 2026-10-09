@@ -139,3 +139,61 @@ describe('TagFilter', () => {
     expect(screen.queryByRole('group')).toBeNull();
   });
 });
+
+/**
+ * A list that appeared and left the keyboard on the button behind it would have to be
+ * reached with Tab, which is what pressing the button was meant to save (#247).
+ */
+describe('reaching the tags without a mouse', () => {
+  const known = [
+    { tag: 'hades', count: 3 },
+    { tag: 'copilot', count: 1 },
+    { tag: 'mod', count: 2 },
+  ];
+
+  const show = (chosen: string[] = []) =>
+    render(<TagFilter known={known} chosen={chosen} onToggle={() => {}} onClear={() => {}} />);
+
+  const chips = () => [...document.querySelectorAll('.tag-filter-menu button.tag')] as HTMLElement[];
+  const openIt = () => fireEvent.click(screen.getByRole('button', { name: /Filter by tag/ }));
+
+  it('takes the keyboard to the first tag when it opens', () => {
+    show();
+
+    openIt();
+
+    expect(document.activeElement).toBe(chips()[0]);
+  });
+
+  it.each([
+    ['ArrowDown', 1],
+    ['ArrowRight', 1],
+    ['ArrowUp', 2],
+    ['ArrowLeft', 2],
+  ])('walks the tags on %s', (key, landing) => {
+    show();
+    openIt();
+
+    fireEvent.keyDown(chips()[0]!, { key });
+
+    expect(document.activeElement, 'wrapping, as the other menus do').toBe(chips()[landing]);
+  });
+
+  /** They wrap across lines, so which arrow a reader reaches for depends on how they broke. */
+  it('leaves every tag reachable by Tab as well', () => {
+    show();
+    openIt();
+
+    expect(chips().every((chip) => chip.tabIndex >= 0)).toBe(true);
+  });
+
+  it('keeps the arrow to itself rather than letting the sidebar act on it', () => {
+    show();
+    openIt();
+
+    const event = new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true, cancelable: true });
+    chips()[0]!.dispatchEvent(event);
+
+    expect(event.defaultPrevented, 'the list owns an arrow pressed inside it').toBe(true);
+  });
+});

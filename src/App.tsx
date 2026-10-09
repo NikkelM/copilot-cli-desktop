@@ -223,6 +223,20 @@ export default function App() {
   const subagents = useSubagents();
 
   /**
+   * Put the keyboard back where someone is going to type.
+   *
+   * A button in the header takes focus when it is clicked and has nowhere to give it back
+   * to, so the next keystroke goes to the button rather than into the message. Bumped
+   * rather than set, since returning focus twice to the same session is a real request.
+   *
+   * Declared here rather than beside the rest of the composer's state because opening a
+   * session reaches for it, and a const read from a callback built further up the render is
+   * a const read before it exists.
+   */
+  const [focusAt, setFocusAt] = useState(0);
+  const toComposer = useCallback(() => setFocusAt((n) => n + 1), []);
+
+  /**
    * Show a session, at a cursor when one was worked out for it.
    *
    * The part every way of arriving has in common. What differs is only how the cursor was
@@ -248,6 +262,11 @@ export default function App() {
 
   const open = useCallback(
     async (sessionId: string, session?: SessionSummary, found?: SessionMatch, words?: string) => {
+      // Asked for while already being read, which is a request to get on with it rather than
+      // to go anywhere: the composer is keyed on the session, so nothing about this arrival
+      // would otherwise move the keyboard and Enter on the row would look like a dead key.
+      const already = sessionId === selectedRef.current;
+
       /**
        * Where to open, worked out before opening rather than after.
        *
@@ -263,8 +282,9 @@ export default function App() {
       const at = found ? await locateTurn(sessionId, found.source).catch(() => null) : null;
 
       show(sessionId, at, session, words);
+      if (already) toComposer();
     },
-    [show],
+    [show, toComposer],
   );
 
   /**
@@ -935,14 +955,6 @@ export default function App() {
   );
 
   /**
-   * Put the keyboard back where someone is going to type.
-   *
-   * A button in the header takes focus when it is clicked and has nowhere to give it back
-   * to, so the next keystroke goes to the button rather than into the message. Bumped
-   * rather than set, since returning focus twice to the same session is a real request.
-   */
-  const [focusAt, setFocusAt] = useState(0);
-  /**
    * Where the caret is in each session's box, kept as it moves.
    *
    * Out here because the box itself is not drawn while the agent is waiting on an answer
@@ -958,7 +970,6 @@ export default function App() {
    * the session falls idle, since by then it has been answered and is part of the record.
    */
   const [lastSent, setLastSent] = useState<Record<string, { messageId: string; prompt: string }>>({});
-  const toComposer = useCallback(() => setFocusAt((n) => n + 1), []);
 
   /** Open the panel and read the list, from wherever the request came from. */
   function openChanges() {

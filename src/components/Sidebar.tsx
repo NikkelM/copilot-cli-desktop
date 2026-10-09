@@ -398,10 +398,27 @@ export function Sidebar({
     [onMenuOpened],
   );
 
-  /** Give the row back the keyboard, for a menu that took it from there in the first place. */
+  /**
+   * Give the row back the keyboard, for a menu that took it from there in the first place.
+   *
+   * On the next frame, and looked up again rather than held: an action taken from the menu
+   * is usually an action on the row it was opened from, and favouriting or archiving one
+   * moves it to another group - so the element focused in this tick is replaced by the
+   * render that follows and the keyboard ends up on nothing.
+   *
+   * A session that is gone entirely leaves nothing to go back to, so the keyboard goes to
+   * the top of the list instead of being dropped.
+   */
   const closeMenu = useCallback(() => {
     setMenu((open) => {
-      if (open?.byKey) nodes.current.get(open.sessionId)?.focus();
+      if (open?.byKey) {
+        const was = open.sessionId;
+        requestAnimationFrame(() => {
+          const row = nodes.current.get(was);
+          if (row?.isConnected) row.focus();
+          else nodes.current.get(stopsRef.current[0] ?? '')?.focus();
+        });
+      }
       return null;
     });
   }, []);
@@ -585,47 +602,124 @@ export function Sidebar({
   }, [onWatchRow]);
 
   /**
-   * The rows the keyboard can reach, top to bottom.
+   * Everything the arrows stop on, top to bottom: each group's own header, then its rows.
    *
-   * `drawn` is the same question asked for a Shift range, but it stops at the groups: the
-   * sessions found by id are drawn below them and are just as reachable, so the cursor has
-   * to know about them too. Kept separate rather than widening `drawn`, because a range is
-   * measured over the groups it was dragged across and those rows are not in one.
+   * Headers are stops of their own so a group can be folded on the way past rather than
+   * walked through - which is the only way a long list is skippable at all. Written as
+   * `group:key` so one map of nodes and one cursor can hold both kinds.
+   *
+   * `drawn` answers a narrower question and stays as it is: a Shift range is measured over
+   * the rows it was dragged across, and a header is not one of them.
    */
-  const order = useMemo(
-    () => [...drawn, ...hidden.map((session) => session.sessionId)],
-    [drawn, hidden],
-  );
+  const stops = useMemo(() => {
+    const list: string[] = [];
+    for (const group of groups) {
+      const shut = group.label !== null && (folded[group.key] ?? group.foldedByDefault === true);
+      if (group.label !== null) list.push(`group:${group.key}`);
+      // A folded group still shows the open session, and a row on screen is a row the
+      // arrows have to reach.
+      for (const session of shut ? group.sessions.filter((s) => s.sessionId === selectedId) : group.sessions) {
+        list.push(session.sessionId);
+      }
+    }
+    // Found by id, drawn below every group and under a heading that is not a control.
+    for (const session of hidden) list.push(session.sessionId);
+    return list;
+  }, [groups, folded, selectedId, hidden]);
 
   /**
-   * Which row carries the tab stop.
+   * The same list, readable from a callback that must not be rebuilt when it changes.
+   *
+   * The menu's own close runs a frame later and needs somewhere to send the keyboard if the
+   * session it was opened on has gone; depending on the list directly would rebuild the
+   * handler on every keystroke in the filter box.
+   */
+  const stopsRef = useRef<readonly string[]>(stops);
+  stopsRef.current = stops;
+
+  /**
+   * Which stop carries the tab stop.
    *
    * A list of hundreds that each took a stop of their own would bury everything after it, so
-   * one row holds it and the arrows move it - the roving tabindex every list on the machine
-   * uses. Worked out rather than only stored, because the row it was left on can be
-   * filtered away, archived or deleted while the cursor sits there, and a tab stop on a row
-   * that is gone is no tab stop at all.
+   * one holds it and the arrows move it - the roving tabindex every list on the machine
+   * uses. Worked out rather than only stored, because what it was left on can be filtered
+   * away, archived or deleted while the cursor sits there, and a tab stop on a row that is
+   * gone is no tab stop at all.
    */
   const [cursor, setCursor] = useState<string | null>(null);
   const at =
-    (cursor !== null && order.includes(cursor) && cursor) ||
-    (selectedId !== null && order.includes(selectedId) && selectedId) ||
-    order[0] ||
+    (cursor !== null && stops.includes(cursor) && cursor) ||
+    (selectedId !== null && stops.includes(selectedId) && selectedId) ||
+    stops[0] ||
     null;
 
-  /** Move the cursor to a row and take the focus there with it. */
-  const goTo = useCallback((sessionId: string | undefined) => {
-    if (!sessionId) return;
-    setCursor(sessionId);
-    nodes.current.get(sessionId)?.focus();
+  /** Move the cursor to a stop and take the focus there with it. */
+  const goTo = useCallback((stop: string | undefined) => {
+    if (!stop) return;
+    setCursor(stop);
+    nodes.current.get(stop)?.focus();
   }, []);
+
+  /**
+   * Moving from one stop to the next, which both kinds of stop do the same way.
+   *
+   * Shift extends the range as it moves, so a run of rows is gathered by holding it down
+   * rather than by marking each one on the way. A header is not a session and so is not
+   * something a range can include, which is why the mark is asked for only when the stop
+   * landed on is a row.
+   */
+  const stepTo = useCallback(
+    (to: number, event: ReactKeyboardEvent) => {
+      event.preventDefault();
+      // Above the first stop is the box that narrowed the list down to it. Going back up
+      // into it is how a search is changed without reaching for the mouse, and it makes the
+      // way in and the way out the same pair of keys.
+      if (to < 0) {
+        searchRef.current?.focus();
+        return;
+      }
+
+      // Off the bottom is nothing rather than the top: a list that wraps takes the reader
+      // somewhere they did not ask to go, and `stops[length]` is already undefined.
+      const next = stops[to];
+      if (event.shiftKey && next && !next.startsWith('group:')) {
+        onMark?.(next, { toggle: false, range: true }, drawn);
+      }
+      goTo(next);
+    },
+    [stops, drawn, goTo, onMark],
+  );
+
+  /**
+   * What a key pressed on a group's header means.
+   *
+   * Only the arrows. Enter and Space belong to the button, which folds the group - the one
+   * thing a header is for, and the reason it is worth stopping on at all.
+   */
+  const onGroupKey = useCallback(
+    (key: string, event: ReactKeyboardEvent) => {
+      const from = stops.indexOf(`group:${key}`);
+      switch (event.key) {
+        case 'ArrowDown':
+          return stepTo(from + 1, event);
+        case 'ArrowUp':
+          return stepTo(from - 1, event);
+        case 'Home':
+          return stepTo(0, event);
+        case 'End':
+          return stepTo(stops.length - 1, event);
+        default:
+          return;
+      }
+    },
+    [stops, stepTo],
+  );
 
   /**
    * What a key pressed on a row means.
    *
    * Enter opens, which is what the row is for. Space marks, as it does in every multi-select
-   * list, and Shift with an arrow extends the range the same way dragging with Shift does -
-   * both routed through the same `onMark` the mouse uses, so the two cannot drift apart.
+   * list, routed through the same `onMark` the mouse uses so the two cannot drift apart.
    *
    * Opening is handed in rather than worked out here, because the two lists open a row on
    * different terms: a row the name found carries the search term and the words it matched,
@@ -633,35 +727,17 @@ export function Sidebar({
    */
   const onRowKey = useCallback(
     (sessionId: string, open: () => void, event: ReactKeyboardEvent) => {
-      const from = order.indexOf(sessionId);
-      const step = (to: number) => {
-        event.preventDefault();
-        // Above the first row is the box that narrowed the list down to it. Going back up
-        // into it is how a search is changed without reaching for the mouse, and it makes
-        // the way in and the way out the same pair of keys.
-        if (to < 0) {
-          searchRef.current?.focus();
-          return;
-        }
-
-        // Off the bottom is nothing rather than the top: a list that wraps takes the reader
-        // somewhere they did not ask to go, and `order[length]` is already undefined.
-        const next = order[to];
-        // Shift extends as it moves, so a range is gathered by holding it down rather than
-        // by marking each row on the way.
-        if (event.shiftKey && next) onMark?.(next, { toggle: false, range: true }, drawn);
-        goTo(next);
-      };
+      const from = stops.indexOf(sessionId);
 
       switch (event.key) {
         case 'ArrowDown':
-          return step(from + 1);
+          return stepTo(from + 1, event);
         case 'ArrowUp':
-          return step(from - 1);
+          return stepTo(from - 1, event);
         case 'Home':
-          return step(0);
+          return stepTo(0, event);
         case 'End':
-          return step(order.length - 1);
+          return stepTo(stops.length - 1, event);
         case 'Enter':
           event.preventDefault();
           return open();
@@ -676,14 +752,17 @@ export function Sidebar({
           event.preventDefault();
           return menuForRow(sessionId);
         case 'F10':
-          if (!event.shiftKey) return;
+          // Claimed either way. The window has no menu bar for the unshifted one to reach -
+          // nothing in this app draws one - so all it did was take the keyboard off the row
+          // and leave the next Shift+F10 pressing against nothing.
           event.preventDefault();
-          return menuForRow(sessionId);
+          if (event.shiftKey) menuForRow(sessionId);
+          return;
         default:
           return;
       }
     },
-    [order, drawn, goTo, onMark, menuForRow],
+    [stops, drawn, stepTo, onMark, menuForRow],
   );
 
 
@@ -731,7 +810,7 @@ export function Sidebar({
             className="new-session"
             onClick={onCreate}
             disabled={creating}
-            data-tip="Start a new session"
+            data-tip="Start a new session (Ctrl+N)"
           >
             {creating ? 'Starting…' : 'New'}
           </button>
@@ -764,7 +843,7 @@ export function Sidebar({
           onKeyDown={(event) => {
             if (event.key !== 'ArrowDown') return;
             event.preventDefault();
-            goTo(order[0]);
+            goTo(stops[0]);
           }}
         />
         {/* Beside the box rather than in the header: it narrows the list, which is what the
@@ -828,6 +907,16 @@ export function Sidebar({
                     className="group"
                     id={`sessions-${group.key}`}
                     aria-expanded={!shut}
+                    // A stop of its own, so a group can be folded on the way past rather
+                    // than walked through - which is the only thing that makes a long list
+                    // skippable. Enter and Space are left to the button, which folds it.
+                    ref={(node) => {
+                      if (node) nodes.current.set(`group:${group.key}`, node);
+                      else nodes.current.delete(`group:${group.key}`);
+                    }}
+                    tabIndex={`group:${group.key}` === at ? 0 : -1}
+                    onKeyDown={(event) => onGroupKey(group.key, event)}
+                    onFocus={() => setCursor(`group:${group.key}`)}
                     onClick={() => toggle(group.key, shut)}
                     title={
                       shut
@@ -1342,6 +1431,15 @@ function Row({
   elsewhere?: boolean;
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
+  const shown = session.title === null ? 'Untitled session' : clipTitle(session.title);
+  /**
+   * The whole name, only where the one on screen is not it.
+   *
+   * The row is inside a scrolling list, which clips anything the page draws beyond it, so a
+   * name the browser draws is the one label here that still earns its keep. It is worth
+   * nothing at all when it only repeats the row, which is almost always.
+   */
+  const full = session.title !== null && shown !== session.title ? session.title : undefined;
 
   // Selecting is the whole row's job, so this button does not also do it: the click it
   // raises, including the one Enter raises for a keyboard, reaches the row on the way up.
@@ -1355,8 +1453,8 @@ function Row({
       // still follows Tab, which is the case the ring is for.
       onMouseDown={(event) => event.preventDefault()}
     >
-      <span className="session-title" title={session.title ?? undefined}>
-        {session.title === null ? 'Untitled session' : clipTitle(session.title)}
+      <span className="session-title" title={full}>
+        {shown}
         {/* A word rather than another dot. The dot beside it is this app saying what it is
             doing, and this is the opposite - a session being worked in somewhere this app
             has no say over, which is a different kind of thing and must not read as a

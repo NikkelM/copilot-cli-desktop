@@ -23,6 +23,17 @@
   --sidebar-inset: 10px;
   /** The header's own padding above and below, which is what the fold control sits against. */
   --header-inset: 12px;
+  /*
+   * How tall the sidebar's top row is.
+   *
+   * Pinned rather than left to whichever child happens to be tallest, because the fold
+   * control has to sit on the same line in both states and the folded one has no siblings
+   * to be centred against. Comfortably above what the row needs at any text size, so it is
+   * this that decides the height rather than the button that happens to win.
+   */
+  --header-row: calc(var(--font-base) * 1.6);
+  /** The fold control, which is square and the same size in both of its two homes. */
+  --toggle-size: calc(var(--font-base) * 1.35);
   --success: #3fb950;
   /** Red, for a failure or a destructive action. */
   --danger: #f85149;
@@ -224,6 +235,9 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* The row's height is pinned so the fold control can be centred against it from outside,
+     once the sidebar is folded away and the control has nothing left to sit beside. */
+  min-height: calc(var(--header-row) + var(--header-inset) * 2);
   padding: var(--header-inset) var(--sidebar-inset);
   border-bottom: 1px solid var(--border);
   font-weight: 600;
@@ -5001,8 +5015,8 @@ pre.fatal,
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  width: calc(var(--font-base) * 1.35);
-  height: calc(var(--font-base) * 1.35);
+  width: var(--toggle-size);
+  height: var(--toggle-size);
   padding: 0;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -5034,7 +5048,10 @@ pre.fatal,
 .sidebar-toggle.away {
   position: fixed;
   z-index: 30;
-  top: var(--header-inset);
+  /* Centred on the line the header would have put it on, rather than hung from the inset.
+     The same size as in the header, so only where it sits changes and not what it looks
+     like - a control that changed shape as it moved would be a second thing to notice. */
+  top: calc(var(--header-inset) + (var(--header-row) - var(--toggle-size)) / 2);
   left: var(--sidebar-inset);
 }
 
@@ -5136,7 +5153,9 @@ pre.fatal,
   flex-wrap: wrap;
   gap: 8px;
   margin: 0 0 18px;
-  padding: 0;
+  /* Room for the focus ring, which is drawn outside the chip it belongs to and would
+     otherwise be clipped away on every edge by the scrolling this list does. */
+  padding: 3px;
   max-height: 34vh;
   overflow-y: auto;
   list-style: none;
@@ -6832,12 +6851,27 @@ pre.fatal,
   pointer-events: none;
 }
 
-/* Anchored to whichever edge leaves it inside the column: a tooltip hanging right from a
-   button already at the right of the sidebar would be cut in half. */
-.sidebar-actions [data-tip]:hover::after,
-.tag-filter [data-tip]:hover::after {
-  left: auto;
-  right: 0;
+/* Anchored to the row the control sits in rather than to the control, so a tooltip is drawn
+   inside the sidebar wherever its button happens to be. Hung from the button it would run
+   off the left of the window for the leftmost one and off the sidebar for the rightmost. */
+.sidebar-header,
+.search {
+  position: relative;
+}
+
+/* Static, so the label escapes the button and resolves against the row instead. */
+.sidebar-header [data-tip],
+.search [data-tip] {
+  position: static;
+}
+
+.sidebar-header [data-tip]:hover::after,
+.search [data-tip]:hover::after {
+  top: calc(100% + 4px);
+  left: var(--sidebar-inset);
+  right: var(--sidebar-inset);
+  width: auto;
+  max-width: none;
 }
 
 /* What is about to be deleted, named rather than counted. */

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
@@ -214,7 +214,10 @@ describe('a title too long to be one', () => {
     shown(title);
 
     expect(drawn().textContent).toBe(title);
-    expect(drawn().getAttribute('title')).toBe(title);
+    // And says nothing further about it. A label the browser pops up to repeat what is
+    // already written is one nobody needs, and it appeared under a pointer that had not
+    // moved while the keyboard was somewhere else entirely.
+    expect(drawn().getAttribute('title')).toBeNull();
   });
 
   it('draws a prompt that spans lines as one line', () => {
@@ -3095,15 +3098,18 @@ describe('opening a session row menu without a mouse', () => {
     expect(document.activeElement).toBe(screen.getAllByRole('menuitem')[0]);
   });
 
-  it('gives the row the keyboard back when the menu closes', () => {
+  it('gives the row the keyboard back when the menu closes', async () => {
     show();
     const row = rows()[0]!;
     row.focus();
     fireEvent.keyDown(row, { key: 'ContextMenu' });
 
     fireEvent.keyDown(window, { key: 'Escape' });
+    // A frame, because an action taken from the menu usually moves the row it was opened
+    // from, so the keyboard is handed back only once the render that moves it has run.
+    await act(async () => new Promise((done) => requestAnimationFrame(() => done(undefined))));
 
-    expect(document.activeElement, 'back where it was before the menu').toBe(row);
+    expect(document.activeElement, 'back where it was before the menu').toBe(rows()[0]);
   });
 
   /** A menu that was pointed at did not take the keyboard, so it has none to give back. */
@@ -3116,5 +3122,187 @@ describe('opening a session row menu without a mouse', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
 
     expect(document.activeElement).toBe(box);
+  });
+});
+
+/**
+ * A group's header is a stop of its own, so a group can be folded on the way past rather than
+ * walked through. Without it the arrows ran from the last row of one group straight into the
+ * first of the next, and a long group had to be crossed row by row.
+ */
+describe('stopping on a group on the way down the list', () => {
+  /** Two groups: one loaded session, one that is not. */
+  const grouped = [
+    session({ sessionId: 'aaaaaaaa-0000-4000-8000-000000000001', title: 'Resident', loaded: true }),
+    session({ sessionId: 'bbbbbbbb-0000-4000-8000-000000000002', title: 'Cold' }),
+  ];
+
+  const show = () =>
+    render(
+      <Sidebar
+        sessions={grouped}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+      />,
+    );
+
+  const headers = () => [...document.querySelectorAll('button.group')] as HTMLElement[];
+  const rows = () => [...document.querySelectorAll('.session-row')] as HTMLElement[];
+
+  it('draws a header for each group, with the rows under it', () => {
+    show();
+
+    expect(headers().length, 'the fixture needs two groups to say anything').toBe(2);
+  });
+
+  it('goes from a group to its first row', () => {
+    show();
+    headers()[0]!.focus();
+
+    fireEvent.keyDown(headers()[0]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(rows()[0]);
+  });
+
+  it('reaches the next group rather than jumping over it into its rows', () => {
+    show();
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement, 'the header of the group below').toBe(headers()[1]);
+  });
+
+  it('comes back up to the group a row belongs to', () => {
+    show();
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'ArrowUp' });
+
+    expect(document.activeElement).toBe(headers()[0]);
+  });
+
+  /** Which is the whole point of stopping here: fold it and its rows are no longer in the way. */
+  it('skips the rows of a group that has been folded', () => {
+    show();
+    fireEvent.click(headers()[0]!);
+    headers()[0]!.focus();
+
+    fireEvent.keyDown(headers()[0]!, { key: 'ArrowDown' });
+
+    expect(document.activeElement, 'straight on to the next group').toBe(headers()[1]);
+  });
+
+  it('leaves Enter to the button, which is what folds the group', () => {
+    show();
+    headers()[0]!.focus();
+
+    fireEvent.keyDown(headers()[0]!, { key: 'Enter' });
+
+    expect(document.activeElement, 'still on the header it folded').toBe(headers()[0]);
+  });
+
+  /**
+   * A header is not a session, so there is nothing about it to add to a set. Asking anyway
+   * marked whatever `group:key` happened to match, which is nothing at all - and the row the
+   * reader was reaching for was skipped over.
+   */
+  it('gathers only rows when Shift carries the arrow across a group', () => {
+    const marked: string[] = [];
+    render(
+      <Sidebar
+        sessions={grouped}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        marked={marked}
+        onMark={(id) => {
+          marked.push(id);
+          return true;
+        }}
+      />,
+    );
+    rows()[0]!.focus();
+
+    // Down from the first row lands on the next group's header, and down again on its row.
+    fireEvent.keyDown(rows()[0]!, { key: 'ArrowDown', shiftKey: true });
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown', shiftKey: true });
+
+    expect(marked, 'the header is not something a range can include').toEqual([
+      grouped[1]!.sessionId,
+    ]);
+  });
+
+  it('holds the one tab stop between the headers and the rows', () => {
+    show();
+
+    const stops = [...headers(), ...rows()].filter((node) => node.tabIndex === 0);
+    expect(stops).toHaveLength(1);
+  });
+
+  it('steps out of the filter box onto the first group', () => {
+    show();
+    const box = screen.getByRole('searchbox');
+    box.focus();
+
+    fireEvent.keyDown(box, { key: 'ArrowDown' });
+
+    expect(document.activeElement).toBe(headers()[0]);
+  });
+});
+
+/** Plain F10 reaches a menu bar this app does not have, and took the keyboard off the row. */
+describe('F10 on a session row', () => {
+  const rows = () => [...document.querySelectorAll('.session-row')] as HTMLElement[];
+
+  const show = () =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        actionsFor={() => [{ id: 'a', label: 'Favourite', run: vi.fn() }]}
+      />,
+    );
+
+  it('is claimed, so the window cannot take the keyboard away with it', () => {
+    show();
+    rows()[0]!.focus();
+
+    const event = new KeyboardEvent('keydown', { key: 'F10', bubbles: true, cancelable: true });
+    rows()[0]!.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it('still opens nothing on its own', () => {
+    show();
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'F10' });
+
+    expect(document.querySelector('.session-menu')).toBeNull();
+  });
+
+  /** The reported sequence: F10 took the focus, so the Shift+F10 after it pressed on nothing. */
+  it('leaves Shift+F10 working immediately afterwards', () => {
+    show();
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'F10' });
+    fireEvent.keyDown(rows()[0]!, { key: 'F10', shiftKey: true });
+
+    expect(document.querySelector('.session-menu')).toBeTruthy();
   });
 });
