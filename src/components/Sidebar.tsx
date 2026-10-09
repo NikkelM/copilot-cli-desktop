@@ -346,18 +346,65 @@ export function Sidebar({
 
   const hidden = useHiddenMatches(query, matches.length === 0);
   const { folded, toggle } = useFolded();
-  /** The session a menu is open on, and where the pointer was when it opened. */
-  const [menu, setMenu] = useState<{ sessionId: string; at: { x: number; y: number } } | null>(null);
+  /**
+   * Every drawn row, by session, so the cursor has something to move focus to.
+   *
+   * Outside the callback that fills it: that one is rebuilt whenever the watcher changes
+   * identity, and a map rebuilt with it would lose every row already on screen.
+   */
+  const nodes = useRef(new Map<string, HTMLElement>());
+
+  /** The session a menu is open on, where it was opened, and whether a key opened it. */
+  const [menu, setMenu] = useState<{ sessionId: string; at: { x: number; y: number }; byKey?: boolean } | null>(null);
   const openMenu = useCallback(
     (sessionId: string) => (event: ReactMouseEvent) => {
       event.preventDefault();
       // Asked as the menu opens rather than for every session in the list: this reads a
       // log, and the sidebar draws hundreds of rows nobody right-clicks.
       onMenuOpened?.(sessionId);
-      setMenu({ sessionId, at: { x: event.clientX, y: event.clientY } });
+
+      // Shift+F10 and the Menu key raise this too, and what they put in the coordinates is
+      // the browser's business - Chromium answers with the focused element's corner, others
+      // with nothing at all. A press with no pointer behind it is placed against the row
+      // instead, so the menu cannot open in the corner of the window.
+      const byKey = event.button !== 2 && event.clientX === 0 && event.clientY === 0;
+      const row = byKey ? (event.currentTarget as HTMLElement).getBoundingClientRect() : null;
+
+      setMenu({
+        sessionId,
+        at: row ? { x: row.left + 12, y: row.top + 12 } : { x: event.clientX, y: event.clientY },
+        byKey: byKey || undefined,
+      });
     },
     [onMenuOpened],
   );
+
+  /**
+   * The same menu, asked for by a key rather than by a pointer.
+   *
+   * Placed against the row that has the keyboard, since there is no pointer to place it at
+   * and the row is what the menu is about. Inset a little so it overlaps the row the way a
+   * right-click near its corner would, rather than sitting exactly on the edge.
+   */
+  const menuForRow = useCallback(
+    (sessionId: string) => {
+      const row = nodes.current.get(sessionId);
+      if (!row) return;
+
+      onMenuOpened?.(sessionId);
+      const box = row.getBoundingClientRect();
+      setMenu({ sessionId, at: { x: box.left + 12, y: box.top + 12 }, byKey: true });
+    },
+    [onMenuOpened],
+  );
+
+  /** Give the row back the keyboard, for a menu that took it from there in the first place. */
+  const closeMenu = useCallback(() => {
+    setMenu((open) => {
+      if (open?.byKey) nodes.current.get(open.sessionId)?.focus();
+      return null;
+    });
+  }, []);
   // Resolved against the current list rather than kept from the right-click, so an action
   // is offered for what the session is now. Sessions evict themselves while a menu is open.
   const menuSession = menu
@@ -471,14 +518,6 @@ export function Sidebar({
       onMark?.(sessionId, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey }, drawn) ?? false,
     [onMark, drawn],
   );
-
-  /**
-   * Every drawn row, by session, so the cursor has something to move focus to.
-   *
-   * Outside the callback that fills it: that one is rebuilt whenever the watcher changes
-   * identity, and a map rebuilt with it would lose every row already on screen.
-   */
-  const nodes = useRef(new Map<string, HTMLElement>());
 
   /** The filter box, which is both where the list is narrowed and what sits above the rows. */
   const searchRef = useRef<HTMLInputElement>(null);
@@ -631,11 +670,20 @@ export function Sidebar({
           event.preventDefault();
           onMark?.(sessionId, { toggle: true, range: false }, drawn);
           return;
+        case 'ContextMenu':
+          // Claimed so the browser does not raise its own menu event behind this one, which
+          // would open the same menu a second time wherever it decided to put it.
+          event.preventDefault();
+          return menuForRow(sessionId);
+        case 'F10':
+          if (!event.shiftKey) return;
+          event.preventDefault();
+          return menuForRow(sessionId);
         default:
           return;
       }
     },
-    [order, drawn, goTo, onMark],
+    [order, drawn, goTo, onMark, menuForRow],
   );
 
 
@@ -996,7 +1044,8 @@ export function Sidebar({
         <SessionMenu
           at={menu.at}
           actions={actionsFor(menuSession)}
-          onClose={() => setMenu(null)}
+          focusFirst={menu.byKey}
+          onClose={closeMenu}
         />
       )}
 

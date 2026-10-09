@@ -3012,3 +3012,109 @@ describe('reaching the buttons above the list', () => {
     expect(document.activeElement, 'still in the list it was opened to').toBe(tag);
   });
 });
+
+/**
+ * The row menu had no keyboard route at all: `openMenu` takes a mouse event and places the
+ * menu at the pointer, and Shift+F10 carries no pointer. Placed against the row instead, so
+ * it opens on what it is about rather than in the corner of the window (#247).
+ */
+describe('opening a session row menu without a mouse', () => {
+  const rows = () => [...document.querySelectorAll('.session-row')] as HTMLElement[];
+  const menu = () => document.querySelector('.session-menu');
+
+  const show = (onMenuOpened = vi.fn()) => {
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        actionsFor={() => [
+          { id: 'a', label: 'Favourite', run: vi.fn() },
+          { id: 'b', label: 'Rename', run: vi.fn() },
+        ]}
+        onMenuOpened={onMenuOpened}
+      />,
+    );
+    return { onMenuOpened };
+  };
+
+  it.each([
+    ['the Menu key', { key: 'ContextMenu' }],
+    ['Shift+F10', { key: 'F10', shiftKey: true }],
+  ])('opens on %s', (_what, init) => {
+    show();
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, init);
+
+    expect(menu()).toBeTruthy();
+  });
+
+  /** F10 alone is not it, and claiming it would take a key nothing here has a use for. */
+  it('leaves plain F10 alone', () => {
+    show();
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'F10' });
+
+    expect(menu()).toBeNull();
+  });
+
+  it('asks what the session is before drawing the menu', () => {
+    const { onMenuOpened } = show();
+    rows()[1]!.focus();
+
+    fireEvent.keyDown(rows()[1]!, { key: 'ContextMenu' });
+
+    expect(onMenuOpened).toHaveBeenCalledWith(sessions[1]!.sessionId);
+  });
+
+  it('places the menu against the row rather than in the corner', () => {
+    show();
+    const row = rows()[0]!;
+    row.getBoundingClientRect = () => ({ left: 40, top: 120, right: 0, bottom: 0, width: 0, height: 0, x: 40, y: 120, toJSON: () => '' });
+    row.focus();
+
+    fireEvent.keyDown(row, { key: 'ContextMenu' });
+
+    const box = menu() as HTMLElement;
+    expect(box.style.left, 'inset from the row it belongs to').toBe('52px');
+    expect(box.style.top).toBe('132px');
+  });
+
+  it('hands the keyboard to the menu, which is the only place left for it', () => {
+    show();
+    rows()[0]!.focus();
+
+    fireEvent.keyDown(rows()[0]!, { key: 'ContextMenu' });
+
+    expect(document.activeElement).toBe(screen.getAllByRole('menuitem')[0]);
+  });
+
+  it('gives the row the keyboard back when the menu closes', () => {
+    show();
+    const row = rows()[0]!;
+    row.focus();
+    fireEvent.keyDown(row, { key: 'ContextMenu' });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(document.activeElement, 'back where it was before the menu').toBe(row);
+  });
+
+  /** A menu that was pointed at did not take the keyboard, so it has none to give back. */
+  it('leaves the keyboard alone when the menu was opened by a right-click', () => {
+    show();
+    const box = screen.getByRole('searchbox');
+    box.focus();
+    fireEvent.contextMenu(rows()[0]!, { button: 2, clientX: 30, clientY: 30 });
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(document.activeElement).toBe(box);
+  });
+});

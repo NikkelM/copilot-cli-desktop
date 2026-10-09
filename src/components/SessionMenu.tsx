@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 /** One thing the menu can do to a session. */
 export interface SessionAction {
@@ -39,11 +39,21 @@ export interface SessionAction {
 export function SessionMenu({
   at,
   actions,
+  focusFirst = false,
   onClose,
 }: {
   /** Where the pointer was, in client coordinates. */
   at: { x: number; y: number };
   actions: SessionAction[];
+  /**
+   * Whether to take the keyboard, for a menu a key asked for.
+   *
+   * Only then: a right-click leaves the keyboard where it was, as every other menu on the
+   * machine does, and a menu that is pointed at is operated by pointing at it. Opened by a
+   * key there is nowhere else for the keyboard to be - the menu would otherwise be a list
+   * that appeared and could not be read.
+   */
+  focusFirst?: boolean;
   onClose: () => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
@@ -81,8 +91,37 @@ export function SessionMenu({
   // first, not to each of them: two would draw two lines and make a group of one.
   const apart = actions.findIndex((action) => action.tone !== undefined);
 
+  /** The items that can actually be reached, since a refused one is drawn but disabled. */
+  const reachable = () => [...(box.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)') ?? [])];
+
+  useEffect(() => {
+    if (focusFirst) reachable()[0]?.focus();
+    // Once, on opening. The actions are rebuilt on every render of the sidebar, so depending
+    // on them would drag the keyboard back to the first item while somebody was moving down
+    // the list.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusFirst]);
+
+  /**
+   * Up and down walk the menu, which is what a menu does everywhere else.
+   *
+   * Only once something inside it has the keyboard, which is only ever true of a menu a key
+   * opened - so this costs a reader using the pointer nothing.
+   */
+  function onKeyDown(event: ReactKeyboardEvent) {
+    const items = reachable();
+    const by = event.key === 'ArrowDown' ? 1 : event.key === 'ArrowUp' ? -1 : 0;
+    if (by === 0) return;
+
+    event.preventDefault();
+    const from = items.indexOf(document.activeElement as HTMLButtonElement);
+    // Wraps, as the other menus in the app do: a list this short is quicker to reach round
+    // the end than back through the middle.
+    items[(from + by + items.length) % items.length]?.focus();
+  }
+
   return (
-    <div className="session-menu" ref={box} role="menu">
+    <div className="session-menu" ref={box} role="menu" onKeyDown={onKeyDown}>
       {actions.map((action, index) => (
         <button
           key={action.id}

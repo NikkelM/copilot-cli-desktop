@@ -142,3 +142,64 @@ describe('SessionMenu', () => {
     });
   });
 });
+
+/**
+ * A menu a key opened has to be operable by key, or it is a list that appears and cannot be
+ * read. A menu that was pointed at is left alone: the keyboard stays where it was, as every
+ * other context menu on the machine does (#247).
+ */
+describe('a menu opened by a key rather than pointed at', () => {
+  const three = (): SessionAction[] => [
+    { id: 'a', label: 'Favourite', run: vi.fn() },
+    { id: 'b', label: 'Rename', run: vi.fn() },
+    { id: 'c', label: 'Export', run: vi.fn() },
+  ];
+
+  const show = (focusFirst: boolean, actions = three()) =>
+    render(<SessionMenu at={{ x: 10, y: 10 }} actions={actions} focusFirst={focusFirst} onClose={() => {}} />);
+
+  const items = () => screen.getAllByRole('menuitem');
+
+  it('takes the keyboard to its first action', () => {
+    show(true);
+
+    expect(document.activeElement).toBe(items()[0]);
+  });
+
+  it('leaves the keyboard alone when it was pointed at', () => {
+    show(false);
+
+    expect(document.activeElement, 'a pointer has not asked to go anywhere').not.toBe(items()[0]);
+  });
+
+  /** Drawn and refused rather than left out, so it is not somewhere the keyboard can land. */
+  it('starts at the first action that can actually be taken', () => {
+    show(true, [
+      { id: 'a', label: 'Unload from memory', refused: 'Still working.', run: vi.fn() },
+      { id: 'b', label: 'Rename', run: vi.fn() },
+    ]);
+
+    expect(screen.getByText('Rename')).toBe(document.activeElement);
+  });
+
+  it.each([
+    ['ArrowDown', 1],
+    ['ArrowUp', 2],
+  ])('walks to the next action on %s', (key, landing) => {
+    show(true);
+
+    fireEvent.keyDown(items()[0]!, { key });
+
+    expect(document.activeElement, 'wrapping, as the other menus do').toBe(items()[landing]);
+  });
+
+  it('runs what the keyboard landed on', () => {
+    const actions = three();
+    show(true, actions);
+
+    fireEvent.keyDown(items()[0]!, { key: 'ArrowDown' });
+    fireEvent.click(document.activeElement!);
+
+    expect(actions[1]!.run).toHaveBeenCalledOnce();
+  });
+});
