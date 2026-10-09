@@ -93,6 +93,12 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'next-region', keys: 'f6', what: 'next part of the window' },
   { id: 'previous-region', keys: 'shift+f6', what: 'previous part of the window' },
   { keys: 'ctrl+wheel', what: 'draw everything larger or smaller' },
+  /*
+   * The CLI asks for this with shift+tab, which here would mean giving up the one key that
+   * walks backwards out of the composer. The CLI has a prompt to leave; this has a window to
+   * walk, and taking the key back is worth more than matching it.
+   */
+  { keys: 'alt+m', what: 'switch modes' },
   { keys: 'shift+enter', what: 'insert newline' },
   { keys: 'up/down', what: 'previous or next prompt' },
   { keys: 'ctrl+r', what: 'reverse search history' },

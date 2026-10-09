@@ -1262,7 +1262,7 @@ describe('searching back through what was sent', () => {
 
 /**
  * The mode the session is working in, which the CLI puts by the prompt and cycles with
- * Shift+Tab. The indicator is the only sign the shortcut exists, so it is also the button.
+ * Alt+M. The indicator is the only sign the shortcut exists, so it is also the button.
  */
 describe('the mode indicator', () => {
   const indicator = () => screen.getByRole('button', { name: /^Mode:/ });
@@ -1275,7 +1275,7 @@ describe('the mode indicator', () => {
 
   /**
    * Interactive is where a session spends most of its life, and saying so every time would
-   * bury the two modes that change what the agent may do without asking. Shift+Tab is still
+   * bury the two modes that change what the agent may do without asking. Alt+M is still
    * the way back in, whether or not anything is drawn.
    */
   it('says nothing while the session is interactive', () => {
@@ -1314,23 +1314,52 @@ describe('the mode indicator', () => {
     expect(indicator().className.split(' ')).not.toContain('composer-mode');
   });
 
-  it('cycles on Shift+Tab', async () => {
+  it('cycles on Alt+M', async () => {
+    const onCycleMode = vi.fn();
+    const { user } = bare({ onCycleMode });
+
+    await user.keyboard('{Alt>}m{/Alt}');
+
+    expect(onCycleMode).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The key the CLI uses for this, which this app needs back: it is the browser's own "focus
+   * the previous thing", and here there is a whole window to walk backwards through rather
+   * than a prompt to leave.
+   */
+  it('leaves Shift+Tab to walk back out of the box', async () => {
     const onCycleMode = vi.fn();
     const { user } = bare({ onCycleMode });
 
     await user.keyboard('{Shift>}{Tab}{/Shift}');
 
-    expect(onCycleMode).toHaveBeenCalledTimes(1);
+    expect(onCycleMode).not.toHaveBeenCalled();
+    expect(document.activeElement, 'gone back the way Tab came').not.toBe(box());
   });
 
-  // Shift+Tab is the browser's own "focus the previous thing", and losing the box mid-message
-  // to change the mode would be a poor trade.
+  // Losing the box mid-message to change the mode would be a poor trade.
   it('keeps the caret in the box', async () => {
     const { user } = bare();
 
-    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    await user.keyboard('{Alt>}m{/Alt}');
 
     expect(document.activeElement).toBe(box());
+  });
+
+  /**
+   * Claimed, not merely answered. Alt and a letter types nothing on Windows, but it does on
+   * a Mac - Option+M is µ - and a key that changed the mode and left a character behind
+   * would be worse than one that did neither.
+   */
+  it('takes the press rather than letting it reach the box', () => {
+    bare();
+    box().focus();
+
+    const event = new KeyboardEvent('keydown', { key: 'm', code: 'KeyM', altKey: true, bubbles: true, cancelable: true });
+    box().dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
   });
 
   // Whoever never finds the shortcut should still be able to change the mode.
@@ -1354,13 +1383,13 @@ describe('the mode indicator', () => {
     expect(onCycleMode).not.toHaveBeenCalled();
   });
 
-  // Shift+Tab means the same thing wherever the caret is, including mid-message.
+  // It means the same thing wherever the caret is, including mid-message.
   it('cycles without sending what is being written', async () => {
     const onCycleMode = vi.fn();
     const onSend = vi.fn();
     const { user } = bare({ onCycleMode, onSend, value: 'half a thought' });
 
-    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    await user.keyboard('{Alt>}m{/Alt}');
 
     expect(onCycleMode).toHaveBeenCalledTimes(1);
     expect(onSend).not.toHaveBeenCalled();

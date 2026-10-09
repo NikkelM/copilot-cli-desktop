@@ -124,7 +124,7 @@ interface ComposerProps {
   onTakeBack?: () => void;
   /** How the session is working, shown beside the box as the CLI shows it. */
   mode: SessionMode;
-  /** Advance to the next mode, which Shift+Tab asks for. */
+  /** Advance to the next mode, which Alt+M asks for. */
   onCycleMode: () => void;
   /** What the agent says it is doing right now, when it has said. */
   intent: string | null;
@@ -479,10 +479,14 @@ export function Composer({
       return;
     }
 
-    // Shift+Tab cycles the mode, as it does in the CLI. Ahead of everything except the
-    // search because it means the same thing wherever the caret is, and the menu claims
-    // only plain Tab, so completing a command and changing the mode cannot be confused.
-    if (event.key === 'Tab' && event.shiftKey) {
+    // Alt+M cycles the mode. The CLI uses shift+tab for this, which here would mean giving
+    // up the one key that walks backwards out of the composer - and this app has a whole
+    // window to walk, where the CLI has a prompt. Ahead of everything except the search
+    // because it means the same thing wherever the caret is.
+    //
+    // Read from the code rather than the character: Alt leaves the letter alone on Windows
+    // but not everywhere, and the key this is named after is the one with M on it.
+    if (event.altKey && !event.ctrlKey && (event.code === 'KeyM' || event.key === 'm' || event.key === 'M')) {
       event.preventDefault();
       onCycleMode();
       return;
@@ -845,15 +849,15 @@ export function Composer({
             {/* Only when the session is somewhere other than interactive. That is where a
                 session spends most of its life, and saying so every time would bury the two
                 modes that actually change what the agent may do unasked. A button rather
-                than a label because it is the same action Shift+Tab performs, which also
+                than a label because it is the same action Alt+M performs, which also
                 remains the only way back in. */}
             {mode !== 'interactive' && (
               <button
                 type="button"
                 className={`composer-agent-mode mode-${mode}`}
                 onClick={onCycleMode}
-                title={`${MODE_LABELS[mode].hint}. Shift+Tab for the next mode.`}
-                aria-label={`Mode: ${MODE_LABELS[mode].label}. Shift+Tab for the next mode.`}
+                title={`${MODE_LABELS[mode].hint}. Alt+M for the next mode.`}
+                aria-label={`Mode: ${MODE_LABELS[mode].label}. Alt+M for the next mode.`}
               >
                 {MODE_LABELS[mode].label}
               </button>

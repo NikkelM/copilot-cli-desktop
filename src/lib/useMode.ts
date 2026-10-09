@@ -6,7 +6,7 @@ import { sessionMode, setSessionMode } from './sidecar';
 import { explain } from './errors';
 
 /**
- * The order Shift+Tab walks, matching the CLI and the SDK's own declaration order.
+ * The order Alt+M walks, matching the CLI and the SDK's own declaration order.
  *
  * Interactive first because it is where a session starts and where most work happens, and
  * autopilot last because it is the one that stops asking.
@@ -98,7 +98,7 @@ export function useMode(sessionId: string | null, onError: (message: string) => 
       .catch((e: unknown) => report.current(explain(e)));
   }, []);
 
-  /** Advance to the next mode, which is what Shift+Tab does in the CLI. */
+  /** Advance to the next mode, which the CLI asks for with Shift+Tab and this app with Alt+M. */
   const cycle = useCallback(() => {
     const at = MODE_ORDER.indexOf(mode);
     choose(MODE_ORDER[(at + 1) % MODE_ORDER.length]!);
