@@ -288,8 +288,86 @@ describe('the rows that take a session off the list', () => {
  * Those were markers rather than styles and have since been taken off, so the rule can be
  * the plain one: if it is worth naming, it is worth a rule (#198).
  */
-describe('class names', () => {
-  /** Every `.name` the stylesheet mentions, wherever in a selector it appears. */
+/**
+ * Where the keyboard is has to be visible, which means beating whatever else paints the row.
+ *
+ * A row that is open, current or hovered sets its own background, and several of those are
+ * two or three classes deep. The cursor wash was declared near the top of the file, where a
+ * tie on specificity is lost on order and a deeper selector is lost outright - so an open
+ * file row, a current branch and an open tool call all showed no cursor at all.
+ *
+ * Checked as a rule rather than by eye, because nothing about the symptom points at the
+ * cascade: the row simply looks unfocused.
+ */
+describe('the cursor wash', () => {
+  /** The stylesheet without its comments, which otherwise contain braces and selectors. */
+  const bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  /** Every `selector { ... }` in the file, in the order they are written. */
+  const rules = [...bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match, order) => ({
+    order,
+    selectors: match[1]!.split(',').map((one) => one.trim()),
+    body: match[2]!,
+  }));
+
+  const washes = rules.filter((rule) => rule.body.includes('var(--cursor-wash)'));
+
+  /**
+   * How hard a selector is to beat, counted as classes, attributes and pseudo-classes.
+   *
+   * Crude on purpose: no selector in this file uses an id, and the rest of CSS specificity
+   * does not come up. Enough to tell `.tool.open .tool-head` from `.tool-head:focus`.
+   */
+  const weight = (selector: string) =>
+    (selector.match(/\.[\w-]+|\[[^\]]+\]|:[\w-]+(?!\()/g) ?? []).filter((part) => !part.startsWith('::')).length;
+
+  it('is drawn somewhere, so this cannot pass by finding nothing', () => {
+    expect(washes.flatMap((rule) => rule.selectors).length).toBeGreaterThan(8);
+  });
+
+  it('beats everything else that paints the rows it washes', () => {
+    /*
+     * Hover is left out. It says where the pointer is, which is a different question from
+     * where the keyboard is, and the pointer being on the row is reason enough to show it.
+     * What matters here is the states that persist: open, current, selected.
+     */
+    const painted = rules.filter(
+      (rule) =>
+        !washes.includes(rule) &&
+        /(^|[^-])background\s*:/.test(rule.body) &&
+        !rule.selectors.every((one) => one.includes(':hover')),
+    );
+
+    const beaten = washes.flatMap((wash) =>
+      wash.selectors.flatMap((selector) => {
+        // The class the cursor is on, which is the last one named before the pseudo-class.
+        const row = selector.replace(/:[\w-]+$/, '').match(/\.[\w-]+$/)?.[0];
+        if (!row) return [];
+
+        // What this row is washed by, at its strongest: another selector in the same rule
+        // may cover the deeper case, as the open tool call needs one of its own.
+        const cover = washes
+          .flatMap((rule) => rule.selectors.map((one) => ({ one, order: rule.order })))
+          .filter(({ one }) => one.includes(row));
+
+        return painted
+          .flatMap((rule) => rule.selectors.map((one) => ({ one, order: rule.order })))
+          .filter(({ one }) => one.includes(row) && !one.includes(':hover'))
+          .filter(
+            (paint) =>
+              !cover.some(
+                (by) => weight(by.one) > weight(paint.one) || (weight(by.one) === weight(paint.one) && by.order > paint.order),
+              ),
+          )
+          .map(({ one }) => `${one} outranks ${selector}`);
+      }),
+    );
+
+    expect([...new Set(beaten)], 'these paint over the cursor, so the row looks unfocused').toEqual([]);
+  });
+});
+
+describe('class names', () => {  /** Every `.name` the stylesheet mentions, wherever in a selector it appears. */
   const styled = new Set(
     [...css.replace(/\/\*[\s\S]*?\*\//g, ' ').matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)].map((match) => match[1]!),
   );

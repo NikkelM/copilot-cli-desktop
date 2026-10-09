@@ -16,15 +16,17 @@ import { chordOf } from '../lib/chords';
 const LISTENING = 'Press keys';
 
 /** What the keys column says for a shortcut somebody turned off. */
-const CLEARED = 'not set';
+const CLEARED = 'Not set';
+
+/** The bindings are worded for the `?` list, which follows the CLI's lower case. A settings
+    row is a label among labels, so it starts with a capital like the rest of the window. */
+const named = (what: string) => what.charAt(0).toUpperCase() + what.slice(1);
 
 /** What to say about a chord that cannot be given to this key. */
 function reason(refusal: Refusal): string {
-  if (refusal.why === 'unmodified') {
-    return 'That one would be typed into the message box. Hold ctrl or alt, or use a function key.';
-  }
+  if (refusal.why === 'unmodified') return 'Needs ctrl or alt, or a function key.';
 
-  return `${refusal.by.keys} is already ${refusal.by.what}.`;
+  return `Already used by "${named(refusal.by.what)}".`;
 }
 
 /**
@@ -109,8 +111,7 @@ export function ShortcutSettings({
   return (
     <div ref={rows}>
       <p className="settings-note">
-        Choose a row and press the keys you want. Escape leaves a row as it was, and is itself the one key that cannot
-        be moved: it is a press repeated rather than a press with modifiers.
+        Select a shortcut and press the keys you want. Escape cancels. Escape itself cannot be changed.
       </p>
 
       {REBINDABLE.filter((binding) => shows(binding.what)).map((binding) => {
@@ -122,7 +123,7 @@ export function ShortcutSettings({
         return (
           <div className="shortcut-row" key={id}>
             <span className="shortcut-what" id={`shortcut-${id}`}>
-              {binding.what}
+              {named(binding.what)}
             </span>
 
             <button
@@ -200,7 +201,7 @@ export function ShortcutSettings({
           put({});
         }}
       >
-        Put every key back
+        Reset all bindings
       </button>
     </div>
   );

@@ -57,31 +57,31 @@ export interface Binding {
  */
 export const BINDINGS: readonly Binding[] = [
   { keys: '/help', what: 'show full help' },
-  { id: 'help', keys: '?', what: 'show quick help' },
+  { id: 'help', keys: '?', what: 'show the shortcuts' },
   { keys: '/', what: 'commands' },
-  { id: 'interrupt', keys: 'ctrl+c', what: 'cancel' },
-  { id: 'escape-twice', keys: 'esc esc', what: 'clear input or interrupt' },
+  { id: 'interrupt', keys: 'ctrl+c', what: 'stop the turn' },
+  { id: 'escape-twice', keys: 'esc esc', what: 'clear the message or stop the turn' },
   { id: 'reasoning', keys: 'ctrl+t', what: 'show or hide reasoning' },
-  { id: 'stash', keys: 'ctrl+s', what: 'stash or pop the prompt' },
-  { id: 'larger', keys: 'ctrl+plus', what: 'draw everything larger' },
-  { id: 'smaller', keys: 'ctrl+minus', what: 'draw everything smaller' },
-  { id: 'reset-size', keys: 'ctrl+0', what: 'back to the default size' },
+  { id: 'stash', keys: 'ctrl+s', what: 'stash or restore the message' },
+  { id: 'larger', keys: 'ctrl+plus', what: 'zoom in' },
+  { id: 'smaller', keys: 'ctrl+minus', what: 'zoom out' },
+  { id: 'reset-size', keys: 'ctrl+0', what: 'reset the zoom' },
   { id: 'sidebar', keys: 'ctrl+b', what: 'show or hide the sidebar' },
-  { id: 'new-session', keys: 'ctrl+n', what: 'start a new session' },
+  { id: 'new-session', keys: 'ctrl+n', what: 'new session' },
   { id: 'find-session', keys: 'ctrl+shift+p', what: 'find a session' },
   { id: 'go-sessions', keys: 'ctrl+shift+s', what: 'go to the session list' },
   { id: 'go-composer', keys: 'ctrl+shift+m', what: 'go to the message box' },
-  { id: 'wiki', keys: 'ctrl+shift+k', what: 'browse your knowledge base' },
+  { id: 'wiki', keys: 'ctrl+shift+k', what: 'open the wiki' },
   { id: 'import', keys: 'ctrl+shift+o', what: 'import a session' },
   { id: 'next-region', keys: 'f6', what: 'next part of the window' },
   { id: 'previous-region', keys: 'shift+f6', what: 'previous part of the window' },
-  { keys: 'ctrl+wheel', what: 'draw everything larger or smaller' },
+  { keys: 'ctrl+wheel', what: 'zoom in or out' },
   /*
    * The CLI asks for this with shift+tab, which here would mean giving up the one key that
    * walks backwards out of the composer. The CLI has a prompt to leave; this has a window to
    * walk, and taking the key back is worth more than matching it.
    */
-  { id: 'cycle-mode', keys: 'alt+m', what: 'switch modes' },
+  { id: 'cycle-mode', keys: 'alt+m', what: 'switch mode' },
   { id: 'attach', keys: 'ctrl+shift+a', what: 'attach files' },
   { keys: 'shift+enter', what: 'insert newline' },
   { keys: 'up/down', what: 'previous or next prompt' },

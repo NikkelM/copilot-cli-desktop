@@ -22,7 +22,7 @@ const show = (value = '') => {
 };
 
 /** The button showing what a key is bound to, which is also the one that changes it. */
-const keys = (what: string) => screen.getByRole('button', { name: what });
+const keys = (what: string) => screen.getByRole('button', { name: what.charAt(0).toUpperCase() + what.slice(1) });
 
 /** The Clear or Reset beside a key, found by the row it sits in. */
 const beside = (what: string, label: string) =>
@@ -41,6 +41,19 @@ describe('the keys a reader can move', () => {
     show();
 
     expect(keys('show or hide the sidebar').textContent).toBe('ctrl+b');
+  });
+
+  /**
+   * The bindings are worded for the `?` list, which follows the CLI's lower case. A settings
+   * row is a label among labels and starts with a capital like every other row in the window.
+   */
+  it('names each one as a settings row rather than as a help line', () => {
+    show();
+
+    for (const binding of REBINDABLE) {
+      expect(screen.getByText(binding.what.charAt(0).toUpperCase() + binding.what.slice(1))).toBeTruthy();
+    }
+    expect(screen.queryByText('show or hide the sidebar')).toBeNull();
   });
 
   it('shows what a reader moved rather than what it was', () => {
@@ -158,7 +171,7 @@ describe('a chord that is already taken', () => {
     await userEvent.click(keys('show or hide the sidebar'));
     await userEvent.keyboard('{Control>}{Shift>}k{/Shift}{/Control}');
 
-    expect(screen.getByRole('alert').textContent).toContain('browse your knowledge base');
+    expect(screen.getByRole('alert').textContent).toContain('Open the wiki');
     expect(onChange, 'the key they had is kept').not.toHaveBeenCalled();
   });
 
@@ -168,7 +181,7 @@ describe('a chord that is already taken', () => {
     await userEvent.click(keys('show or hide the sidebar'));
     await userEvent.keyboard('{Control>}u{/Control}');
 
-    expect(screen.getByRole('alert').textContent).toContain('delete to start of line');
+    expect(screen.getByRole('alert').textContent).toContain('Delete to start of line');
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -179,7 +192,7 @@ describe('a chord that is already taken', () => {
     await userEvent.click(keys('show or hide the sidebar'));
     await userEvent.keyboard('j');
 
-    expect(screen.getByRole('alert').textContent).toContain('message box');
+    expect(screen.getByRole('alert').textContent).toContain('Needs ctrl or alt');
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -206,7 +219,7 @@ describe('putting a key back', () => {
   it('says so in the row', () => {
     show(JSON.stringify({ sidebar: '' }));
 
-    expect(screen.getByRole('button', { name: 'show or hide the sidebar' }).textContent).toBe('not set');
+    expect(screen.getByRole('button', { name: 'Show or hide the sidebar' }).textContent).toBe('Not set');
   });
 
   it('will not clear what is already cleared', () => {
@@ -232,7 +245,7 @@ describe('putting a key back', () => {
   it('puts every key back at once', async () => {
     const { saved } = show(JSON.stringify({ sidebar: 'ctrl+shift+b', wiki: '' }));
 
-    await userEvent.click(screen.getByRole('button', { name: 'Put every key back' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Reset all bindings' }));
 
     expect(saved()).toEqual({});
   });
@@ -240,7 +253,7 @@ describe('putting a key back', () => {
   it('offers nothing to put back when nothing was moved', () => {
     show();
 
-    expect((screen.getByRole('button', { name: 'Put every key back' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Reset all bindings' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   /**
@@ -255,6 +268,6 @@ describe('putting a key back', () => {
     again(JSON.stringify(saved()));
     await new Promise((settle) => requestAnimationFrame(settle));
 
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'show or hide the sidebar' }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show or hide the sidebar' }));
   });
 });

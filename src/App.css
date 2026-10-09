@@ -133,22 +133,9 @@ body {
 }
 
 /*
- * The rows of a list, which take the wash rather than the ring.
- *
- * Gathered in one place so that every list in the app says where the keyboard is the same
- * way: a reader moving from the sidebar into a panel should not have to learn a second
- * cursor halfway across. `:focus` rather than `:focus-visible`, as the session rows do -
- * the latter is a guess about how the focus arrived and stops matching once a row has been
- * clicked, which would leave somebody arrowing away from a clicked row with no cursor.
+ * The rows of a list take a wash rather than this ring, which is said at the end of the
+ * file - where it can beat the background a row paints for being open or current.
  */
-.changes-row:focus,
-.repo-branch-item:focus,
-.subagents-open:focus,
-.subagent:focus {
-  outline: none;
-  background: var(--cursor-wash);
-  color: var(--text);
-}
 
 .app {
   display: grid;
@@ -7187,4 +7174,36 @@ pre.fatal,
 /* The editor fills what is left of the column, as it fills the pane in the browser. */
 .notes-body .wiki-source {
   height: 100%;
+}
+
+/*
+ * The rows of a list, which take the wash rather than the ring.
+ *
+ * Gathered in one place so that every list in the app says where the keyboard is the same
+ * way: a reader moving from the sidebar into a panel should not have to learn a second
+ * cursor halfway across. `:focus` rather than `:focus-visible`, as the session rows do -
+ * the latter is a guess about how the focus arrived and stops matching once a row has been
+ * clicked, which would leave somebody arrowing away from a clicked row with no cursor.
+ *
+ * Last in the file on purpose. A row that is open, current or hovered paints its own
+ * background, and several of those are two classes deep - which ties with this and would
+ * win on order alone. Where the keyboard is has to beat what a row happens to be.
+ */
+.changes-row:focus,
+.repo-branch-item:focus,
+.subagents-open:focus,
+.subagent:focus,
+/* The transcript's own folds: a tool call, the reasoning above it, and what a turn changed.
+   Full-width rows, read as a list, and reached by Tab like any other. */
+.tool-head:focus,
+/* And again for an open one, whose own background is a class deeper and would otherwise
+   win on specificity however late this rule comes. */
+.tool.open .tool-head:focus,
+.reasoning-head:focus,
+.turn-changes-head:focus,
+.cli-group-head:focus,
+.wiki-folder-head:focus {
+  outline: none;
+  background: var(--cursor-wash);
+  color: var(--text);
 }
