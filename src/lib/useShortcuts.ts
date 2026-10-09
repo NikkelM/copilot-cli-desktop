@@ -19,8 +19,25 @@ export type Shortcut =
   | 'find-session'
   | 'go-sessions'
   | 'go-composer'
+  | 'wiki'
+  | 'import'
   | 'next-region'
   | 'previous-region';
+
+/**
+ * Where ctrl and shift and a letter go.
+ *
+ * Gathered rather than written as a chain of questions, because there are now enough of them
+ * that the chain was longer than the rest of the handler. The letter is read folded to lower
+ * case, since shift is what makes it upper.
+ */
+const GOES_TO: Record<string, Shortcut> = {
+  p: 'find-session',
+  s: 'go-sessions',
+  m: 'go-composer',
+  k: 'wiki',
+  o: 'import',
+};
 
 export interface Binding {
   /**
@@ -71,6 +88,8 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'find-session', keys: 'ctrl+shift+p', what: 'find a session' },
   { id: 'go-sessions', keys: 'ctrl+shift+s', what: 'go to the session list' },
   { id: 'go-composer', keys: 'ctrl+shift+m', what: 'go to the message box' },
+  { id: 'wiki', keys: 'ctrl+shift+k', what: 'browse your knowledge base' },
+  { id: 'import', keys: 'ctrl+shift+o', what: 'import a session' },
   { id: 'next-region', keys: 'f6', what: 'next part of the window' },
   { id: 'previous-region', keys: 'shift+f6', what: 'previous part of the window' },
   { keys: 'ctrl+wheel', what: 'draw everything larger or smaller' },
@@ -235,16 +254,11 @@ export function useShortcuts(on: (shortcut: Shortcut) => void, writing?: () => s
       }
 
       if (event.ctrlKey && !event.altKey) {
-        const going =
-          !event.shiftKey && (event.key === 'n' || event.key === 'N')
-            ? 'new-session'
-            : event.shiftKey && (event.key === 'P' || event.key === 'p')
-              ? 'find-session'
-              : event.shiftKey && (event.key === 'S' || event.key === 's')
-                ? 'go-sessions'
-                : event.shiftKey && (event.key === 'M' || event.key === 'm')
-                  ? 'go-composer'
-                  : null;
+        // Shift makes the letter upper case, which is why these are read folded rather than
+        // listed twice - and why none of them can be confused with the composer's own
+        // readline keys, where `k` and `u` are the unshifted ones.
+        const letter = event.key.toLowerCase();
+        const going = event.shiftKey ? GOES_TO[letter] : letter === 'n' ? 'new-session' : undefined;
 
         if (going) {
           event.preventDefault();

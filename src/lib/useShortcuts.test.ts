@@ -421,6 +421,8 @@ describe('moving about the window', () => {
     ['ctrl+shift+p', 'P', { ctrlKey: true, shiftKey: true }, 'find-session'],
     ['ctrl+shift+s', 'S', { ctrlKey: true, shiftKey: true }, 'go-sessions'],
     ['ctrl+shift+m', 'M', { ctrlKey: true, shiftKey: true }, 'go-composer'],
+    ['ctrl+shift+k', 'K', { ctrlKey: true, shiftKey: true }, 'wiki'],
+    ['ctrl+shift+o', 'O', { ctrlKey: true, shiftKey: true }, 'import'],
     ['f6', 'F6', {}, 'next-region'],
     ['shift+f6', 'F6', { shiftKey: true }, 'previous-region'],
   ];
@@ -463,6 +465,22 @@ describe('moving about the window', () => {
 
     expect(fired('new-session')).toBe(0);
   });
+
+  /**
+   * The composer keeps ctrl+k and ctrl+u for readline's own line editing, and those are the
+   * unshifted keys. Shift makes the letter upper case, so the two cannot be mistaken for one
+   * another - but only for as long as nothing here answers the unshifted one as well.
+   */
+  it.each<[string, string, Shortcut]>([
+    ['ctrl+k', 'k', 'wiki'],
+    ['ctrl+o', 'o', 'import'],
+  ])('leaves %s to whatever already has it', (_name, key, shortcut) => {
+    renderHook(() => useShortcuts(on));
+
+    press(key, { ctrlKey: true });
+
+    expect(fired(shortcut)).toBe(0);
+  });
 });
 
 describe('BINDINGS', () => {  // The list a reader sees is built from these, so a shortcut this hook reports must be
@@ -475,6 +493,7 @@ describe('BINDINGS', () => {  // The list a reader sees is built from these, so 
       'go-composer',
       'go-sessions',
       'help',
+      'import',
       'interrupt',
       'larger',
       'new-session',
@@ -485,6 +504,7 @@ describe('BINDINGS', () => {  // The list a reader sees is built from these, so 
       'sidebar',
       'smaller',
       'stash',
+      'wiki',
     ]);
   });
 

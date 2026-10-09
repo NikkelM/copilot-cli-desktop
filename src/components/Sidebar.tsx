@@ -788,7 +788,7 @@ export function Sidebar({
             type="button"
             className="new-session"
             onClick={onWiki}
-            data-tip="Browse your local knowledge base"
+            data-tip="Browse your local knowledge base (Ctrl+Shift+K)"
           >
             Wiki
           </button>
@@ -800,7 +800,7 @@ export function Sidebar({
               type="button"
               className="new-session"
               onClick={onImport}
-              data-tip="Import a .zip file containing a Copilot session"
+              data-tip="Import a .zip file containing a Copilot session (Ctrl+Shift+O)"
             >
               Import
             </button>

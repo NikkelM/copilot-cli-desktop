@@ -927,6 +927,17 @@ export default function App() {
           return;
         }
 
+        if (shortcut === 'wiki') {
+          setWikiScope(null);
+          setShowWiki(true);
+          return;
+        }
+
+        if (shortcut === 'import') {
+          void importFrom();
+          return;
+        }
+
         if (shortcut === 'reasoning') {
           setDisplay('showReasoning', !display.showReasoning);
           return;
