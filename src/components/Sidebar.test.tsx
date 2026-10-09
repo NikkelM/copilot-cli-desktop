@@ -3405,3 +3405,60 @@ describe('extending a selection with Shift and an arrow', () => {
     expect(markedTitles()).toEqual([]);
   });
 });
+
+/**
+ * A row is one option of a list, and an option is not allowed to hold controls. Tab stopped
+ * three times on every row - the title, then the star, then the next row's title - which on a
+ * list of hundreds is a very long way to anywhere (#247).
+ *
+ * Nothing is lost by it. Favouriting is on the row's own menu, filtering by a tag is what the
+ * control beside the search box does, and Space on the row marks it.
+ */
+describe('what a session row holds', () => {
+  const show = () =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{}}
+        favourites={[]}
+        onFavourite={() => {}}
+        tags={{ [sessions[0]!.sessionId]: ['hades', 'mod'] }}
+        showTags
+        marked={[sessions[0]!.sessionId]}
+        selecting
+        onMark={() => true}
+      />,
+    );
+
+  const rows = () => [...document.querySelectorAll('.session-row')] as HTMLElement[];
+
+  it('draws the controls it always did', () => {
+    show();
+
+    expect(document.querySelector('.favourite'), 'a star to click').toBeTruthy();
+    expect(document.querySelector('.session-check'), 'a box to tick').toBeTruthy();
+    expect(document.querySelector('.session-tags .tag'), 'a tag to filter by').toBeTruthy();
+  });
+
+  it('keeps none of them in the way of Tab', () => {
+    show();
+
+    const inside = rows().flatMap((row) => [...row.querySelectorAll<HTMLElement>('button, a[href], input')]);
+    expect(inside.length, 'the fixture needs controls inside a row to say anything').toBeGreaterThan(0);
+    expect(inside.filter((node) => node.tabIndex >= 0)).toEqual([]);
+  });
+
+  it('is itself the only thing in the list the keyboard stops on', () => {
+    show();
+
+    const stops = [...document.querySelectorAll<HTMLElement>('.session-list *')].filter(
+      (node) => node.tabIndex === 0,
+    );
+    expect(stops.every((node) => node.classList.contains('session-row'))).toBe(true);
+  });
+});

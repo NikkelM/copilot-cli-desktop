@@ -1330,6 +1330,10 @@ function SessionTags({
           key={tag}
           className={chosen.includes(tag) ? 'tag on' : 'tag'}
           aria-pressed={chosen.includes(tag)}
+          // Not a stop: the row is one option of a list, and these would be several more
+          // stops apiece. Filtering by a tag is what the control beside the search box is
+          // for, which is where the keyboard reaches it.
+          tabIndex={-1}
           title={chosen.includes(tag) ? `Stop filtering by ${tag}` : `Show only sessions tagged ${tag}`}
           onClick={(event) => {
             // The row opens the session; this asks about every session like it.
@@ -1381,6 +1385,8 @@ function Check({
       aria-checked={on}
       aria-label={on ? `Deselect ${title}` : `Select ${title}`}
       className={on ? 'session-check on' : 'session-check'}
+      // Space on the row does this, and the row is the one stop the list holds.
+      tabIndex={-1}
       onMouseDown={(event) => event.preventDefault()}
       onClick={(event) => {
         event.stopPropagation();
@@ -1397,6 +1403,10 @@ function Favourite({ on, title, onToggle }: { on: boolean; title: string; onTogg
     <button
       type="button"
       className={on ? 'favourite on' : 'favourite'}
+      // Not a stop of its own. The row around it is one option of a list, and an option is
+      // not allowed to hold controls - Tab stopped three times on every row before this.
+      // Favouriting is on the row's own menu, so nothing here is only a click target (#247).
+      tabIndex={-1}
       onClick={(event) => {
         event.stopPropagation();
         onToggle();
@@ -1455,6 +1465,9 @@ function Row({
     <button
       type="button"
       className={`session${session.sessionId === selectedId ? ' selected' : ''}`}
+      // The row itself is the option the keyboard lands on, and Enter there opens the
+      // session - which is all this would do.
+      tabIndex={-1}
       // A pointer should not leave a focus ring behind. Chromium counts a Ctrl or Shift
       // click as keyboard-ish and draws one, so marking a range left a box around the last
       // row touched - while the row itself was already saying it was marked (#63). Focus
