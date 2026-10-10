@@ -114,13 +114,23 @@ export function FindBar({
             size={String(said).length}
             onChange={(event) => {
               const raw = event.target.value;
-              setTyped(raw);
-              const wanted = Number(raw);
-              if (Number.isInteger(wanted) && wanted >= 1 && wanted <= said) onGo(wanted - 1);
+              // Cleared on the way to typing something else, which is not a number to go to.
+              if (raw === '') {
+                setTyped('');
+                return;
+              }
+              // Digits only. Anything else names no hit, and leaving it in the box would be
+              // a sentence that says the reader is somewhere they are not.
+              if (!/^\d+$/.test(raw)) return;
+
+              // Clamped rather than refused: a digit typed onto the end of a number that was
+              // already large is a reader reaching for the far end, so take them there.
+              const wanted = Math.min(Math.max(Number(raw), 1), said);
+              setTyped(String(wanted));
+              onGo(wanted - 1);
             }}
             // Back to following the walk, and rid of anything half-typed that went nowhere.
             onBlur={() => setTyped(null)}
-            onFocus={(event) => event.currentTarget.select()}
             onKeyDown={(event) => {
               if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
                 event.preventDefault();

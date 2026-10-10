@@ -290,33 +290,57 @@ describe('going straight to a hit', () => {
     expect(onGo).toHaveBeenLastCalledWith(11);
   });
 
-  it.each(['0', '9', 'x'])('goes nowhere for %s, which is not a hit', async (typed) => {
-    const { onGo } = show({ query: 'fox', said: 5, at: 2 });
+  /**
+   * A digit typed onto the end of a number that was already large is a reader reaching for
+   * the far end, so take them there: typing 5 after the 2 of 22 means the last one.
+   */
+  it('clamps a number past the end to the last hit', async () => {
+    const { onGo } = show({ query: 'fox', said: 22, at: 1 });
 
-    await userEvent.clear(number());
-    await userEvent.type(number(), typed);
+    await userEvent.click(number());
+    await userEvent.type(number(), '5');
 
-    expect(onGo).not.toHaveBeenCalled();
+    expect(onGo).toHaveBeenLastCalledWith(21);
+    expect(number().value, 'and says where it took them').toBe('22');
   });
 
+  it('clamps a number below the first to the first', async () => {
+    const { onGo } = show({ query: 'fox', said: 22, at: 4 });
+
+    await userEvent.clear(number());
+    await userEvent.type(number(), '0');
+
+    expect(onGo).toHaveBeenLastCalledWith(0);
+    expect(number().value).toBe('1');
+  });
+
+  /** Nothing that is not a number names a hit, and the box should not hold one either. */
+  it('ignores anything that is not a number', async () => {
+    const { onGo } = show({ query: 'fox', said: 22, at: 4 });
+
+    await userEvent.type(number(), 'x');
+
+    expect(onGo).not.toHaveBeenCalled();
+    expect(number().value).toBe('5');
+  });
+
+  it('can be cleared on the way to typing another number', async () => {
+    const { onGo } = show({ query: 'fox', said: 22, at: 4 });
+
+    await userEvent.clear(number());
+
+    expect(number().value).toBe('');
+    expect(onGo, 'an empty box names no hit either').not.toHaveBeenCalled();
+  });
   /** A half-typed number that went nowhere should not be left standing in the sentence. */
+  /** An empty box names no hit, so leaving one should put the sentence back together. */
   it('goes back to saying where the reader is when it is left', async () => {
     show({ query: 'fox', said: 21, at: 4 });
     await userEvent.clear(number());
-    await userEvent.type(number(), '9');
 
     await userEvent.tab();
 
     expect(number().value).toBe('5');
-  });
-
-  it('selects what is there, so a number replaces it rather than joining it', async () => {
-    show({ query: 'fox', said: 21, at: 11 });
-
-    number().focus();
-
-    expect(number().selectionStart).toBe(0);
-    expect(number().selectionEnd).toBe(2);
   });
 
   it.each([
