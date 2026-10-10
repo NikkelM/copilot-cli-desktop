@@ -489,7 +489,15 @@ export function Composer({
      */
     if (mention) {
       const folder = item.kind === 'directory';
-      const path = folder ? `${item.value ?? item.id}${item.separator ?? ''}` : (item.value ?? item.id);
+      /*
+       * Relative while it stays in the session, because that is what the agent resolves
+       * against and what reads as a path somebody wrote. Named in full once it climbs out:
+       * a `..` chain is resolvable only from where it was typed, and the agent answered one
+       * by looking on the wrong drive entirely.
+       */
+      const chosen = mentions.find((one) => one.path === (item.value ?? item.id));
+      const named = chosen && !chosen.inside ? chosen.absolute : (item.value ?? item.id);
+      const path = folder ? `${named}${item.separator ?? ''}` : named;
       const next = withMention(value, mention, path, caret, !folder);
 
       onChange(next.value);

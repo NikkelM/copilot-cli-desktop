@@ -72,19 +72,20 @@ describe('putting a path into the message', () => {
   };
 
   /**
-   * The `@` stays: it marks the words as a file rather than a phrase, and it is what lets a
-   * folder be walked into - strip it and the half-written path stops being a mention.
+   * The marker is how this app was asked for the menu, not something the agent reads. A
+   * message carrying `@../Music/readme.txt` was answered by looking on the wrong drive,
+   * because what arrived was a token to guess at rather than a path to resolve.
    */
-  it('keeps the marker and completes the path', () => {
-    expect(put('look at @src/Ap|', 'src/App.tsx').value).toBe('look at @src/App.tsx ');
+  it('leaves a plain path behind, with no marker', () => {
+    expect(put('look at @src/Ap|', 'src/App.tsx').value).toBe('look at src/App.tsx ');
   });
 
   it('leaves what was written after it alone', () => {
-    expect(put('@src/Ap| and fix it', 'src/App.tsx').value).toBe('@src/App.tsx  and fix it');
+    expect(put('@src/Ap| and fix it', 'src/App.tsx').value).toBe('src/App.tsx  and fix it');
   });
 
   it('puts the caret after what it wrote', () => {
-    expect(put('look at @src|', 'src/App.tsx').caret).toBe(8 + '@src/App.tsx '.length);
+    expect(put('look at @src|', 'src/App.tsx').caret).toBe(8 + 'src/App.tsx '.length);
   });
 
   /** A folder is not finished: the reader is still walking into it. */
@@ -92,7 +93,10 @@ describe('putting a path into the message', () => {
     expect(put('@sr|', 'src/', false).value).toBe('@src/');
   });
 
-  /** And what it leaves behind is still a mention, or the menu would close on the way in. */
+  /**
+   * And keeps the marker there, because that half-written state is what the menu reads to
+   * know it is still wanted. Strip it and the menu closes on the way into the folder.
+   */
   it('leaves a folder still being mentioned', () => {
     const walked = put('@sr|', 'src/', false);
 
@@ -106,6 +110,11 @@ describe('putting a path into the message', () => {
   });
 
   it('writes over the whole of what was typed, not only what matched', () => {
-    expect(put('@completely-wrong|', 'src/App.tsx').value).toBe('@src/App.tsx ');
+    expect(put('@completely-wrong|', 'src/App.tsx').value).toBe('src/App.tsx ');
+  });
+
+  /** Named in full where it has to be, which is the caller's decision rather than this one's. */
+  it('takes whatever path it is given', () => {
+    expect(put('@..|', 'C:\\Users\\me\\Music\\readme.txt').value).toBe('C:\\Users\\me\\Music\\readme.txt ');
   });
 });

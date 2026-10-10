@@ -76,15 +76,30 @@ export interface Entry {
  * one subdirectory among them is one the reader would otherwise have to hunt through.
  */
 export async function listEntries(cwd: string | undefined, path: string): Promise<Entry[]> {
+  return (await readFolder(cwd, path)).entries;
+}
+
+/**
+ * The same read, with the folder it actually resolved to.
+ *
+ * The caller needs that to say where a chosen file really is. A path typed relative to the
+ * session reads back to the agent against the same place, which is fine until one climbs
+ * out with `..` - at which point only an absolute answer is unambiguous, and this is the one
+ * place that knows it (#135).
+ */
+export async function readFolder(
+  cwd: string | undefined,
+  path: string,
+): Promise<{ entries: Entry[]; directory: string }> {
   const parent = resolveDirectory(cwd, path);
-  if (!parent) return [];
+  if (!parent) return { entries: [], directory: '' };
 
   let entries: Dirent[];
   try {
     entries = await readdir(parent, { withFileTypes: true });
   } catch (error: unknown) {
     // A half-typed path simply has no completions yet.
-    if (['ENOENT', 'ENOTDIR'].includes(errorCode(error) ?? '')) return [];
+    if (['ENOENT', 'ENOTDIR'].includes(errorCode(error) ?? '')) return { entries: [], directory: parent };
     throw error;
   }
 
@@ -92,7 +107,10 @@ export async function listEntries(cwd: string | undefined, path: string): Promis
     entries.map(async (entry) => ({ name: entry.name, directory: await browsable(entry, parent) })),
   );
 
-  return found.sort(
-    (one, other) => Number(other.directory) - Number(one.directory) || collator.compare(one.name, other.name),
-  );
+  return {
+    entries: found.sort(
+      (one, other) => Number(other.directory) - Number(one.directory) || collator.compare(one.name, other.name),
+    ),
+    directory: parent,
+  };
 }

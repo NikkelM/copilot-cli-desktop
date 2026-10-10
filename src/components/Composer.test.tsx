@@ -31,6 +31,7 @@ beforeEach(() => {
   });
   listEntries.mockReset().mockResolvedValue({
     entries: [],
+    directory: 'C:\\repo',
     separator: '\\',
     caseSensitive: false,
   });
@@ -1835,8 +1836,8 @@ describe('Composer, the caret it comes back with', () => {
 describe('naming a file with @', () => {
   const rows = () => screen.queryAllByRole('option').map((row) => row.textContent);
 
-  const listing = (entries: { name: string; directory: boolean }[]) =>
-    listEntries.mockResolvedValue({ entries, separator: '\\', caseSensitive: false });
+  const listing = (entries: { name: string; directory: boolean }[], directory = 'C:\\repo') =>
+    listEntries.mockResolvedValue({ entries, directory, separator: '\\', caseSensitive: false });
 
   it('offers what is in the working directory', async () => {
     listing([
@@ -1879,7 +1880,7 @@ describe('naming a file with @', () => {
   });
 
   /** The marker stays, as it does in the CLI: it says these words are a file. */
-  it('keeps the marker and puts the path in', async () => {
+  it('leaves a plain path behind, with no marker', async () => {
     listing([{ name: 'README.md', directory: false }]);
     const { user } = hosted();
     await user.type(box(), 'look at @READ');
@@ -1887,7 +1888,7 @@ describe('naming a file with @', () => {
 
     await user.keyboard('{Enter}');
 
-    await waitFor(() => expect(box().value).toBe('look at @README.md '));
+    await waitFor(() => expect(box().value).toBe('look at README.md '));
   });
 
   /** Enter on a folder would otherwise send a message ending in half a path. */
@@ -1953,5 +1954,36 @@ describe('naming a file with @', () => {
     await user.type(box(), '!cat @READ');
 
     expect(rows()).toHaveLength(0);
+  });
+
+  /**
+   * A path that climbs out of the session is resolvable only from where it was typed, and
+   * the agent answered one by looking on the wrong drive entirely: `@../Music/readme.txt`
+   * from a session in `G:\...\Projects` was read as `C:\Users\nikke\Music\readme.txt`.
+   */
+  it('names a file outside the session in full', async () => {
+    listing([{ name: 'readme.txt', directory: false }], 'G:\\Users\\nikke\\OneDrive\\Privat\\Music');
+    const { user } = hosted();
+    await user.type(box(), '@..\\Music\\read');
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await user.keyboard('{Enter}');
+
+    await waitFor(() =>
+      expect(box().value).toBe('G:\\Users\\nikke\\OneDrive\\Privat\\Music\\readme.txt '),
+    );
+  });
+
+  /** Inside, a relative path resolves against the same place it was typed against, and
+      reads as something a person would write. */
+  it('leaves a file inside the session relative', async () => {
+    listing([{ name: 'App.tsx', directory: false }], 'C:\\repo\\src');
+    const { user } = hosted();
+    await user.type(box(), '@src\\App');
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(box().value).toBe('src\\App.tsx '));
   });
 });

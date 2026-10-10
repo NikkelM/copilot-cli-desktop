@@ -12,17 +12,45 @@ export interface MentionChoice {
   directory: boolean;
   /** The separator to follow a folder with, so the next segment can be typed straight away. */
   separator: string;
+  /**
+   * Whether this is still inside the session's working directory.
+   *
+   * A relative path reads back to the agent against the same place it was typed against, so
+   * it is the better thing to put in a message - right up until it climbs out with `..`,
+   * where it stops being resolvable from the session alone and has to be named in full.
+   */
+  inside: boolean;
+  /** Where the file actually is, for the case above. */
+  absolute: string;
 }
 
 interface Listing {
   key: string;
   entries: { name: string; directory: boolean }[];
+  directory: string;
   separator: string;
   caseSensitive: boolean;
 }
 
 /** A folder of thousands should not become thousands of rows, as the path menu already has it. */
 const MAX_VISIBLE = 200;
+
+/**
+ * Whether one path is the other or sits beneath it.
+ *
+ * Compared as text, folded for case, because this is about two answers from the same machine
+ * rather than about what a filesystem would accept. The separator comes from the sidecar, so
+ * the comparison uses the platform's own rather than guessing at one.
+ */
+function within(folder: string, root: string, separator: string, caseSensitive: boolean): boolean {
+  if (!folder || !root) return false;
+
+  const fold = (path: string) => (caseSensitive ? path : path.toLowerCase());
+  const base = fold(root.endsWith(separator) ? root.slice(0, -separator.length) : root);
+  const here = fold(folder);
+
+  return here === base || here.startsWith(`${base}${separator}`);
+}
 
 /**
  * Files and folders matching the path being mentioned (#135).
@@ -71,6 +99,7 @@ export function useMentionCompletion(
 
     const wanted = listing.caseSensitive ? parts.prefix : parts.prefix.toLowerCase();
     const separator = parts.separator ?? listing.separator;
+    const inside = within(listing.directory, cwd ?? '', listing.separator, listing.caseSensitive);
 
     return listing.entries
       .filter((entry) => {
@@ -83,6 +112,8 @@ export function useMentionCompletion(
         path: `${parts.base}${entry.name}`,
         directory: entry.directory,
         separator,
+        inside,
+        absolute: `${listing.directory}${listing.separator}${entry.name}`,
       }));
-  }, [key, listing, parts.base, parts.prefix, parts.separator]);
+  }, [cwd, key, listing, parts.base, parts.prefix, parts.separator]);
 }

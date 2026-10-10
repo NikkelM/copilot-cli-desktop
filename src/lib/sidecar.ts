@@ -326,7 +326,12 @@ export function listDirectories(
 export function listEntries(
   cwd: string | undefined,
   path: string,
-): Promise<{ entries: { name: string; directory: boolean }[]; separator: string; caseSensitive: boolean }> {
+): Promise<{
+  entries: { name: string; directory: boolean }[];
+  directory: string;
+  separator: string;
+  caseSensitive: boolean;
+}> {
   return request('filesystem.entries', { cwd, path });
 }
 

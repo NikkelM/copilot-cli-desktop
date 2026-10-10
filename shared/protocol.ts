@@ -1613,11 +1613,18 @@ export interface SidecarRequests {
    *
    * Separate from the above rather than a flag on it, because the two answer different
    * questions and the shapes differ: a path argument wants names, and a mention wants to
-   * know which of them can be walked into.
+   * know which of them can be walked into - and where the folder being read actually is,
+   * since a path that climbs out of the session with `..` can only be named in full.
    */
   'filesystem.entries': {
     params: { cwd?: string; path: string };
-    result: { entries: { name: string; directory: boolean }[]; separator: string; caseSensitive: boolean };
+    result: {
+      entries: { name: string; directory: boolean }[];
+      /** The folder that was read, resolved against the session. Empty when none could be. */
+      directory: string;
+      separator: string;
+      caseSensitive: boolean;
+    };
   };
   /**
    * Every page in the local knowledge base, for the browser's tree.

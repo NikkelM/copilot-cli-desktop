@@ -6,8 +6,9 @@
  * attachment: the agent reads the file when it gets there, which costs nothing until it is
  * needed, where attaching sends the contents whether they are wanted or not.
  *
- * The `@` stays in the message, as it does in the CLI. It marks the words as a file rather
- * than a phrase, and it is what lets a folder be walked into one segment at a time.
+ * The `@` is how this app is asked for the menu and nothing more. It does not survive into
+ * the message, because the agent does not read it: a path is something it can resolve, and
+ * a marker in front of one is something it has to guess at.
  */
 
 /** Where a mention being written starts, and how much of the path has been typed. */
@@ -57,13 +58,17 @@ export function typedMention(value: string, caret: number): Mention | null {
 /**
  * The message with the mention replaced by a path.
  *
- * The `@` stays. It is what marks the words as a file rather than a phrase, which is how the
- * CLI writes one too - and it is what makes walking into a folder work at all: strip it and
- * the half-written path stops being a mention, so the menu closes on the way into the very
- * folder it was opened to reach.
+ * The marker goes once a file is chosen. `@` is how this app was asked for the menu, not
+ * something the agent reads: a message carrying `@../Music/readme.txt` was answered by
+ * looking in the wrong place entirely, because what reached the agent was a token it had to
+ * guess at rather than a path it could resolve. What is left is a plain path.
+ *
+ * It stays while a folder is being walked, because that is the half-written state the menu
+ * reads to know it is still wanted - strip it there and the menu closes on the way into the
+ * very folder it was opened to reach.
  *
  * A trailing space follows a finished file so the next word does not run into it, and a
- * folder is left without one because the reader is still walking into it.
+ * folder is left without one because the reader is still typing.
  */
 export function withMention(
   value: string,
@@ -75,7 +80,7 @@ export function withMention(
   // What the mention covers is everything from the `@` to the caret, which is exactly what
   // was read to find it. Anything past the caret was written before and is left alone.
   const rest = value.slice(Math.max(mention.at, Math.min(caret, value.length)));
-  const written = finished ? `@${path} ` : `@${path}`;
+  const written = finished ? `${path} ` : `@${path}`;
 
   return { value: `${value.slice(0, mention.at)}${written}${rest}`, caret: mention.at + written.length };
 }
