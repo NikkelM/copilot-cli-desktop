@@ -6032,6 +6032,34 @@ pre.fatal,
 }
 
 /*
+ * Which hit the reader is on, as something they can change.
+ *
+ * Drawn as part of the sentence it sits in rather than as a field beside it: it is the
+ * number that was already there, and the only sign it can be typed into is that it answers
+ * when you do.
+ */
+.find-at {
+  padding: 0 2px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: right;
+}
+
+.find-at:hover {
+  border-color: var(--border);
+}
+
+.find-at:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+/*
  * The found words themselves, marked wherever they are drawn (#209).
  *
  * Registered highlights rather than wrapped elements: the rows are rendered markdown that

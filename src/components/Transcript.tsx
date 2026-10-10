@@ -720,6 +720,11 @@ export function Transcript({
     [at, entries, matches],
   );
 
+  const goTo = useCallback(
+    (to: number) => setOnKey(entries[matches[to] ?? -1]?.key ?? null),
+    [entries, matches],
+  );
+
   const closeFind = useCallback(() => {
     setOnKey(null);
     onFindClosed?.();
@@ -1055,6 +1060,7 @@ export function Transcript({
             said={matches.length}
             at={at}
             onStep={step}
+            onGo={goTo}
             onClose={closeFind}
             openedAt={finding}
             searchAll={searchAll}

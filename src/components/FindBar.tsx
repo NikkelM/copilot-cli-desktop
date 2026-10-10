@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { CloseIcon, TickIcon } from './Icons';
 
@@ -22,6 +22,7 @@ export function FindBar({
   said,
   at,
   onStep,
+  onGo,
   onClose,
   openedAt,
   searchAll,
@@ -34,6 +35,8 @@ export function FindBar({
   /** Which hit the reader is on, counted from zero, or -1 before they have walked to one. */
   at: number;
   onStep: (by: 1 | -1) => void;
+  /** Go straight to a hit by its place in the walk, counted from zero. */
+  onGo: (at: number) => void;
   onClose: () => void;
   /** Changes whenever the key is pressed again, which takes the keyboard back to the box. */
   openedAt: number;
@@ -58,20 +61,16 @@ export function FindBar({
   const nothing = query.trim() !== '' && said === 0 && !reaching;
 
   /**
-   * What the count can honestly claim.
+   * What the count can honestly claim beyond the number itself.
    *
    * While it is still reaching back, what it has is a floor rather than a total. Once it has
    * everything, the session is the answer; with the reach turned off, the page is - and the
    * page is not the session, so it says which it means.
    */
-  const counted =
-    query.trim() === ''
-      ? ''
-      : reaching
-        ? `${Math.max(at + 1, 0)} of ${said} so far`
-        : said === 0
-          ? 'Nothing here'
-          : `${at + 1} of ${said}${searchAll ? '' : ' shown'}`;
+  const qualifier = reaching ? ' so far' : searchAll ? '' : ' shown';
+
+  /** What the box shows while it is being typed into, so a half-typed number survives. */
+  const [typed, setTyped] = useState<string | null>(null);
 
   return (
     <li className="find-bar">
@@ -99,11 +98,55 @@ export function FindBar({
         }}
       />
 
-      {/* Says what it counts. The transcript holds what it has read rather than the whole
-          session, so a bare number would be a claim that is not true until it has the rest. */}
-      <span className="find-count" role="status">
-        {counted}
-      </span>
+      {/*
+        Which hit the reader is on, as something they can change.
+        Walking to the fortieth of two hundred is forty presses otherwise, and the number is
+        already on screen saying where they are - so it is the obvious thing to type into.
+      */}
+      {said > 0 ? (
+        <span className="find-count" role="status">
+          <input
+            type="text"
+            inputMode="numeric"
+            className="find-at"
+            aria-label={`Match ${at + 1} of ${said}. Type a number to go to it.`}
+            value={typed ?? String(at + 1)}
+            size={String(said).length}
+            onChange={(event) => {
+              const raw = event.target.value;
+              setTyped(raw);
+              const wanted = Number(raw);
+              if (Number.isInteger(wanted) && wanted >= 1 && wanted <= said) onGo(wanted - 1);
+            }}
+            // Back to following the walk, and rid of anything half-typed that went nowhere.
+            onBlur={() => setTyped(null)}
+            onFocus={(event) => event.currentTarget.select()}
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                event.preventDefault();
+                setTyped(null);
+                onStep(event.key === 'ArrowDown' ? 1 : -1);
+                return;
+              }
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                setTyped(null);
+                return;
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                onClose();
+              }
+            }}
+          />
+          {` of ${said}${qualifier}`}
+        </span>
+      ) : (
+        <span className="find-count" role="status">
+          {query.trim() === '' ? '' : reaching ? `0 of 0${qualifier}` : 'Nothing here'}
+        </span>
+      )}
 
       {/* Drawn the way the settings boxes are, which is the only checkbox style this app has. */}
       <label className="find-all" title="Reach back through the whole session, not only what is loaded">

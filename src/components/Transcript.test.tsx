@@ -19,6 +19,18 @@ const shell = (id: string, command: string, callId: string) => [
   ),
 ];
 
+/**
+ * The whole sentence the find bar is saying, box and all.
+ *
+ * The number it is on is a field now, so it has no text of its own to read - and a reader
+ * sees one sentence rather than a control wedged into a label.
+ */
+function findCount(): string {
+  const box = screen.queryByRole('textbox', { name: /^Match/ }) as HTMLInputElement | null;
+  const rest = screen.getByRole('status').textContent ?? '';
+  return box ? box.value + rest : rest;
+}
+
 function show(events: TranscriptEvent[]) {
   return render(
     <Transcript
@@ -2953,7 +2965,8 @@ describe('finding words in the session', () => {
   );
 
   const field = () => screen.getByLabelText('Find in this session') as HTMLInputElement;
-  const count = () => screen.getByRole('status').textContent;
+  /** The whole sentence the bar is saying: the number is a field, so it has no text of its own. */
+  const count = () => findCount();
   const marked = () => document.querySelector('li.entry.found')?.textContent;
 
   it('is not there until it is asked for', () => {
@@ -3215,10 +3228,10 @@ describe('finding past what is loaded', () => {
   it('stays on the row it was on when a page arrives', async () => {
     const { rerender } = render(draw({ hasOlder: true, events: [said('a fox here', 'e1')] }));
     await userEvent.type(field(), 'fox');
-    expect(screen.getByRole('status').textContent).toBe('1 of 1 so far');
+    expect(findCount()).toBe('1 of 1 so far');
 
     rerender(draw({ hasOlder: false, events: [said('an older fox', 'e0'), said('a fox here', 'e1')] }));
 
-    expect(screen.getByRole('status').textContent, 'still on the same row, now second').toBe('2 of 2');
+    expect(findCount(), 'still on the same row, now second').toBe('2 of 2');
   });
 });

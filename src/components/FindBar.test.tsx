@@ -12,12 +12,14 @@ const show = (over: Partial<Parameters<typeof FindBar>[0]> = {}) => {
   const onStep = vi.fn();
   const onClose = vi.fn();
   const onSearchAll = vi.fn();
+  const onGo = vi.fn();
   const props = {
     query: '',
     onQuery,
     said: 0,
     at: -1,
     onStep,
+    onGo,
     onClose,
     openedAt: 1,
     searchAll: true,
@@ -34,6 +36,7 @@ const show = (over: Partial<Parameters<typeof FindBar>[0]> = {}) => {
   return {
     onQuery,
     onStep,
+    onGo,
     onClose,
     onSearchAll,
     again: (next: Partial<Parameters<typeof FindBar>[0]>) =>
@@ -46,6 +49,18 @@ const show = (over: Partial<Parameters<typeof FindBar>[0]> = {}) => {
 };
 
 const field = () => screen.getByLabelText('Find in this session') as HTMLInputElement;
+
+/**
+ * The whole sentence the bar is saying, box and all.
+ *
+ * The number is a field now, so it has no text of its own to read - and a reader sees one
+ * sentence rather than a control wedged into a label.
+ */
+const count = () => {
+  const box = screen.queryByRole('textbox', { name: /^Match/ }) as HTMLInputElement | null;
+  const rest = screen.getByRole('status').textContent ?? '';
+  return box ? `${box.value}${rest}` : rest;
+};
 
 describe('the find bar', () => {
   it('takes the keyboard as it opens', () => {
@@ -86,19 +101,19 @@ describe('the find bar', () => {
   it('says what it is counting', () => {
     show({ query: 'fox', said: 17, at: 2 });
 
-    expect(screen.getByRole('status').textContent).toBe('3 of 17');
+    expect(count()).toBe('3 of 17');
   });
 
   it('says so when the words are nowhere', () => {
     show({ query: 'fox', said: 0 });
 
-    expect(screen.getByRole('status').textContent).toBe('Nothing here');
+    expect(count()).toBe('Nothing here');
   });
 
   it('says nothing at all before anything is typed', () => {
     show({ query: '' });
 
-    expect(screen.getByRole('status').textContent).toBe('');
+    expect(count()).toBe('');
   });
 
   it('walks forward on Enter', async () => {
@@ -209,26 +224,135 @@ describe('reaching back for the rest', () => {
   it('says the count is only what is shown while the reach is off', () => {
     show({ query: 'fox', said: 4, at: 0, searchAll: false });
 
-    expect(screen.getByRole('status').textContent).toBe('1 of 4 shown');
+    expect(count()).toBe('1 of 4 shown');
   });
-
   it('claims the whole session once it has reached back', () => {
     show({ query: 'fox', said: 4, at: 0, searchAll: true });
 
-    expect(screen.getByRole('status').textContent).toBe('1 of 4');
+    expect(count()).toBe('1 of 4');
   });
 
   /** What it has while it is still reading is a floor rather than a total. */
   it('says it is still counting while it reaches', () => {
     show({ query: 'fox', said: 4, at: 0, searchAll: true, reaching: true });
 
-    expect(screen.getByRole('status').textContent).toBe('1 of 4 so far');
+    expect(count()).toBe('1 of 4 so far');
   });
 
   it('does not call it empty while there is still more to read', () => {
     show({ query: 'fox', said: 0, searchAll: true, reaching: true });
 
-    expect(screen.getByRole('status').textContent).toBe('0 of 0 so far');
+    expect(count()).toBe('0 of 0 so far');
     expect((screen.getByLabelText('Find in this session') as HTMLInputElement).className).not.toContain('empty');
+  });
+});
+
+/**
+ * Typing the number to jump to it (#209).
+ *
+ * Walking to the fortieth of two hundred is forty presses otherwise, and the number is
+ * already on screen saying where the reader is - so it is the obvious thing to type into.
+ */
+describe('going straight to a hit', () => {
+  const number = () => screen.getByRole('textbox', { name: /^Match/ }) as HTMLInputElement;
+
+  it('shows which hit the reader is on', () => {
+    show({ query: 'fox', said: 21, at: 2 });
+
+    expect(number().value).toBe('3');
+  });
+
+  it('jumps as the number is typed', async () => {
+    const { onGo } = show({ query: 'fox', said: 21, at: 0 });
+
+    await userEvent.clear(number());
+    await userEvent.type(number(), '7');
+
+    expect(onGo).toHaveBeenLastCalledWith(6);
+  });
+
+  /** Counted from one on screen and from zero underneath, which is where that is settled. */
+  it('counts from one, as the sentence it sits in does', async () => {
+    const { onGo } = show({ query: 'fox', said: 21, at: 0 });
+
+    await userEvent.clear(number());
+    await userEvent.type(number(), '1');
+
+    expect(onGo).toHaveBeenLastCalledWith(0);
+  });
+
+  it('takes a number of more than one digit', async () => {
+    const { onGo } = show({ query: 'fox', said: 21, at: 0 });
+
+    await userEvent.clear(number());
+    await userEvent.type(number(), '12');
+
+    expect(onGo).toHaveBeenLastCalledWith(11);
+  });
+
+  it.each(['0', '9', 'x'])('goes nowhere for %s, which is not a hit', async (typed) => {
+    const { onGo } = show({ query: 'fox', said: 5, at: 2 });
+
+    await userEvent.clear(number());
+    await userEvent.type(number(), typed);
+
+    expect(onGo).not.toHaveBeenCalled();
+  });
+
+  /** A half-typed number that went nowhere should not be left standing in the sentence. */
+  it('goes back to saying where the reader is when it is left', async () => {
+    show({ query: 'fox', said: 21, at: 4 });
+    await userEvent.clear(number());
+    await userEvent.type(number(), '9');
+
+    await userEvent.tab();
+
+    expect(number().value).toBe('5');
+  });
+
+  it('selects what is there, so a number replaces it rather than joining it', async () => {
+    show({ query: 'fox', said: 21, at: 11 });
+
+    number().focus();
+
+    expect(number().selectionStart).toBe(0);
+    expect(number().selectionEnd).toBe(2);
+  });
+
+  it.each([
+    ['{ArrowDown}', 1],
+    ['{ArrowUp}', -1],
+  ])('walks on %s, as the arrows do everywhere', async (key, by) => {
+    const { onStep } = show({ query: 'fox', said: 21, at: 4 });
+    number().focus();
+
+    await userEvent.keyboard(key);
+
+    expect(onStep).toHaveBeenCalledWith(by);
+  });
+
+  it('closes the bar on Escape, as the box beside it does', async () => {
+    const { onClose } = show({ query: 'fox', said: 21, at: 4 });
+    number().focus();
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  /** Nothing to go to, so there is nothing to type into either. */
+  it('is not there when nothing was found', () => {
+    show({ query: 'fox', said: 0 });
+
+    expect(screen.queryByRole('textbox', { name: /^Match/ })).toBeNull();
+  });
+
+  it('is reachable by keyboard from the words being searched for', async () => {
+    show({ query: 'fox', said: 21, at: 0 });
+    screen.getByLabelText('Find in this session').focus();
+
+    await userEvent.tab();
+
+    expect(document.activeElement).toBe(number());
   });
 });
