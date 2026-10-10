@@ -159,8 +159,14 @@ describe('the agent’s todo list', () => {
  */
 describe('how the list is read', () => {
   const names = () => [...document.querySelectorAll('.todo-name')].map((node) => node.textContent);
-  const sort = () => screen.getByLabelText('Order') as HTMLSelectElement;
+  const sort = () => screen.getByRole('button', { name: /^Order:/ });
   const hide = () => screen.getByRole('checkbox', { name: 'Hide done' }) as HTMLInputElement;
+
+  /** Open the picker and take the row by its label, which is how a reader reaches one. */
+  const choose = async (user: ReturnType<typeof userEvent.setup>, label: string) => {
+    await user.click(sort());
+    await user.click(screen.getByRole('option', { name: label }));
+  };
 
   const plan = () => [
     todo({ id: 'a', title: 'First', status: 'done', createdAt: '2026-01-01 00:00:01' }),
@@ -175,14 +181,14 @@ describe('how the list is read', () => {
   it('opens with the newest at the top', () => {
     shown(plan());
 
-    expect(sort().value).toBe('created');
+    expect(sort().textContent).toContain('Newest first');
     expect(names()).toEqual(['Third', 'Second', 'First']);
   });
 
   it('reorders when another order is chosen', async () => {
     const { user } = shown(plan());
 
-    await user.selectOptions(sort(), 'planned');
+    await choose(user, 'Oldest first');
 
     expect(names()).toEqual(['First', 'Second', 'Third']);
   });
@@ -219,13 +225,13 @@ describe('how the list is read', () => {
 
   it('opens the way it was last read', async () => {
     const { user } = shown(plan());
-    await user.selectOptions(sort(), 'open');
+    await choose(user, 'Open first');
     await user.click(hide());
 
     cleanup();
     render(<Todos todos={plan()} onClose={vi.fn()} />);
 
-    expect(sort().value).toBe('open');
+    expect(sort().textContent).toContain('Open first');
     expect(hide().checked).toBe(true);
   });
 
@@ -235,7 +241,142 @@ describe('how the list is read', () => {
 
     render(<Todos todos={plan()} onClose={vi.fn()} />);
 
-    expect(sort().value).toBe('created');
+    expect(sort().textContent).toContain('Newest first');
     expect(names()).toEqual(['Third', 'Second', 'First']);
+  });
+});
+
+/**
+ * The order picker, which is this app's menu rather than the platform's.
+ *
+ * A native `select` hands its list to Windows, so neither the control nor its rows can say
+ * anything while it is open - the control went back to looking untouched the moment the list
+ * appeared over it, which reads as the press not having landed.
+ */
+describe('choosing an order', () => {
+  const sort = () => screen.getByRole('button', { name: /^Order:/ });
+  const options = () => screen.getAllByRole('option');
+  const open = async (user: ReturnType<typeof userEvent.setup>) => user.click(sort());
+
+  const plan = () => [todo({ id: 'a' }), todo({ id: 'b' })];
+
+  it('says what the list is in, without opening anything', () => {
+    shown(plan());
+
+    expect(sort().textContent).toContain('Newest first');
+    expect(screen.queryAllByRole('option')).toEqual([]);
+  });
+
+  it('offers every order when opened', async () => {
+    const { user } = shown(plan());
+
+    await open(user);
+
+    expect(options().map((row) => row.textContent)).toEqual([
+      'Newest first',
+      'Oldest first',
+      'Open first',
+      'Recently changed',
+    ]);
+  });
+
+  /**
+   * The pointer moves off the control and onto the list the moment it opens, so without a
+   * state of its own the control goes back to looking untouched while its own menu stands
+   * over it.
+   */
+  it('keeps the control marked while its list is up', async () => {
+    const { user } = shown(plan());
+
+    await open(user);
+
+    expect(sort().className).toContain('open');
+    expect(sort().getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('drops the mark once the list has gone', async () => {
+    const { user } = shown(plan());
+    await open(user);
+
+    await user.keyboard('{Escape}');
+
+    expect(sort().className).not.toContain('open');
+  });
+
+  it('says which one is in force', async () => {
+    const { user } = shown(plan());
+
+    await open(user);
+
+    const chosen = options().filter((row) => row.getAttribute('aria-selected') === 'true');
+    expect(chosen.map((row) => row.textContent)).toEqual(['Newest first']);
+  });
+
+  /** Opening on the row already in force, rather than at a top the reader has to count from. */
+  it('puts the keyboard on the order in force', async () => {
+    const { user } = shown(plan());
+
+    await open(user);
+
+    // The row rather than the control, whose own text is the same label - which would let
+    // this pass without the menu ever having taken the keyboard.
+    expect(document.activeElement?.getAttribute('role')).toBe('option');
+    expect(document.activeElement?.textContent).toBe('Newest first');
+  });
+
+  it.each(['{ArrowDown}', '{ArrowUp}'])('opens on %s from the control', async (key) => {
+    const { user } = shown(plan());
+    sort().focus();
+
+    await user.keyboard(key);
+
+    expect(options()).toHaveLength(4);
+  });
+
+  it('walks the list with the arrows', async () => {
+    const { user } = shown(plan());
+    await open(user);
+
+    await user.keyboard('{ArrowDown}');
+
+    expect(document.activeElement?.textContent).toBe('Oldest first');
+  });
+
+  it('wraps at the end, as every list in this app does', async () => {
+    const { user } = shown(plan());
+    await open(user);
+
+    await user.keyboard('{End}{ArrowDown}');
+
+    expect(document.activeElement?.textContent).toBe('Newest first');
+  });
+
+  it('picks with Enter', async () => {
+    const { user } = shown(plan());
+    await open(user);
+
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    expect(sort().textContent).toContain('Oldest first');
+  });
+
+  /** The menu it was in has gone, and a reader who picked by keyboard has nowhere else to be. */
+  it('hands the keyboard back to the control', async () => {
+    const { user } = shown(plan());
+    await open(user);
+
+    await user.keyboard('{Enter}');
+
+    expect(document.activeElement).toBe(sort());
+  });
+
+  it('closes without choosing on Escape', async () => {
+    const { user } = shown(plan());
+    await open(user);
+
+    await user.keyboard('{ArrowDown}{Escape}');
+
+    expect(screen.queryAllByRole('option')).toEqual([]);
+    expect(sort().textContent, 'still the one it opened on').toContain('Newest first');
   });
 });

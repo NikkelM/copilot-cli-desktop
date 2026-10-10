@@ -6814,8 +6814,11 @@ pre.fatal,
 
 /* Takes the space, so the controls sit together at the far end rather than spread across. */
 .todos-sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
-  padding: 1px 4px;
+  padding: 1px 4px 1px 7px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg);
@@ -6825,8 +6828,61 @@ pre.fatal,
   cursor: pointer;
 }
 
-.todos-sort:hover {
+/*
+ * Open counts as pointed at.
+ *
+ * The pointer moves off the control and onto the list the moment it opens, so without this
+ * the control goes back to looking untouched while its own menu is standing over it - which
+ * reads as the press not having landed.
+ */
+.todos-sort:hover,
+.todos-sort.open {
+  border-color: var(--text-muted);
   color: var(--text);
+}
+
+.todos-sort-menu {
+  min-width: calc(var(--font-base) * 11);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.6);
+}
+
+.todos-sort-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The colour the session rows and the sidebar's groups hover in, which is what makes this
+   read as a list rather than as a panel of buttons. */
+.todos-sort-option:hover {
+  background: #1c2128;
+}
+
+/* The one in force, which the tick says and the weight says again at a glance. */
+.todos-sort-option.chosen {
+  font-weight: 600;
+}
+
+/* Holds the tick's place on every row, so the labels line up whichever one is in force. */
+.todos-sort-tick {
+  display: inline-flex;
+  width: var(--font-sm);
+  color: var(--accent);
 }
 
 /* The box and its word read as one control, which is what clicking either of them gets. */
@@ -7230,6 +7286,7 @@ pre.fatal,
 /* And again for an open one, whose own background is a class deeper and would otherwise
    win on specificity however late this rule comes. */
 .tool.open .tool-head:focus,
+.todos-sort-option:focus,
 .reasoning-head:focus,
 .turn-changes-head:focus,
 .cli-group-head:focus,

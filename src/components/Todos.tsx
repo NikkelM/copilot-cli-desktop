@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { TickIcon } from './Icons';
+import { ChevronIcon, TickIcon } from './Icons';
+import { FloatingMenu } from './FloatingMenu';
 import { OPENS_ON, TODO_ORDERS, isDone, ordered, type TodoOrder } from '../lib/todoOrder';
+import { step } from '../lib/roving';
 import { read, save } from '../lib/store';
 import type { Todo } from '../../shared/protocol';
 
@@ -28,6 +30,96 @@ const HIDE_DONE_KEY = 'todoHideDone';
 function openingOrder(): TodoOrder {
   const last = read('sessions', ORDER_KEY);
   return TODO_ORDERS.some((one) => one.value === last) ? (last as TodoOrder) : OPENS_ON;
+}
+
+/**
+ * Which order the list is in, as a menu this app draws rather than one Windows draws.
+ *
+ * A native `select` was the obvious thing and the wrong one: its list belongs to the
+ * platform, so neither the control nor its rows can say anything while it is open. The
+ * control went back to looking untouched the moment the list appeared over it, which reads
+ * as the press not having landed.
+ *
+ * Drawn as the model picker is, down to the chevron, since they are the same control: a
+ * current value, a list to pick from, and nothing else.
+ */
+function OrderPicker({ order, onChoose }: { order: TodoOrder; onChoose: (order: TodoOrder) => void }) {
+  const box = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+
+  const label = TODO_ORDERS.find((one) => one.value === order)?.label ?? '';
+
+  const close = () => {
+    setOpen(false);
+    // Back to the control rather than to the top of the window: the menu it was in has gone,
+    // and a reader who picked with the keyboard has nowhere else to be.
+    box.current?.focus();
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        ref={box}
+        className={`todos-sort${open ? ' open' : ''}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={`Order: ${label}`}
+        onClick={() => setOpen((was) => !was)}
+        onKeyDown={(event) => {
+          // What a dropdown answers everywhere, and the only way into the list that does
+          // not go through the mouse.
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+          event.preventDefault();
+          setOpen(true);
+        }}
+      >
+        {label}
+        <ChevronIcon open={open} />
+      </button>
+
+      {open && (
+        <FloatingMenu anchor={box} onDismiss={close} className="todos-sort-menu" role="listbox">
+          {TODO_ORDERS.map((one) => (
+            <button
+              key={one.value}
+              type="button"
+              role="option"
+              aria-selected={one.value === order}
+              // The one in force, so opening the menu puts the keyboard where the reader
+              // already is rather than at the top of a list they have to find their place in.
+              autoFocus={one.value === order}
+              className={`todos-sort-option${one.value === order ? ' chosen' : ''}`}
+              onClick={() => {
+                onChoose(one.value);
+                close();
+              }}
+              onKeyDown={(event) => {
+                const by =
+                  event.key === 'ArrowDown'
+                    ? 1
+                    : event.key === 'ArrowUp'
+                      ? -1
+                      : event.key === 'Home'
+                        ? 'first'
+                        : event.key === 'End'
+                          ? 'last'
+                          : null;
+                if (!by) return;
+                event.preventDefault();
+                // The menu is this row's parent, which saves threading a ref through the
+                // portal the menu is drawn in.
+                step(event.currentTarget.parentElement, '[role="option"]', by);
+              }}
+            >
+              <span className="todos-sort-tick">{one.value === order ? <TickIcon /> : null}</span>
+              {one.label}
+            </button>
+          ))}
+        </FloatingMenu>
+      )}
+    </>
+  );
 }
 
 /**
@@ -97,22 +189,13 @@ export function Todos({ todos, onClose }: TodosProps) {
           {done} of {todos.length} done
         </span>
 
-        <select
-          className="todos-sort"
-          aria-label="Order"
-          value={order}
-          onChange={(event) => {
-            const chosen = event.target.value as TodoOrder;
+        <OrderPicker
+          order={order}
+          onChoose={(chosen) => {
             setOrder(chosen);
             save('sessions', ORDER_KEY, chosen);
           }}
-        >
-          {TODO_ORDERS.map((one) => (
-            <option key={one.value} value={one.value}>
-              {one.label}
-            </option>
-          ))}
-        </select>
+        />
 
         {/* Drawn the way the settings boxes are, which is the only checkbox style this app
             has. A box answers Space and nothing else, which is a surprise beside controls
