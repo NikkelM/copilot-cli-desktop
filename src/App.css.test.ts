@@ -1201,4 +1201,24 @@ describe('the find bar', () => {
   it('lets its controls wrap rather than squeezing them', () => {
     expect(rule()).toContain('flex-wrap: wrap');
   });
+
+  /**
+   * Above everything the transcript paints into its own corners.
+   *
+   * The time and the copy button sit at a layer of their own on each message, and they come
+   * after the bar in the list - so at the same layer they won the tie and were drawn through
+   * it. Nothing here creates a stacking context between them, so the numbers are compared
+   * directly and the bar has to be the larger.
+   */
+  it.each(['.message-meta {', '.block .copy {'])('is drawn above %s', (selector) => {
+    const layer = (start: string) => {
+      const at = css.indexOf(start);
+      expect(at, `${start} should still be styled`).toBeGreaterThan(-1);
+      const found = /z-index:\s*(\d+)/.exec(css.slice(at, css.indexOf('\n}', at)));
+      expect(found, `${start} should still declare a layer`).not.toBeNull();
+      return Number(found![1]);
+    };
+
+    expect(layer('.find-bar {')).toBeGreaterThan(layer(selector));
+  });
 });

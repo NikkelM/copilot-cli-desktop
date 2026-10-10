@@ -5989,7 +5989,14 @@ pre.fatal,
 .find-bar {
   position: sticky;
   top: 0;
-  z-index: 2;
+  /*
+   * Above what it is drawn over.
+   *
+   * The time and the copy button are painted into the top right corner of every message at
+   * a layer of their own, and they come after this in the list - so at the same layer they
+   * won the tie and were drawn through the bar.
+   */
+  z-index: 5;
   /*
    * Its own size rather than the list's, pushed to the end of it.
    *
