@@ -5979,6 +5979,82 @@ pre.fatal,
   border-color: var(--danger);
 }
 
+/*
+ * Finding words in the conversation on screen (#209).
+ *
+ * The first row of the transcript, stuck to its top. The pane is a four-row grid whose rows
+ * are assigned by position, so a bar added beside the list would shift every row below it -
+ * and a bar inside the list is one the reader cannot scroll away from by accident.
+ */
+.find-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 4px 12px rgba(1, 4, 9, 0.5);
+}
+
+.find-field {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-md);
+}
+
+.find-field:focus-visible {
+  border-color: var(--accent);
+}
+
+/* Words nobody said, which the box itself should say as well as the count beside it. */
+.find-field.empty {
+  border-color: var(--danger);
+}
+
+.find-count {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--font-sm);
+  /* Held open, so the buttons beside it do not shuffle as the count changes width. */
+  min-width: calc(var(--font-base) * 6);
+  text-align: right;
+}
+
+.find-step {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.find-step:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.find-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Nothing to save yet, which the Save button should look like rather than only behave like. */
 .mcp-action:disabled {
   opacity: 0.4;

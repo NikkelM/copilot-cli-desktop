@@ -576,6 +576,7 @@ describe('BINDINGS', () => {  // The list a reader sees is built from these, so 
       'attach',
       'cycle-mode',
       'escape-twice',
+      'find-here',
       'find-session',
       'fold-all',
       'go-composer',

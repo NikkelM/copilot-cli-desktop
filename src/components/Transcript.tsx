@@ -8,6 +8,8 @@ import { changesByTurn, type ShowTurnChanges } from '../lib/turnChanges';
 import { TurnSummary, type TurnView } from './TurnSummary';
 import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
+import { FindBar } from './FindBar';
+import { findMatches, stepMatch } from '../lib/findInTranscript';
 import { ASSUMED_DISPLAY, type CliDisplay } from '../lib/useCliDisplay';
 import { CopyButton } from './CopyButton';
 import { Diff } from './Diff';
@@ -127,7 +129,14 @@ export interface FoldAll {
   at: number;
 }
 
-const Folds = createContext<FoldAll | null>(null);
+/** What the transcript is asking of its folds: all of them, or one in particular. */
+interface Folding {
+  all: FoldAll | null;
+  /** The key of a row to open, because the reader has been walked to it (#209). */
+  show: string | null;
+}
+
+const Folds = createContext<Folding | null>(null);
 
 /**
  * Whether this fold should be open, given what was asked of all of them.
@@ -135,9 +144,14 @@ const Folds = createContext<FoldAll | null>(null);
  * A row that mounts after a request counts as having answered it, so a tool call arriving
  * while everything is expanded still opens closed, as every new row does. The request is
  * about the transcript somebody was looking at, not a standing order over what arrives next.
+ *
+ * Opening for a search hit is not the same thing and has no such memory: it is the one row
+ * the reader was taken to, and it opens whenever it becomes that row.
  */
-function useFoldAll(setOpen: (open: boolean) => void): void {
-  const all = useContext(Folds);
+function useFoldAll(key: string, setOpen: (open: boolean) => void): void {
+  const folds = useContext(Folds);
+  const all = folds?.all ?? null;
+  const show = folds?.show ?? null;
   const answered = useRef(all?.at ?? 0);
 
   useEffect(() => {
@@ -148,6 +162,11 @@ function useFoldAll(setOpen: (open: boolean) => void): void {
     // thing that can start this.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all]);
+
+  useEffect(() => {
+    if (show === key) setOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show, key]);
 }
 
 /**
@@ -160,7 +179,7 @@ function useFoldAll(setOpen: (open: boolean) => void): void {
  */
 function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
   const [open, setOpen] = useState(Boolean(entry.streaming));
-  useFoldAll(setOpen);
+  useFoldAll(entry.key, setOpen);
   const words = entry.body.trim().split(/\s+/).length;
 
   return (
@@ -226,7 +245,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   // Collapsed like every other row, including a delegated task: its work is watched from
   // the sidebar entry, which is somewhere that survives the row scrolling away.
   const [open, setOpen] = useState(false);
-  useFoldAll(setOpen);
+  useFoldAll(entry.key, setOpen);
 
   // The offered options say more than the tool's own "User responded: x", which only
   // repeats what the header already shows. They are worth seeing even unanswered.
@@ -408,6 +427,13 @@ interface TranscriptProps {
   sessionId: string;
   /** Open or close every fold at once, if that has been asked for since the session opened. */
   folds?: FoldAll | null;
+  /**
+   * When the reader last asked to find words in this conversation, or null when they have
+   * not (#209). A fresh number means the key was pressed again, which takes them back to
+   * the box rather than opening a second one.
+   */
+  finding?: number | null;
+  onFindClosed?: () => void;
   /** Used to shorten file paths in tool summaries. */
   cwd: string | null;
   /** What a stopped turn had already said, by the abort that ended it. */
@@ -468,6 +494,8 @@ export function Transcript({
   events,
   sessionId,
   folds = null,
+  finding = null,
+  onFindClosed,
   cwd,
   abandoned,
   hasOlder = false,
@@ -631,7 +659,7 @@ export function Transcript({
    * earlier is an older mention of the same thing.
    */
   const wanted = highlight?.words.trim().toLowerCase() ?? '';
-  const target = useMemo(() => {
+  const said = useMemo(() => {
     if (!wanted) return -1;
 
     let last = -1;
@@ -640,6 +668,44 @@ export function Transcript({
     }
     return last;
   }, [entries, wanted]);
+
+  /**
+   * Finding words inside this conversation, which is a different question from which
+   * session said them (#209).
+   *
+   * The walk is over what the transcript holds rather than over the session, which is why
+   * the bar says what it is counting: the page is 150 entries to begin with and grows as
+   * the reader scrolls back, so a bare number would be a claim that is not true.
+   */
+  const [query, setQuery] = useState('');
+  const [onHit, setOnHit] = useState(-1);
+  const matches = useMemo(() => findMatches(entries, query), [entries, query]);
+
+  // Back to the first hit whenever the words change, since the one they were on was found
+  // by a different question and may not be a hit at all now.
+  const asked = useRef(query);
+  if (asked.current !== query) {
+    asked.current = query;
+    setOnHit(matches.length > 0 ? 0 : -1);
+  }
+
+  const hit = finding !== null && onHit >= 0 ? (matches[onHit] ?? -1) : -1;
+
+  const step = useCallback(
+    (by: 1 | -1) => setOnHit((was) => stepMatch(matches.length, was, by)),
+    [matches.length],
+  );
+
+  const closeFind = useCallback(() => {
+    setOnHit(-1);
+    onFindClosed?.();
+  }, [onFindClosed]);
+
+  /**
+   * Where the transcript is pointing: the hit being walked to, or the search result it was
+   * opened at. The walk wins, because it is the thing the reader is doing now.
+   */
+  const target = hit >= 0 ? hit : said;
 
   /**
    * Whether the reader has moved the transcript themselves since arriving.
@@ -704,7 +770,9 @@ export function Transcript({
 
   /** Where the drawn window starts, so an index into the entries can be found among the rows. */
   const from = entries.length - shown.length;
-  const pointingAt = target >= 0 && !tookOver ? target - from : -1;
+  // The walk points wherever it is, scrolled or not: the reader asked for this row a moment
+  // ago. A search result gives way once they take the transcript over themselves.
+  const pointingAt = target >= 0 && (hit >= 0 || !tookOver) ? target - from : -1;
 
   /**
    * Drawn far enough back to include it, when the budget stopped short of it.
@@ -876,7 +944,7 @@ export function Transcript({
 
   return (
     <Reports.Provider value={onError ?? noReport}>
-    <Folds.Provider value={folds}>
+    <Folds.Provider value={{ all: folds, show: hit >= 0 ? (entries[hit]?.key ?? null) : null }}>
     <Shows.Provider value={display}>
       <ol
         className="transcript"
@@ -895,6 +963,18 @@ export function Transcript({
         onPointerDown={release}
         onKeyDown={releaseOnKey}
       >
+        {finding !== null && (
+          <FindBar
+            query={query}
+            onQuery={setQuery}
+            said={matches.length}
+            at={onHit}
+            onStep={step}
+            onClose={closeFind}
+            openedAt={finding}
+          />
+        )}
+
         <li className="history-edge">
           {loadingOlder ? (
             'Loading earlier messages…'

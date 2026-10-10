@@ -19,6 +19,7 @@ export type Shortcut =
   | 'next-region'
   | 'previous-region'
   | 'fold-all'
+  | 'find-here'
   | 'cycle-mode'
   | 'attach';
 
@@ -64,6 +65,7 @@ export const BINDINGS: readonly Binding[] = [
   { id: 'escape-twice', keys: 'esc esc', what: 'clear the message or stop the turn' },
   { id: 'reasoning', keys: 'ctrl+t', what: 'show or hide reasoning' },
   { id: 'fold-all', keys: 'ctrl+o', what: 'expand or collapse every tool call' },
+  { id: 'find-here', keys: 'ctrl+f', what: 'find words in this session' },
   { id: 'stash', keys: 'ctrl+s', what: 'stash or restore the message' },
   { id: 'larger', keys: 'ctrl+plus', what: 'zoom in' },
   { id: 'smaller', keys: 'ctrl+minus', what: 'zoom out' },

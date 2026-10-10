@@ -2931,3 +2931,130 @@ describe('folding the whole transcript', () => {
     expect(screen.queryByText('output of pwd')).toBeNull();
   });
 });
+
+/**
+ * Finding words inside one conversation (#209).
+ *
+ * Distinct from searching the sessions, which finds which session said something. This is
+ * for when the reader is already in the right place and the word appears forty times.
+ */
+describe('finding words in the session', () => {
+  const said = (body: string, id: string) => event('assistant.message', { content: body }, id);
+
+  const draw = (over: Partial<ComponentProps<typeof Transcript>> = {}) => (
+    <Transcript
+      events={[said('the quick brown fox', 'e1'), said('nothing here', 'e2'), said('another fox entirely', 'e3')]}
+      sessionId="s1"
+      cwd={null}
+      display={ASSUMED_DISPLAY}
+      {...over}
+    />
+  );
+
+  const field = () => screen.getByLabelText('Find in this session') as HTMLInputElement;
+  const count = () => screen.getByRole('status').textContent;
+  const marked = () => document.querySelector('li.entry.found')?.textContent;
+
+  it('is not there until it is asked for', () => {
+    render(draw());
+
+    expect(screen.queryByLabelText('Find in this session')).toBeNull();
+  });
+
+  it('opens when it is', () => {
+    render(draw({ finding: 1 }));
+
+    expect(field()).toBeTruthy();
+  });
+
+  it('counts the rows holding the words', async () => {
+    render(draw({ finding: 1 }));
+
+    await userEvent.type(field(), 'fox');
+
+    expect(count()).toBe('1 of 2 shown');
+  });
+
+  it('walks to the next one', async () => {
+    render(draw({ finding: 1 }));
+    await userEvent.type(field(), 'fox');
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(count()).toBe('2 of 2 shown');
+  });
+
+  /** A key that stops working at the last match reads as broken rather than as finished. */
+  it('wraps round the end', async () => {
+    render(draw({ finding: 1 }));
+    await userEvent.type(field(), 'fox');
+
+    await userEvent.keyboard('{Enter}{Enter}');
+
+    expect(count()).toBe('1 of 2 shown');
+  });
+
+  it('marks the row it walked to', async () => {
+    render(draw({ finding: 1 }));
+
+    await userEvent.type(field(), 'fox');
+
+    expect(marked()).toContain('the quick brown fox');
+  });
+
+  it('moves the mark as the walk goes on', async () => {
+    render(draw({ finding: 1 }));
+    await userEvent.type(field(), 'fox');
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(marked()).toContain('another fox entirely');
+  });
+
+  it('says so when the words are nowhere', async () => {
+    render(draw({ finding: 1 }));
+
+    await userEvent.type(field(), 'elephant');
+
+    expect(count()).toBe('Nothing here');
+    expect(marked()).toBeUndefined();
+  });
+
+  /** The row they were on was found by a different question and may not be a hit now. */
+  it('starts again when the words change', async () => {
+    render(draw({ finding: 1 }));
+    await userEvent.type(field(), 'fox');
+    await userEvent.keyboard('{Enter}');
+
+    await userEvent.type(field(), 'y');
+
+    expect(count()).toBe('Nothing here');
+  });
+
+  it('asks to be closed', async () => {
+    const onFindClosed = vi.fn();
+    render(draw({ finding: 1, onFindClosed }));
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(onFindClosed).toHaveBeenCalled();
+  });
+
+  /**
+   * A folded row can be found in, because the reader can see the row and expects the word in
+   * it to turn up - so landing on one has to open it.
+   */
+  it('opens a folded row it walks to', async () => {
+    render(
+      draw({
+        events: [...shell('e1', 'ls', 't1'), said('nothing here', 'e2')],
+        finding: 1,
+      }),
+    );
+    expect(screen.queryByText('output of ls')).toBeNull();
+
+    await userEvent.type(field(), 'output of ls');
+
+    expect(screen.getByText('output of ls')).toBeTruthy();
+  });
+});

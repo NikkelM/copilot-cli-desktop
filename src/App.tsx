@@ -900,6 +900,9 @@ export default function App() {
    */
   const [folds, setFolds] = useState<FoldAll | null>(null);
 
+  /** When the reader last asked to find words in the session on screen (#209). */
+  const [finding, setFinding] = useState<number | null>(null);
+
   useShortcuts(
     useCallback(
       (shortcut) => {
@@ -974,6 +977,13 @@ export default function App() {
           // Alternating rather than worked out from what is on screen: every fold keeps its
           // own state, so there is nothing here that knows how many of them are open.
           setFolds((was) => ({ open: !(was?.open ?? false), at: (was?.at ?? 0) + 1 }));
+          return;
+        }
+
+        if (shortcut === 'find-here') {
+          // A fresh number each time, which is what takes the keyboard back to the box when
+          // the bar is already up rather than opening a second one.
+          setFinding((was) => (was ?? 0) + 1);
           return;
         }
 
@@ -2082,6 +2092,8 @@ export default function App() {
               events={transcript.events}
               sessionId={selected.sessionId}
               folds={folds}
+              finding={finding}
+              onFindClosed={() => setFinding(null)}
               cwd={selected.cwd}
               abandoned={transcript.abandoned}
               hasOlder={transcript.hasOlder}
