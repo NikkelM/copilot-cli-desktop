@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { FindBar } from './FindBar';
+import { PLAIN } from '../lib/findMode';
 
 afterEach(cleanup);
 
@@ -13,6 +14,7 @@ const show = (over: Partial<Parameters<typeof FindBar>[0]> = {}) => {
   const onClose = vi.fn();
   const onSearchAll = vi.fn();
   const onGo = vi.fn();
+  const onMode = vi.fn();
   const props = {
     query: '',
     onQuery,
@@ -25,6 +27,8 @@ const show = (over: Partial<Parameters<typeof FindBar>[0]> = {}) => {
     searchAll: true,
     onSearchAll,
     reaching: false,
+    mode: PLAIN,
+    onMode,
     ...over,
   };
   const { rerender } = render(
@@ -39,6 +43,7 @@ const show = (over: Partial<Parameters<typeof FindBar>[0]> = {}) => {
     onGo,
     onClose,
     onSearchAll,
+    onMode,
     again: (next: Partial<Parameters<typeof FindBar>[0]>) =>
       rerender(
         <ol>
@@ -371,12 +376,69 @@ describe('going straight to a hit', () => {
     expect(screen.queryByRole('textbox', { name: /^Match/ })).toBeNull();
   });
 
+  /** Three toggles sit between the words and the number, which Tab walks through on its way. */
   it('is reachable by keyboard from the words being searched for', async () => {
     show({ query: 'fox', said: 21, at: 0 });
     screen.getByLabelText('Find in this session').focus();
 
     await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.tab();
+    await userEvent.tab();
 
     expect(document.activeElement).toBe(number());
+  });
+});
+
+/**
+ * The three toggles, as the glyphs a reader knows them by from everywhere else (#209).
+ */
+describe('how the words are matched', () => {
+  const mode = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+
+  it.each(['Match case', 'Match whole word', 'Use a regular expression'])('offers %s', (name) => {
+    show({ query: 'fox' });
+
+    expect(mode(name)).toBeTruthy();
+  });
+
+  it('says which are on', () => {
+    show({ query: 'fox', mode: { matchCase: true, wholeWord: false, regex: false } });
+
+    expect(mode('Match case').getAttribute('aria-pressed')).toBe('true');
+    expect(mode('Use a regular expression').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it.each([
+    ['Match case', 'matchCase'],
+    ['Match whole word', 'wholeWord'],
+    ['Use a regular expression', 'regex'],
+  ])('turns %s on', async (name, key) => {
+    const { onMode } = show({ query: 'fox' });
+
+    await userEvent.click(mode(name));
+
+    expect(onMode).toHaveBeenCalledWith({ [key]: true });
+  });
+
+  it('turns one back off', async () => {
+    const { onMode } = show({ query: 'fox', mode: { matchCase: true, wholeWord: false, regex: false } });
+
+    await userEvent.click(mode('Match case'));
+
+    expect(onMode).toHaveBeenCalledWith({ matchCase: false });
+  });
+
+  /** A pattern nobody can use is a mistake in the box, not a search that found nothing. */
+  it('marks the box when the pattern will not compile', () => {
+    show({ query: 'fox(', said: 3, mode: { matchCase: false, wholeWord: false, regex: true } });
+
+    expect(screen.getByLabelText('Find in this session').closest('.find-box')?.className).toContain('empty');
+  });
+
+  it('leaves the box alone for the same letters read as letters', () => {
+    show({ query: 'fox(', said: 3, mode: PLAIN });
+
+    expect(screen.getByLabelText('Find in this session').closest('.find-box')?.className).not.toContain('empty');
   });
 });

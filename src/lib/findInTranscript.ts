@@ -1,3 +1,4 @@
+import { matcher, PLAIN, type FindMode } from './findMode';
 import type { Entry } from './transcriptEntries';
 
 /**
@@ -37,13 +38,16 @@ export function textOf(entry: Entry): string {
  * One hit per entry however many times the words appear in it. A row is what the reader is
  * taken to, and taking them to the same row three times would read as the walk being stuck.
  */
-export function findMatches(entries: readonly Entry[], query: string): number[] {
-  const wanted = query.trim().toLowerCase();
+export function findMatches(entries: readonly Entry[], query: string, mode: FindMode = PLAIN): number[] {
+  const wanted = matcher(query, mode);
   if (!wanted) return [];
 
   const found: number[] = [];
   for (const [index, entry] of entries.entries()) {
-    if (textOf(entry).toLowerCase().includes(wanted)) found.push(index);
+    // Put back before each row: the expression is global, so it would otherwise carry on
+    // from wherever the last row left it and miss a match earlier in this one.
+    wanted.lastIndex = 0;
+    if (wanted.test(textOf(entry))) found.push(index);
   }
 
   return found;

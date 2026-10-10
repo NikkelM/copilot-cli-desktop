@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { clearMatches, paintMatches, rangesIn } from './findHighlight';
+import { PLAIN, type FindMode } from './findMode';
 
 let root: HTMLElement;
 
@@ -108,5 +109,42 @@ describe('where the browser cannot mark words', () => {
 
   it('clears nothing rather than failing', () => {
     expect(() => clearMatches()).not.toThrow();
+  });
+});
+
+/** The same matcher serves the marks, so what is counted and what is painted agree. */
+describe('marking under the three modes', () => {
+  const covered = (query: string, mode: Partial<FindMode> = {}) =>
+    rangesIn(root, query, { ...PLAIN, ...mode }).map((range) => range.toString());
+
+  it('minds case when it is told to', () => {
+    given('<p>a Fox and a fox</p>');
+
+    expect(covered('fox', { matchCase: true })).toEqual(['fox']);
+  });
+
+  it('marks only whole words when they were asked for', () => {
+    given('<p>a fox in a foxglove</p>');
+
+    expect(covered('fox', { wholeWord: true })).toEqual(['fox']);
+  });
+
+  it('marks what a pattern matches, keeping the letters it found', () => {
+    given('<p>fox and fax</p>');
+
+    expect(covered('f.x', { regex: true })).toEqual(['fox', 'fax']);
+  });
+
+  /** A pattern that can match nothing would never advance, so the walk would never end. */
+  it('does not hang on a pattern that matches nothing at all', () => {
+    given('<p>abc</p>');
+
+    expect(covered('x*', { regex: true })).toEqual([]);
+  });
+
+  it('marks nothing for a pattern that will not compile', () => {
+    given('<p>a fox</p>');
+
+    expect(covered('fox(', { regex: true })).toEqual([]);
   });
 });

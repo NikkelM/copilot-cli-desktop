@@ -11,6 +11,7 @@ import { formatClock, formatExact } from '../lib/time';
 import { FindBar } from './FindBar';
 import { findMatches, stepMatch } from '../lib/findInTranscript';
 import { clearMatches, paintMatches } from '../lib/findHighlight';
+import { readFindMode, saveFindMode, type FindMode } from '../lib/findMode';
 import { read, save } from '../lib/store';
 import { ASSUMED_DISPLAY, type CliDisplay } from '../lib/useCliDisplay';
 import { CopyButton } from './CopyButton';
@@ -692,6 +693,15 @@ export function Transcript({
    * which is where the todo panel's own reading choices sit.
    */
   const [searchAll, setSearchAll] = useState(() => read('sessions', FIND_EVERYWHERE) !== 'false');
+  /** How the words are matched, which the reader sets with the three toggles in the box. */
+  const [mode, setMode] = useState<FindMode>(readFindMode);
+  const changeMode = useCallback((change: Partial<FindMode>) => {
+    setMode((was) => {
+      const next = { ...was, ...change };
+      saveFindMode(next);
+      return next;
+    });
+  }, []);
   /**
    * Which row the walk is on, by key rather than by its place in the list.
    *
@@ -699,7 +709,7 @@ export function Transcript({
    * held as a number would jump rows every time a page arrived; the row itself does not move.
    */
   const [onKey, setOnKey] = useState<string | null>(null);
-  const matches = useMemo(() => findMatches(entries, query), [entries, query]);
+  const matches = useMemo(() => findMatches(entries, query, mode), [entries, query, mode]);
   const at = onKey === null ? -1 : matches.findIndex((index) => entries[index]?.key === onKey);
 
   // Back to the first hit whenever the words change, since the one they were on was found
@@ -878,7 +888,7 @@ export function Transcript({
       cancelAnimationFrame(waiting);
       // A frame later, so a burst of changes is painted once rather than per mutation.
       waiting = requestAnimationFrame(() =>
-        paintMatches(list, list.querySelector<HTMLElement>(':scope > li.entry.found'), query),
+        paintMatches(list, list.querySelector<HTMLElement>(':scope > li.entry.found'), query, mode),
       );
     };
 
@@ -891,7 +901,7 @@ export function Transcript({
       watch.disconnect();
       clearMatches();
     };
-  }, [finding, query, pointingAt]);
+  }, [finding, query, mode, pointingAt]);
 
   /**
    * Keep up with a reply as it is written.
@@ -1069,6 +1079,8 @@ export function Transcript({
               save('sessions', FIND_EVERYWHERE, String(on));
             }}
             reaching={reachingBack}
+            mode={mode}
+            onMode={changeMode}
           />
         )}
 

@@ -6011,30 +6011,72 @@ pre.fatal,
   box-shadow: 0 4px 12px rgba(1, 4, 9, 0.5);
 }
 
-.find-field {
-  /*
-   * Its own row. The bar is a fifth of the conversation's width, which is not enough for the
-   * words, the count, the toggle and three buttons side by side - and the words are what is
-   * being typed, so they get the room rather than giving it up to what reports on them.
-   */
+/*
+ * The words being typed, with the three toggles inside the box.
+ *
+ * Where every other find bar puts them, and where they cost the row no width: the bar is a
+ * fifth of the conversation, which has none to spare.
+ */
+.find-box {
   flex: 1 1 100%;
-  min-width: calc(var(--font-base) * 7);
-  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-right: 4px;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: var(--bg);
+}
+
+.find-box:focus-within {
+  border-color: var(--accent);
+}
+
+/* A pattern that will not compile, which the box says rather than leaving to the count. */
+.find-box.empty {
+  border-color: var(--danger);
+}
+
+.find-field {
+  flex: 1;
+  min-width: calc(var(--font-base) * 7);
+  padding: 6px 9px;
+  border: none;
+  background: none;
   color: var(--text);
   font: inherit;
   font-size: var(--font-md);
 }
 
 .find-field:focus-visible {
-  border-color: var(--accent);
+  outline: none;
 }
 
-/* Words nobody said, which the box itself should say as well as the count beside it. */
-.find-field.empty {
-  border-color: var(--danger);
+/* Square, so the three of them read as a set of switches rather than as three words. */
+.find-mode {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(var(--font-base) * 1.5);
+  padding: 3px 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-dim);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.find-mode:hover {
+  color: var(--text);
+}
+
+/* On, which has to be legible at a glance beside two that are not. */
+.find-mode.on {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .find-count {

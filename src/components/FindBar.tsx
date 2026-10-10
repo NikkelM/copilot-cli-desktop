@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { CloseIcon, TickIcon } from './Icons';
+import { broken, type FindMode } from '../lib/findMode';
 
 /**
  * Finding words inside the conversation on screen (#209).
@@ -28,6 +29,8 @@ export function FindBar({
   searchAll,
   onSearchAll,
   reaching,
+  mode,
+  onMode,
 }: {
   query: string;
   onQuery: (query: string) => void;
@@ -45,6 +48,9 @@ export function FindBar({
   onSearchAll: (on: boolean) => void;
   /** Whether it is still reaching, so the count is not the whole answer yet. */
   reaching: boolean;
+  /** How the words are matched: case, whole words, and whether it is a pattern. */
+  mode: FindMode;
+  onMode: (change: Partial<FindMode>) => void;
 }) {
   const field = useRef<HTMLInputElement>(null);
 
@@ -58,7 +64,7 @@ export function FindBar({
     field.current?.select();
   }, [openedAt]);
 
-  const nothing = query.trim() !== '' && said === 0 && !reaching;
+  const nothing = query.trim() !== '' && ((said === 0 && !reaching) || broken(query, mode));
 
   /**
    * What the count can honestly claim beyond the number itself.
@@ -72,31 +78,56 @@ export function FindBar({
   /** What the box shows while it is being typed into, so a half-typed number survives. */
   const [typed, setTyped] = useState<string | null>(null);
 
+  /** The three toggles, as the glyphs a reader knows them by from everywhere else. */
+  const modes: { of: keyof FindMode; glyph: string; what: string }[] = [
+    { of: 'matchCase', glyph: 'Aa', what: 'Match case' },
+    { of: 'wholeWord', glyph: 'ab', what: 'Match whole word' },
+    { of: 'regex', glyph: '.*', what: 'Use a regular expression' },
+  ];
+
   return (
     <li className="find-bar">
-      <input
-        ref={field}
-        type="text"
-        className={nothing ? 'find-field empty' : 'find-field'}
-        aria-label="Find in this session"
-        placeholder="Find"
-        value={query}
-        onChange={(event) => onQuery(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            onStep(event.shiftKey ? -1 : 1);
-            return;
-          }
-          // Escape belongs to the bar while the bar has the keyboard: the composer behind it
-          // would otherwise clear what was being written, which is not what closing means.
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            onClose();
-          }
-        }}
-      />
+      {/* The toggles sit in the box rather than beside it, where every other find bar puts
+          them - and where they do not cost the row its width. */}
+      <div className={nothing ? 'find-box empty' : 'find-box'}>
+        <input
+          ref={field}
+          type="text"
+          className="find-field"
+          aria-label="Find in this session"
+          placeholder="Find"
+          value={query}
+          onChange={(event) => onQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              onStep(event.shiftKey ? -1 : 1);
+              return;
+            }
+            // Escape belongs to the bar while the bar has the keyboard: the composer behind
+            // it would otherwise clear what was being written, which is not what closing is.
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              onClose();
+            }
+          }}
+        />
+
+        {modes.map((each) => (
+          <button
+            key={each.of}
+            type="button"
+            className={mode[each.of] ? 'find-mode on' : 'find-mode'}
+            aria-label={each.what}
+            aria-pressed={mode[each.of]}
+            title={each.what}
+            onClick={() => onMode({ [each.of]: !mode[each.of] })}
+          >
+            {each.glyph}
+          </button>
+        ))}
+      </div>
 
       {/*
         Which hit the reader is on, as something they can change.

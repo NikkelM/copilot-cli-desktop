@@ -1,3 +1,5 @@
+import { matcher, PLAIN, type FindMode } from './findMode';
+
 /**
  * Marking the found words themselves, not only the row holding them (#209).
  *
@@ -9,26 +11,32 @@
  */
 
 /** Every place the words appear under this element, in the order they are read. */
-export function rangesIn(root: Node | null, query: string): Range[] {
-  const wanted = query.trim().toLowerCase();
+export function rangesIn(root: Node | null, query: string, mode: FindMode = PLAIN): Range[] {
+  const wanted = matcher(query, mode);
   if (!root || !wanted) return [];
 
   const found: Range[] = [];
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const text = node.nodeValue?.toLowerCase();
+    const text = node.nodeValue;
     if (!text) continue;
 
-    let at = text.indexOf(wanted);
-    while (at !== -1) {
+    // Put back for each text node, since the expression is global and would otherwise carry
+    // on from wherever the last node left it.
+    wanted.lastIndex = 0;
+    for (let hit = wanted.exec(text); hit; hit = wanted.exec(text)) {
+      // A pattern that can match nothing at all would never advance, so the walk would
+      // never end. Stepping past it is what every `exec` loop has to do.
+      if (hit[0] === '') {
+        wanted.lastIndex += 1;
+        continue;
+      }
+
       const range = document.createRange();
-      range.setStart(node, at);
-      range.setEnd(node, at + wanted.length);
+      range.setStart(node, hit.index);
+      range.setEnd(node, hit.index + hit[0].length);
       found.push(range);
-      // Past the match rather than one character on, so overlapping starts are not counted
-      // twice: `aa` in `aaa` is one match followed by a stray letter, not two.
-      at = text.indexOf(wanted, at + wanted.length);
     }
   }
 
@@ -62,14 +70,14 @@ function registry(): Highlights | null {
  * Two registrations rather than one, because the row being walked to has to look different
  * from the others: the reader is being told both where the word is and which one they are on.
  */
-export function paintMatches(root: Node | null, current: Element | null, query: string): void {
+export function paintMatches(root: Node | null, current: Element | null, query: string, mode: FindMode = PLAIN): void {
   const api = registry();
   if (!api) return;
 
   api.delete(ALL);
   api.delete(HERE);
 
-  const ranges = rangesIn(root, query);
+  const ranges = rangesIn(root, query, mode);
   if (ranges.length === 0) return;
 
   const Make = (globalThis as unknown as { Highlight: new (...ranges: Range[]) => unknown }).Highlight;
