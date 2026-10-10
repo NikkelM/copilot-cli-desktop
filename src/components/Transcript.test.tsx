@@ -2844,3 +2844,90 @@ describe('asking for earlier messages rather than scrolling to them', () => {
     expect(screen.getByText('Start of session')).toBeTruthy();
   });
 });
+
+/**
+ * Opening or closing every fold at once (#135).
+ *
+ * The CLI answers ctrl+o with this, and a long session is a column of one-line rows that
+ * each have to be opened by hand. The rows keep their own state, so the request is carried
+ * as a value and a count: each row answers a request it has not answered yet and then goes
+ * back to being its own row.
+ */
+describe('folding the whole transcript', () => {
+  const fold = (folds: ComponentProps<typeof Transcript>['folds']) => (
+    <Transcript
+      events={[...shell('e1', 'ls', 't1'), ...shell('e2', 'pwd', 't2')]}
+      sessionId="s1"
+      cwd={null}
+      folds={folds}
+      display={ASSUMED_DISPLAY}
+    />
+  );
+
+  const output = () => [screen.queryByText('output of ls'), screen.queryByText('output of pwd')].filter(Boolean);
+
+  it('opens every row when asked', () => {
+    const { rerender } = render(fold(null));
+    expect(output(), 'closed to begin with').toHaveLength(0);
+
+    rerender(fold({ open: true, at: 1 }));
+
+    expect(output()).toHaveLength(2);
+  });
+
+  it('closes them again', () => {
+    const { rerender } = render(fold(null));
+    rerender(fold({ open: true, at: 1 }));
+
+    rerender(fold({ open: false, at: 2 }));
+
+    expect(output()).toHaveLength(0);
+  });
+
+  /**
+   * One press does not freeze every fold until the next one. A reader who opened everything
+   * and then closed one row has closed that row, not asked a question of the whole list.
+   */
+  it('leaves a row free to be worked on its own afterwards', async () => {
+    const { rerender } = render(fold(null));
+    rerender(fold({ open: true, at: 1 }));
+
+    await userEvent.click(screen.getByRole('button', { name: /ls/ }));
+
+    expect(screen.queryByText('output of ls')).toBeNull();
+    expect(screen.queryByText('output of pwd'), 'and the other is untouched').toBeTruthy();
+  });
+
+  /** The same request arriving again is the same request, not a second press. */
+  it('does nothing when the request has not changed', async () => {
+    const { rerender } = render(fold(null));
+    rerender(fold({ open: true, at: 1 }));
+    await userEvent.click(screen.getByRole('button', { name: /ls/ }));
+
+    rerender(fold({ open: true, at: 1 }));
+
+    expect(screen.queryByText('output of ls'), 'still closed by hand').toBeNull();
+  });
+
+  /**
+   * A row that arrives after the request counts as having answered it, so a tool call
+   * landing while everything is expanded still opens closed, as every new row does.
+   */
+  it('leaves a row that arrived later on its own default', () => {
+    const { rerender } = render(
+      <Transcript events={shell('e1', 'ls', 't1')} sessionId="s1" cwd={null} folds={{ open: true, at: 1 }} display={ASSUMED_DISPLAY} />,
+    );
+
+    rerender(
+      <Transcript
+        events={[...shell('e1', 'ls', 't1'), ...shell('e2', 'pwd', 't2')]}
+        sessionId="s1"
+        cwd={null}
+        folds={{ open: true, at: 1 }}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+
+    expect(screen.queryByText('output of pwd')).toBeNull();
+  });
+});

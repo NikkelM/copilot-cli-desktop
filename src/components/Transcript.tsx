@@ -112,6 +112,45 @@ const STATUS_GLYPH: Record<ToolEntry['status'], string> = {
 };
 
 /**
+ * A request to open or close every fold at once (#135).
+ *
+ * Carried as a value and a count rather than as a boolean, because the rows keep their own
+ * state: each answers a request it has not answered yet and then goes back to being its own
+ * row, so one press does not freeze every fold in the transcript until the next.
+ *
+ * A context for the same reason `Shows` is one - the folds are several levels down, and
+ * everything between them and here would be carrying an answer to a question it does not ask.
+ */
+export interface FoldAll {
+  open: boolean;
+  /** Which request this is. A row compares it with the last one it answered. */
+  at: number;
+}
+
+const Folds = createContext<FoldAll | null>(null);
+
+/**
+ * Whether this fold should be open, given what was asked of all of them.
+ *
+ * A row that mounts after a request counts as having answered it, so a tool call arriving
+ * while everything is expanded still opens closed, as every new row does. The request is
+ * about the transcript somebody was looking at, not a standing order over what arrives next.
+ */
+function useFoldAll(setOpen: (open: boolean) => void): void {
+  const all = useContext(Folds);
+  const answered = useRef(all?.at ?? 0);
+
+  useEffect(() => {
+    if (!all || all.at === answered.current) return;
+    answered.current = all.at;
+    setOpen(all.open);
+    // `setOpen` is a state setter, which React keeps stable, so the request is the only
+    // thing that can start this.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all]);
+}
+
+/**
  * The model's thinking, folded away until asked for.
  *
  * Open while it is being written, because the wait before a reply is the longest the
@@ -121,6 +160,7 @@ const STATUS_GLYPH: Record<ToolEntry['status'], string> = {
  */
 function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
   const [open, setOpen] = useState(Boolean(entry.streaming));
+  useFoldAll(setOpen);
   const words = entry.body.trim().split(/\s+/).length;
 
   return (
@@ -186,6 +226,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
   // Collapsed like every other row, including a delegated task: its work is watched from
   // the sidebar entry, which is somewhere that survives the row scrolling away.
   const [open, setOpen] = useState(false);
+  useFoldAll(setOpen);
 
   // The offered options say more than the tool's own "User responded: x", which only
   // repeats what the header already shows. They are worth seeing even unanswered.
@@ -365,6 +406,8 @@ interface TranscriptProps {
   events: TranscriptEvent[];
   /** Changing this jumps to the newest message rather than preserving scroll. */
   sessionId: string;
+  /** Open or close every fold at once, if that has been asked for since the session opened. */
+  folds?: FoldAll | null;
   /** Used to shorten file paths in tool summaries. */
   cwd: string | null;
   /** What a stopped turn had already said, by the abort that ended it. */
@@ -424,6 +467,7 @@ interface TranscriptProps {
 export function Transcript({
   events,
   sessionId,
+  folds = null,
   cwd,
   abandoned,
   hasOlder = false,
@@ -832,6 +876,7 @@ export function Transcript({
 
   return (
     <Reports.Provider value={onError ?? noReport}>
+    <Folds.Provider value={folds}>
     <Shows.Provider value={display}>
       <ol
         className="transcript"
@@ -909,6 +954,7 @@ export function Transcript({
         )}
       </ol>
     </Shows.Provider>
+    </Folds.Provider>
     </Reports.Provider>
   );
 }

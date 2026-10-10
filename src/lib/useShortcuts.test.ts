@@ -470,6 +470,9 @@ describe('moving about the window', () => {
    * The composer keeps ctrl+k and ctrl+u for readline's own line editing, and those are the
    * unshifted keys. Shift makes the letter upper case, so the two cannot be mistaken for one
    * another - but only for as long as nothing here answers the unshifted one as well.
+   *
+   * Ctrl+O is the pair that is no longer free: it folds the transcript (#135), so the test
+   * is that the shifted key still means importing and not that the unshifted one is idle.
    */
   it.each<[string, string, Shortcut]>([
     ['ctrl+k', 'k', 'wiki'],
@@ -480,6 +483,14 @@ describe('moving about the window', () => {
     press(key, { ctrlKey: true });
 
     expect(fired(shortcut)).toBe(0);
+  });
+
+  it('folds the transcript on the unshifted ctrl+o', () => {
+    renderHook(() => useShortcuts(on));
+
+    press('o', { ctrlKey: true });
+
+    expect(fired('fold-all')).toBe(1);
   });
 });
 
@@ -566,6 +577,7 @@ describe('BINDINGS', () => {  // The list a reader sees is built from these, so 
       'cycle-mode',
       'escape-twice',
       'find-session',
+      'fold-all',
       'go-composer',
       'go-sessions',
       'help',

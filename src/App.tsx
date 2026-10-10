@@ -27,7 +27,7 @@ import { Shortcuts } from './components/Shortcuts';
 import { Queue } from './components/Queue';
 import { SessionPath } from './components/SessionPath';
 import { Sidebar } from './components/Sidebar';
-import { Transcript } from './components/Transcript';
+import { Transcript, type FoldAll } from './components/Transcript';
 import {
   abortSession,
   createSession,
@@ -892,6 +892,14 @@ export default function App() {
   const shortcutOverrides = useMemo(() => readOverrides(settings.shortcuts), [settings.shortcuts]);
   const bindings = useMemo(() => resolveBindings(shortcutOverrides), [shortcutOverrides]);
 
+  /**
+   * The last request to open or close every fold in the transcript (#135).
+   *
+   * Held here rather than in the transcript because the key is a window key: it has to work
+   * while the composer holds the keyboard, which is whenever a session is open.
+   */
+  const [folds, setFolds] = useState<FoldAll | null>(null);
+
   useShortcuts(
     useCallback(
       (shortcut) => {
@@ -959,6 +967,13 @@ export default function App() {
 
         if (shortcut === 'reasoning') {
           setDisplay('showReasoning', !display.showReasoning);
+          return;
+        }
+
+        if (shortcut === 'fold-all') {
+          // Alternating rather than worked out from what is on screen: every fold keeps its
+          // own state, so there is nothing here that knows how many of them are open.
+          setFolds((was) => ({ open: !(was?.open ?? false), at: (was?.at ?? 0) + 1 }));
           return;
         }
 
@@ -1943,6 +1958,7 @@ export default function App() {
               events={agentEvents}
               sessionId={subagents.open.agentId}
               cwd={selected?.cwd ?? null}
+              folds={folds}
               ofAgent={subagents.open.agentId}
               display={display}
               turnSummary={settings.turnSummary}
@@ -2065,6 +2081,7 @@ export default function App() {
             <Transcript
               events={transcript.events}
               sessionId={selected.sessionId}
+              folds={folds}
               cwd={selected.cwd}
               abandoned={transcript.abandoned}
               hasOlder={transcript.hasOlder}
