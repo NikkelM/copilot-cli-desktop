@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { TickIcon } from './Icons';
-import { TODO_ORDERS, isDone, ordered, type TodoOrder } from '../lib/todoOrder';
+import { OPENS_ON, TODO_ORDERS, isDone, ordered, type TodoOrder } from '../lib/todoOrder';
 import { read, save } from '../lib/store';
 import type { Todo } from '../../shared/protocol';
 
@@ -24,10 +24,10 @@ interface TodosProps {
 const ORDER_KEY = 'todoOrder';
 const HIDE_DONE_KEY = 'todoHideDone';
 
-/** The order to open on, which is the one the agent wrote unless something else was chosen. */
+/** The order to open on, which is the newest first unless something else was chosen. */
 function openingOrder(): TodoOrder {
   const last = read('sessions', ORDER_KEY);
-  return TODO_ORDERS.some((one) => one.value === last) ? (last as TodoOrder) : 'planned';
+  return TODO_ORDERS.some((one) => one.value === last) ? (last as TodoOrder) : OPENS_ON;
 }
 
 /**

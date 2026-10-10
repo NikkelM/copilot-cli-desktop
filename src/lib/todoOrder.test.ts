@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TODO_ORDERS, isDone, ordered } from './todoOrder';
+import { OPENS_ON, TODO_ORDERS, isDone, ordered } from './todoOrder';
 import type { Todo } from '../../shared/protocol';
 
 /** A todo, with only what a test is about spelled out. */
@@ -18,17 +18,30 @@ const todo = (id: string, over: Partial<Todo> = {}): Todo => ({
 const ids = (list: Todo[]) => list.map((one) => one.id);
 
 describe('the orders there are', () => {
-  it('offers planned order first, since that is what the agent wrote', () => {
-    expect(TODO_ORDERS[0]?.value).toBe('planned');
+  /**
+   * The panel opens at the top, which is where a reader starts. A long plan with its newest
+   * rows at the bottom opens on work finished weeks ago.
+   */
+  it('opens on the newest first', () => {
+    expect(OPENS_ON).toBe('created');
+    expect(TODO_ORDERS[0]?.value).toBe(OPENS_ON);
   });
 
   it('names every one of them', () => {
-    expect(TODO_ORDERS.map((one) => one.value)).toEqual(['planned', 'open', 'changed', 'created']);
+    expect(TODO_ORDERS.map((one) => one.value)).toEqual(['created', 'planned', 'open', 'changed']);
     for (const one of TODO_ORDERS) expect(one.label.length).toBeGreaterThan(0);
+  });
+
+  /** Two names for one column read in two directions, so each has to say which way. */
+  it('says which way round the two time orders go', () => {
+    const labels = Object.fromEntries(TODO_ORDERS.map((one) => [one.value, one.label]));
+
+    expect(labels.created).toBe('Newest first');
+    expect(labels.planned).toBe('Oldest first');
   });
 });
 
-describe('planned order', () => {
+describe('oldest first', () => {
   it('is the list exactly as it arrived', () => {
     const list = [todo('c'), todo('a'), todo('b')];
 

@@ -168,20 +168,23 @@ describe('how the list is read', () => {
     todo({ id: 'c', title: 'Third', status: 'in_progress', createdAt: '2026-01-01 00:00:03' }),
   ];
 
-  /** What the agent wrote, which is also what the CLI draws: changing it would surprise. */
-  it('opens in the order the agent planned', () => {
+  /**
+   * The panel opens at the top, so that is where the newest work has to be. Opening on the
+   * order the agent wrote would show a long plan's oldest rows, which are its finished ones.
+   */
+  it('opens with the newest at the top', () => {
     shown(plan());
 
-    expect(sort().value).toBe('planned');
-    expect(names()).toEqual(['First', 'Second', 'Third']);
+    expect(sort().value).toBe('created');
+    expect(names()).toEqual(['Third', 'Second', 'First']);
   });
 
   it('reorders when another order is chosen', async () => {
     const { user } = shown(plan());
 
-    await user.selectOptions(sort(), 'open');
+    await user.selectOptions(sort(), 'planned');
 
-    expect(names()).toEqual(['Third', 'Second', 'First']);
+    expect(names()).toEqual(['First', 'Second', 'Third']);
   });
 
   it('leaves out what is done when asked', async () => {
@@ -189,7 +192,7 @@ describe('how the list is read', () => {
 
     await user.click(hide());
 
-    expect(names()).toEqual(['Second', 'Third']);
+    expect(names()).toEqual(['Third', 'Second']);
   });
 
   /**
@@ -211,28 +214,28 @@ describe('how the list is read', () => {
 
     await user.keyboard('{Enter}');
 
-    expect(names()).toEqual(['Second', 'Third']);
+    expect(names()).toEqual(['Third', 'Second']);
   });
 
   it('opens the way it was last read', async () => {
     const { user } = shown(plan());
-    await user.selectOptions(sort(), 'created');
+    await user.selectOptions(sort(), 'open');
     await user.click(hide());
 
     cleanup();
     render(<Todos todos={plan()} onClose={vi.fn()} />);
 
-    expect(sort().value).toBe('created');
+    expect(sort().value).toBe('open');
     expect(hide().checked).toBe(true);
   });
 
   /** A stored order from a later version should leave the panel readable, not empty. */
-  it('opens on the planned order when the stored one means nothing', () => {
+  it('opens on the default when the stored order means nothing', () => {
     save('sessions', 'todoOrder', 'from-the-future');
 
     render(<Todos todos={plan()} onClose={vi.fn()} />);
 
-    expect(sort().value).toBe('planned');
-    expect(names()).toEqual(['First', 'Second', 'Third']);
+    expect(sort().value).toBe('created');
+    expect(names()).toEqual(['Third', 'Second', 'First']);
   });
 });

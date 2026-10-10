@@ -3,19 +3,23 @@ import type { Todo } from '../../shared/protocol';
 /**
  * The orders a plan can be read in (#253).
  *
- * `planned` is what the agent wrote and what the CLI draws, so it is the default: the panel
- * showing a different list from the one the agent is working through would be its own
- * problem. The rest are for reading a plan after the fact, which is when the order it was
- * written in stops being the useful one.
+ * `created` is the default, newest first, because the panel opens at the top and that is
+ * where a reader's attention starts: a long plan with its newest rows at the bottom opens
+ * on work finished weeks ago. `planned` is the same column the other way, which is the order
+ * the agent wrote and the CLI draws - worth having for following a plan through, and no
+ * longer worth opening on.
  */
 export type TodoOrder = 'planned' | 'open' | 'changed' | 'created';
 
+/** Where the panel opens, for a reader who has not said otherwise. */
+export const OPENS_ON: TodoOrder = 'created';
+
 /** What each order is called, in the order the picker offers them. */
 export const TODO_ORDERS: readonly { value: TodoOrder; label: string }[] = [
-  { value: 'planned', label: 'Planned order' },
+  { value: 'created', label: 'Newest first' },
+  { value: 'planned', label: 'Oldest first' },
   { value: 'open', label: 'Open first' },
   { value: 'changed', label: 'Recently changed' },
-  { value: 'created', label: 'Recently created' },
 ];
 
 /**
