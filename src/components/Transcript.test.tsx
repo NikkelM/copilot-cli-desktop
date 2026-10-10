@@ -3148,7 +3148,7 @@ describe('finding past what is loaded', () => {
   );
 
   const field = () => screen.getByLabelText('Find in this session') as HTMLInputElement;
-  const toggle = () => screen.getByRole('checkbox', { name: /Everything/ }) as HTMLInputElement;
+  const toggle = () => screen.getByRole('checkbox', { name: /Entire session/ }) as HTMLInputElement;
 
   beforeEach(resetStores);
 

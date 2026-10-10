@@ -171,7 +171,7 @@ describe('the find bar', () => {
  * transcript already holds (#209).
  */
 describe('reaching back for the rest', () => {
-  const toggle = () => screen.getByRole('checkbox', { name: /Everything/ }) as HTMLInputElement;
+  const toggle = () => screen.getByRole('checkbox', { name: /Entire session/ }) as HTMLInputElement;
 
   it('is on unless it was turned off', () => {
     show();

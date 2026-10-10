@@ -10,6 +10,7 @@ import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
 import { FindBar } from './FindBar';
 import { findMatches, stepMatch } from '../lib/findInTranscript';
+import { clearMatches, paintMatches } from '../lib/findHighlight';
 import { read, save } from '../lib/store';
 import { ASSUMED_DISPLAY, type CliDisplay } from '../lib/useCliDisplay';
 import { CopyButton } from './CopyButton';
@@ -851,6 +852,41 @@ export function Transcript({
     row.scrollIntoView({ block: 'center' });
   }, [pointingAt, hit, shown.length, entries.length]);
 
+
+  /**
+   * Mark the words themselves, wherever they are drawn.
+   *
+   * Through a mutation observer rather than from the deps above, because what is on screen
+   * changes for reasons this component does not render: a fold opening as the walk reaches
+   * it, markdown laying out, a reply still arriving. Nothing in the document changes here -
+   * the marks are ranges handed to the browser - so there is no loop to guard against.
+   */
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || finding === null || query.trim() === '') {
+      clearMatches();
+      return;
+    }
+
+    let waiting = 0;
+    const paint = () => {
+      cancelAnimationFrame(waiting);
+      // A frame later, so a burst of changes is painted once rather than per mutation.
+      waiting = requestAnimationFrame(() =>
+        paintMatches(list, list.querySelector<HTMLElement>(':scope > li.entry.found'), query),
+      );
+    };
+
+    paint();
+    const watch = new MutationObserver(paint);
+    watch.observe(list, { childList: true, subtree: true, characterData: true });
+
+    return () => {
+      cancelAnimationFrame(waiting);
+      watch.disconnect();
+      clearMatches();
+    };
+  }, [finding, query, pointingAt]);
 
   /**
    * Keep up with a reply as it is written.

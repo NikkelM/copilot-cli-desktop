@@ -122,7 +122,7 @@ export function FindBar({
           />
           <TickIcon />
         </span>
-        Everything
+        Entire session
       </label>
 
       <button

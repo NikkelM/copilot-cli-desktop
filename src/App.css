@@ -6031,6 +6031,23 @@ pre.fatal,
   text-align: right;
 }
 
+/*
+ * The found words themselves, marked wherever they are drawn (#209).
+ *
+ * Registered highlights rather than wrapped elements: the rows are rendered markdown that
+ * React owns and rebuilds, so anything added to the tree would be lost or duplicated on the
+ * next render. These paint over the text without touching it.
+ */
+::highlight(find-words) {
+  background: rgba(210, 153, 34, 0.3);
+}
+
+/* The one being walked to, which has to be told apart from the rest at a glance. */
+::highlight(find-words-here) {
+  background: var(--warning);
+  color: #0d1117;
+}
+
 /* The box and its word read as one control, which is what clicking either of them gets. */
 .find-all {
   flex: none;
