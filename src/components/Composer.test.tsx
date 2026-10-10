@@ -1986,4 +1986,34 @@ describe('naming a file with @', () => {
 
     await waitFor(() => expect(box().value).toBe('src\\App.tsx '));
   });
+
+  /**
+   * `readdir` never reports the way up, so a half-typed `..` used to filter every real name
+   * away and leave nothing on screen - which made the one path that cannot be reached by
+   * walking down unreachable.
+   */
+  it('still offers the way up once .. is half typed', async () => {
+    listing([
+      { name: '..', directory: true },
+      { name: 'src', directory: true },
+    ]);
+    const { user } = hosted();
+
+    await user.type(box(), '@..');
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]).toContain('..');
+  });
+
+  it('walks up when it is taken', async () => {
+    listing([{ name: '..', directory: true }]);
+    const { user } = hosted();
+    await user.type(box(), '@..');
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(box().value).toBe('@..\\'));
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('C:\\repo', '..\\'));
+  });
 });

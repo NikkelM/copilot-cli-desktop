@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
+import { parse } from 'node:path';
 import { isAbsolute, join, sep } from 'node:path';
 
 import { listDirectories, listEntries, resolveDirectory } from './directories.js';
@@ -64,6 +65,7 @@ describe('listing files as well as folders', () => {
     writeFileSync(join(root, 'package.json'), '{}');
 
     expect(await listEntries(root, '')).toEqual([
+      { name: '..', directory: true },
       { name: 'src', directory: true },
       { name: 'package.json', directory: false },
     ]);
@@ -76,14 +78,17 @@ describe('listing files as well as folders', () => {
     mkdirSync(join(root, 'alpha'));
     writeFileSync(join(root, 'README.md'), '');
 
-    expect((await listEntries(root, '')).map((entry) => entry.name)).toEqual(['alpha', 'zebra', 'README.md']);
+    expect((await listEntries(root, '')).map((entry) => entry.name)).toEqual(['..', 'alpha', 'zebra', 'README.md']);
   });
 
   it('reads below a relative path from the session working directory', async () => {
     mkdirSync(join(root, 'src'));
     writeFileSync(join(root, 'src', 'App.tsx'), '');
 
-    expect(await listEntries(root, `src${sep}`)).toEqual([{ name: 'App.tsx', directory: false }]);
+    expect(await listEntries(root, `src${sep}`)).toEqual([
+      { name: '..', directory: true },
+      { name: 'App.tsx', directory: false },
+    ]);
   });
 
   it('offers nothing while the directory part does not exist yet', async () => {
@@ -100,5 +105,46 @@ describe('listing files as well as folders', () => {
     writeFileSync(join(root, 'package.json'), '{}');
 
     expect(await listDirectories(root, '')).toEqual(['src']);
+  });
+});
+
+/**
+ * The way back up, which `readdir` never reports (#135).
+ *
+ * Without it, typing `@..` filtered every real name away and left nothing on screen - so the
+ * one path that cannot be reached by walking down could not be reached at all.
+ */
+describe('the way up', () => {
+  it('offers it first, ahead of everything that sorts', async () => {
+    mkdirSync(join(root, 'alpha'));
+    writeFileSync(join(root, 'README.md'), '');
+
+    expect((await listEntries(root, '')).map((entry) => entry.name)).toEqual(['..', 'alpha', 'README.md']);
+  });
+
+  it('calls it a folder, so it can be walked into', async () => {
+    expect((await listEntries(root, ''))[0]).toEqual({ name: '..', directory: true });
+  });
+
+  it('is what makes a half-typed .. match anything at all', async () => {
+    mkdirSync(join(root, 'alpha'));
+
+    const matching = (await listEntries(root, '')).filter((entry) => entry.name.startsWith('..'));
+
+    expect(matching).toEqual([{ name: '..', directory: true }]);
+  });
+
+  /** At a root it would only lead back to itself. */
+  it('is absent where there is nothing above', async () => {
+    const { root: top } = parse(root);
+
+    expect((await listEntries(undefined, top)).some((entry) => entry.name === '..')).toBe(false);
+  });
+
+  /** A command argument is a path something will act on, where `..` is a worse answer. */
+  it('is not offered for a command argument', async () => {
+    mkdirSync(join(root, 'alpha'));
+
+    expect(await listDirectories(root, '')).toEqual(['alpha']);
   });
 });

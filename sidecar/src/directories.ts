@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { isAbsolute, join, resolve, sep, dirname } from 'node:path';
 import type { Dirent } from 'node:fs';
 
 /** Whether names on this platform normally differ only by letter case. */
@@ -58,7 +58,11 @@ async function browsable(entry: Dirent, parent: string): Promise<boolean> {
  * disk read serves every keystroke until the reader crosses into another directory.
  */
 export async function listDirectories(cwd: string | undefined, path: string): Promise<string[]> {
-  return (await listEntries(cwd, path)).filter((entry) => entry.directory).map((entry) => entry.name);
+  // Without the way up, which belongs to a menu somebody is browsing rather than to a
+  // command argument: `..` in a path a command will act on is a worse answer than typing it.
+  return (await listEntries(cwd, path))
+    .filter((entry) => entry.directory && entry.name !== '..')
+    .map((entry) => entry.name);
 }
 
 /** A child of the directory being browsed, and whether it can be browsed in turn. */
@@ -107,10 +111,19 @@ export async function readFolder(
     entries.map(async (entry) => ({ name: entry.name, directory: await browsable(entry, parent) })),
   );
 
-  return {
-    entries: found.sort(
-      (one, other) => Number(other.directory) - Number(one.directory) || collator.compare(one.name, other.name),
-    ),
-    directory: parent,
-  };
+  const sorted = found.sort(
+    (one, other) => Number(other.directory) - Number(one.directory) || collator.compare(one.name, other.name),
+  );
+
+  /*
+   * The way back up, which `readdir` never reports and which a menu is expected to offer.
+   * Without it, typing `@..` filtered every real name away and left nothing on screen - so
+   * the one path that cannot be reached by walking down could not be reached at all.
+   *
+   * First, and ahead of the sort, because it is navigation rather than a name among names.
+   * Absent at a root, where it would only lead back to itself.
+   */
+  const up = dirname(parent) === parent ? [] : [{ name: '..', directory: true }];
+
+  return { entries: [...up, ...sorted], directory: parent };
 }
