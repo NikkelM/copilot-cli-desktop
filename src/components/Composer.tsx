@@ -18,6 +18,8 @@ import { useDirectoryCompletion } from '../lib/useDirectoryCompletion';
 import { useMcpServers } from '../lib/useMcpServers';
 import { REWIND, REWIND_SCOPES, takesServerName, typedRewindScope, typedServerName } from '../lib/localCommands';
 import { MODE_LABELS } from '../lib/useMode';
+import { typedMention, withMention } from '../lib/mentions';
+import { useMentionCompletion } from '../lib/useMentionCompletion';
 import { chordsOf, type Overrides } from '../lib/bindings';
 import { matchesChord } from '../lib/chords';
 import type { Attachment, SessionMode, SlashCommand } from '../../shared/protocol';
@@ -289,6 +291,20 @@ export function Composer({
   const typed = typedCommand(value);
   const named = typed ? findCommand(commands, typed.name) : undefined;
   const directories = useDirectoryCompletion(named, typed?.input ?? null, cwd, onError);
+
+  /**
+   * The mention being written, if the caret is in one (#135).
+   *
+   * Read from the caret rather than from the end of the text, so completing one in the
+   * middle of a sentence offers what is being written there.
+   *
+   * Not while a command is being typed, where `@` is an argument rather than a file, and not
+   * in shell mode, where the line is a command for the shell and the box is showing the text
+   * without its marker - so a position in one is not a position in the other.
+   */
+  const [caret, setCaret] = useState(0);
+  const mention = typed || shell || dismissed === value ? null : typedMention(value, caret);
+  const mentions = useMentionCompletion(mention?.path ?? null, cwd, onError);
   /** The half-typed server name, when the argument being written is one. */
   const serverPrefix = named && typed?.input != null ? typedServerName(named, typed.input) : null;
   /**
@@ -328,6 +344,16 @@ export function Composer({
    * this app knows enough for the offer to be worth making.
    */
   const items = useMemo((): MenuItem[] => {
+    if (mention) {
+      return mentions.map((choice) => ({
+        id: `mention:${choice.path}`,
+        value: choice.path,
+        label: choice.directory ? `${choice.name}${choice.separator}` : choice.name,
+        description: choice.directory ? 'folder' : 'file',
+        ...(choice.directory ? { kind: 'directory' as const, separator: choice.separator } : {}),
+      }));
+    }
+
     if (!typed || dismissed === value) return [];
 
     if (typed.input === null) {
@@ -407,6 +433,8 @@ export function Composer({
     commands,
     named,
     directories,
+    mention,
+    mentions,
     serverPrefix,
     servers,
     // Its parts rather than the object, which is built fresh every render and would make
@@ -454,6 +482,27 @@ export function Composer({
    * into rather than sent half-written.
    */
   function choose(item: MenuItem, key: 'Tab' | 'Enter') {
+    /*
+     * A file or folder named with `@`. Both keys do the same thing here, because there is
+     * nothing to run: a folder is walked into and a file finishes the mention, so Enter on
+     * a folder would otherwise send a message ending in half a path.
+     */
+    if (mention) {
+      const folder = item.kind === 'directory';
+      const path = folder ? `${item.value ?? item.id}${item.separator ?? ''}` : (item.value ?? item.id);
+      const next = withMention(value, mention, path, caret, !folder);
+
+      onChange(next.value);
+      setCaret(next.caret);
+      // A frame later, because the box still holds the old text until React has drawn the
+      // change and setting the caret before then puts it at a position in the wrong string.
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.setSelectionRange(next.caret, next.caret);
+      });
+      return;
+    }
+
     if (!typed) return;
 
     // A value for the argument: the name stays, and only what follows it is filled in.
@@ -687,7 +736,7 @@ export function Composer({
           onSelect={setSelected}
           onChoose={choose}
           onDismiss={() => setDismissed(value)}
-          label="Slash commands"
+          label={mention ? 'Files' : 'Slash commands'}
         />
       )}
 
@@ -756,12 +805,16 @@ export function Composer({
               // Typing ends a walk through the history: the position was taken against text
               // that no longer exists.
               setBrowsing(null);
+              setCaret(e.target.selectionStart);
               write(e.target.value);
             }}
             onKeyDown={onKeyDown}
             // Followed as it moves rather than only read on the way out, so the position is
             // already known when the box is asked to stand aside for a queued message.
-            onSelect={(event) => onCaret?.(event.currentTarget.selectionStart)}
+            onSelect={(event) => {
+              setCaret(event.currentTarget.selectionStart);
+              onCaret?.(event.currentTarget.selectionStart);
+            }}
             onPaste={(event) => {
               // Files first: the clipboard carries them only when files were copied, and a
               // screenshot is a different thing to a wall of text.

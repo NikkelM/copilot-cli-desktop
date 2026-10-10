@@ -58,6 +58,24 @@ async function browsable(entry: Dirent, parent: string): Promise<boolean> {
  * disk read serves every keystroke until the reader crosses into another directory.
  */
 export async function listDirectories(cwd: string | undefined, path: string): Promise<string[]> {
+  return (await listEntries(cwd, path)).filter((entry) => entry.directory).map((entry) => entry.name);
+}
+
+/** A child of the directory being browsed, and whether it can be browsed in turn. */
+export interface Entry {
+  name: string;
+  directory: boolean;
+}
+
+/**
+ * Everything below a partially typed path, files included (#135).
+ *
+ * The same read as `listDirectories`, which is built on this: naming a file is what `@`
+ * is for, and the two differ only in what they keep. Directories lead the list, because a
+ * path being typed is walked before it is finished - and a folder of a hundred files with
+ * one subdirectory among them is one the reader would otherwise have to hunt through.
+ */
+export async function listEntries(cwd: string | undefined, path: string): Promise<Entry[]> {
   const parent = resolveDirectory(cwd, path);
   if (!parent) return [];
 
@@ -70,8 +88,11 @@ export async function listDirectories(cwd: string | undefined, path: string): Pr
     throw error;
   }
 
-  const directories = await Promise.all(
-    entries.map(async (entry) => ((await browsable(entry, parent)) ? entry.name : null)),
+  const found = await Promise.all(
+    entries.map(async (entry) => ({ name: entry.name, directory: await browsable(entry, parent) })),
   );
-  return directories.filter((name): name is string => name !== null).sort(collator.compare);
+
+  return found.sort(
+    (one, other) => Number(other.directory) - Number(one.directory) || collator.compare(one.name, other.name),
+  );
 }

@@ -8,7 +8,7 @@
 import type { JsonRpcRequest, SidecarHandlers } from '../../shared/protocol.js';
 import { PROTOCOL_VERSION } from '../../shared/protocol.js';
 import { sessionChanges, sessionDiff } from './changes.js';
-import { directoryCaseSensitive, directorySeparator, listDirectories } from './directories.js';
+import { directoryCaseSensitive, directorySeparator, listDirectories, listEntries } from './directories.js';
 import {
   lastAgent,
   lastModel,
@@ -197,6 +197,12 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'filesystem.directories': async ({ cwd, path }) => ({
       entries: await listDirectories(cwd, path),
+      separator: directorySeparator,
+      caseSensitive: directoryCaseSensitive,
+    }),
+
+    'filesystem.entries': async ({ cwd, path }) => ({
+      entries: await listEntries(cwd, path),
       separator: directorySeparator,
       caseSensitive: directoryCaseSensitive,
     }),

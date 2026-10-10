@@ -1609,6 +1609,17 @@ export interface SidecarRequests {
     result: { entries: string[]; separator: string; caseSensitive: boolean };
   };
   /**
+   * The same read, files included, for naming one with `@` in the composer (#135).
+   *
+   * Separate from the above rather than a flag on it, because the two answer different
+   * questions and the shapes differ: a path argument wants names, and a mention wants to
+   * know which of them can be walked into.
+   */
+  'filesystem.entries': {
+    params: { cwd?: string; path: string };
+    result: { entries: { name: string; directory: boolean }[]; separator: string; caseSensitive: boolean };
+  };
+  /**
    * Every page in the local knowledge base, for the browser's tree.
    *
    * A directory walk and one read of the prebuilt index. Like the session list, it costs no
@@ -1959,6 +1970,7 @@ export const SIDECAR_METHODS = [
   'models.list',
   'commands.list',
   'filesystem.directories',
+  'filesystem.entries',
   'wiki.pages',
   'wiki.page',
   'wiki.save',

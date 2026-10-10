@@ -322,6 +322,14 @@ export function listDirectories(
   return request('filesystem.directories', { cwd, path });
 }
 
+/** The same read with files included, for a mention being written with `@` (#135). */
+export function listEntries(
+  cwd: string | undefined,
+  path: string,
+): Promise<{ entries: { name: string; directory: boolean }[]; separator: string; caseSensitive: boolean }> {
+  return request('filesystem.entries', { cwd, path });
+}
+
 /** Run a slash command in a session, resuming it if it is cold. */
 export async function invokeCommand(
   sessionId: string,

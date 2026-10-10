@@ -7,13 +7,15 @@ import { useState } from 'react';
 import { Composer } from './Composer';
 import type { SlashCommand } from '../../shared/protocol';
 
-const { listDirectories, listMcpServers } = vi.hoisted(() => ({
+const { listDirectories, listEntries, listMcpServers } = vi.hoisted(() => ({
   listDirectories: vi.fn(),
+  listEntries: vi.fn(),
   listMcpServers: vi.fn(),
 }));
 
 vi.mock('../lib/sidecar', () => ({
   listDirectories: (cwd: string | undefined, path: string) => listDirectories(cwd, path),
+  listEntries: (cwd: string | undefined, path: string) => listEntries(cwd, path),
   listMcpServers: (cwd: string | undefined) => listMcpServers(cwd),
 }));
 
@@ -23,6 +25,11 @@ beforeEach(() => {
     { name: 'github-mcp-server', type: 'stdio', source: 'builtin', enabled: false },
   ]);
   listDirectories.mockReset().mockResolvedValue({
+    entries: [],
+    separator: '\\',
+    caseSensitive: false,
+  });
+  listEntries.mockReset().mockResolvedValue({
     entries: [],
     separator: '\\',
     caseSensitive: false,
@@ -1815,5 +1822,136 @@ describe('Composer, the caret it comes back with', () => {
     rerender(<Composer {...props} focusOn="s1:2" value="an earlier draft" caretAt={3} />);
 
     expect((screen.getByRole('textbox') as HTMLTextAreaElement).selectionStart).toBe(3);
+  });
+});
+
+/**
+ * Naming a file with `@` (#135).
+ *
+ * The CLI offers this and the app offered nothing, so the only way to point an agent at a
+ * file was to type the path out. What lands in the message is the path itself: the agent
+ * reads the file when it gets there, where attaching would send the contents regardless.
+ */
+describe('naming a file with @', () => {
+  const rows = () => screen.queryAllByRole('option').map((row) => row.textContent);
+
+  const listing = (entries: { name: string; directory: boolean }[]) =>
+    listEntries.mockResolvedValue({ entries, separator: '\\', caseSensitive: false });
+
+  it('offers what is in the working directory', async () => {
+    listing([
+      { name: 'src', directory: true },
+      { name: 'README.md', directory: false },
+    ]);
+    const { user } = hosted();
+
+    await user.type(box(), '@');
+
+    await waitFor(() => expect(rows().some((row) => row?.includes('README.md'))).toBe(true));
+    expect(listEntries).toHaveBeenCalledWith('C:\\repo', '');
+  });
+
+  it('says which rows can be walked into', async () => {
+    listing([
+      { name: 'src', directory: true },
+      { name: 'README.md', directory: false },
+    ]);
+    const { user } = hosted();
+
+    await user.type(box(), '@');
+
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    expect(rows()[0]).toContain('folder');
+    expect(rows()[1]).toContain('file');
+  });
+
+  it('narrows them as more is typed', async () => {
+    listing([
+      { name: 'README.md', directory: false },
+      { name: 'package.json', directory: false },
+    ]);
+    const { user } = hosted();
+
+    await user.type(box(), '@READ');
+
+    await waitFor(() => expect(rows()).toHaveLength(1));
+    expect(rows()[0]).toContain('README.md');
+  });
+
+  /** The marker stays, as it does in the CLI: it says these words are a file. */
+  it('keeps the marker and puts the path in', async () => {
+    listing([{ name: 'README.md', directory: false }]);
+    const { user } = hosted();
+    await user.type(box(), 'look at @READ');
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(box().value).toBe('look at @README.md '));
+  });
+
+  /** Enter on a folder would otherwise send a message ending in half a path. */
+  it('walks into a folder rather than sending', async () => {
+    listing([{ name: 'src', directory: true }]);
+    const { onSend, user } = hosted();
+    await user.type(box(), '@sr');
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(box().value).toBe('@src\\'));
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('reads the folder that was walked into', async () => {
+    listing([{ name: 'src', directory: true }]);
+    const { user } = hosted();
+    await user.type(box(), '@sr');
+    await waitFor(() => expect(rows()).toHaveLength(1));
+
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => expect(listEntries).toHaveBeenCalledWith('C:\\repo', 'src\\'));
+  });
+
+  it('offers nothing before an @ is typed', async () => {
+    listing([{ name: 'README.md', directory: false }]);
+    const { user } = hosted();
+
+    await user.type(box(), 'look at this');
+
+    expect(rows()).toHaveLength(0);
+    expect(listEntries).not.toHaveBeenCalled();
+  });
+
+  /** An email address, a handle, the middle of a word: none of them wants a file menu. */
+  it('offers nothing for an @ with a word in front of it', async () => {
+    listing([{ name: 'README.md', directory: false }]);
+    const { user } = hosted();
+
+    await user.type(box(), 'someone@example');
+
+    expect(rows()).toHaveLength(0);
+  });
+
+  /** A command's argument is not a file, whatever it happens to start with. */
+  it('leaves a slash command alone', async () => {
+    listing([{ name: 'README.md', directory: false }]);
+    const { user } = hosted();
+
+    await user.type(box(), '/rewind @READ');
+
+    expect(rows().some((row) => row?.includes('README.md'))).toBe(false);
+  });
+
+  /** The box shows the line without its marker, so a position in one is not a position in
+      the other - and a shell line is a command rather than a sentence about a file. */
+  it('leaves a shell line alone', async () => {
+    listing([{ name: 'README.md', directory: false }]);
+    const { user } = hosted();
+
+    await user.type(box(), '!cat @READ');
+
+    expect(rows()).toHaveLength(0);
   });
 });
