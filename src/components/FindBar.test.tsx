@@ -11,7 +11,20 @@ const show = (over: Partial<Parameters<typeof FindBar>[0]> = {}) => {
   const onQuery = vi.fn();
   const onStep = vi.fn();
   const onClose = vi.fn();
-  const props = { query: '', onQuery, said: 0, at: -1, onStep, onClose, openedAt: 1, ...over };
+  const onSearchAll = vi.fn();
+  const props = {
+    query: '',
+    onQuery,
+    said: 0,
+    at: -1,
+    onStep,
+    onClose,
+    openedAt: 1,
+    searchAll: true,
+    onSearchAll,
+    reaching: false,
+    ...over,
+  };
   const { rerender } = render(
     <ol>
       <FindBar {...props} />
@@ -22,6 +35,7 @@ const show = (over: Partial<Parameters<typeof FindBar>[0]> = {}) => {
     onQuery,
     onStep,
     onClose,
+    onSearchAll,
     again: (next: Partial<Parameters<typeof FindBar>[0]>) =>
       rerender(
         <ol>
@@ -72,7 +86,7 @@ describe('the find bar', () => {
   it('says what it is counting', () => {
     show({ query: 'fox', said: 17, at: 2 });
 
-    expect(screen.getByRole('status').textContent).toBe('3 of 17 shown');
+    expect(screen.getByRole('status').textContent).toBe('3 of 17');
   });
 
   it('says so when the words are nowhere', () => {
@@ -149,5 +163,72 @@ describe('the find bar', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Close find' }));
 
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Whether the find reaches back for the rest of the session, or only looks at what the
+ * transcript already holds (#209).
+ */
+describe('reaching back for the rest', () => {
+  const toggle = () => screen.getByRole('checkbox', { name: /Everything/ }) as HTMLInputElement;
+
+  it('is on unless it was turned off', () => {
+    show();
+
+    expect(toggle().checked).toBe(true);
+  });
+
+  it('reports being turned off', async () => {
+    const { onSearchAll } = show({ searchAll: true });
+
+    await userEvent.click(toggle());
+
+    expect(onSearchAll).toHaveBeenCalledWith(false);
+  });
+
+  it('reports being turned back on', async () => {
+    const { onSearchAll } = show({ searchAll: false });
+
+    await userEvent.click(toggle());
+
+    expect(onSearchAll).toHaveBeenCalledWith(true);
+  });
+
+  /** A box answers Space and nothing else, which surprises beside controls that take Enter. */
+  it('takes Enter as well as Space', async () => {
+    const { onSearchAll } = show({ searchAll: true });
+    toggle().focus();
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(onSearchAll).toHaveBeenCalledWith(false);
+  });
+
+  /** The page is not the session, so a count over it has to say which it means. */
+  it('says the count is only what is shown while the reach is off', () => {
+    show({ query: 'fox', said: 4, at: 0, searchAll: false });
+
+    expect(screen.getByRole('status').textContent).toBe('1 of 4 shown');
+  });
+
+  it('claims the whole session once it has reached back', () => {
+    show({ query: 'fox', said: 4, at: 0, searchAll: true });
+
+    expect(screen.getByRole('status').textContent).toBe('1 of 4');
+  });
+
+  /** What it has while it is still reading is a floor rather than a total. */
+  it('says it is still counting while it reaches', () => {
+    show({ query: 'fox', said: 4, at: 0, searchAll: true, reaching: true });
+
+    expect(screen.getByRole('status').textContent).toBe('1 of 4 so far');
+  });
+
+  it('does not call it empty while there is still more to read', () => {
+    show({ query: 'fox', said: 0, searchAll: true, reaching: true });
+
+    expect(screen.getByRole('status').textContent).toBe('0 of 0 so far');
+    expect((screen.getByLabelText('Find in this session') as HTMLInputElement).className).not.toContain('empty');
   });
 });

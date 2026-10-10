@@ -6031,6 +6031,22 @@ pre.fatal,
   text-align: right;
 }
 
+/* The box and its word read as one control, which is what clicking either of them gets. */
+.find-all {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.find-all:hover {
+  color: var(--text);
+}
+
 .find-step {
   flex: none;
   display: inline-flex;

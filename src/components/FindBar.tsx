@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import { CloseIcon } from './Icons';
+import { CloseIcon, TickIcon } from './Icons';
 
 /**
  * Finding words inside the conversation on screen (#209).
@@ -24,6 +24,9 @@ export function FindBar({
   onStep,
   onClose,
   openedAt,
+  searchAll,
+  onSearchAll,
+  reaching,
 }: {
   query: string;
   onQuery: (query: string) => void;
@@ -34,6 +37,11 @@ export function FindBar({
   onClose: () => void;
   /** Changes whenever the key is pressed again, which takes the keyboard back to the box. */
   openedAt: number;
+  /** Whether the find reaches back for the rest of the session rather than what is held. */
+  searchAll: boolean;
+  onSearchAll: (on: boolean) => void;
+  /** Whether it is still reaching, so the count is not the whole answer yet. */
+  reaching: boolean;
 }) {
   const field = useRef<HTMLInputElement>(null);
 
@@ -47,7 +55,23 @@ export function FindBar({
     field.current?.select();
   }, [openedAt]);
 
-  const nothing = query.trim() !== '' && said === 0;
+  const nothing = query.trim() !== '' && said === 0 && !reaching;
+
+  /**
+   * What the count can honestly claim.
+   *
+   * While it is still reaching back, what it has is a floor rather than a total. Once it has
+   * everything, the session is the answer; with the reach turned off, the page is - and the
+   * page is not the session, so it says which it means.
+   */
+  const counted =
+    query.trim() === ''
+      ? ''
+      : reaching
+        ? `${Math.max(at + 1, 0)} of ${said} so far`
+        : said === 0
+          ? 'Nothing here'
+          : `${at + 1} of ${said}${searchAll ? '' : ' shown'}`;
 
   return (
     <li className="find-bar">
@@ -76,10 +100,30 @@ export function FindBar({
       />
 
       {/* Says what it counts. The transcript holds what it has read rather than the whole
-          session, so a bare number would be a claim about the conversation that is not true. */}
+          session, so a bare number would be a claim that is not true until it has the rest. */}
       <span className="find-count" role="status">
-        {query.trim() === '' ? '' : said === 0 ? 'Nothing here' : `${at + 1} of ${said} shown`}
+        {counted}
       </span>
+
+      {/* Drawn the way the settings boxes are, which is the only checkbox style this app has. */}
+      <label className="find-all" title="Reach back through the whole session, not only what is loaded">
+        <span className="tickbox">
+          <input
+            type="checkbox"
+            checked={searchAll}
+            onChange={() => onSearchAll(!searchAll)}
+            onKeyDown={(event) => {
+              // A box answers Space and nothing else, which is a surprise beside controls
+              // that answer Enter either side of it.
+              if (event.key !== 'Enter') return;
+              event.preventDefault();
+              onSearchAll(!searchAll);
+            }}
+          />
+          <TickIcon />
+        </span>
+        Everything
+      </label>
 
       <button
         type="button"

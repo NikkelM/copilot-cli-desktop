@@ -10,6 +10,7 @@ import { countChanges, parsePatch } from '../lib/patch';
 import { formatClock, formatExact } from '../lib/time';
 import { FindBar } from './FindBar';
 import { findMatches, stepMatch } from '../lib/findInTranscript';
+import { read, save } from '../lib/store';
 import { ASSUMED_DISPLAY, type CliDisplay } from '../lib/useCliDisplay';
 import { CopyButton } from './CopyButton';
 import { Diff } from './Diff';
@@ -137,6 +138,9 @@ interface Folding {
 }
 
 const Folds = createContext<Folding | null>(null);
+
+/** Whether a find reaches back for the rest of the session. Remembered across sessions. */
+const FIND_EVERYWHERE = 'findEverywhere';
 
 /**
  * Whether this fold should be open, given what was asked of all of them.
@@ -673,33 +677,67 @@ export function Transcript({
    * Finding words inside this conversation, which is a different question from which
    * session said them (#209).
    *
-   * The walk is over what the transcript holds rather than over the session, which is why
-   * the bar says what it is counting: the page is 150 entries to begin with and grows as
-   * the reader scrolls back, so a bare number would be a claim that is not true.
+   * The walk is over what the transcript holds. Asked to, it reaches back for the rest of
+   * the session first, which is what the toggle in the bar is for - and why the count says
+   * what it is counting until it has everything.
    */
   const [query, setQuery] = useState('');
-  const [onHit, setOnHit] = useState(-1);
+  /**
+   * Whether the find reaches back for the rest of the session.
+   *
+   * On unless it was turned off, and remembered for every session rather than this one: a
+   * reader who does not want their finds reaching back does not want it in the next session
+   * either. Kept beside the other things the app noticed rather than among the settings,
+   * which is where the todo panel's own reading choices sit.
+   */
+  const [searchAll, setSearchAll] = useState(() => read('sessions', FIND_EVERYWHERE) !== 'false');
+  /**
+   * Which row the walk is on, by key rather than by its place in the list.
+   *
+   * Reaching back puts older entries in front of it, which moves every index along. A walk
+   * held as a number would jump rows every time a page arrived; the row itself does not move.
+   */
+  const [onKey, setOnKey] = useState<string | null>(null);
   const matches = useMemo(() => findMatches(entries, query), [entries, query]);
+  const at = onKey === null ? -1 : matches.findIndex((index) => entries[index]?.key === onKey);
 
   // Back to the first hit whenever the words change, since the one they were on was found
   // by a different question and may not be a hit at all now.
   const asked = useRef(query);
   if (asked.current !== query) {
     asked.current = query;
-    setOnHit(matches.length > 0 ? 0 : -1);
+    setOnKey(matches.length > 0 ? (entries[matches[0]!]?.key ?? null) : null);
   }
 
-  const hit = finding !== null && onHit >= 0 ? (matches[onHit] ?? -1) : -1;
+  const hit = finding !== null && at >= 0 ? (matches[at] ?? -1) : -1;
 
   const step = useCallback(
-    (by: 1 | -1) => setOnHit((was) => stepMatch(matches.length, was, by)),
-    [matches.length],
+    (by: 1 | -1) => {
+      const next = stepMatch(matches.length, at, by);
+      setOnKey(next < 0 ? null : (entries[matches[next]!]?.key ?? null));
+    },
+    [at, entries, matches],
   );
 
   const closeFind = useCallback(() => {
-    setOnHit(-1);
+    setOnKey(null);
     onFindClosed?.();
   }, [onFindClosed]);
+
+  /**
+   * Reach back for the rest of the session, a page at a time, while the find wants it.
+   *
+   * Loading it is what makes the older half searchable on the same terms as the near half:
+   * the index the session search uses holds only what was said, so counting from it would
+   * find nothing in a tool call and say so in the same breath as a count that did.
+   *
+   * Only while the bar is open with something in it, and given back by the same rule that
+   * already gives back pages reached by scrolling.
+   */
+  const reachingBack = finding !== null && searchAll && query.trim() !== '' && hasOlder;
+  useEffect(() => {
+    if (reachingBack && !loadingOlder) onLoadOlder?.();
+  }, [reachingBack, loadingOlder, onLoadOlder]);
 
   /**
    * Where the transcript is pointing: the hit being walked to, or the search result it was
@@ -979,10 +1017,16 @@ export function Transcript({
             query={query}
             onQuery={setQuery}
             said={matches.length}
-            at={onHit}
+            at={at}
             onStep={step}
             onClose={closeFind}
             openedAt={finding}
+            searchAll={searchAll}
+            onSearchAll={(on) => {
+              setSearchAll(on);
+              save('sessions', FIND_EVERYWHERE, String(on));
+            }}
+            reaching={reachingBack}
           />
         )}
 

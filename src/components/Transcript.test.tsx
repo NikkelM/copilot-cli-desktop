@@ -6,6 +6,7 @@ import type { ComponentProps } from 'react';
 import type { TranscriptEvent } from '../../shared/protocol';
 import { ASSUMED_DISPLAY } from '../lib/useCliDisplay';
 import { Transcript } from './Transcript';
+import { resetStores } from '../lib/store';
 
 const event = (type: string, data: Record<string, unknown>, id: string): TranscriptEvent => ({ type, data, id });
 
@@ -2972,7 +2973,7 @@ describe('finding words in the session', () => {
 
     await userEvent.type(field(), 'fox');
 
-    expect(count()).toBe('1 of 2 shown');
+    expect(count()).toBe('1 of 2');
   });
 
   it('walks to the next one', async () => {
@@ -2981,7 +2982,7 @@ describe('finding words in the session', () => {
 
     await userEvent.keyboard('{Enter}');
 
-    expect(count()).toBe('2 of 2 shown');
+    expect(count()).toBe('2 of 2');
   });
 
   /** A key that stops working at the last match reads as broken rather than as finished. */
@@ -2991,7 +2992,7 @@ describe('finding words in the session', () => {
 
     await userEvent.keyboard('{Enter}{Enter}');
 
-    expect(count()).toBe('1 of 2 shown');
+    expect(count()).toBe('1 of 2');
   });
 
   it('marks the row it walked to', async () => {
@@ -3122,5 +3123,102 @@ describe('following the find', () => {
 
     expect(list.scrollTop, 'put back at the end by the follower').not.toBe(5000);
     done();
+  });
+});
+
+/**
+ * Reaching back for the rest of the session (#209).
+ *
+ * Loading it is what makes the older half searchable on the same terms as the near half.
+ * The index the session search uses holds only what was said, so counting from it would find
+ * nothing in a tool call and say so in the same breath as a count that did.
+ */
+describe('finding past what is loaded', () => {
+  const said = (body: string, id: string) => event('assistant.message', { content: body }, id);
+
+  const draw = (over: Partial<ComponentProps<typeof Transcript>> = {}) => (
+    <Transcript
+      events={[said('the quick brown fox', 'e1')]}
+      sessionId="s1"
+      cwd={null}
+      display={ASSUMED_DISPLAY}
+      finding={1}
+      {...over}
+    />
+  );
+
+  const field = () => screen.getByLabelText('Find in this session') as HTMLInputElement;
+  const toggle = () => screen.getByRole('checkbox', { name: /Everything/ }) as HTMLInputElement;
+
+  beforeEach(resetStores);
+
+  it('asks for the pages it has not read', async () => {
+    const onLoadOlder = vi.fn();
+    render(draw({ hasOlder: true, onLoadOlder }));
+
+    await userEvent.type(field(), 'fox');
+
+    expect(onLoadOlder).toHaveBeenCalled();
+  });
+
+  it('asks for nothing until there is something to find', () => {
+    const onLoadOlder = vi.fn();
+    render(draw({ hasOlder: true, onLoadOlder }));
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it('asks for nothing once the reach is turned off', async () => {
+    const onLoadOlder = vi.fn();
+    render(draw({ hasOlder: true, onLoadOlder }));
+    await userEvent.click(toggle());
+
+    await userEvent.type(field(), 'fox');
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  it('stops asking once there is nothing left to read', async () => {
+    const onLoadOlder = vi.fn();
+    render(draw({ hasOlder: false, onLoadOlder }));
+
+    await userEvent.type(field(), 'fox');
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  /** Asking again while a page is on its way would ask for the same page twice. */
+  it('waits for the page it asked for', async () => {
+    const onLoadOlder = vi.fn();
+    render(draw({ hasOlder: true, loadingOlder: true, onLoadOlder }));
+
+    await userEvent.type(field(), 'fox');
+
+    expect(onLoadOlder).not.toHaveBeenCalled();
+  });
+
+  /** A reader who does not want their finds reaching back does not want it next time either. */
+  it('remembers being turned off', async () => {
+    const { unmount } = render(draw());
+    await userEvent.click(toggle());
+    unmount();
+
+    render(draw());
+
+    expect(toggle().checked).toBe(false);
+  });
+
+  /**
+   * The walk is held by row rather than by place in the list: reaching back puts older
+   * entries in front of it, which moves every index along.
+   */
+  it('stays on the row it was on when a page arrives', async () => {
+    const { rerender } = render(draw({ hasOlder: true, events: [said('a fox here', 'e1')] }));
+    await userEvent.type(field(), 'fox');
+    expect(screen.getByRole('status').textContent).toBe('1 of 1 so far');
+
+    rerender(draw({ hasOlder: false, events: [said('an older fox', 'e0'), said('a fox here', 'e1')] }));
+
+    expect(screen.getByRole('status').textContent, 'still on the same row, now second').toBe('2 of 2');
   });
 });
