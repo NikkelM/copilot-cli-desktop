@@ -1147,3 +1147,26 @@ describe('the notes grip', () => {
     expect(block('.sidebar-grip')).toContain('left: var(--sidebar-used)');
   });
 });
+
+/**
+ * The box the match number is typed into (#209).
+ *
+ * A control nobody can see is one nobody tries, and the whole point of this one is that it
+ * can be typed into. It was drawn as plain text that only became a box when pointed at.
+ */
+describe('the match number in the find bar', () => {
+  const rule = () => {
+    const at = css.indexOf('.find-at {');
+    expect(at, 'the number should still be styled').toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('carries a border of its own rather than waiting to be pointed at', () => {
+    expect(rule()).toContain('border: 1px solid var(--border)');
+    expect(rule(), 'a transparent border is a box nobody can see').not.toContain('transparent');
+  });
+
+  it('is filled like the box of words beside it, so the two read as a pair', () => {
+    expect(rule()).toContain('background: var(--bg)');
+  });
+});

@@ -6034,15 +6034,15 @@ pre.fatal,
 /*
  * Which hit the reader is on, as something they can change.
  *
- * Drawn as part of the sentence it sits in rather than as a field beside it: it is the
- * number that was already there, and the only sign it can be typed into is that it answers
- * when you do.
+ * Drawn as a box in its own right rather than as text that becomes one when pointed at: a
+ * control nobody can see is one nobody tries, and the whole point of this one is that it
+ * can be typed into. Shaped like the box of words beside it, for the same reason.
  */
 .find-at {
   padding: 0 2px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-radius: 4px;
-  background: none;
+  background: var(--bg);
   color: var(--text);
   font: inherit;
   font-size: var(--font-sm);
@@ -6050,13 +6050,12 @@ pre.fatal,
 }
 
 .find-at:hover {
-  border-color: var(--border);
+  border-color: var(--text-muted);
 }
 
 .find-at:focus-visible {
   outline: none;
   border-color: var(--accent);
-  background: var(--bg);
 }
 
 /*
