@@ -1170,3 +1170,35 @@ describe('the match number in the find bar', () => {
     expect(rule()).toContain('background: var(--bg)');
   });
 });
+
+/**
+ * The find bar's own size (#209).
+ *
+ * A bar the width of the conversation is a bar whose controls sit a screen apart, with the
+ * count and the buttons nowhere near the words being typed.
+ */
+describe('the find bar', () => {
+  const rule = () => {
+    const at = css.indexOf('.find-bar {');
+    expect(at, 'the bar should still be styled').toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('takes its own width rather than the list it sits in', () => {
+    expect(rule()).toMatch(/width:\s*min\(/);
+  });
+
+  /** Fixed, until the pane is narrower than it - at which point the pane wins. */
+  it('gives way when there is less room than it wants', () => {
+    expect(rule()).toContain('100%');
+  });
+
+  it('sits at the end of the row, where a find box belongs', () => {
+    expect(rule()).toContain('margin-left: auto');
+  });
+
+  /** Too narrow for one row, so the parts have to be allowed to fall onto the next. */
+  it('lets its controls wrap rather than squeezing them', () => {
+    expect(rule()).toContain('flex-wrap: wrap');
+  });
+});

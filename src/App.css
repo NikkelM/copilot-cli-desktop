@@ -5990,11 +5990,21 @@ pre.fatal,
   position: sticky;
   top: 0;
   z-index: 2;
+  /*
+   * Its own size rather than the list's, pushed to the end of it.
+   *
+   * A bar the width of the conversation is a bar whose controls sit a screen apart, with
+   * the count and the buttons nowhere near the words being typed. This is wide enough for
+   * what it holds and no wider, and gives way when the pane is narrower than that.
+   */
+  width: min(calc(var(--font-base) * 31), 100%);
+  margin-left: auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-  padding: 6px 8px;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 9px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-raised);
@@ -6002,9 +6012,14 @@ pre.fatal,
 }
 
 .find-field {
-  flex: 1;
-  min-width: 0;
-  padding: 3px 7px;
+  /*
+   * Its own row. The bar is a fifth of the conversation's width, which is not enough for the
+   * words, the count, the toggle and three buttons side by side - and the words are what is
+   * being typed, so they get the room rather than giving it up to what reports on them.
+   */
+  flex: 1 1 100%;
+  min-width: calc(var(--font-base) * 7);
+  padding: 6px 9px;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: var(--bg);
@@ -6024,11 +6039,11 @@ pre.fatal,
 
 .find-count {
   flex: none;
+  /* Takes what the row has left, so the buttons sit at the end of the bar rather than
+     shuffling along as the count changes width. */
+  margin-right: auto;
   color: var(--text-dim);
   font-size: var(--font-sm);
-  /* Held open, so the buttons beside it do not shuffle as the count changes width. */
-  min-width: calc(var(--font-base) * 6);
-  text-align: right;
 }
 
 /*
@@ -6039,7 +6054,7 @@ pre.fatal,
  * can be typed into. Shaped like the box of words beside it, for the same reason.
  */
 .find-at {
-  padding: 0 2px;
+  padding: 5px 4px;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg);
@@ -6095,7 +6110,9 @@ pre.fatal,
   flex: none;
   display: inline-flex;
   align-items: center;
-  padding: 2px 6px;
+  justify-content: center;
+  min-width: calc(var(--font-base) * 1.6);
+  padding: 5px 7px;
   border: 1px solid var(--border);
   border-radius: 5px;
   background: none;
