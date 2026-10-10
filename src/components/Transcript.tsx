@@ -798,9 +798,20 @@ export function Transcript({
     const row = listRef.current?.querySelector<HTMLElement>(':scope > li.entry.found');
     if (!row) return;
 
+    /*
+     * Somebody walking matches is not at the bottom any more, whatever they were before.
+     *
+     * Left pinned, the follower below puts the transcript back at the end the moment the
+     * mark moves - and the mark moves on every keystroke in the find box, so the view
+     * snapped back before it had finished arriving. A search result escaped this because
+     * opening one unpins the transcript on the way in; a find box opens where the reader
+     * already is, so there was nothing to unpin it.
+     */
+    if (hit >= 0) pinned.current = false;
+
     ignoreScrollsUntil.current = Date.now() + OWN_SCROLL_MS;
     row.scrollIntoView({ block: 'center' });
-  }, [pointingAt, shown.length, entries.length]);
+  }, [pointingAt, hit, shown.length, entries.length]);
 
 
   /**

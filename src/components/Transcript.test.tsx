@@ -3058,3 +3058,69 @@ describe('finding words in the session', () => {
     expect(screen.getByText('output of ls')).toBeTruthy();
   });
 });
+
+/**
+ * Walking the hits has to move the view, which is most of what walking them is for.
+ *
+ * jsdom lays nothing out, so what is checked is that the row is asked to come into view and
+ * that nothing puts the transcript back at the end afterwards.
+ */
+describe('following the find', () => {
+  const said = (body: string, id: string) => event('assistant.message', { content: body }, id);
+  const events = [said('the quick brown fox', 'e1'), said('nothing here', 'e2'), said('another fox', 'e3')];
+
+  function finding() {
+    const came: string[] = [];
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, 'scrollIntoView')
+      .mockImplementation(function (this: Element) {
+        came.push(this.textContent ?? '');
+      });
+
+    const view = render(
+      <Transcript events={events} sessionId="s1" cwd={null} display={ASSUMED_DISPLAY} finding={1} />,
+    );
+    const list = view.container.querySelector('ol.transcript') as HTMLOListElement;
+    Object.defineProperty(list, 'scrollHeight', { configurable: true, get: () => 5000 });
+    Object.defineProperty(list, 'clientHeight', { configurable: true, get: () => 400 });
+
+    return { came, list, done: () => scrollIntoView.mockRestore() };
+  }
+
+  const field = () => screen.getByLabelText('Find in this session') as HTMLInputElement;
+
+  it('brings the first hit into view as the words are typed', async () => {
+    const { came, done } = finding();
+
+    await userEvent.type(field(), 'fox');
+
+    expect(came[came.length - 1]).toContain('the quick brown fox');
+    done();
+  });
+
+  it('brings the next one into view as the walk goes on', async () => {
+    const { came, done } = finding();
+    await userEvent.type(field(), 'fox');
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(came[came.length - 1]).toContain('another fox');
+    done();
+  });
+
+  /**
+   * The transcript follows the end of the conversation until somebody scrolls away, and the
+   * mark moving counts as a mutation - so without letting go of the end, the view snapped
+   * back to the bottom on every keystroke in the find box.
+   */
+  it('lets go of the end, so nothing pulls the view back', async () => {
+    const { list, done } = finding();
+    list.scrollTop = 4600;
+
+    await userEvent.type(field(), 'fox');
+    await new Promise((settle) => setTimeout(settle, 0));
+
+    expect(list.scrollTop, 'put back at the end by the follower').not.toBe(5000);
+    done();
+  });
+});
