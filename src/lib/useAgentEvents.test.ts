@@ -12,6 +12,9 @@ const { useAgentEvents } = await import('./useAgentEvents');
 const event = (content: string): TranscriptEvent =>
   ({ type: 'assistant.message', data: { content } }) as unknown as TranscriptEvent;
 
+/** The announcement that opened a run, which is what proves a read reached its beginning. */
+const started = (): TranscriptEvent => ({ type: 'subagent.started', data: {} }) as unknown as TranscriptEvent;
+
 beforeEach(() => {
   getAgentTranscript.mockReset().mockResolvedValue({ events: [] });
 });
@@ -110,5 +113,56 @@ describe('reading a subagent own events', () => {
     rerender({ id: null });
 
     expect(result.current).toEqual([]);
+  });
+});
+
+/**
+ * Which copy to believe once the log can be shown to hold the whole run (#262).
+ *
+ * A subagent's transcript was showing prompts the reader had sent to the session itself, and
+ * not showing the instruction the session gave the subagent. The two copies were compared by
+ * length, which is the wrong question: a held copy carrying something that is not this
+ * agent's work is not a better copy for being longer, it is a worse one, and it was winning.
+ */
+describe('a log that reached the start of the run', () => {
+  /** The whole point: fewer events, and still the one to believe. */
+  it('wins even when more is held', async () => {
+    const held = [event('a'), event('b'), event('c')];
+    const answer = Promise.resolve({ events: [started(), event('a')] });
+    getAgentTranscript.mockReturnValue(answer);
+
+    const { result } = renderHook(() => useAgentEvents('s1', 'a1', held));
+    await act(async () => {
+      await answer;
+    });
+
+    expect(result.current).toHaveLength(2);
+    expect(result.current).not.toBe(held);
+  });
+
+  /** Without that proof the old rule still applies, so a run in flight is not cut short. */
+  it('leaves the held copy alone while the read has not reached the start', async () => {
+    const held = [event('a'), event('b'), event('c')];
+    const answer = Promise.resolve({ events: [event('a')] });
+    getAgentTranscript.mockReturnValue(answer);
+
+    const { result } = renderHook(() => useAgentEvents('s1', 'a1', held));
+    await act(async () => {
+      await answer;
+    });
+
+    expect(result.current).toBe(held);
+  });
+
+  it('is still the one to believe when it has more as well', async () => {
+    const answer = Promise.resolve({ events: [started(), event('a'), event('b')] });
+    getAgentTranscript.mockReturnValue(answer);
+
+    const { result } = renderHook(() => useAgentEvents('s1', 'a1', [event('a')]));
+    await act(async () => {
+      await answer;
+    });
+
+    expect(result.current).toHaveLength(3);
   });
 });

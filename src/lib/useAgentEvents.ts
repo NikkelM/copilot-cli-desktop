@@ -48,7 +48,22 @@ export function useAgentEvents(
 
   if (!agentId || read?.agentId !== agentId) return held;
 
-  // What the log can hold against what it holds, rather than against every event watched:
-  // the live stream carries a run's machinery too, and the log carries only what is drawn.
+  /*
+   * The log, once it can be shown to hold the whole run.
+   *
+   * `subagent.started` is the announcement that opened the run, so a read carrying it has
+   * reached the beginning: there is nothing earlier of this agent's left to be missing, and
+   * the log attributes every event it returns by asking who produced it.
+   *
+   * That makes it the better copy outright rather than merely the longer one. The rule below
+   * preferred whichever had more events, which is the wrong question when the live copy may
+   * be carrying something that is not this agent's work at all: more of it is not better, it
+   * is worse, and it wins (#262).
+   */
+  if (read.events.some((event) => event.type === 'subagent.started')) return read.events;
+
+  // Neither can be shown to be whole, so the fuller one wins. Counted against what the log
+  // is able to hold: the live stream carries a run's machinery too, and the log carries only
+  // what is drawn.
   return read.events.length >= held.filter((event) => showsInTranscript(event.type)).length ? read.events : held;
 }
