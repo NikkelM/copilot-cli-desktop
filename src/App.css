@@ -267,6 +267,15 @@ body {
   align-items: center;
   gap: 6px;
   margin-left: auto;
+  /* Nothing inside it shrinks, so letting the group shrink only clipped the buttons at the
+     end of it instead of making room for anything. */
+  flex-shrink: 0;
+}
+
+/* Out of room for everything on one line, so the count takes a line of its own rather than
+   pushing the buttons off the end of a sidebar somebody has narrowed. */
+.sidebar-header.crowded {
+  flex-wrap: wrap;
 }
 
 .sidebar-header button {

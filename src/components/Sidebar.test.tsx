@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ComponentProps } from 'react';
 
 import { Sidebar } from './Sidebar';
@@ -1288,6 +1288,113 @@ describe('a session waiting for an answer', () => {
     await userEvent.click(screen.getByText(/2 waiting/));
 
     expect(onSelect).toHaveBeenCalledExactlyOnceWith('a', expect.objectContaining({ sessionId: 'a' }));
+  });
+
+  /**
+   * The top row runs out of room on a sidebar somebody has narrowed, and what gave way was
+   * the buttons at its end: the row does not wrap, nothing in it shrinks, and the sidebar
+   * clips whatever leaves it. The count takes a line of its own instead.
+   *
+   * jsdom lays nothing out, so every width here is the test's to state. What is checked is
+   * the decision and where the count lands, not the arithmetic of a layout engine.
+   */
+  describe('with no room for everything on one line', () => {
+    const room = { available: 1000, child: 100, gap: 0, inset: 0 };
+
+    beforeEach(() => {
+      Object.assign(room, { available: 1000, child: 100, gap: 0, inset: 0 });
+
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          observe() {}
+          disconnect() {}
+        },
+      );
+
+      vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+        const wide = this.parentElement?.classList.contains('sidebar-header') ? room.child : 0;
+        return { width: wide, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) };
+      });
+
+      Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.classList.contains('sidebar-header') ? room.available : 0;
+        },
+      });
+
+      // No stylesheet is loaded here, so the row's own gap and padding would read as
+      // nothing and the two terms that spend them could never be wrong.
+      const real = window.getComputedStyle.bind(window);
+      vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+        if (!(element as HTMLElement).classList?.contains('sidebar-header')) return real(element, pseudo);
+
+        return {
+          columnGap: `${room.gap}px`,
+          paddingLeft: `${room.inset}px`,
+          paddingRight: `${room.inset}px`,
+          pointerEvents: 'auto',
+          visibility: 'visible',
+          display: 'flex',
+        } as unknown as CSSStyleDeclaration;
+      });
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+      Reflect.deleteProperty(HTMLElement.prototype, 'clientWidth');
+    });
+
+    const header = () => document.querySelector('.sidebar-header') as HTMLElement;
+    /** Where the count sits among the row's own children, which is what decides its line. */
+    const countAt = () => [...header().children].findIndex((child) => child.classList.contains('waiting-count'));
+    const actionsAt = () => [...header().children].findIndex((child) => child.classList.contains('sidebar-actions'));
+
+    it('leaves the count where it is when the row has room', () => {
+      room.available = 1000;
+      shown({ activity: blocked('b') });
+
+      expect(header().classList.contains('crowded')).toBe(false);
+      expect(countAt()).toBeLessThan(actionsAt());
+    });
+
+    it('moves the count past the buttons when it does not', () => {
+      room.available = 150;
+      shown({ activity: blocked('b') });
+
+      expect(header().classList.contains('crowded')).toBe(true);
+      expect(countAt()).toBeGreaterThan(actionsAt());
+    });
+
+    /** The space between the controls is room they need too, and there is one for each gap. */
+    it('counts the space between the controls', () => {
+      room.available = 205;
+      room.gap = 10;
+      shown({ activity: blocked('b') });
+
+      expect(header().classList.contains('crowded')).toBe(true);
+    });
+
+    /** And the row's own padding is width the controls never get to use. */
+    it('counts the padding the row is drawn inside', () => {
+      room.inset = 450;
+      shown({ activity: blocked('b') });
+
+      expect(header().classList.contains('crowded')).toBe(true);
+    });
+
+    /** Moved rather than dropped: it is the one thing in the row somebody is waiting on. */
+    it('keeps the count pressable once it has moved', async () => {
+      room.available = 150;
+      const onSelect = vi.fn();
+      shown({ activity: blocked('b'), onSelect });
+
+      await userEvent.click(screen.getByText(/1 waiting/));
+
+      expect(onSelect).toHaveBeenCalledExactlyOnceWith('b', expect.objectContaining({ sessionId: 'b' }));
+    });
   });
 });
 

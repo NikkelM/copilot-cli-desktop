@@ -580,6 +580,44 @@ export function Sidebar({
   /** The row of controls along the top, for the arrows that move between them. */
   const headerRef = useRef<HTMLElement>(null);
 
+  /**
+   * Whether the top row has run out of room for everything on it.
+   *
+   * Measured rather than set at a width somebody picked: which buttons are there varies,
+   * every size in the row follows the text scale, and the sidebar is dragged to whatever
+   * width suits - so a breakpoint in pixels would be wrong for most of what can be chosen.
+   *
+   * Summed from the children rather than read off `scrollWidth`, which stops reporting an
+   * overflow the moment the row is allowed to wrap: a measure that disagrees with itself
+   * once the answer has been applied flips back and forth forever. Nothing in the row
+   * shrinks, so each child comes to the same width whether it has wrapped or not.
+   */
+  const [crowded, setCrowded] = useState(false);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header || typeof ResizeObserver === 'undefined') return;
+
+    const measure = () => {
+      const style = getComputedStyle(header);
+      const gap = Number.parseFloat(style.columnGap) || 0;
+      const inset = (Number.parseFloat(style.paddingLeft) || 0) + (Number.parseFloat(style.paddingRight) || 0);
+      const children = [...header.children];
+      const needed =
+        children.reduce((total, child) => total + child.getBoundingClientRect().width, 0) +
+        gap * Math.max(0, children.length - 1);
+
+      setCrowded(needed > header.clientWidth - inset);
+    };
+
+    measure();
+    const resized = new ResizeObserver(measure);
+    resized.observe(header);
+    return () => resized.disconnect();
+    // What is in the row, since a button arriving changes what it needs without changing
+    // the size of anything the observer is watching.
+  }, [waiting.length, Boolean(onSettings), Boolean(onImport), Boolean(onToggle)]);
+
   /** Up out of the filter row is the row of buttons above it, starting at the fold control. */
   const toHeader = useCallback(() => {
     headerRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
@@ -859,10 +897,12 @@ export function Sidebar({
     [stops, drawn, stepTo, onMark, menuForRow],
   );
 
+  /** Built once so it is the same element wherever the row has room to put it. */
+  const notice = <Waiting count={waiting.length} onJump={jump} />;
 
   return (
     <nav className="sidebar" data-region="sidebar">
-      <header className="sidebar-header" ref={headerRef} onKeyDown={onHeaderKey}>
+      <header className={`sidebar-header${crowded ? ' crowded' : ''}`} ref={headerRef} onKeyDown={onHeaderKey}>
         {onToggle && <SidebarToggle hidden={false} onToggle={onToggle} />}
         {/* On the left with the fold control: both are about the app rather than about any
             session, and neither is something you reach for often enough to want it under
@@ -872,7 +912,10 @@ export function Sidebar({
             <GearIcon />
           </button>
         )}
-        <Waiting count={waiting.length} onJump={jump} />
+        {/* Moved below the buttons rather than drawn in place and reordered, so the order
+            the keyboard walks stays the order the eye reads. Reordering with CSS alone
+            cannot do this anyway: a flex row wraps its last item, and this one is first. */}
+        {!crowded && notice}
         {/* Kept together and pushed right as a group, so the count on the left has the room
             it needs and these two stay next to each other however many there are. */}
         <div className="sidebar-actions">
@@ -909,6 +952,7 @@ export function Sidebar({
             {creating ? 'Starting…' : 'New'}
           </button>
         </div>
+        {crowded && notice}
       </header>
 
       <div
