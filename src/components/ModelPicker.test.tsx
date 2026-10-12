@@ -537,8 +537,86 @@ describe('ModelPicker', () => {
     expect(lines[0]).toContain('Routing');
   });
 
-  describe('how auto routes', () => {
-    /** The runtime refuses a routing preference against any other model. */
+  describe('changing the model already in use', () => {
+    /**
+     * Touching the effort or the room size of the model already selected is not composing a
+     * choice, it is changing the thing in front of you. Staged and not committed, it looked
+     * chosen until the menu closed and then was gone.
+     */
+    it('commits an effort chosen on the row in use', async () => {
+      const onChoose = vi.fn();
+      picker({ onChoose, current: { model: 'claude-opus-5', reasoningEffort: 'low' } });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
+
+      expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-opus-5', reasoningEffort: 'high' }));
+    });
+
+    it('commits a room size chosen on the row in use', async () => {
+      const onChoose = vi.fn();
+      picker({ onChoose, current: { model: 'claude-opus-5', contextTier: 'default' } });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with 936k of context' }));
+
+      expect(onChoose).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-opus-5', contextTier: 'long_context' }),
+      );
+    });
+
+    /** Carries the rest of the row, not just the part that moved. */
+    it('keeps what the row already held', async () => {
+      const onChoose = vi.fn();
+      picker({ onChoose, current: { model: 'claude-opus-5', reasoningEffort: 'high', contextTier: 'long_context' } });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 with 200k of context' }));
+
+      expect(onChoose).toHaveBeenCalledWith(
+        expect.objectContaining({ reasoningEffort: 'high', contextTier: 'default' }),
+      );
+    });
+
+    /** Adjusting one of these often means adjusting the other. */
+    it('leaves the menu open to adjust the rest', async () => {
+      picker({ current: { model: 'claude-opus-5', reasoningEffort: 'low' } });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
+
+      expect(screen.getByRole('listbox')).toBeTruthy();
+    });
+
+    /**
+     * On any other row the same click is one part of a choice not yet made. Committing it
+     * would move the session onto a model nobody asked for, which for a session means a
+     * resume as well.
+     */
+    it('only stages the same click on a model not in use', async () => {
+      const onChoose = vi.fn();
+      picker({ onChoose, current: { model: 'auto' } });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
+
+      expect(onChoose).not.toHaveBeenCalled();
+    });
+
+    it('sends what was staged once the model is chosen', async () => {
+      const onChoose = vi.fn();
+      picker({ onChoose, current: { model: 'auto' } });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Claude Opus 5 thinking high' }));
+      await userEvent.click(screen.getByRole('option', { name: /Claude Opus 5/ }));
+
+      expect(onChoose).toHaveBeenCalledTimes(1);
+      expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ model: 'claude-opus-5', reasoningEffort: 'high' }));
+    });
+  });
+
+  describe('how auto routes', () => {    /** The runtime refuses a routing preference against any other model. */
     it('offers it on auto alone', async () => {
       picker();
       await openMenu();
@@ -595,7 +673,6 @@ describe('ModelPicker', () => {
 
       expect(screen.getByText('waiting for the next prompt')).toBeTruthy();
     });
-
     it('says nothing about waiting when nothing is', async () => {
       picker({ autoTier: { current: 'balance' } });
       await openMenu();

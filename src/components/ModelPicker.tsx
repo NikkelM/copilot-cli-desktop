@@ -286,6 +286,30 @@ function ModelRow({
     () => autoTier?.pending ?? autoTier?.current ?? undefined,
   );
 
+  /** Everything the row holds, with whichever part has just been touched replacing its own. */
+  const held = (change: Partial<ModelChoiceMade>): ModelChoiceMade => ({
+    model: model.id,
+    reasoningEffort: effort,
+    contextTier: tier,
+    ...(model.id === 'auto' && routing ? { autoTier: routing } : {}),
+    ...change,
+  });
+
+  /**
+   * Keep a part of the row, and commit it where the row is the one in use.
+   *
+   * Touching the effort or the room size of the model already selected is not composing a
+   * choice, it is changing the thing in front of you, so it takes effect. On any other row
+   * the same click is one part of a choice not yet made, and is held until the reader says
+   * which model it belongs to.
+   *
+   * The menu stays open either way: a reader adjusting one of these often adjusts the other,
+   * and closing after the first would make the second a second trip.
+   */
+  const keep = (change: Partial<ModelChoiceMade>) => {
+    if (chosen) onChoose(held(change));
+  };
+
   return (
     // Focus does what the pointer does, so the price follows a reader using the keyboard.
     <div
@@ -299,15 +323,9 @@ function ModelRow({
         role="option"
         aria-selected={chosen}
         onClick={() => {
-          onChoose({
-            model: model.id,
-            reasoningEffort: effort,
-            contextTier: tier,
-            // Sent only where it means something, and only where it has been chosen: the
-            // runtime refuses it against any other model, and sending it unasked would make
-            // selecting auto a routing change nobody made.
-            ...(model.id === 'auto' && routing ? { autoTier: routing } : {}),
-          });
+          // Sent with whatever the row holds. The routing preference rides along only on
+          // auto, which is the only model the runtime accepts one against.
+          onChoose(held({}));
           onDone();
         }}
       >
@@ -324,7 +342,10 @@ function ModelRow({
               key={level}
               className={effort === level ? 'model-option chosen' : 'model-option'}
               aria-pressed={effort === level}
-              onClick={() => setEffort(level)}
+              onClick={() => {
+                setEffort(level);
+                keep({ reasoningEffort: level });
+              }}
               aria-label={`${model.name} thinking ${level}`}
             >
               {level}
@@ -342,7 +363,10 @@ function ModelRow({
               key={context.tier}
               className={tier === context.tier ? 'model-option chosen' : 'model-option'}
               aria-pressed={tier === context.tier}
-              onClick={() => setTier(context.tier)}
+              onClick={() => {
+                setTier(context.tier);
+                keep({ contextTier: context.tier });
+              }}
               aria-label={`${model.name} with ${tokens(context.maxPromptTokens)} of context`}
             >
               {tokens(context.maxPromptTokens)}
@@ -363,7 +387,10 @@ function ModelRow({
               key={level}
               className={routing === level ? 'model-option chosen' : 'model-option'}
               aria-pressed={routing === level}
-              onClick={() => setRouting(level)}
+              onClick={() => {
+                setRouting(level);
+                keep({ autoTier: level });
+              }}
               aria-label={`Auto routing for ${level}`}
             >
               {level}
