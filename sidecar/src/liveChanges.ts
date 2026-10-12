@@ -1,7 +1,7 @@
 import { normalize } from 'node:path';
 
 import type { SessionChange } from '../../shared/protocol.js';
-import { splitByFile, type PatchStatus } from '../../shared/patch.js';
+import { splitByFile, WRITE_TOOLS, type PatchStatus } from '../../shared/patch.js';
 
 /**
  * What a turn has changed while it is still running (#140).
@@ -28,9 +28,6 @@ import { splitByFile, type PatchStatus } from '../../shared/patch.js';
  * that have been read, so a turn running in a session somebody navigated away from would
  * lose its changes to the gap.
  */
-
-/** The tools that write files, as the logs here actually name them. */
-const WRITES: ReadonlySet<string> = new Set(['edit', 'create', 'apply_patch']);
 
 /** One file a running turn has touched, as the tools that touched it reported. */
 interface LiveFile {
@@ -61,7 +58,7 @@ const touched = new Map<string, Map<string, LiveFile>>();
  * they finish, which is also the only moment anything has actually changed.
  */
 export function noteToolStart(sessionId: string, toolCallId: string, toolName: string): void {
-  if (!WRITES.has(toolName)) return;
+  if (!WRITE_TOOLS.has(toolName)) return;
 
   let calls = pending.get(sessionId);
   if (!calls) pending.set(sessionId, (calls = new Set()));

@@ -18,13 +18,20 @@ interface ChangesProps {
   /** Shortens paths to the part that identifies them. */
   cwd: string | null;
   onClose: () => void;
-  /** Mark everything listed as seen, so next time only what is newer shows. */
-  onReview: () => void;
+  /**
+   * Mark everything listed as seen, so next time only what is newer shows.
+   *
+   * Absent where there is nothing to review: a delegated run has finished, and its account
+   * of what it changed is not going to grow.
+   */
+  onReview?: () => void;
   /** How far this session has been reviewed, or null if it never has. */
   reviewedAt: string | null;
   /** Whether the whole session is on show rather than only what is new. */
   showAll: boolean;
   onSpan: (all: boolean) => void;
+  /** Whose work is being read, for the line shown while the list is on its way. */
+  whose?: string;
 }
 
 const GLYPH: Record<SessionChange['status'], string> = {
@@ -85,6 +92,7 @@ export function Changes({
   reviewedAt,
   showAll,
   onSpan,
+  whose = 'this session',
 }: ChangesProps) {
   const [open, setOpen] = useState<string | null>(null);
 
@@ -159,7 +167,7 @@ export function Changes({
               {showAll ? 'Only what is new' : 'Whole session'}
             </button>
           )}
-          {changes && changes.length > 0 && (
+          {onReview && changes && changes.length > 0 && (
             <button
               type="button"
               className="changes-action primary"
@@ -176,7 +184,7 @@ export function Changes({
       </div>
 
       {failed && <p className="error">{failed}</p>}
-      {loading && !changes && <p className="changes-note">Reading what this session changed.</p>}
+      {loading && !changes && <p className="changes-note">Reading what {whose} changed.</p>}
       {changes?.length === 0 &&
         (since ? (
           <p className="changes-note">

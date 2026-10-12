@@ -94,6 +94,7 @@ import { bulkActions } from './lib/bulkActions';
 import { promptHistory } from './lib/promptHistory';
 import { useChanges } from './lib/useChanges';
 import { useAgentEvents } from './lib/useAgentEvents';
+import { agentChanges } from './lib/agentChanges';
 import { useHasSubagents } from './lib/useHasSubagents';
 import { useNativeMenu } from './lib/useNativeMenu';
 import { useRewind } from './lib/useRewind';
@@ -1610,6 +1611,20 @@ export default function App() {
   );
 
   /**
+   * What the open run changed, from the diffs its own writes reported (#261).
+   *
+   * Derived from the events already in hand rather than asked for, so it costs nothing and
+   * is known before anybody presses anything - which is what lets the button appear only
+   * where the run actually wrote something. Most runs never do: the delegated runs in the
+   * largest log here are read-only to a one.
+   */
+  const agentWork = useMemo(() => agentChanges(agentEvents), [agentEvents]);
+  const [showAgentChanges, setShowAgentChanges] = useState(false);
+
+  // A different run's files are not this one's, and a panel left open would be showing them.
+  useEffect(() => setShowAgentChanges(false), [subagents.open?.agentId]);
+
+  /**
    * Copy a session into a new one and go to the copy.
    *
    * The sidecar opens the source before copying it, and refuses when it cannot: forking a
@@ -1957,6 +1972,20 @@ export default function App() {
                     another model now. Absent from a few older announcements, and a blank
                     space says that better than a word guessing at it would. */}
                 {subagents.open.model && <span className="subagent-model">{subagents.open.model}</span>}
+                {/* Only where the run wrote something. Most never do, and an entry that
+                    opens an empty panel is worse than no entry - the rule the session's
+                    Todos button already follows (#261). */}
+                {agentWork.changes.length > 0 && (
+                  <button
+                    type="button"
+                    className={showAgentChanges ? 'header-button on' : 'header-button'}
+                    onClick={() => setShowAgentChanges((open) => !open)}
+                    aria-pressed={showAgentChanges}
+                    title="Show what this run changed"
+                  >
+                    Changes
+                  </button>
+                )}
               </div>
             </header>
 
@@ -1981,6 +2010,23 @@ export default function App() {
             />
 
             <div className="footer">
+              {showAgentChanges && (
+                <Changes
+                  changes={agentWork.changes}
+                  loading={false}
+                  failed={null}
+                  diffs={agentWork.diffs}
+                  /* Nothing to fetch: the diffs came with the list, out of the same events. */
+                  onDiff={() => undefined}
+                  cwd={selected?.cwd ?? null}
+                  onClose={() => setShowAgentChanges(false)}
+                  /* No reviewing a run that has finished, and no span to narrow it to. */
+                  reviewedAt={null}
+                  showAll
+                  onSpan={() => undefined}
+                  whose="this run"
+                />
+              )}
               <p className="changes-note">
                 Read-only. Recorded by the session that delegated it.
               </p>

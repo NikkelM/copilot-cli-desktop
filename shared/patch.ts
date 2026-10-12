@@ -13,6 +13,15 @@
 /** What a patch does to a file, in the terms the changes list already uses. */
 export type PatchStatus = 'created' | 'modified' | 'deleted';
 
+/**
+ * The tools that write files, as the logs here actually name them.
+ *
+ * Shared for the same reason the reading below is: the sidecar watches a running turn's
+ * writes and the app reads a delegated run's out of its transcript, and a tool missing from
+ * one list but not the other is a write that silently stops being counted on one side.
+ */
+export const WRITE_TOOLS: ReadonlySet<string> = new Set(['edit', 'create', 'apply_patch']);
+
 /** One file inside a patch, with the part of the patch that is about it. */
 export interface PatchFile {
   path: string;
