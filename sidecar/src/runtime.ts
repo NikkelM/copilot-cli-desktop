@@ -15,7 +15,6 @@ import type {  McpServerState,
   AskedBy,
   Attachment,
   AutoTier,
-  AutoTierOutcome,
   CommandOutcome,
   ContextTier,
   ElicitationAction,
@@ -2256,6 +2255,7 @@ export class SessionRuntime {
     model: string,
     reasoningEffort?: ReasoningEffort,
     contextTier?: ContextTier,
+    autoTier?: AutoTier | null,
   ): Promise<void> {
     const session = await this.ensureSession(sessionId);
     await session.setModel(model, {
@@ -2263,6 +2263,9 @@ export class SessionRuntime {
       // report as a level they accept.
       ...(reasoningEffort ? { reasoningEffort: reasoningEffort as never } : {}),
       ...(contextTier ? { contextTier } : {}),
+      // Only alongside `auto`, which is the only model the runtime accepts it against. Sent
+      // when it is undefined nowhere, so selecting another model is unchanged.
+      ...(autoTier !== undefined && model === 'auto' ? { autoTier } : {}),
     });
   }
 
@@ -2292,19 +2295,6 @@ export class SessionRuntime {
           ? { pending: current.activatingAutoTier as AutoTier | null }
           : {}),
     };
-  }
-
-  /**
-   * Ask for a different routing preference.
-   *
-   * Costs a resume, like changing the model, because the choice belongs to the running
-   * session. `pending` means accepted rather than applied - the reader is told as much,
-   * since every other choice in that menu takes effect at once.
-   */
-  async setAutoTier(sessionId: string, tier: AutoTier | null): Promise<AutoTierOutcome> {
-    const session = await this.ensureSession(sessionId);
-    const { status } = await session.setAutoTier(tier);
-    return status === 'unchanged' ? 'unchanged' : 'pending';
   }
 
   /**

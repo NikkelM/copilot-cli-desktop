@@ -50,7 +50,6 @@ import type {
   SessionModel,
   SessionAutoTier,
   AutoTier,
-  AutoTierOutcome,
   SessionMode,
   SessionUsage,
   ShellResult,
@@ -529,8 +528,9 @@ export function setSessionModel(
   model: string,
   reasoningEffort?: ReasoningEffort,
   contextTier?: ContextTier,
+  autoTier?: AutoTier | null,
 ): Promise<void> {
-  return request('sessions.setModel', { sessionId, model, reasoningEffort, contextTier });
+  return request('sessions.setModel', { sessionId, model, reasoningEffort, contextTier, autoTier });
 }
 
 /**
@@ -542,17 +542,6 @@ export function setSessionModel(
 export async function sessionAutoTier(sessionId: string): Promise<SessionAutoTier | null> {
   const { tier } = await request('sessions.autoTier', { sessionId });
   return tier;
-}
-
-/**
- * Ask for a different routing preference. Null goes back to the provider's default.
- *
- * `pending` means accepted rather than applied: it commits on a later turn that uses the
- * `auto` model, and can fail then.
- */
-export async function setSessionAutoTier(sessionId: string, tier: AutoTier | null): Promise<AutoTierOutcome> {
-  const { outcome } = await request('sessions.setAutoTier', { sessionId, tier });
-  return outcome;
 }
 
 /** How a session is working, read from its log when it is cold. Costs no Copilot process. */

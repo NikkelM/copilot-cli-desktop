@@ -66,6 +66,8 @@ beforeEach(() => {
 
 /** Tied to the SDK's own signature so a shape change fails the build rather than the fake. */
 type ContextAttribution = Awaited<ReturnType<CopilotSession['rpc']['metadata']['getContextAttribution']>>;
+/** The same, for the model snapshot the Auto routing preference is read from (#215). */
+type CurrentModel = Awaited<ReturnType<CopilotSession['rpc']['model']['getCurrent']>>;
 /** The same, for the command result whose `mode` follow-up was being dropped (#167). */
 type InvokeResult = Awaited<ReturnType<CopilotSession['rpc']['commands']['invoke']>>;
 /** And for the usage metrics, so a change to what the runtime accounts for fails the build. */
@@ -94,7 +96,6 @@ function makeSession(id: string) {
     },
     send: vi.fn(async (_options: { prompt: string; mode?: string }) => `msg-${id}`),
     setModel: vi.fn(async (_model: string, _options?: Record<string, unknown>) => undefined),
-    setAutoTier: vi.fn(async (_tier: string | null) => ({ status: 'pending' as 'pending' | 'unchanged' })),
     rpc: {
       history: {
         listRewindPoints: vi.fn(
@@ -183,7 +184,7 @@ function makeSession(id: string) {
         })),
       },
       model: {
-        getCurrent: vi.fn(async () => ({ modelId: 'a-named-model' })),
+        getCurrent: vi.fn(async (): Promise<CurrentModel> => ({ modelId: 'a-named-model' })),
       },
       agent: {
         select: vi.fn(async (_params: { name: string }) => ({})),
@@ -1856,21 +1857,36 @@ describe('how the automatic model routes', () => {
     expect(client.start).not.toHaveBeenCalled();
   });
 
-  it('asks the session for a different preference', async () => {
+  it('asks the session for a different preference alongside auto', async () => {
     const { runtime, sessions } = makeRuntime();
     await runtime.send('s1', 'hello');
 
-    expect(await runtime.setAutoTier('s1', 'efficiency')).toBe('pending');
-    expect(sessions.get('s1')!.setAutoTier).toHaveBeenCalledWith('efficiency');
+    await runtime.setModel('s1', 'auto', undefined, undefined, 'efficiency');
+
+    expect(sessions.get('s1')!.setModel).toHaveBeenCalledWith('auto', { autoTier: 'efficiency' });
   });
 
-  /** Already in force is a different answer from accepted, and the reader is told which. */
-  it('passes on that the preference was already in force', async () => {
+  /** Null is a request to go back to the provider's own routing, not the absence of one. */
+  it('passes on a return to the default', async () => {
     const { runtime, sessions } = makeRuntime();
     await runtime.send('s1', 'hello');
-    sessions.get('s1')!.setAutoTier.mockResolvedValueOnce({ status: 'unchanged' });
 
-    expect(await runtime.setAutoTier('s1', 'balance')).toBe('unchanged');
+    await runtime.setModel('s1', 'auto', undefined, undefined, null);
+
+    expect(sessions.get('s1')!.setModel).toHaveBeenCalledWith('auto', { autoTier: null });
+  });
+
+  /**
+   * The runtime refuses the option against anything but `auto`, so sending it with another
+   * model would turn an ordinary model change into a failed one.
+   */
+  it('keeps the preference off every other model', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    await runtime.setModel('s1', 'claude-opus-5', undefined, undefined, 'efficiency');
+
+    expect(sessions.get('s1')!.setModel).toHaveBeenCalledWith('claude-opus-5', {});
   });
 });
 

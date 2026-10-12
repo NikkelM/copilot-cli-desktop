@@ -329,8 +329,6 @@ export interface SessionAutoTier {
   pending?: AutoTier | null;
 }
 
-/** Whether a tier was already in force, or has been accepted and awaits a turn to commit. */
-export type AutoTierOutcome = 'unchanged' | 'pending';
 
 /**
  * How a session is working, mirroring the SDK's own union.
@@ -1907,7 +1905,20 @@ export interface SidecarRequests {
   'sessions.usage': { params: { sessionId: string }; result: { usage: SessionUsage | null } };
   'sessions.model': { params: { sessionId: string }; result: { current: SessionModel | null } };
   'sessions.setModel': {
-    params: { sessionId: string; model: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier };
+    params: {
+      sessionId: string;
+      model: string;
+      reasoningEffort?: ReasoningEffort;
+      contextTier?: ContextTier;
+      /**
+       * How `auto` should route, settable only alongside `auto` itself.
+       *
+       * The runtime refuses it against any other model, which is why it rides with the model
+       * rather than travelling as a choice of its own: the picker commits a row, and the row
+       * that carries a routing preference is the one that selects the model it belongs to.
+       */
+      autoTier?: AutoTier | null;
+    };
     result: void;
   };
   /**
@@ -1918,16 +1929,6 @@ export interface SidecarRequests {
    * must not start a process to find one.
    */
   'sessions.autoTier': { params: { sessionId: string }; result: { tier: SessionAutoTier | null } };
-  /**
-   * Ask for a different routing preference. Null returns to the provider's own default.
-   *
-   * Costs a resume, as changing the model does, because the choice belongs to the running
-   * session. The answer says whether it was already in force or is waiting for a turn.
-   */
-  'sessions.setAutoTier': {
-    params: { sessionId: string; tier: AutoTier | null };
-    result: { outcome: AutoTierOutcome };
-  };
   /**
    * How a session is working. Read from the log when it is not loaded, so asking is cheap.
    *
@@ -2078,7 +2079,6 @@ export const SIDECAR_METHODS = [
   'sessions.model',
   'sessions.setModel',
   'sessions.autoTier',
-  'sessions.setAutoTier',
   'sessions.mode',
   'sessions.setMode',
   'runtime.status',
