@@ -63,7 +63,7 @@ export const BINDINGS: readonly Binding[] = [
   { keys: '/', what: 'commands' },
   { id: 'interrupt', keys: 'ctrl+c', what: 'stop the turn' },
   { id: 'escape-twice', keys: 'esc esc', what: 'clear the message or stop the turn' },
-  { id: 'reasoning', keys: 'ctrl+t', what: 'show or hide reasoning' },
+  { id: 'reasoning', keys: 'ctrl+t', what: 'unfold or fold reasoning' },
   { id: 'fold-all', keys: 'ctrl+o', what: 'expand or collapse every tool call' },
   { id: 'find-here', keys: 'ctrl+f', what: 'find words in this session' },
   { id: 'stash', keys: 'ctrl+s', what: 'stash or restore the message' },

@@ -187,11 +187,32 @@ function useFoldAll(key: string, setOpen: (open: boolean) => void): void {
  * window is ever silent and this is the only thing that fills it. Closed once read back
  * from a log: it is usually longer than the answer it produced, and a transcript where
  * every reply is preceded by paragraphs of reasoning is one nobody can scan.
+ *
+ * `showReasoning` off folds the row rather than dropping it, which is what the CLI does:
+ * its own timeline keeps the `Thought for 12s` line whatever the setting says, and only the
+ * body behind it comes and goes. Dropped, there was nothing left to say a turn had reasoned
+ * at all, so a transcript read with the setting off looked like one missing history (#264).
  */
 function ReasoningRow({ entry }: { entry: ReasoningEntry }) {
-  const [open, setOpen] = useState(Boolean(entry.streaming));
+  const shows = useContext(Shows);
+  const [open, setOpen] = useState(Boolean(entry.streaming) && shows.showReasoning);
   useFoldAll(entry.key, setOpen);
   const words = entry.body.trim().split(/\s+/).length;
+
+  /**
+   * Follow the setting when it is turned over, but not when the row is first drawn.
+   *
+   * A row drawn for the first time keeps its own answer, so a transcript opened with
+   * thinking on is not a wall of it. Turning the setting over is somebody asking for
+   * something now, and it would be a strange key that left the transcript they are looking
+   * at exactly as it was.
+   */
+  const answered = useRef(shows.showReasoning);
+  useEffect(() => {
+    if (answered.current === shows.showReasoning) return;
+    answered.current = shows.showReasoning;
+    setOpen(shows.showReasoning);
+  }, [shows.showReasoning]);
 
   return (
     <div className={`reasoning${open ? ' open' : ''}`}>
@@ -481,7 +502,6 @@ interface TranscriptProps {
    * apart it was read as them already being there and answered with nothing.
    */
   highlight?: { words: string; at: number };
-  /** Whether the model's thinking is shown at all, which ctrl+t turns off (#72). */
   /**
    * Whose timeline this is, when it belongs to a subagent rather than the session.
    *
@@ -524,13 +544,7 @@ export function Transcript({
   // Rebuilt only when the events are, rather than on every render: a streamed reply
   // re-renders this component once per chunk, and the walk costs more the more history is
   // on screen.
-  const all = useMemo(() => toEntries(events, cwd, abandoned, ofAgent), [events, cwd, abandoned, ofAgent]);
-  // Dropped rather than hidden with CSS: thinking is usually longer than the answer it
-  // produced, and the point of turning it off is to stop paying to lay it out.
-  const entries = useMemo(
-    () => (display.showReasoning ? all : all.filter((entry) => entry.kind !== 'reasoning')),
-    [all, display.showReasoning],
-  );
+  const entries = useMemo(() => toEntries(events, cwd, abandoned, ofAgent), [events, cwd, abandoned, ofAgent]);
   /**
    * What is actually drawn, budgeted by how much text it comes to.
    *

@@ -612,27 +612,76 @@ describe('showing or hiding the model thinking', () => {
     event('assistant.message', { messageId: 'm1', content: 'the second one' }, 'e2'),
   ];
 
-  const withReasoning = (reasoning: boolean) =>
-    render(
-      <Transcript
-        events={thought}
-        sessionId="s1"
-        cwd={null}
-        hasOlder={false}
-        loadingOlder={false}
-        onLoadOlder={() => {}}
-        display={{ ...ASSUMED_DISPLAY, showReasoning: reasoning }}
-      />,
-    );
+  const tree = (reasoning: boolean) => (
+    <Transcript
+      events={thought}
+      sessionId="s1"
+      cwd={null}
+      hasOlder={false}
+      loadingOlder={false}
+      onLoadOlder={() => {}}
+      display={{ ...ASSUMED_DISPLAY, showReasoning: reasoning }}
+    />
+  );
+
+  const withReasoning = (reasoning: boolean) => render(tree(reasoning));
 
   it('shows it when it is on', () => {
     withReasoning(true);
     expect(screen.getByText('Thinking')).toBeTruthy();
   });
 
-  it('leaves it out entirely when it is off', () => {
-    withReasoning(false);
-    expect(screen.queryByText('Thinking')).toBeNull();
+  /**
+   * Folded rather than dropped, which is what the CLI does: its own timeline keeps the
+   * `Thought for 12s` line whatever the setting says. Dropped, there was nothing left to
+   * say a turn had reasoned at all, and the transcript read as though history were missing.
+   */
+  it('folds it away rather than dropping it when it is off', () => {
+    const { container } = withReasoning(false);
+
+    expect(screen.getByText('Thinking')).toBeTruthy();
+    expect(container.querySelector('.reasoning-body')).toBeNull();
+  });
+
+  /** The key still has to do something to the transcript the reader is looking at. */
+  it('unfolds what is already drawn when it is turned on', () => {
+    const { container, rerender } = withReasoning(false);
+
+    rerender(tree(true));
+
+    expect(container.querySelector('.reasoning-body')).toBeTruthy();
+  });
+
+  it('folds what is already drawn when it is turned off', () => {
+    const { container, rerender } = withReasoning(true);
+
+    rerender(tree(false));
+
+    expect(container.querySelector('.reasoning-body')).toBeNull();
+  });
+
+  /**
+   * Read back from a log rather than watched arriving, which is the common case. Folded
+   * whatever the setting says: thinking is longer than the answer it produced, and a
+   * transcript that opens with every turn's reasoning spread out is one nobody can scan.
+   */
+  it('leaves thinking read back from a log folded', () => {
+    const { container } = render(
+      <Transcript
+        events={[
+          event('assistant.message', { messageId: 'm1', content: 'the second one', reasoningText: 'weighing two approaches' }, 'e1'),
+        ]}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
+
+    expect(screen.getByText('Thinking')).toBeTruthy();
+    expect(container.querySelector('.reasoning-body')).toBeNull();
   });
 
   /**
@@ -1317,16 +1366,17 @@ describe("what the CLI's settings say to draw", () => {
       />,
     );
 
-  it('leaves the thinking out when the CLI says not to show it', () => {
+  it('folds the thinking away when the CLI says not to show it', () => {
     const { container } = drawn({ showReasoning: false });
 
-    expect(container.querySelector('.reasoning')).toBeNull();
+    expect(container.querySelector('.reasoning')).toBeTruthy();
+    expect(container.querySelector('.reasoning-body')).toBeNull();
   });
 
   it('shows it when the CLI says to', () => {
     const { container } = drawn({});
 
-    expect(container.querySelector('.reasoning')).toBeTruthy();
+    expect(container.querySelector('.reasoning-body')).toBeTruthy();
   });
 
   it('leaves the clock off a message when the CLI says not to show it', () => {
