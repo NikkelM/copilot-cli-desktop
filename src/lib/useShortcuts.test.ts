@@ -13,6 +13,15 @@ const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = 
 
 let on: Mock<(shortcut: Shortcut) => void>;
 
+/** A field inside the message box, which is the one place a question mark is not a character. */
+const inComposer = <T extends HTMLElement>(field: T): T => {
+  const composer = document.createElement('div');
+  composer.setAttribute('data-region', 'composer');
+  composer.append(field);
+  document.body.append(composer);
+  return field;
+};
+
 /**
  * How many times one shortcut was reported.
  *
@@ -178,8 +187,7 @@ describe('useShortcuts', () => {
     // has focus would put the list out of reach almost all of the time.
     it('opens from an empty composer, and does not leave the mark behind', () => {
       renderHook(() => useShortcuts(on));
-      const box = document.createElement('textarea');
-      document.body.append(box);
+      const box = inComposer(document.createElement('textarea'));
 
       const event = press('?', {}, box);
 
@@ -204,9 +212,8 @@ describe('useShortcuts', () => {
     // shortcut that has to ask the DOM is guessing.
     it('asks the caller what has been written rather than the field', () => {
       renderHook(() => useShortcuts(on, () => ''));
-      const box = document.createElement('textarea');
+      const box = inComposer(document.createElement('textarea'));
       box.value = 'the field disagrees';
-      document.body.append(box);
 
       const event = press('?', {}, box);
 
@@ -216,10 +223,27 @@ describe('useShortcuts', () => {
 
     it('leaves the mark alone when the caller says something is written', () => {
       renderHook(() => useShortcuts(on, () => 'why does'));
-      const box = document.createElement('textarea');
-      document.body.append(box);
+      const box = inComposer(document.createElement('textarea'));
 
       const event = press('?', {}, box);
+
+      expect(on).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    });
+
+    /**
+     * The reasoning behind claiming the key is about a message being written. Every other
+     * field in the window is somewhere a question mark is an ordinary character - answering
+     * a question the agent asked with "?" is a thing people do - and the caller's getter
+     * speaks for the composer alone, so an empty composer behind an elicitation was
+     * answering for a box it knew nothing about and swallowing the key.
+     */
+    it('types the mark into a field that is not the composer', () => {
+      renderHook(() => useShortcuts(on, () => ''));
+      const field = document.createElement('input');
+      document.body.append(field);
+
+      const event = press('?', {}, field);
 
       expect(on).not.toHaveBeenCalled();
       expect(event.defaultPrevented).toBe(false);

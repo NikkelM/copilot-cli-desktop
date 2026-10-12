@@ -35,25 +35,31 @@ function typing(target: EventTarget | null): boolean {
 }
 
 /**
- * Whether nothing has been written yet, so a key pressed now is the first character.
+ * Whether this is the first character of a message, so the key is still free to claim.
  *
  * The composer holds the keyboard whenever a session is open, so a shortcut that refuses to
  * fire while a field has focus would be unreachable almost all of the time. A question mark
  * as the first character is a question nobody asks, which is what makes it safe to claim -
  * the same reasoning the CLI applies to its own leading keys.
  *
- * The caller is asked before the field itself, because the caller holds the text and the
- * field is only where it is being shown.
+ * Only in the composer, though. The reasoning is about a message being written, and every
+ * other field in the window is somewhere a question mark is an ordinary character: answering
+ * a question the agent asked with "?" is a thing people do. The caller's getter speaks for
+ * the composer alone, so consulting it about another field asked the wrong box whether it
+ * was empty - and an empty composer behind an elicitation swallowed the key (#130 era bug).
  */
-function nothingWritten(target: EventTarget | null, writing?: () => string): boolean {
+function firstInComposer(target: EventTarget | null, writing?: () => string): boolean {
+  const field = target as (HTMLElement & { value?: string }) | null;
+  if (!field?.closest?.('[data-region="composer"]')) return false;
+
+  // The caller holds the text and the field is only where it is being shown.
   if (writing) return writing().length === 0;
 
-  const field = target as HTMLInputElement | HTMLTextAreaElement | null;
   // A menu has a value but nothing is being typed into it, so it is never "the first
   // character" of anything.
-  if (field?.tagName !== 'INPUT' && field?.tagName !== 'TEXTAREA') return false;
+  if (field.tagName !== 'INPUT' && field.tagName !== 'TEXTAREA') return false;
 
-  return field.value.length === 0;
+  return (field.value ?? '').length === 0;
 }
 
 /**
@@ -69,8 +75,9 @@ function allowed(id: Shortcut, event: KeyboardEvent, writing?: () => string): bo
   if (id === 'interrupt') return !window.getSelection()?.toString();
 
   // A question mark as the first character of a message is one nobody types, so it is
-  // claimed - and swallowed, rather than left in the box behind the list.
-  if (id === 'help') return !typing(event.target) || nothingWritten(event.target, writing);
+  // claimed - and swallowed, rather than left in the box behind the list. Anywhere else it
+  // is an ordinary character and belongs to whatever is being typed into.
+  if (id === 'help') return !typing(event.target) || firstInComposer(event.target, writing);
 
   return true;
 }
