@@ -131,7 +131,7 @@ export function Subagents({
         <header className="subagents-header">
           <h2>Subagents</h2>
           <button type="button" className="subagents-close" onClick={onClose} aria-label="Close">
-            ×
+            ✕
           </button>
         </header>
 
