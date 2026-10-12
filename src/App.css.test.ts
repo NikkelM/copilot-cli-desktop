@@ -1173,15 +1173,46 @@ describe('the controls on a subagent row', () => {
     expect(shared()).toMatch(/width:\s*calc\(/);
   });
 
-  /** What made them differ: a size and a line height set on one of them and not the other. */
-  it.each(['.subagent-keep {', '.subagent-dismiss {'])('leaves %s nothing that changes its shape', (selector) => {
+  /**
+   * What made them differ: a line height and a padding set on one and not the other, back
+   * when nothing else held their boxes equal. Size is no longer among them - see below.
+   */
+  it.each(['.subagent-keep {', '.subagent-dismiss {'])('leaves %s nothing that changes its box', (selector) => {
     const at = css.indexOf(`\n${selector}`);
     expect(at, `${selector} should still be styled`).toBeGreaterThan(-1);
     const rule = css.slice(at, css.indexOf('\n}', at));
 
-    for (const property of ['font-size', 'line-height', 'padding', 'width']) {
+    for (const property of ['line-height', 'padding', 'width']) {
       expect(rule, `${selector} should take its ${property} from the pair`).not.toContain(`${property}:`);
     }
+  });
+
+  /**
+   * The star keeps the pair's size and the cross is stepped down from it.
+   *
+   * A full cross drawn at the star's size is the heavier of the two marks, and the control
+   * that gets rid of a row should not be the louder one. Only the ink changes: the box is
+   * the pair's and the row stretches both, so the two still sit on one line.
+   *
+   * Pinned as a relationship rather than as two names, so moving either one up or down the
+   * scale is free and equalising them is not.
+   */
+  it('draws the cross smaller than the star', () => {
+    const multiplier = (step: string) => {
+      const found = new RegExp(`--font-${step}:\\s*calc\\(var\\(--font-base\\) \\* ([\\d.]+)\\)`).exec(css);
+      expect(found, `--font-${step} should still be a step on the scale`).not.toBeNull();
+      return Number(found![1]);
+    };
+
+    const sizeIn = (rule: string) => {
+      const at = css.indexOf(`\n${rule}`);
+      expect(at, `${rule} should still be styled`).toBeGreaterThan(-1);
+      const found = /font-size:\s*var\(--font-([a-z]+)\)/.exec(css.slice(at, css.indexOf('\n}', at)));
+      expect(found, `${rule} should set a size from the scale`).not.toBeNull();
+      return multiplier(found![1]);
+    };
+
+    expect(sizeIn('.subagent-item .subagent-dismiss {')).toBeLessThan(sizeIn('.subagent-keep,'));
   });
 
   /**

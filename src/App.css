@@ -411,6 +411,22 @@ body {
   cursor: pointer;
 }
 
+/*
+ * The cross alone, a step down the scale from the star.
+ *
+ * A full cross drawn at the star's size is the heavier of the two marks, and the control
+ * that gets rid of a row should not be the louder one: measured in the app's own font, the
+ * pair's size inks the cross at 11x11px against the star's 13x13, and a step down inks it
+ * at 9x9.
+ *
+ * Only the ink changes. The box is still the pair's - the width, the padding and the line
+ * height above - and the row stretches both to its own height, so a smaller glyph is a
+ * smaller glyph centred in the same square rather than a shorter button (#260).
+ */
+.subagent-item .subagent-dismiss {
+  font-size: var(--font-xs);
+}
+
 .subagent-item:hover .subagent-dismiss,
 .subagent-dismiss:focus-visible {
   opacity: 1;
