@@ -1154,6 +1154,37 @@ describe('the notes grip', () => {
  * A control nobody can see is one nobody tries, and the whole point of this one is that it
  * can be typed into. It was drawn as plain text that only became a box when pointed at.
  */
+/**
+ * The two controls on a subagent row (#260).
+ *
+ * The star and the cross were a pair of buttons with their own padding, their own font size
+ * and one of them its own line height, so they came out at different heights from each other
+ * and from the name beside them. They share a box now, as the session rows' own controls do.
+ */
+describe('the controls on a subagent row', () => {
+  const shared = () => {
+    const found = /\.subagent-keep,\s*\.subagent-dismiss \{/.exec(css);
+    expect(found, 'the two should still be shaped together').not.toBeNull();
+    return css.slice(found!.index, css.indexOf('\n}', found!.index));
+  };
+
+  it('gives both the same box, so the glyphs sit on one line', () => {
+    expect(shared()).toContain('place-items: center');
+    expect(shared()).toMatch(/width:\s*calc\(/);
+  });
+
+  /** What made them differ: a size and a line height set on one of them and not the other. */
+  it.each(['.subagent-keep {', '.subagent-dismiss {'])('leaves %s nothing that changes its shape', (selector) => {
+    const at = css.indexOf(`\n${selector}`);
+    expect(at, `${selector} should still be styled`).toBeGreaterThan(-1);
+    const rule = css.slice(at, css.indexOf('\n}', at));
+
+    for (const property of ['font-size', 'line-height', 'padding', 'width']) {
+      expect(rule, `${selector} should take its ${property} from the pair`).not.toContain(`${property}:`);
+    }
+  });
+});
+
 describe('the match number in the find bar', () => {
   const rule = () => {
     const at = css.indexOf('.find-at {');

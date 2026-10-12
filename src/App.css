@@ -373,14 +373,31 @@ body {
 /* Only on hover or focus: a row of crosses down the sidebar would read as a list of things
    to get rid of rather than a list of work. */
 .subagent-dismiss {
+  color: var(--text-muted);
+  opacity: 0;
+}
+
+/*
+ * The two controls on a subagent row, shaped alike so they line up.
+ *
+ * Equal boxes with the glyph centred in each, which is what the session rows above them do.
+ * They were a pair of buttons with their own padding, their own font size and one of them
+ * its own line height, so the star and the cross came out at different heights from each
+ * other and from the name beside them, and the row read as crooked (#260).
+ */
+.subagent-keep,
+.subagent-dismiss {
   flex: none;
-  padding: 0 10px;
+  display: grid;
+  place-items: center;
+  width: calc(var(--font-base) * 1.5);
+  padding: 0;
   border: none;
   background: none;
-  color: var(--text-muted);
   font: inherit;
+  font-size: var(--font-md);
+  line-height: 1;
   cursor: pointer;
-  opacity: 0;
 }
 
 .subagent-item:hover .subagent-dismiss,
@@ -6744,16 +6761,11 @@ pre.fatal,
   font-size: var(--font-md);
 }
 
-/* Keeping a delegated task, which stops it ageing out of the list. Drawn like the dismiss
-   beside it - both are things done to a row rather than parts of it. */
+/* Keeping a delegated task, which stops it ageing out of the list. Shaped with the dismiss
+   beside it, up where the pair are declared together - both are things done to a row rather
+   than parts of it, and they only line up if they are given the same box. */
 .subagent-keep {
-  padding: 0 4px;
-  border: none;
-  background: none;
   color: var(--text-muted);
-  font-size: var(--font-md);
-  line-height: 1;
-  cursor: pointer;
   opacity: 0.35;
 }
 
