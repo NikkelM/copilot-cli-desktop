@@ -1183,6 +1183,21 @@ describe('the controls on a subagent row', () => {
       expect(rule, `${selector} should take its ${property} from the pair`).not.toContain(`${property}:`);
     }
   });
+
+  /**
+   * Hover and selection belong to the row, not to the button inside it. Those two controls
+   * sit outside that button, so lighting the button alone left them in a darker strip at the
+   * end of the row and drew a seam down the list.
+   */
+  it('lights the whole row rather than the button inside it', () => {
+    expect(css).toMatch(/\.subagent-item\[aria-selected='true'\] \{[^}]*background:/);
+    expect(css).toMatch(/\.subagent-item:hover \{[^}]*background:/);
+  });
+
+  it('leaves the button unlit, so there is nothing to draw a seam', () => {
+    expect(css, 'the row carries the mark now').not.toContain('.subagent.selected');
+    expect(css).not.toMatch(/\.subagent:hover \{[^}]*background:/);
+  });
 });
 
 describe('the match number in the find bar', () => {

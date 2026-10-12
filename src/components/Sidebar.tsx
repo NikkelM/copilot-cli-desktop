@@ -1357,7 +1357,7 @@ function Delegated({
           >
             <button
               type="button"
-              className={`subagent${entry.agentId === selectedSubagentId ? ' selected' : ''}`}
+              className="subagent"
               tabIndex={-1}
               onClick={open}
               title={`Open what ${entry.name} did`}

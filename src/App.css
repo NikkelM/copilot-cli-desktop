@@ -331,6 +331,27 @@ body {
   align-items: stretch;
 }
 
+/*
+ * Hover and selection belong to the row, not to the button inside it.
+ *
+ * The star and the cross sit outside that button, so lighting the button alone left them in
+ * a darker strip at the end of the row and drew a seam down the list - which is the same
+ * thing the session rows above already say about their own pair of controls.
+ */
+.subagent-item:hover {
+  background: var(--bg-raised);
+}
+
+.subagent-item[aria-selected='true'] {
+  background: #1f2937;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.subagent-item:hover .subagent,
+.subagent-item[aria-selected='true'] .subagent {
+  color: var(--text);
+}
+
 .subagent {
   display: flex;
   flex: 1;
@@ -346,16 +367,6 @@ body {
   font-size: var(--font-sm);
   text-align: left;
   cursor: pointer;
-}
-
-.subagent:hover {
-  background: var(--bg-raised);
-  color: var(--text);
-}
-
-.subagent.selected {
-  background: var(--bg-selected, rgba(110, 118, 129, 0.18));
-  color: var(--text);
 }
 
 .subagent-name {
@@ -7493,7 +7504,9 @@ pre.fatal,
 .changes-row:focus,
 .repo-branch-item:focus,
 .subagents-open:focus,
-.subagent:focus,
+/* The row rather than the button inside it: the row is the stop the arrow keys land on, and
+   the button is out of the tab order so this never matched anything. */
+.subagent-item:focus,
 /* The transcript's own folds: a tool call, the reasoning above it, and what a turn changed.
    Full-width rows, read as a list, and reached by Tab like any other. */
 .tool-head:focus,

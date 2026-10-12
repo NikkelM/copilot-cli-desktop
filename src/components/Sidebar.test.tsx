@@ -712,9 +712,14 @@ describe('Sidebar subagents', () => {
     });
   });
 
+  /**
+   * On the row rather than on the button inside it. The row is what carries the mark for a
+   * screen reader and for the arrow-key cursor, and what the background has to cover: the
+   * star and the cross sit outside that button (#260).
+   */
   it('marks the one being read', () => {
     const { container } = shown({ subagents: [watched()], selectedSubagentId: 'a1' });
-    expect(container.querySelector('.subagent.selected')).toBeTruthy();
+    expect(container.querySelector('.subagent-item[aria-selected="true"]')).toBeTruthy();
   });
 
   it('lets one be taken off the list', () => {
