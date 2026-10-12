@@ -48,6 +48,9 @@ import type {
   SessionAgent,
   SessionContextUsage,
   SessionModel,
+  SessionAutoTier,
+  AutoTier,
+  AutoTierOutcome,
   SessionMode,
   SessionUsage,
   ShellResult,
@@ -528,6 +531,28 @@ export function setSessionModel(
   contextTier?: ContextTier,
 ): Promise<void> {
   return request('sessions.setModel', { sessionId, model, reasoningEffort, contextTier });
+}
+
+/**
+ * How the automatic model routes, for a session that is loaded (#215).
+ *
+ * Null for one that is not, which is the whole answer rather than a failure: no log records
+ * the tier, so a cold session cannot be asked without starting it - and browsing never does.
+ */
+export async function sessionAutoTier(sessionId: string): Promise<SessionAutoTier | null> {
+  const { tier } = await request('sessions.autoTier', { sessionId });
+  return tier;
+}
+
+/**
+ * Ask for a different routing preference. Null goes back to the provider's default.
+ *
+ * `pending` means accepted rather than applied: it commits on a later turn that uses the
+ * `auto` model, and can fail then.
+ */
+export async function setSessionAutoTier(sessionId: string, tier: AutoTier | null): Promise<AutoTierOutcome> {
+  const { outcome } = await request('sessions.setAutoTier', { sessionId, tier });
+  return outcome;
 }
 
 /** How a session is working, read from its log when it is cold. Costs no Copilot process. */

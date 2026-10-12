@@ -300,6 +300,39 @@ export interface SessionModel {
 }
 
 /**
+ * How the automatic model routes, for a session running on `auto` (#215).
+ *
+ * `fast` is left out of the four the runtime accepts. The SDK calls it an integrator-only
+ * latency preset and says in as many words that it is not a first-party product preference,
+ * so offering it beside the three that are would misrepresent what it is.
+ */
+export type AutoTier = 'efficiency' | 'balance' | 'intelligence';
+
+/**
+ * What a loaded session says about its Auto routing.
+ *
+ * Only a loaded one can say. No event carries the tier - checked across the twelve largest
+ * logs on this machine, where every mention of one is incidental text inside tool output -
+ * so unlike the model, which a session's log names, this is unanswerable for a cold session
+ * and must never be worth resuming one to find out.
+ *
+ * `pending` is the part that makes this unlike every other choice in the picker. Setting a
+ * tier does not take effect when it is set: the runtime commits it only on a later turn that
+ * uses the `auto` model, and it can still fail then. So what was asked for and what is in
+ * force are two different facts, and a picker that showed only one of them would be claiming
+ * something it does not know.
+ */
+export interface SessionAutoTier {
+  /** The preference in force, absent where the provider's own default is. */
+  current?: AutoTier;
+  /** Asked for and not yet committed. Null is a pending return to the default. */
+  pending?: AutoTier | null;
+}
+
+/** Whether a tier was already in force, or has been accepted and awaits a turn to commit. */
+export type AutoTierOutcome = 'unchanged' | 'pending';
+
+/**
  * How a session is working, mirroring the SDK's own union.
  *
  * `interactive` is the ordinary back-and-forth and is what a session runs in unless told
@@ -1878,6 +1911,24 @@ export interface SidecarRequests {
     result: void;
   };
   /**
+   * How the automatic model routes for a loaded session (#215).
+   *
+   * Null where the session is not loaded, which is not a failure and never a reason to load
+   * one: no log records the tier, so a cold session has no answer to give and browsing it
+   * must not start a process to find one.
+   */
+  'sessions.autoTier': { params: { sessionId: string }; result: { tier: SessionAutoTier | null } };
+  /**
+   * Ask for a different routing preference. Null returns to the provider's own default.
+   *
+   * Costs a resume, as changing the model does, because the choice belongs to the running
+   * session. The answer says whether it was already in force or is waiting for a turn.
+   */
+  'sessions.setAutoTier': {
+    params: { sessionId: string; tier: AutoTier | null };
+    result: { outcome: AutoTierOutcome };
+  };
+  /**
    * How a session is working. Read from the log when it is not loaded, so asking is cheap.
    *
    * Always an answer rather than null: a session with nothing to say about its mode is in
@@ -2026,6 +2077,8 @@ export const SIDECAR_METHODS = [
   'sessions.usage',
   'sessions.model',
   'sessions.setModel',
+  'sessions.autoTier',
+  'sessions.setAutoTier',
   'sessions.mode',
   'sessions.setMode',
   'runtime.status',

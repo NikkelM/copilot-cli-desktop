@@ -14,6 +14,8 @@ import {
 import type {  McpServerState,
   AskedBy,
   Attachment,
+  AutoTier,
+  AutoTierOutcome,
   CommandOutcome,
   ContextTier,
   ElicitationAction,
@@ -27,6 +29,7 @@ import type {  McpServerState,
   RewindPreview,
   RewindResult,
   RewindUnavailable,
+  SessionAutoTier,
   SessionContextUsage,
   SessionUsage,
   SessionMode,
@@ -2261,6 +2264,47 @@ export class SessionRuntime {
       ...(reasoningEffort ? { reasoningEffort: reasoningEffort as never } : {}),
       ...(contextTier ? { contextTier } : {}),
     });
+  }
+
+  /**
+   * How the automatic model routes, from the session itself (#215).
+   *
+   * Only a loaded one, and never a reason to load one: no event records the tier, so there
+   * is nothing in a cold session's log to read and browsing must not cost a process. The
+   * context meter already lives with the same split, and for the same reason.
+   *
+   * What is in force and what has been asked for are reported separately, because setting a
+   * tier does not apply it: the runtime commits it on a later turn that uses `auto`.
+   */
+  async autoTier(sessionId: string): Promise<SessionAutoTier | null> {
+    const live = this.loaded.get(sessionId)?.session;
+    if (!live) return null;
+
+    const current = await live.rpc.model.getCurrent();
+
+    return {
+      ...(current.autoTier ? { current: current.autoTier as AutoTier } : {}),
+      // Told apart from absent on purpose: null is a pending return to the provider's
+      // default, which is a request like any other and not the lack of one.
+      ...(current.pendingAutoTier !== undefined
+        ? { pending: current.pendingAutoTier as AutoTier | null }
+        : current.activatingAutoTier !== undefined
+          ? { pending: current.activatingAutoTier as AutoTier | null }
+          : {}),
+    };
+  }
+
+  /**
+   * Ask for a different routing preference.
+   *
+   * Costs a resume, like changing the model, because the choice belongs to the running
+   * session. `pending` means accepted rather than applied - the reader is told as much,
+   * since every other choice in that menu takes effect at once.
+   */
+  async setAutoTier(sessionId: string, tier: AutoTier | null): Promise<AutoTierOutcome> {
+    const session = await this.ensureSession(sessionId);
+    const { status } = await session.setAutoTier(tier);
+    return status === 'unchanged' ? 'unchanged' : 'pending';
   }
 
   /**

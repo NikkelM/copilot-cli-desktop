@@ -319,6 +319,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 
     'sessions.setModel': ({ sessionId, model, reasoningEffort, contextTier }) =>
       runtime.setModel(sessionId, model, reasoningEffort, contextTier),
+    'sessions.autoTier': async ({ sessionId }) => ({ tier: await runtime.autoTier(sessionId) }),
+    'sessions.setAutoTier': async ({ sessionId, tier }) => ({
+      outcome: await runtime.setAutoTier(sessionId, tier),
+    }),
     'sessions.mode': async ({ sessionId }) => ({ mode: await runtime.mode(sessionId) }),
     'sessions.setMode': ({ sessionId, mode }) => runtime.setMode(sessionId, mode),
 

@@ -94,6 +94,7 @@ function makeSession(id: string) {
     },
     send: vi.fn(async (_options: { prompt: string; mode?: string }) => `msg-${id}`),
     setModel: vi.fn(async (_model: string, _options?: Record<string, unknown>) => undefined),
+    setAutoTier: vi.fn(async (_tier: string | null) => ({ status: 'pending' as 'pending' | 'unchanged' })),
     rpc: {
       history: {
         listRewindPoints: vi.fn(
@@ -1790,6 +1791,86 @@ describe('how full a session window is', () => {
     sessions.get('s1')!.rpc.metadata.getContextAttribution.mockResolvedValueOnce({});
 
     expect(await runtime.contextUsage('s1')).toBeNull();
+  });
+});
+
+/**
+ * No event carries the Auto routing preference - checked across the twelve largest logs on
+ * this machine, where every mention of one is incidental text inside tool output. So unlike
+ * the model, which a session's log names, this can only be had from a loaded session, and
+ * browsing one must never be what starts a process (#215).
+ */
+describe('how the automatic model routes', () => {
+  it('reports the preference in force for a loaded session', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.model.getCurrent.mockResolvedValueOnce({ modelId: 'auto', autoTier: 'intelligence' });
+
+    expect(await runtime.autoTier('s1')).toEqual({ current: 'intelligence' });
+  });
+
+  /**
+   * What was asked for and what is in force are two facts. Setting a tier does not apply it:
+   * the runtime commits it on a later turn that uses `auto`, so a picker showing only one of
+   * them would claim something it does not know.
+   */
+  it('keeps a preference waiting to commit apart from the one in force', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.model.getCurrent.mockResolvedValueOnce({
+      modelId: 'auto',
+      autoTier: 'balance',
+      pendingAutoTier: 'intelligence',
+    });
+
+    expect(await runtime.autoTier('s1')).toEqual({ current: 'balance', pending: 'intelligence' });
+  });
+
+  /** Null is a pending return to the provider's default, which is a request, not the lack of one. */
+  it('keeps a pending return to the default', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.rpc.model.getCurrent.mockResolvedValueOnce({
+      modelId: 'auto',
+      autoTier: 'balance',
+      pendingAutoTier: null,
+    });
+
+    expect(await runtime.autoTier('s1')).toEqual({ current: 'balance', pending: null });
+  });
+
+  it('says nothing for a session that is not loaded', async () => {
+    const { runtime, sessions } = makeRuntime();
+
+    expect(await runtime.autoTier('never-opened')).toBeNull();
+    expect(sessions.has('never-opened')).toBe(false);
+  });
+
+  // Asking is what the picker does for whichever session is open, so it must never be the
+  // thing that starts a Copilot process.
+  it('does not resume a cold session to answer', async () => {
+    const { runtime, client } = makeRuntime();
+
+    await runtime.autoTier('cold');
+
+    expect(client.start).not.toHaveBeenCalled();
+  });
+
+  it('asks the session for a different preference', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+
+    expect(await runtime.setAutoTier('s1', 'efficiency')).toBe('pending');
+    expect(sessions.get('s1')!.setAutoTier).toHaveBeenCalledWith('efficiency');
+  });
+
+  /** Already in force is a different answer from accepted, and the reader is told which. */
+  it('passes on that the preference was already in force', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('s1', 'hello');
+    sessions.get('s1')!.setAutoTier.mockResolvedValueOnce({ status: 'unchanged' });
+
+    expect(await runtime.setAutoTier('s1', 'balance')).toBe('unchanged');
   });
 });
 
