@@ -1941,7 +1941,7 @@ export default function App() {
           <>
             <header className="main-header">
               <h1>{subagents.open.name}</h1>
-              <div className="header-row">
+              <div className="header-row subagent-head">
                 <button type="button" className="changes-action" onClick={subagents.close}>
                   Back to the session
                 </button>

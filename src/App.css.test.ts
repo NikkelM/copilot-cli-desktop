@@ -1216,6 +1216,18 @@ describe('the state of a delegated run', () => {
   it('is set like the button it stands next to, so the pair reads as one line', () => {
     expect(sizeOf('.subagent-state')).toBe(sizeOf('.changes-action'));
   });
+
+  /**
+   * The button's border and padding make its box taller than the bare word beside it, so
+   * centring the boxes puts the word that has no border low. Baselines are what the eye
+   * reads as level.
+   */
+  it('lines the pair up on the baseline rather than through the middle', () => {
+    const at = css.indexOf('\n.subagent-head {');
+    expect(at, 'the row should still be styled').toBeGreaterThan(-1);
+
+    expect(css.slice(at, css.indexOf('\n}', at))).toContain('align-items: baseline');
+  });
 });
 
 describe('the match number in the find bar', () => {

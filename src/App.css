@@ -821,6 +821,17 @@ body {
   flex-wrap: wrap;
 }
 
+/*
+ * The way back out of a delegated run, and how the run went.
+ *
+ * Lined up on the baseline rather than through the middle. Two bits of text read as level
+ * when their baselines match, and the button's border and padding make its box taller than
+ * the bare word beside it - so centring the boxes puts the word that has no border low.
+ */
+.subagent-head {
+  align-items: baseline;
+}
+
 .main-header h1 {
   margin: 0;
   font-size: var(--font-4xl);
