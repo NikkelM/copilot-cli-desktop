@@ -454,6 +454,15 @@ function latestAgentIn(events: TranscriptEvent[]): { agent: SessionAgent | null 
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index];
 
+    /*
+     * Only the session's own choice. A delegated run announces the agent it was given on
+     * this same event, and those outnumber the session's by two orders of magnitude: across
+     * the 214 logs on this machine, 243 of the 245 selections carry an agent id and are a
+     * run saying what it is. Reading them put the last subagent's name in the session's
+     * picker, which is the same mistake the model picker was making (#263).
+     */
+    if (event.agentId) continue;
+
     if (event.type === 'subagent.deselected') return { agent: null };
     if (event.type !== 'subagent.selected') continue;
 

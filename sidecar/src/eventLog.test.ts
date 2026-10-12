@@ -567,6 +567,43 @@ describe('lastAgent', () => {
     expect((await lastAgent('s1'))?.name).toBe('third');
   });
 
+  /**
+   * A delegated run announces the agent it was given on this same event. Across the 214 logs
+   * on this machine 243 of the 245 selections are a run saying what it is, and only two are
+   * the session's own choice - so reading them put the last subagent in the session's picker.
+   */
+  it('ignores the agent a delegated run announces', async () => {
+    const byRun = JSON.stringify({
+      type: 'subagent.selected',
+      agentId: 'a1',
+      data: { agentName: 'nikkelm-blog-writer', agentDisplayName: 'nikkelm-blog-writer' },
+    });
+
+    writeLog('s1', [selected('deep-audit', 'Deep Audit'), line(1), byRun, line(2)]);
+    const { lastAgent } = await loadEventLog();
+
+    expect(await lastAgent('s1')).toEqual({ name: 'deep-audit', displayName: 'Deep Audit' });
+  });
+
+  /** A run ending its own selection is not the session going back to the default agent. */
+  it('ignores a delegated run being deselected', async () => {
+    const byRun = JSON.stringify({ type: 'subagent.deselected', agentId: 'a1', data: {} });
+
+    writeLog('s1', [selected('deep-audit', 'Deep Audit'), line(1), byRun, line(2)]);
+    const { lastAgent } = await loadEventLog();
+
+    expect((await lastAgent('s1'))?.name).toBe('deep-audit');
+  });
+
+  it('says nothing for a session where only runs chose an agent', async () => {
+    const byRun = JSON.stringify({ type: 'subagent.selected', agentId: 'a1', data: { agentName: 'explore' } });
+
+    writeLog('s1', [line(1), byRun, line(2)]);
+    const { lastAgent } = await loadEventLog();
+
+    expect(await lastAgent('s1')).toBeNull();
+  });
+
   // The distinction the wrapper in latestAgentIn exists for: without it the deselection reads
   // as nothing to say and the scan carries on to the selection it undid.
   it('treats a later deselection as the default agent rather than a miss', async () => {
