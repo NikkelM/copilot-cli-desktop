@@ -6,12 +6,14 @@ import type { ModelChoice } from '../../shared/protocol';
 
 const listModels = vi.fn();
 const sessionModel = vi.fn();
+const sessionAutoTier = vi.fn(async (_id: string) => null);
 const setSessionModel = vi.fn();
 
 vi.mock('./sidecar', () => ({
   listModels: () => listModels(),
   sessionModel: (id: string) => sessionModel(id),
   setSessionModel: (...args: unknown[]) => setSessionModel(...args),
+  sessionAutoTier: (id: string) => sessionAutoTier(id),
 }));
 
 const catalogue: ModelChoice[] = [
@@ -155,7 +157,33 @@ describe('useModel', () => {
 
       act(() => result.current.choose({ model: 'gpt-5.4', reasoningEffort: 'high', contextTier: 'long_context' }));
 
-      expect(setSessionModel).toHaveBeenCalledWith('s1', 'gpt-5.4', 'high', 'long_context');
+      // The routing preference goes undefined rather than omitted: the runtime refuses it
+      // against anything but `auto`, so a model chosen without one must send nothing.
+      expect(setSessionModel).toHaveBeenCalledWith('s1', 'gpt-5.4', 'high', 'long_context', undefined);
+    });
+
+    /** Carried with the model because that is the only way the runtime accepts it (#215). */
+    it('sends a routing preference chosen alongside auto', async () => {
+      const useModel = await loadUseModel();
+      const { result } = renderHook(() => useModel('s1', () => {}));
+
+      act(() => result.current.choose({ model: 'auto', autoTier: 'intelligence' }));
+
+      expect(setSessionModel).toHaveBeenCalledWith('s1', 'auto', undefined, undefined, 'intelligence');
+    });
+
+    /**
+     * Every other choice here takes effect on the next message. This one the runtime only
+     * records, committing it on a later turn that uses `auto` - so it is shown as asked for
+     * rather than as done.
+     */
+    it('marks a routing preference as waiting rather than chosen', async () => {
+      const useModel = await loadUseModel();
+      const { result } = renderHook(() => useModel('s1', () => {}));
+
+      act(() => result.current.choose({ model: 'auto', autoTier: 'efficiency' }));
+
+      expect(result.current.autoTier?.pending).toBe('efficiency');
     });
 
     // Switching resumes the session, which takes seconds; the header should not sit on the

@@ -5,9 +5,11 @@ import { credits, tokens } from '../lib/units';
 import { FloatingMenu } from './FloatingMenu';
 import { ChevronIcon } from './Icons';
 import type {
+  AutoTier,
   ContextTier,
   ModelChoice,
   ReasoningEffort,
+  SessionAutoTier,
   SessionContextUsage,
   SessionModel,
 } from '../../shared/protocol';
@@ -16,7 +18,18 @@ export interface ModelChoiceMade {
   model: string;
   reasoningEffort?: ReasoningEffort;
   contextTier?: ContextTier;
+  /** How `auto` should route. Carried with the model because the runtime takes it that way. */
+  autoTier?: AutoTier | null;
 }
+
+/**
+ * The routing preferences offered, which is three of the four the runtime takes.
+ *
+ * `fast` is left out: the SDK calls it an integrator-only latency preset and says it is not
+ * a first-party product preference, so putting it beside the three that are would misreport
+ * what it is.
+ */
+const AUTO_TIERS: readonly AutoTier[] = ['efficiency', 'balance', 'intelligence'];
 
 interface ModelPickerProps {
   /** What the session runs on: null when its log never said, undefined until it is read. */
@@ -25,6 +38,14 @@ interface ModelPickerProps {
   models: ModelChoice[] | null;
   /** How full the window is. Null for a session the runtime is not holding, which has no window. */
   usage: SessionContextUsage | null;
+  /**
+   * How auto routes, for a loaded session (#215).
+   *
+   * Null where there is no session to ask, and absent where there is no session at all -
+   * the same picker chooses the defaults for sessions not yet made, and a routing
+   * preference belongs to a running session rather than to a choice about future ones.
+   */
+  autoTier?: SessionAutoTier | null;
   /** Why the catalogue could not be fetched, if it could not. */
   failed: string | null;
   /** Refresh the catalogue. Costs a running server, so it waits for the picker to open. */
@@ -78,6 +99,7 @@ export function ModelPicker({
   current,
   models,
   usage,
+  autoTier = null,
   failed,
   onOpen,
   onChoose,
@@ -161,6 +183,7 @@ export function ModelPicker({
               key={model.id}
               model={model}
               current={current}
+              autoTier={autoTier}
               onChoose={onChoose}
               onDone={close}
               onLookAt={() => setHovered(model.id)}
@@ -224,12 +247,14 @@ function Prices({ model }: { model: ModelChoice | undefined }) {
 function ModelRow({
   model,
   current,
+  autoTier,
   onChoose,
   onDone,
   onLookAt,
 }: {
   model: ModelChoice;
   current: SessionModel | null | undefined;
+  autoTier: SessionAutoTier | null;
   onChoose: (choice: ModelChoiceMade) => void;
   onDone: () => void;
   onLookAt: () => void;
@@ -250,6 +275,16 @@ function ModelRow({
   const [tier, setTier] = useState<ContextTier>(
     model.contexts.some((context) => context.tier === wantedTier) ? wantedTier : 'default',
   );
+  /**
+   * Which way auto should route, starting from whatever the session asked for last.
+   *
+   * A pending request beats the preference in force, because it is the newer of the two and
+   * the one the reader made: showing the old one under a request they have already given
+   * would read as the request having been ignored.
+   */
+  const [routing, setRouting] = useState<AutoTier | undefined>(
+    () => autoTier?.pending ?? autoTier?.current ?? undefined,
+  );
 
   return (
     // Focus does what the pointer does, so the price follows a reader using the keyboard.
@@ -264,7 +299,15 @@ function ModelRow({
         role="option"
         aria-selected={chosen}
         onClick={() => {
-          onChoose({ model: model.id, reasoningEffort: effort, contextTier: tier });
+          onChoose({
+            model: model.id,
+            reasoningEffort: effort,
+            contextTier: tier,
+            // Sent only where it means something, and only where it has been chosen: the
+            // runtime refuses it against any other model, and sending it unasked would make
+            // selecting auto a routing change nobody made.
+            ...(model.id === 'auto' && routing ? { autoTier: routing } : {}),
+          });
           onDone();
         }}
       >
@@ -305,6 +348,30 @@ function ModelRow({
               {tokens(context.maxPromptTokens)}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Only on auto, which is the only model the runtime accepts a routing preference
+          against, and only where there is a session to ask: the tier is in no log, so a
+          cold one has nothing to say and is not worth starting to find out (#215). */}
+      {model.id === 'auto' && (
+        <div className="model-line">
+          <span className="model-line-label">Routing</span>
+          {AUTO_TIERS.map((level) => (
+            <button
+              type="button"
+              key={level}
+              className={routing === level ? 'model-option chosen' : 'model-option'}
+              aria-pressed={routing === level}
+              onClick={() => setRouting(level)}
+              aria-label={`Auto routing for ${level}`}
+            >
+              {level}
+            </button>
+          ))}
+          {/* Said rather than drawn as done. The runtime records this one and commits it on a
+              later turn that uses auto, so until that turn it is a request. */}
+          {autoTier?.pending !== undefined && <span className="model-note">waiting for the next prompt</span>}
         </div>
       )}
     </div>

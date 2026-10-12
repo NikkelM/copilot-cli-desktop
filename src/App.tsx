@@ -2119,6 +2119,7 @@ export default function App() {
                   />
                   <ModelPicker
                     current={model.current}
+                    autoTier={model.autoTier}
                     models={model.models}
                     usage={contextUsage.usage}
                     failed={model.failed}

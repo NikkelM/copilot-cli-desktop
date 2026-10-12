@@ -528,8 +528,90 @@ describe('ModelPicker', () => {
     picker();
     await openMenu();
 
+    // Auto offers no efforts and one context, so neither of those lines belongs to it. Its
+    // routing line does, which is the one line it has (#215).
     const row = screen.getByRole('option', { name: /Auto/ }).closest('.model-row')!;
-    expect(row.querySelectorAll('.model-line')).toHaveLength(0);
+    const lines = [...row.querySelectorAll('.model-line')].map((line) => line.textContent);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('Routing');
+  });
+
+  describe('how auto routes', () => {
+    /** The runtime refuses a routing preference against any other model. */
+    it('offers it on auto alone', async () => {
+      picker();
+      await openMenu();
+
+      const other = screen.getByRole('option', { name: /Claude Opus 5/ }).closest('.model-row')!;
+      expect([...other.querySelectorAll('.model-line')].map((l) => l.textContent).join()).not.toContain('Routing');
+    });
+
+    /**
+     * Three of the four the runtime takes. The SDK calls `fast` an integrator-only latency
+     * preset and says it is not a first-party product preference.
+     */
+    it('offers the three that are product preferences', async () => {
+      picker();
+      await openMenu();
+
+      const row = screen.getByRole('option', { name: /Auto/ }).closest('.model-row')!;
+      const offered = [...row.querySelectorAll('.model-option')].map((option) => option.textContent);
+
+      expect(offered).toEqual(['efficiency', 'balance', 'intelligence']);
+      expect(offered, 'fast is not a preference to offer beside the others').not.toContain('fast');
+    });
+
+    it('sends the preference with the model, which is how the runtime takes it', async () => {
+      const onChoose = vi.fn();
+      picker({ onChoose });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Auto routing for intelligence' }));
+      await userEvent.click(screen.getByRole('option', { name: /Auto/ }));
+
+      expect(onChoose).toHaveBeenCalledWith(expect.objectContaining({ model: 'auto', autoTier: 'intelligence' }));
+    });
+
+    /** Untouched, it must send nothing: an unasked preference is not a choice to make. */
+    it('sends none where none was chosen', async () => {
+      const onChoose = vi.fn();
+      picker({ onChoose });
+      await openMenu();
+
+      await userEvent.click(screen.getByRole('option', { name: /Auto/ }));
+
+      expect(onChoose.mock.calls[0]?.[0]).not.toHaveProperty('autoTier');
+    });
+
+    /**
+     * Every other choice in this menu takes effect on the next message. The runtime only
+     * records this one, committing it on a later turn that uses auto, so saying it is set
+     * would be claiming something that has not happened.
+     */
+    it('says a preference is waiting rather than in force', async () => {
+      picker({ autoTier: { current: 'balance', pending: 'intelligence' } });
+      await openMenu();
+
+      expect(screen.getByText('waiting for the next prompt')).toBeTruthy();
+    });
+
+    it('says nothing about waiting when nothing is', async () => {
+      picker({ autoTier: { current: 'balance' } });
+      await openMenu();
+
+      expect(screen.queryByText('waiting for the next prompt')).toBeNull();
+    });
+
+    /** The newer of the two, and the one the reader made. */
+    it('starts from a preference asked for over the one in force', async () => {
+      picker({ autoTier: { current: 'balance', pending: 'efficiency' } });
+      await openMenu();
+
+      expect(screen.getByRole('button', { name: 'Auto routing for efficiency' }).getAttribute('aria-pressed')).toBe(
+        'true',
+      );
+    });
   });
   it('closes when Escape is pressed', async () => {
     picker();
