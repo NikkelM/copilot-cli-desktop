@@ -376,28 +376,16 @@ export async function lastModel(sessionId: string): Promise<SessionModel | null>
     const { size } = await file.stat();
     if (size === 0) return null;
 
-    let window = Math.min(INITIAL_WINDOW, size);
-    let found: SessionModel | null = null;
+    const found = await modelBefore(file, size);
 
-    for (;;) {
-      const start = Math.max(0, size - window);
-      const reachedStart = start === 0;
-
-      found = latestModelIn(await eventsIn(file, start, size, reachedStart));
-      if (found) break;
-
-      if (reachedStart || window >= MAX_WINDOW) break;
-      window = Math.min(window * GROWTH_FACTOR, size, MAX_WINDOW);
-    }
-
-    // The opening of the run is worth reading in two cases: when the tail said nothing at
-    // all, and when it named a model without saying how it was set up. Neither is unusual -
-    // a change event often carries the model and the effort but not the context.
-    if (!found || !found.reasoningEffort || !found.contextTier) {
+    // The opening of the run is worth reading when the walk named a model without saying how
+    // it was set up, which is not unusual: a change event often carries the model and the
+    // effort but not the context. There is no case for reading it when nothing was named at
+    // all, since a walk that found nothing has already been past the opening itself.
+    if (found && (!found.reasoningEffort || !found.contextTier)) {
       const opening = latestModelIn(await eventsIn(file, 0, Math.min(INITIAL_WINDOW, size), true));
 
-      if (!found) found = opening;
-      else if (opening) {
+      if (opening) {
         found.reasoningEffort ??= opening.reasoningEffort;
         found.contextTier ??= opening.contextTier;
       }
@@ -618,7 +606,12 @@ function latestModelIn(events: TranscriptEvent[]): SessionModel | null {
   let contextTier: string | undefined;
 
   for (let index = events.length - 1; index >= 0; index--) {
-    if (!NAMES_A_MODEL.has(events[index].type)) continue;
+    if (!NAMES_A_MODEL.includes(events[index].type)) continue;
+
+    // A delegated run announces its own model exactly as a session does, and four starting at
+    // once is four such lines in three milliseconds. None of them is what the session runs on.
+    if (events[index].agentId) continue;
+
     const data = (events[index].data ?? {}) as Record<string, unknown>;
 
     model ??= textOf(data.newModel) ?? textOf(data.selectedModel);
@@ -654,7 +647,66 @@ async function eventsIn(
  * opened with, under a different name. Four of the twenty-eight logs here have no change in
  * them at all, so the second is not a fallback worth skipping.
  */
-const NAMES_A_MODEL = new Set(['session.model_change', 'session.start', 'session.resume']);
+const NAMES_A_MODEL = ['session.model_change', 'session.start', 'session.resume'];
+
+/**
+ * How much of the log to take at a time when reading back for the model.
+ *
+ * Larger than the window paging opens with, because this walk is looking for something rare
+ * rather than for the most recent events: one log here runs 106MB between one mention of a
+ * model and the next, and crossing that at 256kB a time would be a hundred reads of a file
+ * that is already open.
+ */
+const MODEL_SCAN_CHUNK = 4 * 1024 * 1024;
+
+/**
+ * Read back through a log for what the session was last set to run on.
+ *
+ * Paging stops growing its window at a point where returning fewer events is a fair answer.
+ * This question has no such answer: stopping early does not report less, it reports the model
+ * the session opened with, which for a log spanning months is one nobody has chosen since.
+ * That is what put a July model in the header of a session running on a September one.
+ *
+ * So the walk is not capped. It is kept cheap instead - the names are looked for in the raw
+ * text and only a line that carries one is parsed - which leaves the usual case a single
+ * chunk, and the worst one here under half a second rather than wrong.
+ */
+async function modelBefore(file: FileHandle, size: number): Promise<SessionModel | null> {
+  const named: TranscriptEvent[] = [];
+  let end = size;
+  let carry = '';
+
+  while (end > 0) {
+    const start = Math.max(0, end - MODEL_SCAN_CHUNK);
+    const buffer = Buffer.alloc(end - start);
+    await file.read(buffer, 0, buffer.length, start);
+
+    // A read that starts mid-file opens mid-line, and that line's tail was carried back from
+    // the chunk before it.
+    const lines = (buffer.toString('utf8') + carry).split('\n');
+    carry = start === 0 ? '' : (lines.shift() ?? '');
+
+    const inChunk: TranscriptEvent[] = [];
+    for (const line of lines) {
+      if (!NAMES_A_MODEL.some((name) => line.includes(name))) continue;
+      try {
+        inChunk.push(JSON.parse(line) as TranscriptEvent);
+      } catch {
+        // A line that does not parse is one this cannot use, and the walk has further to go.
+      }
+    }
+
+    // Kept together rather than answered per chunk, because the parts are gathered separately:
+    // a context tier recorded after the last change of model is still the current one.
+    named.unshift(...inChunk);
+    const found = latestModelIn(named);
+    if (found) return found;
+
+    end = start;
+  }
+
+  return null;
+}
 
 /**
  * How much to read when landing at an arbitrary point in a log.

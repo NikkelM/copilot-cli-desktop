@@ -88,6 +88,11 @@ export function useModel(sessionId: string | null, onError: (message: string) =>
   const observe = useCallback((event: TranscriptEvent) => {
     if (event.type !== 'session.model_change') return;
 
+    // A delegated run announces the model it was given the same way the session does. Taking
+    // it for the session's own is what moved the header to a small model, and the context it
+    // reports down with it, for as long as that run lasted.
+    if (event.agentId) return;
+
     const data = (event.data ?? {}) as { newModel?: string; reasoningEffort?: string; contextTier?: string };
     if (data.newModel) {
       setCurrent({ model: data.newModel, reasoningEffort: data.reasoningEffort, contextTier: data.contextTier });

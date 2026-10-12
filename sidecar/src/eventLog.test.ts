@@ -472,6 +472,42 @@ describe('lastModel', () => {
     expect((await lastModel('s1'))?.model).toBe('claude-opus-5');
   });
 
+  /**
+   * What the window cap got wrong. A log here runs 106MB between one mention of a model and
+   * the next, so a read that stops at 32MB finds nothing and falls back to the opening line -
+   * reporting a model the session was moved off months earlier as the one it runs on now.
+   */
+  it('reaches back past any fixed window for the last model', async () => {
+    const bulk = JSON.stringify({ type: 'user.message', data: { content: 'x'.repeat(10_000) } });
+    const beyond = new Array(3_400).fill(bulk);
+
+    writeLog('s1', [start('claude-opus-4.8'), change('gpt-5.6-sol-fast', { reasoningEffort: 'max' }), ...beyond]);
+    const { lastModel } = await loadEventLog();
+
+    expect((await lastModel('s1'))?.model).toBe('gpt-5.6-sol-fast');
+  });
+
+  // A delegated run announces the model it was given the same way a session does, and four
+  // starting at once is four such lines three milliseconds apart.
+  it('ignores the model a delegated run was given', async () => {
+    writeLog('s1', [
+      start('claude-opus-5', { reasoningEffort: 'max', contextTier: 'long_context' }),
+      JSON.stringify({
+        type: 'session.model_change',
+        agentId: 'a1',
+        data: { newModel: 'gpt-5.4-mini', reasoningEffort: 'low', contextTier: 'default' },
+      }),
+      line(1),
+    ]);
+    const { lastModel } = await loadEventLog();
+
+    expect(await lastModel('s1')).toEqual({
+      model: 'claude-opus-5',
+      reasoningEffort: 'max',
+      contextTier: 'long_context',
+    });
+  });
+
   it('reads a resume the same way as a start', async () => {
     writeLog('s1', [
       start('gpt-5.4'),

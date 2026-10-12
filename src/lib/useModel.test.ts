@@ -200,6 +200,29 @@ describe('useModel', () => {
     });
   });
 
+  // A delegated run announces the model it was given exactly as the session does. Four
+  // starting at once put a small model, and the smaller context with it, into the header.
+  it('ignores the model a delegated run reports', async () => {
+    sessionModel.mockResolvedValue({ model: 'claude-opus-5', reasoningEffort: 'max', contextTier: 'long_context' });
+    const useModel = await loadUseModel();
+    const { result } = renderHook(() => useModel('s1', () => {}));
+    await waitFor(() => expect(result.current.current).not.toBeUndefined());
+
+    act(() =>
+      result.current.observe({
+        type: 'session.model_change',
+        agentId: 'a1',
+        data: { newModel: 'gpt-5.4-mini', reasoningEffort: 'low', contextTier: 'default' },
+      } as never),
+    );
+
+    expect(result.current.current).toEqual({
+      model: 'claude-opus-5',
+      reasoningEffort: 'max',
+      contextTier: 'long_context',
+    });
+  });
+
   it('ignores an event that is not about the model', async () => {
     sessionModel.mockResolvedValue({ model: 'claude-opus-5' });
     const useModel = await loadUseModel();
