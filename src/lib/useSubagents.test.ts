@@ -47,6 +47,30 @@ describe('the subagents this app watched start', () => {
     expect(result.current.watched[0]).toMatchObject({ agentId: 'a1', sessionId: 's1', name: 'deep-audit' });
   });
 
+  // Shown where a session shows its model picker, so a run says what it was given.
+  it('takes the model from the announcement', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() =>
+      result.current.observe('s1', {
+        type: 'subagent.started',
+        agentId: 'a1',
+        timestamp: '2026-01-02T00:00:00.000Z',
+        data: { toolCallId: 'c1', agentName: 'explore', agentDisplayName: 'explore', model: 'claude-haiku-4.5' },
+      } as TranscriptEvent),
+    );
+
+    expect(result.current.watched[0]?.model).toBe('claude-haiku-4.5');
+  });
+
+  it('claims no model where the announcement names none', () => {
+    const { result } = renderHook(() => useSubagents());
+
+    act(() => result.current.observe('s1', started('a1', 'deep-audit')));
+
+    expect(result.current.watched[0]?.model).toBeUndefined();
+  });
+
   it('says nothing about its outcome while it is still working', () => {
     const { result } = renderHook(() => useSubagents());
     act(() => result.current.observe('s1', started('a1')));

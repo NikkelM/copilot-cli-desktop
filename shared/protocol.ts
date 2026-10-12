@@ -55,6 +55,14 @@ export interface DelegatedTask {
   agentId: string;
   /** What the agent is called, preferring the display name the announcement carries. */
   name: string;
+  /**
+   * The model it was given, which a subagent's view shows where a session shows its picker.
+   *
+   * Static, because a run that has already happened cannot be moved to another model. Named
+   * by the announcement that started it in 691 of the 695 on this machine, so the few
+   * without are a gap to leave blank rather than a reason to ask the runtime.
+   */
+  model?: string;
   /** ISO-8601, from the announcement that started it. */
   startedAt: string;
   /** Absent for one still running, and for one whose end is past the page that found it. */

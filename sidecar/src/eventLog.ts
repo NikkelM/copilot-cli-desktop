@@ -335,6 +335,7 @@ function tasksIn(events: readonly LocatedEvent[]): DelegatedTask[] {
         name: String(data.agentDisplayName ?? data.agentName ?? 'agent'),
         startedAt: String(event.timestamp ?? ''),
         offset,
+        ...(textOf(data.model) ? { model: textOf(data.model) } : {}),
         ...(parent ? { parentAgentId: parent } : {}),
       });
       continue;

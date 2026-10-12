@@ -784,6 +784,16 @@ body {
   font-size: var(--font-sm);
 }
 
+/* Set apart from the state beside it: the two are both small grey words, and run together
+   they read as one phrase rather than as a state and a model. */
+.subagent-model {
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+
 
 
 .main {

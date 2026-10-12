@@ -43,6 +43,8 @@ export interface WatchedSubagent {
   error?: string;
   /** The subagent that delegated it, when the session itself did not. */
   parentAgentId?: string;
+  /** The model it was given, shown where a session shows its picker. Absent on older runs. */
+  model?: string;
   /** Its own events, by reference: the same objects the transcript holds, not copies. */
   events: TranscriptEvent[];
   /**
@@ -187,6 +189,7 @@ export function useSubagents() {
     if (name && event.agentId) {
       const agentId = event.agentId;
       const parent = typeof call === 'string' ? callerOf.current.get(call) : undefined;
+      const model = (event.data as { model?: unknown } | undefined)?.model;
       finishedAt.current.delete(agentId);
       setWatched((current) =>
         current.some((entry) => entry.agentId === agentId)
@@ -199,6 +202,7 @@ export function useSubagents() {
                 name,
                 startedAt: event.timestamp,
                 events: [],
+                ...(typeof model === 'string' && model ? { model } : {}),
                 ...(parent ? { parentAgentId: parent } : {}),
               },
             ],
@@ -387,6 +391,7 @@ export function useSubagents() {
           sessionId,
           name: task.name,
           startedAt: task.startedAt,
+          ...(task.model ? { model: task.model } : {}),
           ...(task.outcome ? { outcome: task.outcome } : {}),
           events: [],
           onDisk: true,

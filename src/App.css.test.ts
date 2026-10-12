@@ -1228,6 +1228,23 @@ describe('the state of a delegated run', () => {
 
     expect(css.slice(at, css.indexOf('\n}', at))).toContain('align-items: baseline');
   });
+
+  /**
+   * The model the run was given sits in the same row, and it is a third small grey word.
+   * Without a box of its own it reads as part of the state beside it rather than as a
+   * separate fact.
+   */
+  it('gives the model a box, so it does not read as part of the state', () => {
+    const at = css.indexOf('\n.subagent-model {');
+    expect(at, 'the model should still be styled').toBeGreaterThan(-1);
+    const rule = css.slice(at, css.indexOf('\n}', at));
+
+    expect(rule).toContain('border: 1px solid var(--border)');
+    expect(rule, 'a box with no padding is a line drawn on the text').toMatch(/padding:\s*\d/);
+    expect(sizeOf('.subagent-model'), 'it should sit below the state, not compete with it').not.toBe(
+      sizeOf('.subagent-state'),
+    );
+  });
 });
 
 describe('the match number in the find bar', () => {

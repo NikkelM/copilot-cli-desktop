@@ -1952,6 +1952,11 @@ export default function App() {
                       ? 'failed'
                       : 'finished'}
                 </span>
+                {/* Where the session carries its model picker, as a fact rather than a
+                    control: the run has already happened, and there is no moving it to
+                    another model now. Absent from a few older announcements, and a blank
+                    space says that better than a word guessing at it would. */}
+                {subagents.open.model && <span className="subagent-model">{subagents.open.model}</span>}
               </div>
             </header>
 

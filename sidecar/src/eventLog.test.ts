@@ -1101,6 +1101,30 @@ describe('readDelegatedTasks', () => {
     expect(task).toMatchObject({ outcome: 'completed', toolCalls: 3, tokens: 900, durationMs: 42 });
   });
 
+  // Shown where a session shows its model picker, so a subagent's view says what it ran on.
+  it('reports the model the announcement gave it', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [
+      JSON.stringify({
+        type: 'subagent.started',
+        agentId: 'a1',
+        timestamp: '2026-09-30T10:00:00.000Z',
+        data: { agentDisplayName: 'explore', model: 'claude-haiku-4.5' },
+      }),
+    ]);
+
+    expect((await readDelegatedTasks('s')).agents[0]?.model).toBe('claude-haiku-4.5');
+  });
+
+  // Four of the 695 announcements here name no model, and a blank space says that better
+  // than the name of whatever ran before it would.
+  it('claims no model where the announcement names none', async () => {
+    const { readDelegatedTasks } = await loadEventLog();
+    writeLog('s', [started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z')]);
+
+    expect((await readDelegatedTasks('s')).agents[0]?.model).toBeUndefined();
+  });
+
   it('says when one failed', async () => {
     const { readDelegatedTasks } = await loadEventLog();
     writeLog('s', [started('a1', 'deep-audit', '2026-09-30T10:00:00.000Z'), ended('a1', 'subagent.failed')]);
