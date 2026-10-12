@@ -1200,6 +1200,24 @@ describe('the controls on a subagent row', () => {
   });
 });
 
+/**
+ * How a delegated run went, beside the way back out of it.
+ *
+ * It borrowed the sidebar's meta line, which is set a size larger - and two words of
+ * different sizes side by side sit on different baselines however their boxes are aligned.
+ */
+describe('the state of a delegated run', () => {
+  const sizeOf = (selector: string) => {
+    const at = css.indexOf(`\n${selector} {`);
+    expect(at, `${selector} should still be styled`).toBeGreaterThan(-1);
+    return /font-size:\s*([^;]+);/.exec(css.slice(at, css.indexOf('\n}', at)))?.[1]?.trim();
+  };
+
+  it('is set like the button it stands next to, so the pair reads as one line', () => {
+    expect(sizeOf('.subagent-state')).toBe(sizeOf('.changes-action'));
+  });
+});
+
 describe('the match number in the find bar', () => {
   const rule = () => {
     const at = css.indexOf('.find-at {');

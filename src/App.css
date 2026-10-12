@@ -771,6 +771,19 @@ body {
   font-size: var(--font-md);
 }
 
+/*
+ * How a delegated run went, beside the way back out of it.
+ *
+ * Its own class rather than the sidebar's meta line, which is where it came from: that line
+ * is set a size larger, and two words of different sizes side by side sit on different
+ * baselines however their boxes are aligned. Set like the button it stands next to, so the
+ * pair reads as one line.
+ */
+.subagent-state {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
 
 
 .main {

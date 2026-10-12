@@ -1945,7 +1945,7 @@ export default function App() {
                 <button type="button" className="changes-action" onClick={subagents.close}>
                   Back to the session
                 </button>
-                <span className="session-meta">
+                <span className="subagent-state">
                   {subagents.open.outcome === undefined
                     ? 'working'
                     : subagents.open.outcome === 'failed'
