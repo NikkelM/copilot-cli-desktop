@@ -33,6 +33,56 @@ describe('what the transcript draws', () => {
       showTimestamps: true,
       showToolDurations: true,
       commandHistoryMaxSize: 50,
+      footer: {
+        showDirectory: true,
+        showBranch: true,
+        showContextWindow: true,
+        showModelEffort: true,
+        showAgent: true,
+        showCodeChanges: true,
+      },
+    });
+  });
+
+  /**
+   * `/statusline` and its `/footer` alias look like terminal configuration and are not:
+   * every toggle names something a reader decided they did not want to see, and most name
+   * something this window has its own version of (#130).
+   */
+  describe('what the CLI says its footer shows', () => {
+    it('follows a part turned off there', async () => {
+      cliSettingValues.mockResolvedValue({ footer: { showDirectory: false, showAgent: false } });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(result.current.display.footer.showDirectory).toBe(false));
+      expect(result.current.display.footer.showAgent).toBe(false);
+      // Not named, so it keeps what the CLI shows by default rather than following the rest off.
+      expect(result.current.display.footer.showBranch).toBe(true);
+    });
+
+    /** Nothing writes the object until `/statusline` does, so most installs have no key. */
+    it('draws all of it where the CLI has never been asked', async () => {
+      cliSettingValues.mockResolvedValue({ showReasoning: false });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(result.current.display.showReasoning).toBe(false));
+      expect(result.current.display.footer).toEqual(ASSUMED_DISPLAY.footer);
+    });
+
+    /** Only an exact false hides anything, as everywhere else here. */
+    it.each([['no'], [0], [null], [undefined]])('is unmoved by %p', async (value) => {
+      cliSettingValues.mockResolvedValue({ footer: { showDirectory: value } });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(result.current.display.footer.showDirectory).toBe(true));
+    });
+
+    it('is unmoved by a footer that is not an object', async () => {
+      cliSettingValues.mockResolvedValue({ footer: 'yes', showReasoning: false });
+      const { result } = renderHook(() => useCliDisplay());
+
+      await waitFor(() => expect(result.current.display.showReasoning).toBe(false));
+      expect(result.current.display.footer).toEqual(ASSUMED_DISPLAY.footer);
     });
   });
 

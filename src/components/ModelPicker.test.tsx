@@ -616,8 +616,48 @@ describe('ModelPicker', () => {
     });
   });
 
-  describe('how auto routes', () => {    /** The runtime refuses a routing preference against any other model. */
-    it('offers it on auto alone', async () => {
+  /**
+   * This picker is this app's version of what the CLI's footer says about the model, so a
+   * reader who turned a part of it off there meant it here too (#130).
+   */
+  describe('what the CLI says its footer shows', () => {
+    it('leaves out the effort where the footer does', () => {
+      picker({
+        current: { model: 'claude-opus-5', reasoningEffort: 'high' },
+        shows: { showContextWindow: true, showModelEffort: false },
+      });
+
+      expect(screen.queryByText('high')).toBeNull();
+    });
+
+    it('leaves out the context where the footer does', () => {
+      picker({
+        current: { model: 'claude-opus-5', contextTier: 'long_context' },
+        shows: { showContextWindow: false, showModelEffort: true },
+      });
+
+      expect(screen.queryByText('936k')).toBeNull();
+    });
+
+    /** The model's own name is the control itself, so nothing in the footer can take it. */
+    it('keeps the model named either way', () => {
+      picker({
+        current: { model: 'claude-opus-5', reasoningEffort: 'high' },
+        shows: { showContextWindow: false, showModelEffort: false },
+      });
+
+      expect(screen.getByText('claude-opus-5')).toBeTruthy();
+    });
+
+    it('draws both where the footer says nothing', () => {
+      picker({ current: { model: 'claude-opus-5', reasoningEffort: 'high', contextTier: 'long_context' } });
+
+      expect(screen.getByText('high')).toBeTruthy();
+      expect(screen.getByText('936k')).toBeTruthy();
+    });
+  });
+
+  describe('how auto routes', () => {    /** The runtime refuses a routing preference against any other model. */    it('offers it on auto alone', async () => {
       picker();
       await openMenu();
 

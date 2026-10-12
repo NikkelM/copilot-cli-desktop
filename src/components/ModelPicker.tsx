@@ -39,6 +39,11 @@ interface ModelPickerProps {
   /** How full the window is. Null for a session the runtime is not holding, which has no window. */
   usage: SessionContextUsage | null;
   /**
+   * What the CLI's own footer shows of the model, which this picker is this app's version
+   * of (#130). Absent where there is no footer to answer to, as in the settings window.
+   */
+  shows?: { showContextWindow: boolean; showModelEffort: boolean };
+  /**
    * How auto routes, for a loaded session (#215).
    *
    * Null where there is no session to ask, and absent where there is no session at all -
@@ -104,6 +109,7 @@ export function ModelPicker({
   onOpen,
   onChoose,
   emptyLabel = 'No model recorded',
+  shows = { showContextWindow: true, showModelEffort: true },
 }: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   /** The row under the pointer, so its price can be read without committing to it. */
@@ -147,11 +153,11 @@ export function ModelPicker({
         ) : (
           <span className="model-id">{current?.model ?? emptyLabel}</span>
         )}
-        {effort && <span className="model-tag">{effort}</span>}
+        {shows.showModelEffort && effort && <span className="model-tag">{effort}</span>}
         {/* How much room is left beats how much there is, so the meter replaces the size
             whenever the runtime can say. Only a loaded session can: a cold one is occupying
             no window, and its size alone still tells the reader what it would have. */}
-        {usage ? (
+        {!shows.showContextWindow ? null : usage ? (
           <span
             className={`model-tag context${usage.totalTokens >= usage.compactionThreshold ? ' pressed' : ''}`}
             title={`Context: ${spentOn(usage)}`}

@@ -2044,6 +2044,9 @@ export default function App() {
               {/* Path, buttons and controls on one line: the buttons were a row of their
                   own against the left edge, which wasted the width the header has. */}
               <div className="header-row">
+                {/* The CLI's footer calls this the directory, and a reader who turned it
+                    off there meant it here too (#130). */}
+                {display.footer.showDirectory && (
                 <SessionPath
           cwd={selected.cwd}
           state={tree.state}
@@ -2058,6 +2061,7 @@ export default function App() {
             });
           }}
         />
+                )}
                 <OpenIn
                   cwd={selected.cwd}
                   remote={tree.state?.remote ?? null}
@@ -2088,6 +2092,7 @@ export default function App() {
                 <div className="header-controls">
                   {/* Reads files rather than starting a session, so it costs nothing until
                       it is asked for - and then costs enough to be worth asking for. */}
+                  {display.footer.showCodeChanges && (
                   <button
                     type="button"
                     className={panel.showing('changes') ? 'header-button on' : 'header-button'}
@@ -2097,6 +2102,7 @@ export default function App() {
                   >
                     Changes
                   </button>
+                  )}
                   {/* Only where there is one. Most sessions never make a todo list, and an
                       entry that opens an empty panel is worse than no entry (#172). */}
                   {todos.todos.length > 0 && (
@@ -2110,6 +2116,7 @@ export default function App() {
                       Todos
                     </button>
                   )}
+                  {display.footer.showAgent && (
                   <AgentPicker
                     current={agent.current}
                     agents={agent.agents}
@@ -2117,8 +2124,10 @@ export default function App() {
                     onOpen={agent.refresh}
                     onChoose={agent.choose}
                   />
+                  )}
                   <ModelPicker
                     current={model.current}
+                    shows={display.footer}
                     autoTier={model.autoTier}
                     models={model.models}
                     usage={contextUsage.usage}
