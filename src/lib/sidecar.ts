@@ -837,10 +837,20 @@ export function getDiff(sessionId: string, path: string, since?: string): Promis
   return request('sessions.diff', { sessionId, path, since });}
 
 /** Starts a session in a directory. Costs a Copilot process, like sending does. */
+/**
+ * Starts a session in a directory. Costs a Copilot process, like sending does.
+ *
+ * Every field the runtime takes is named, rather than the three it once was. The rest rode
+ * through untyped - a variable with extra properties is not an object literal, so nothing
+ * checked them - which is how a routing preference went missing without a word (#215).
+ */
 export function createSession(defaults: {
   workingDirectory?: string;
   allowAll?: boolean;
   model?: string;
+  reasoningEffort?: ReasoningEffort;
+  contextTier?: ContextTier;
+  autoTier?: AutoTier | null;
 } = {}): Promise<{ sessionId: string }> {
   return request('sessions.create', defaults);
 }

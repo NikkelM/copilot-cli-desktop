@@ -24,7 +24,7 @@ const SAVED: Settings = {
   textScale: 1,
   defaultModel: '',
   defaultEffort: '',
-  defaultContext: '',
+  defaultContext: '', defaultAutoTier: '',
     turnSummary: 'always',
   sidebarTags: true,
   sidebarPreviewLines: 2,

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
 import { ModelPicker } from './ModelPicker';
+import type { AutoTier } from '../../shared/protocol';
 import { DiskUsage } from './DiskUsage';
 import { ShortcutSettings } from './ShortcutSettings';
 import { REBINDABLE } from '../lib/bindings';
@@ -941,6 +942,10 @@ export function SettingsWindow({
                           }
                         : null
                     }
+                    /* The draft's own routing preference, dressed as a session's so the row
+                       starts where it was left. Nothing is pending here: there is no session
+                       to commit it, only a default for the next one made. */
+                    autoTier={draft.defaultAutoTier ? { current: draft.defaultAutoTier as AutoTier } : null}
                     models={models ?? null}
                     // No session, so no window to be full: the sizes still describe what a
                     // model would have, which is what is being chosen here.
@@ -953,6 +958,7 @@ export function SettingsWindow({
                         defaultModel: choice.model,
                         defaultEffort: choice.reasoningEffort ?? '',
                         defaultContext: choice.contextTier ?? '',
+                        defaultAutoTier: choice.autoTier ?? '',
                       }))
                     }
                     emptyLabel="Auto"

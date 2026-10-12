@@ -1526,6 +1526,13 @@ export interface SidecarRequests {
        */
       reasoningEffort?: ReasoningEffort;
       contextTier?: ContextTier;
+      /**
+       * How `auto` should route, for a session started on it.
+       *
+       * The CLI takes this as `--auto-tier` at launch and the runtime refuses it against any
+       * other model, so like the two above it only means anything beside the model it names.
+       */
+      autoTier?: AutoTier | null;
     };
     result: { sessionId: string };
   };

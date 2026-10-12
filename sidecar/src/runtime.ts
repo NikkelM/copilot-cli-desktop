@@ -571,7 +571,13 @@ export class SessionRuntime {
    */
   async create(
     workingDirectory?: string,
-    defaults?: { allowAll?: boolean; model?: string; reasoningEffort?: ReasoningEffort; contextTier?: ContextTier },
+    defaults?: {
+      allowAll?: boolean;
+      model?: string;
+      reasoningEffort?: ReasoningEffort;
+      contextTier?: ContextTier;
+      autoTier?: AutoTier | null;
+    },
   ): Promise<{ sessionId: string }> {
     const client = await this.ensureClient();
     const pluginDirectories = await this.discovery.pluginDirectories(client);

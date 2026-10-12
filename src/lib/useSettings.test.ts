@@ -48,7 +48,7 @@ const SAVED_SHAPE = {
   textScale: 1,
   defaultModel: '',
   defaultEffort: '',
-  defaultContext: '',
+  defaultContext: '', defaultAutoTier: '',
   turnSummary: 'always' as const,
   sidebarTags: true,
   sidebarPreviewLines: 2,
@@ -237,7 +237,7 @@ describe('changing a setting', () => {
       textScale: 1,
       defaultModel: '',
       defaultEffort: '',
-      defaultContext: '',
+      defaultContext: '', defaultAutoTier: '',
       turnSummary: 'always',
       sidebarTags: true,
       sidebarPreviewLines: 2,
@@ -274,7 +274,7 @@ describe('changing a setting', () => {
       textScale: 1,
       defaultModel: '',
       defaultEffort: '',
-      defaultContext: '',
+      defaultContext: '', defaultAutoTier: '',
       turnSummary: 'always',
       sidebarTags: true,
       sidebarPreviewLines: 2,
@@ -753,6 +753,31 @@ describe('what a new session is given', () => {
     expect(
       sessionDefaults({ ...saved, defaultModel: '', defaultEffort: 'high', defaultContext: 'long_context' }),
     ).toEqual({});
+  });
+
+  /** The CLI spells this --auto-tier at launch, and a session made here had no way to say it. */
+  it('carries the routing preference alongside auto', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults({ ...saved, defaultModel: 'auto', defaultAutoTier: 'intelligence' })).toEqual({
+      model: 'auto',
+      autoTier: 'intelligence',
+    });
+  });
+
+  /** The runtime refuses the preference against any other model, so sending it would fail. */
+  it('keeps the routing preference off every other model', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults({ ...saved, defaultModel: 'gpt-5.5', defaultAutoTier: 'intelligence' })).toEqual({
+      model: 'gpt-5.5',
+    });
+  });
+
+  it('drops the routing preference when no model was chosen', async () => {
+    const { sessionDefaults } = await load();
+
+    expect(sessionDefaults({ ...saved, defaultModel: '', defaultAutoTier: 'intelligence' })).toEqual({});
   });
 
   it('carries all three together', async () => {

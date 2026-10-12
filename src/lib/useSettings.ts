@@ -5,6 +5,7 @@ import { onSidecarRestarted, setRuntimeLimits, updateCli } from './sidecar';
 import { useTauriEvent } from './useTauriEvent';
 import type { ShowTurnChanges } from './turnChanges';
 import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol';
+import type { AutoTier, ContextTier, ReasoningEffort } from '../../shared/protocol';
 import { SCALE_KEY, TEXT_SCALE_KEY, applyScale, readScale, readTextScale } from './scale';
 
 /**
@@ -40,6 +41,9 @@ export const DEFAULT_MODEL = 'defaultModel';
 /** How hard it should think, and how much room it should have. Empty means the model's own. */
 export const DEFAULT_EFFORT = 'defaultEffort';
 export const DEFAULT_CONTEXT = 'defaultContext';
+
+/** Which way uto should route. Empty means the provider's own routing (#215). */
+export const DEFAULT_AUTO_TIER = 'defaultAutoTier';
 
 /** Whether to bring the Copilot CLI up to date when the app starts. */
 export const UPDATE_ON_START = 'updateOnStart';
@@ -121,6 +125,8 @@ export interface Settings {
   defaultEffort: string;
   /** How much room it has, or empty for the model's ordinary size. */
   defaultContext: string;
+  /** Which way auto routes, or empty for the provider's own. Only auto can carry one. */
+  defaultAutoTier: string;
   updateOnStart: boolean;
   /**
    * When a turn ends with a line saying what it changed.
@@ -200,6 +206,7 @@ export function readSettings(): Settings {
     defaultModel: read('settings', DEFAULT_MODEL) ?? '',
     defaultEffort: read('settings', DEFAULT_EFFORT) ?? '',
     defaultContext: read('settings', DEFAULT_CONTEXT) ?? '',
+    defaultAutoTier: read('settings', DEFAULT_AUTO_TIER) ?? '',
     updateOnStart: read('settings', UPDATE_ON_START) === 'true',
     // Only the two answers that withhold something are honoured from the file. Anything
     // else, including a key written by a later version, leaves the line showing rather
@@ -324,19 +331,24 @@ export function sessionDefaults(settings: Settings): {
   workingDirectory?: string;
   allowAll?: boolean;
   model?: string;
-  reasoningEffort?: string;
-  contextTier?: string;
+  reasoningEffort?: ReasoningEffort;
+  contextTier?: ContextTier;
+  autoTier?: AutoTier;
 } {
   return {
     ...(settings.workingDirectory ? { workingDirectory: settings.workingDirectory } : {}),
     ...(settings.allowAll ? { allowAll: true } : {}),
-    // The three travel together: an effort or a room size without a model to apply them to
-    // is nothing the runtime can act on.
+    // The four travel together: an effort, a room size or a routing preference without a
+    // model to apply them to is nothing the runtime can act on.
     ...(settings.defaultModel
       ? {
           model: settings.defaultModel,
-          ...(settings.defaultEffort ? { reasoningEffort: settings.defaultEffort } : {}),
-          ...(settings.defaultContext ? { contextTier: settings.defaultContext } : {}),
+          ...(settings.defaultEffort ? { reasoningEffort: settings.defaultEffort as ReasoningEffort } : {}),
+          ...(settings.defaultContext ? { contextTier: settings.defaultContext as ContextTier } : {}),
+          // Only alongside auto, which is the only model the runtime accepts one against.
+          ...(settings.defaultModel === 'auto' && settings.defaultAutoTier
+            ? { autoTier: settings.defaultAutoTier as AutoTier }
+            : {}),
         }
       : {}),
   };
@@ -354,6 +366,7 @@ const KEYS: Record<keyof Settings, string> = {
   defaultModel: DEFAULT_MODEL,
   defaultEffort: DEFAULT_EFFORT,
   defaultContext: DEFAULT_CONTEXT,
+  defaultAutoTier: DEFAULT_AUTO_TIER,
   updateOnStart: UPDATE_ON_START,
   turnSummary: TURN_SUMMARY,
   sidebarTags: SIDEBAR_TAGS,
