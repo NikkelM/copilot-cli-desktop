@@ -1245,6 +1245,17 @@ describe('the state of a delegated run', () => {
       sizeOf('.subagent-state'),
     );
   });
+
+  /**
+   * What puts the model and the changes at the far end of the row rather than against the
+   * way back out. Both headers hang their controls on it, so losing it moves two of them.
+   */
+  it('pushes the controls to the far end of the row', () => {
+    const at = css.indexOf('\n.header-controls {');
+    expect(at, 'the controls should still be styled').toBeGreaterThan(-1);
+
+    expect(css.slice(at, css.indexOf('\n}', at))).toContain('margin-left: auto');
+  });
 });
 
 describe('the match number in the find bar', () => {

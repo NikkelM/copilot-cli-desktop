@@ -1402,7 +1402,11 @@ function Delegated({
                 title={`Hide ${entry.name}`}
                 aria-label={`Hide ${entry.name}`}
               >
-                ×
+                {/* The cross, not the multiplication sign. That one is a maths operator: it
+                    draws at 6x7px where the star beside it draws at 15x15, and sits six
+                    pixels lower because it is centred on the maths axis rather than the cap
+                    height - so the pair read as a star next to a smudge. */}
+                ✕
               </button>
             )}
           </li>

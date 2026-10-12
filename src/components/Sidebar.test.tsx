@@ -743,6 +743,26 @@ describe('Sidebar subagents', () => {
     expect(onDismissSubagent).toHaveBeenCalledWith('a1');
   });
 
+  /**
+   * The cross rather than the multiplication sign. Measured in the app's own font at one
+   * size, `×` inks 6x7px against the star's 15x15 and sits six pixels lower, because it is
+   * an operator centred on the maths axis - so the pair read as a star beside a smudge.
+   */
+  it('dismisses with a cross the size of the star beside it', () => {
+    const { container } = shown({
+      subagents: [watched()],
+      onDismissSubagent: () => {},
+      onKeepSubagent: () => {},
+      keepableSubagent: () => true,
+    });
+
+    expect(container.querySelector('.subagent-dismiss')?.textContent).toBe('\u2715');
+    expect(
+      container.querySelector('.subagent-dismiss')?.textContent,
+      'the multiplication sign is a maths operator, not a control',
+    ).not.toBe('\u00d7');
+  });
+
   // Without somewhere to open one, a row that cannot be opened is worse than no row.
   it('draws none when there is nothing to open them with', () => {
     shown({ subagents: [watched()], onSelectSubagent: undefined });

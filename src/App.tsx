@@ -1967,25 +1967,30 @@ export default function App() {
                       ? 'failed'
                       : 'finished'}
                 </span>
-                {/* Where the session carries its model picker, as a fact rather than a
-                    control: the run has already happened, and there is no moving it to
-                    another model now. Absent from a few older announcements, and a blank
-                    space says that better than a word guessing at it would. */}
-                {subagents.open.model && <span className="subagent-model">{subagents.open.model}</span>}
-                {/* Only where the run wrote something. Most never do, and an entry that
-                    opens an empty panel is worse than no entry - the rule the session's
-                    Todos button already follows (#261). */}
-                {agentWork.changes.length > 0 && (
-                  <button
-                    type="button"
-                    className={showAgentChanges ? 'header-button on' : 'header-button'}
-                    onClick={() => setShowAgentChanges((open) => !open)}
-                    aria-pressed={showAgentChanges}
-                    title="Show what this run changed"
-                  >
-                    Changes
-                  </button>
-                )}
+                {/* The same box the session's header puts its controls in, so they sit at
+                    the far end rather than crowding the way back out, and in the same order:
+                    the changes first and the model last. */}
+                <div className="header-controls">
+                  {/* Only where the run wrote something. Most never do, and an entry that
+                      opens an empty panel is worse than no entry - the rule the session's
+                      Todos button already follows (#261). */}
+                  {agentWork.changes.length > 0 && (
+                    <button
+                      type="button"
+                      className={showAgentChanges ? 'header-button on' : 'header-button'}
+                      onClick={() => setShowAgentChanges((open) => !open)}
+                      aria-pressed={showAgentChanges}
+                      title="Show what this run changed"
+                    >
+                      Changes
+                    </button>
+                  )}
+                  {/* Where the session carries its model picker, as a fact rather than a
+                      control: the run has already happened, and there is no moving it to
+                      another model now. Absent from a few older announcements, and a blank
+                      space says that better than a word guessing at it would. */}
+                  {subagents.open.model && <span className="subagent-model">{subagents.open.model}</span>}
+                </div>
               </div>
             </header>
 
