@@ -1240,6 +1240,15 @@ body {
   font-size: var(--font-xl);
 }
 
+/* Capped the way a plan is, so a question that comes with a table of numbers cannot push
+   its own answers off the bottom of the pane. */
+.elicitation-message {
+  max-height: 45vh;
+  overflow-y: auto;
+  margin-bottom: 14px;
+  min-width: 0;
+}
+
 .elicitation-badge {
   flex-shrink: 0;
   padding: 1px 8px;

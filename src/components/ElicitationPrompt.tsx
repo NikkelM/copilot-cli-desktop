@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 
 
 import type { ElicitationFieldValue, PendingElicitation } from '../../shared/protocol';
 import { Expiry } from './Elapsed';
+import { Markdown } from './Markdown';
 import {
   formOf,
   initialValues,
@@ -139,9 +140,11 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
       <section className="elicitation">
         <header className="elicitation-header">
           <span className="elicitation-badge">question</span>
-          <span>{pending.message}</span>
           <Expiry at={pending.expiresAt} />
         </header>
+        <div className="elicitation-message">
+          <Markdown body={pending.message} />
+        </div>
         <a className="elicitation-url" href={pending.url} target="_blank" rel="noreferrer">
           {pending.url}
         </a>
@@ -154,9 +157,15 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
     <section className="elicitation" ref={containerRef} tabIndex={-1} onKeyDown={onKeyDown}>
       <header className="elicitation-header">
         <span className="elicitation-badge">question</span>
-        <span>{pending.message}</span>
         <Expiry at={pending.expiresAt} />
       </header>
+
+      {/* Markdown, because that is what it was written as: the questions that need asking
+          are the ones with a table of numbers or a list of what each answer costs, and as
+          one run-on line those are unreadable where the terminal shows them laid out. */}
+      <div className="elicitation-message">
+        <Markdown body={pending.message} />
+      </div>
 
       <div className="elicitation-fields">
         {Object.entries(fields).map(([name, field]) => (

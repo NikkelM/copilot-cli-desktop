@@ -238,3 +238,25 @@ describe('ElicitationPrompt keeps typed text', () => {
     expect(screen.getByRole('button', { name: 'Submit' })).toHaveProperty('disabled', true);
   });
 });
+
+/**
+ * The questions worth asking come with a table of numbers or a list of what each answer
+ * costs, which is what the terminal lays out. Drawn as one span, the newlines collapsed
+ * into a run-on line and the table arrived as a row of pipes.
+ */
+describe('a question written as markdown', () => {
+  const rich: PendingElicitation = {
+    ...question,
+    message:
+      'Proposed rework:\n\n- **Tartarus:** durability unchanged\n\n| Biome | Slot 1 |\n|---|---|\n| Styx | 0.14 |\n\nHow should I apply it?',
+  };
+
+  it('lays the question out the way it was written', () => {
+    const { container } = render(<ElicitationPrompt pending={rich} onResolve={vi.fn()} />);
+    const message = container.querySelector('.elicitation-message');
+
+    expect(message?.querySelector('table td')?.textContent).toBe('Styx');
+    expect(message?.querySelector('li strong')?.textContent).toBe('Tartarus:');
+    expect(screen.getByText('How should I apply it?')).toBeTruthy();
+  });
+});
