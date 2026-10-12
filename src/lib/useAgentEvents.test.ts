@@ -15,6 +15,9 @@ const event = (content: string): TranscriptEvent =>
 /** The announcement that opened a run, which is what proves a read reached its beginning. */
 const started = (): TranscriptEvent => ({ type: 'subagent.started', data: {} }) as unknown as TranscriptEvent;
 
+/** And the one that ended it, which is what proves nothing of the run is still to come. */
+const finished = (): TranscriptEvent => ({ type: 'subagent.completed', data: {} }) as unknown as TranscriptEvent;
+
 beforeEach(() => {
   getAgentTranscript.mockReset().mockResolvedValue({ events: [] });
 });
@@ -128,7 +131,64 @@ describe('a log that reached the start of the run', () => {
   /** The whole point: fewer events, and still the one to believe. */
   it('wins even when more is held', async () => {
     const held = [event('a'), event('b'), event('c')];
+    const answer = Promise.resolve({ events: [started(), event('a'), finished()] });
+    getAgentTranscript.mockReturnValue(answer);
+
+    const { result } = renderHook(() => useAgentEvents('s1', 'a1', held));
+    await act(async () => {
+      await answer;
+    });
+
+    expect(result.current).toHaveLength(3);
+    expect(result.current).not.toBe(held);
+  });
+
+  /**
+   * The log is read once, when the view opens, and a run that has not finished goes on being
+   * written afterwards. Preferring a copy that cannot grow over the one the events are
+   * arriving on showed the run as it was at the moment it was opened, and the reader had to
+   * leave and come back to see it move.
+   */
+  it('follows a run still working rather than the read that opened it', async () => {
     const answer = Promise.resolve({ events: [started(), event('a')] });
+    getAgentTranscript.mockReturnValue(answer);
+
+    const { result, rerender } = renderHook(({ held }) => useAgentEvents('s1', 'a1', held), {
+      initialProps: { held: [started(), event('a')] },
+    });
+    await act(async () => {
+      await answer;
+    });
+
+    // The run writes two more lines while the view stays open.
+    rerender({ held: [started(), event('a'), event('b'), event('c')] });
+
+    expect(result.current).toHaveLength(4);
+  });
+
+  /**
+   * The start is what proves the read reached the beginning of the run. An outcome without
+   * one is a read that caught the end and may be missing everything before it, which is the
+   * half of the test that keeps a short read from replacing a fuller held copy.
+   */
+  it('is not whole on an outcome with no start behind it', async () => {
+    const held = [event('a'), event('b'), event('c')];
+    const answer = Promise.resolve({ events: [event('a'), finished()] });
+    getAgentTranscript.mockReturnValue(answer);
+
+    const { result } = renderHook(() => useAgentEvents('s1', 'a1', held));
+    await act(async () => {
+      await answer;
+    });
+
+    expect(result.current).toBe(held);
+  });
+
+  /** A run that failed has ended as surely as one that completed. */
+  it('counts a run that failed as ended', async () => {
+    const held = [event('a'), event('b'), event('c')];
+    const failed = { type: 'subagent.failed', data: {} } as unknown as TranscriptEvent;
+    const answer = Promise.resolve({ events: [started(), failed] });
     getAgentTranscript.mockReturnValue(answer);
 
     const { result } = renderHook(() => useAgentEvents('s1', 'a1', held));
@@ -137,7 +197,6 @@ describe('a log that reached the start of the run', () => {
     });
 
     expect(result.current).toHaveLength(2);
-    expect(result.current).not.toBe(held);
   });
 
   /** Without that proof the old rule still applies, so a run in flight is not cut short. */
