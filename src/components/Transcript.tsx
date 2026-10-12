@@ -37,15 +37,20 @@ const SCROLLS = new Set(['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', '
 const LOAD_OLDER_THRESHOLD_PX = 120;
 
 /**
- * How many times a page may extend itself to fill the view before the reader has to ask.
+ * How many events a page may pull in on its own to fill the view before the reader has to ask.
  *
  * A list that cannot scroll fires no scroll event, so a page drawing too few rows to fill
  * the window leaves no way to reach what is above it - and a page can draw very few: a
  * delegation whose call is further back than the page reaches collapses into one row
- * however much work is behind it. Capped rather than repeated until it fills, because a
- * session that is almost entirely delegated work would otherwise load all of itself.
+ * however much work is behind it.
+ *
+ * Counted in events rather than in tries. A try is worth anything from one row to a hundred,
+ * so capping tries caps neither the cost nor the benefit: four of them buy a screenful of
+ * ordinary conversation and nothing at all in a session that is mostly delegated work, which
+ * is exactly where the filling is needed. Six pages' worth, which is the most this will
+ * spend before saying so with a button.
  */
-const AUTO_FILL_LIMIT = 4;
+const AUTO_FILL_EVENTS = 900;
 
 /**
  * How many of the drawn rows it takes to fill the view, counting back from the newest.
@@ -543,8 +548,10 @@ export function Transcript({
   const restoreFrom = useRef<number | null>(null);
   /** Counting down to giving back the pages reached by scrolling up, or null when not. */
   const dropAfter = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /** How many times this session's page has already extended itself to fill the view. */
-  const filled = useRef(0);
+  /** How many events this session's page held when it first went looking for more. */
+  const filledFrom = useRef<number | null>(null);
+  /** How many it held when an older page was last asked for, so a fruitless ask is not repeated. */
+  const askedAt = useRef<number | null>(null);
   /**
    * Until when a scroll event is this component's own doing rather than the reader's.
    *
@@ -611,7 +618,8 @@ export function Transcript({
   useLayoutEffect(() => {
     pinned.current = !highlight;
     restoreFrom.current = null;
-    filled.current = 0;
+    filledFrom.current = null;
+    askedAt.current = null;
     // Depending on the arrival rather than on the object that carries it: the object is
     // built fresh on every render, so this ran on every render - and wiped, every time, the
     // scroll position recorded a moment earlier to be given back once the page had grown.
@@ -953,14 +961,28 @@ export function Transcript({
    */
   useEffect(() => {
     const list = listRef.current;
-    if (!list || loadingOlder || !more || filled.current >= AUTO_FILL_LIMIT) return;
+    if (!list || loadingOlder || !more) return;
     // Nothing measured yet, which is a list that has not been laid out rather than one
     // that is too short.
     if (list.scrollHeight === 0 || list.scrollHeight > list.clientHeight) return;
 
-    filled.current += 1;
-    if (budgeted.hasMore) budgeted.showMore();
-    else onLoadOlder?.();
+    // Measured from where the filling started rather than from the session's own first
+    // page, so a reader who has already reached back by hand is not charged for it.
+    filledFrom.current ??= events.length;
+    if (events.length - filledFrom.current >= AUTO_FILL_EVENTS) return;
+
+    // What is already held costs nothing to widen, and `hasMore` is what ends it.
+    if (budgeted.hasMore) {
+      budgeted.showMore();
+      return;
+    }
+
+    // A fetch that brought nothing back is the end of it. Without this the view would ask
+    // again on every render for a page that cannot grow - the events are the only evidence
+    // a fetch achieved anything, and asking is not free.
+    if (askedAt.current === events.length) return;
+    askedAt.current = events.length;
+    onLoadOlder?.();
   });
 
   function onScroll() {

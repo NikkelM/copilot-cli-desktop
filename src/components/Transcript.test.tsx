@@ -1032,7 +1032,62 @@ describe('a page too short to scroll', () => {
       ));
     }
 
-    expect(onLoadOlder.mock.calls.length).toBeLessThanOrEqual(4);
+    // Asking again for a page that brought nothing back would be asking the same question
+    // on every render for as long as the session stayed open.
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The case the old cap got wrong. It counted tries, and a try is worth anything from one
+   * row to a hundred - so four of them filled a screen of ordinary conversation and bought
+   * almost nothing in a session that is mostly delegated work, where one delegation collapses
+   * a whole page of events into a single row. That session opened on one row and a button.
+   */
+  it('keeps filling while the pages it asks for bring something back', () => {
+    const onLoadOlder = vi.fn();
+    const heights = { scroll: 0, client: 600 };
+    const { view } = mountShort(onLoadOlder, heights);
+    heights.scroll = 40;
+
+    // Each page arrives and collapses into the row already drawn, as a delegation does.
+    let events = short;
+    for (let round = 0; round < 8; round++) {
+      events = [...events, { type: 'assistant.message', id: `more-${round}`, data: { content: 'x' } } as TranscriptEvent];
+      act(() => view.rerender(
+        <Transcript events={events} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={ASSUMED_DISPLAY} />,
+      ));
+    }
+
+    expect(onLoadOlder.mock.calls.length).toBeGreaterThan(4);
+  });
+
+  /**
+   * And the bound that replaced the try count. Pages that keep arriving would otherwise be
+   * asked for until the session ran out, which is what the old cap was there to prevent.
+   */
+  it('stops once it has pulled in enough on its own', () => {
+    const onLoadOlder = vi.fn();
+    const heights = { scroll: 0, client: 600 };
+    const { view } = mountShort(onLoadOlder, heights);
+    heights.scroll = 40;
+
+    // A page at a time, as the sidecar hands them over, and every one of them collapses.
+    let events = short;
+    for (let page = 0; page < 10; page++) {
+      events = [
+        ...events,
+        ...Array.from(
+          { length: 150 },
+          (_, index) => ({ type: 'assistant.message', id: `p${page}-${index}`, data: { content: 'x' } }) as TranscriptEvent,
+        ),
+      ];
+      act(() => view.rerender(
+        <Transcript events={events} sessionId="s1" cwd={null} hasOlder loadingOlder={false} onLoadOlder={onLoadOlder} display={ASSUMED_DISPLAY} />,
+      ));
+    }
+
+    // Six pages' worth, so the seventh render is the one that stops asking.
+    expect(onLoadOlder.mock.calls.length).toBeLessThanOrEqual(7);
   });
 });
 
