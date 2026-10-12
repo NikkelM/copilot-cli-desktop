@@ -252,8 +252,12 @@ body {
   align-items: center;
   gap: 6px;
   /* The row's height is pinned so the fold control can be centred against it from outside,
-     once the sidebar is folded away and the control has nothing left to sit beside. */
+     once the sidebar is folded away and the control has nothing left to sit beside.
+     Naming a minimum replaces the automatic one, which is what a flex item's content comes
+     to - so without the line below the column was free to squeeze a wrapped row back down
+     to one row's worth and clip the second. */
   min-height: calc(var(--header-row) + var(--header-inset) * 2);
+  flex-shrink: 0;
   padding: var(--header-inset) var(--sidebar-inset);
   border-bottom: 1px solid var(--border);
   font-weight: 600;
