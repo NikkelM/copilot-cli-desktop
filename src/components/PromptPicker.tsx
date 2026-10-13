@@ -69,7 +69,8 @@ export function PromptPicker({ prompts, failed, onOpen, onChoose, at }: PromptPi
 
   const matching = useMemo(() => {
     const wanted = filter.trim().toLowerCase();
-    const all = prompts ?? [];
+    // Newest first, which is the other way round from the log these were read out of.
+    const all = [...(prompts ?? [])].reverse();
     return wanted ? all.filter((prompt) => prompt.text.toLowerCase().includes(wanted)) : all;
   }, [prompts, filter]);
 

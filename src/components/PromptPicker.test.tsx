@@ -8,11 +8,21 @@ import { PromptPicker } from './PromptPicker';
 
 const prompt = (at: string, text: string): SessionPrompt => ({ at, text });
 
+/**
+ * As the sidecar hands them over: oldest first, which is the order of the log they were read
+ * from. Written that way round on purpose - a fixture already in the order the list draws
+ * would let the list stop ordering them and say nothing about it.
+ */
 const three = [
-  prompt('2026-01-03T00:00:00.000Z', 'rewrite the parser'),
-  prompt('2026-01-02T00:00:00.000Z', 'add a test for the edge case'),
   prompt('2026-01-01T00:00:00.000Z', 'fix the crash on startup'),
+  prompt('2026-01-02T00:00:00.000Z', 'add a test for the edge case'),
+  prompt('2026-01-03T00:00:00.000Z', 'rewrite the parser'),
 ];
+
+/** The newest, which is what the list puts at the top. */
+const newest = three[2]!;
+/** The oldest, which is what it puts at the bottom. */
+const oldest = three[0]!;
 
 const picker = (over: Partial<Parameters<typeof PromptPicker>[0]> = {}) => {
   const onOpen = vi.fn();
@@ -45,7 +55,8 @@ describe('the list of a session prompts', () => {
     expect(onOpen).toHaveBeenCalledOnce();
   });
 
-  it('lists them once open', async () => {
+  /** Newest at the top, oldest at the bottom - the other way round from the log. */
+  it('lists them newest first, whatever order they arrived in', async () => {
     picker();
 
     await userEvent.click(screen.getByRole('button', { name: /Prompts/ }));
@@ -64,7 +75,7 @@ describe('the list of a session prompts', () => {
     await userEvent.click(screen.getByRole('button', { name: /Prompts/ }));
     await userEvent.click(screen.getByText('fix the crash on startup'));
 
-    expect(onChoose).toHaveBeenCalledExactlyOnceWith(three[2]);
+    expect(onChoose).toHaveBeenCalledExactlyOnceWith(oldest);
     expect(rows()).toEqual([]);
   });
 
@@ -142,15 +153,16 @@ describe('the list of a session prompts', () => {
       await userEvent.click(screen.getByRole('button', { name: /Prompts/ }));
       await userEvent.type(screen.getByRole('searchbox'), 'crash{Enter}');
 
-      expect(onChoose).toHaveBeenCalledExactlyOnceWith(three[2]);
+      expect(onChoose).toHaveBeenCalledExactlyOnceWith(oldest);
     });
 
+    /** Down from the box reaches the top row, which is the newest. */
     it('walks down out of the filter into the rows', async () => {
       picker();
 
       await userEvent.click(screen.getByRole('button', { name: /Prompts/ }));
       await userEvent.keyboard('{ArrowDown}');
-      expect(document.activeElement?.textContent).toContain('rewrite the parser');
+      expect(document.activeElement?.textContent).toContain(newest.text);
 
       await userEvent.keyboard('{ArrowDown}');
       expect(document.activeElement?.textContent).toContain('add a test for the edge case');
@@ -183,8 +195,10 @@ describe('the list of a session prompts', () => {
    * jsdom lays nothing out, so the list's measurements are the test's to state.
    */
   describe('a session with thousands of them', () => {
+    // Oldest first, as the sidecar hands them over, and genuinely ascending in time: a
+    // fixture whose moments jump about would say nothing about an order built from them.
     const many = Array.from({ length: 460 }, (_, index) =>
-      prompt(`2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.${String(index).padStart(3, '0')}Z`, `prompt ${index}`),
+      prompt(new Date(Date.UTC(2026, 0, 1) + index * 1000).toISOString(), `prompt ${index}`),
     );
 
     /** Scroll the list to a position, having told it how big it is. */
@@ -209,6 +223,8 @@ describe('the list of a session prompts', () => {
       await openList();
 
       expect(rows()).toHaveLength(200);
+      // The newest at the top, so the page drawn first is the recent end of the session.
+      expect(said()[0]).toBe('prompt 459');
       expect(screen.getByText('260 older')).toBeTruthy();
     });
 
@@ -228,6 +244,8 @@ describe('the list of a session prompts', () => {
       scrollTo(700);
 
       expect(rows()).toHaveLength(460);
+      // And the oldest is where scrolling to the end of the list arrives.
+      expect(said()[459]).toBe('prompt 0');
       expect(screen.queryByText(/older/)).toBeNull();
     });
 
@@ -251,11 +269,12 @@ describe('the list of a session prompts', () => {
       expect(rows()).toHaveLength(200);
     });
 
+    /** The oldest is past the first page, so this only finds it if the filter reaches past it. */
     it('reaches the rest through the filter as well', async () => {
       await openList();
-      await userEvent.type(screen.getByRole('searchbox'), 'prompt 459');
+      await userEvent.type(screen.getByRole('searchbox'), 'prompt 0');
 
-      expect(rows()).toHaveLength(1);
+      expect(said()).toEqual(['prompt 0']);
       expect(screen.queryByText(/older/)).toBeNull();
     });
   });
