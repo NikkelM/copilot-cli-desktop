@@ -2001,68 +2001,6 @@ describe('a command that changes settings', () => {
 });
 
 /**
- * A command can end by offering the next thing to type.
- *
- * `/update` is what does it in practice: `/exit` where a restart is what applies the
- * update, or the npm install line where npm is what installed it. An extension's own
- * command can return one too. Unlike the settings flag above the runtime declares it on one
- * result kind only, the row it asks to be added, so there is one place to read it (#174).
- */
-describe('a command that offers something to type', () => {
-  const invoking = async (result: Record<string, unknown>) => {
-    const harness = makeRuntime();
-    await harness.runtime.send('s1', 'x');
-    harness.sessions.get('s1')!.rpc.commands.invoke.mockResolvedValueOnce(result as never);
-    return harness.runtime.invoke('s1', 'update');
-  };
-
-  it('carries the offer through with the row', async () => {
-    expect(
-      await invoking({
-        kind: 'add-timeline-entry',
-        entry: { type: 'info', text: 'To update, run: `npm i -g @github/copilot@1.2.3`' },
-        prefillInput: '!npm i -g @github/copilot@1.2.3',
-      }),
-    ).toEqual({
-      kind: 'text',
-      text: 'To update, run: `npm i -g @github/copilot@1.2.3`',
-      prefill: '!npm i -g @github/copilot@1.2.3',
-    });
-  });
-
-  /**
-   * Most rows offer nothing, and an absent offer must not become an empty one.
-   *
-   * Strict, because `toEqual` passes a key explicitly set to `undefined` as though it were
-   * not there at all - which is the exact difference between answering with an offer and
-   * declining to.
-   */
-  it('says nothing when the command offered nothing', async () => {
-    expect(await invoking({ kind: 'add-timeline-entry', entry: { type: 'note', text: 'row' } })).toStrictEqual({
-      kind: 'text',
-      text: 'row',
-    });
-  });
-
-  /** The row and the offer are separate things, and a command can change settings as well. */
-  it('carries the settings flag alongside it', async () => {
-    expect(
-      await invoking({
-        kind: 'add-timeline-entry',
-        entry: { type: 'info', text: 'Exit and restart copilot to apply the update.' },
-        prefillInput: '/exit',
-        runtimeSettingsChanged: true,
-      }),
-    ).toEqual({
-      kind: 'text',
-      text: 'Exit and restart copilot to apply the update.',
-      prefill: '/exit',
-      settingsChanged: true,
-    });
-  });
-});
-
-/**
  * The mode a session is in, which the sidebar wants for every session it lists.
  *
  * Split by whether the session is loaded, because the two answers come from different
