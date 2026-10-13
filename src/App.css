@@ -7594,3 +7594,125 @@ pre.fatal,
   background: var(--cursor-wash);
   color: var(--text);
 }
+
+/* The prompts of a session, to navigate it by (#96). A dropdown rather than a panel: it is
+   opened, chosen from, and closed, and a panel would take height from the transcript the
+   list exists to move around. */
+.prompts {
+  position: relative;
+}
+
+.prompts-current {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.prompts-current:hover {
+  color: var(--text);
+}
+
+/* How many there are, once they have been read. Dimmer than the word, since it describes
+   the list rather than naming it. */
+.prompts-count {
+  opacity: 0.7;
+}
+
+/* Wider than the agent menu beside it: these rows are sentences rather than names, and a
+   narrow column turns every one of them into three lines. */
+.prompts-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(calc(var(--font-base) * 34), 90vw);
+  max-height: 60vh;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgba(1, 4, 9, 0.6);
+}
+
+.prompts-filter {
+  flex: none;
+  margin: 2px 2px 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-md);
+}
+
+.prompts-filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* The one part that scrolls, so the filter stays put while the list moves under it. */
+.prompts-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.prompts-loading {
+  margin: 0;
+  padding: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-md);
+}
+
+.prompt-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-md);
+  text-align: left;
+  cursor: pointer;
+}
+
+.prompt-row:hover,
+.prompt-row:focus-visible {
+  background: rgba(110, 118, 129, 0.12);
+}
+
+/* Where this list last sent the reader, so it says where you are as well as where to go. */
+.prompt-row.chosen {
+  background: rgba(56, 139, 253, 0.1);
+}
+
+/* One line of it. The prompt is the row, so it takes the room, and the rest is cut rather
+   than wrapped: three lines per row is a list of four prompts. */
+.prompt-row-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.prompt-row-when {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}

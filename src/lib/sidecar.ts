@@ -48,6 +48,7 @@ import type {
   SessionAgent,
   SessionContextUsage,
   SessionModel,
+  SessionPrompt,
   SessionAutoTier,
   AutoTier,
   SessionMode,
@@ -193,6 +194,17 @@ export async function locateTurn(sessionId: string, source: string): Promise<num
 export async function locateMoment(sessionId: string, at: string): Promise<number | null> {
   const { cursor } = await request('sessions.locate', { sessionId, at });
   return cursor;
+}
+
+/**
+ * Every prompt somebody typed into a session, oldest first (#96).
+ *
+ * Costs no session, but does read the whole log - a second on the largest here - so it is
+ * asked for when somebody opens the list rather than alongside the session.
+ */
+export async function sessionPrompts(sessionId: string): Promise<SessionPrompt[]> {
+  const { prompts } = await request('sessions.prompts', { sessionId });
+  return prompts;
 }
 
 /**

@@ -5,6 +5,7 @@ import type {
   Attachment,
   RewindResult,
   SessionMatch,
+  SessionPrompt,
   SessionSummary,
   SlashCommand,
   TranscriptEvent,
@@ -14,6 +15,7 @@ import { Changes } from './components/Changes';
 import { Todos } from './components/Todos';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
+import { PromptPicker } from './components/PromptPicker';
 import { Environment } from './components/Environment';
 import { Repository } from './components/Repository';
 import { Subagents } from './components/Subagents';
@@ -88,6 +90,7 @@ import { stashFiles } from './lib/paste';
 import { nameOf } from './lib/paths';
 import { useFileDrop } from './lib/useFileDrop';
 import { useTodos } from './lib/useTodos';
+import { usePromptList } from './lib/usePromptList';
 import { useActiveElsewhere } from './lib/useActiveElsewhere';
 import { useMarked } from './lib/useMarked';
 import { bulkActions } from './lib/bulkActions';
@@ -310,7 +313,33 @@ export default function App() {
   );
 
   const transcript = useTranscript(selectedId, setError, jump?.sessionId === selectedId ? jump.cursor : null);
-  const tree = useTreeState(selected?.cwd ?? null);
+  /**
+   * The prompts of the open session, for the header's list to navigate by (#96).
+   *
+   * Keyed on how many events are loaded, which is what moves when the session says anything,
+   * so a list opened after a reply is read again rather than being the one from before it.
+   */
+  const promptList = usePromptList(selectedId, transcript.events.length);
+
+  /**
+   * Go to a prompt, the same way the app already goes to a delegation or a search result.
+   *
+   * A cursor points at where the next thing begins and the page is what came before it, so
+   * asking for the moment just after the prompt puts the prompt at the end of the page with
+   * the conversation that led to it above - which is the wrong end to read from. The moment
+   * of the prompt itself is asked for instead, so it lands at the end of the page and what
+   * it produced is what loads next.
+   */
+  const goToPrompt = useCallback(
+    async (prompt: SessionPrompt) => {
+      if (!selectedId) return;
+
+      promptList.went(prompt.at);
+      const at = await locateMoment(selectedId, prompt.at).catch(() => null);
+      show(selectedId, at);
+    },
+    [selectedId, promptList, show],
+  );  const tree = useTreeState(selected?.cwd ?? null);
   const queue = useQueue();
   /**
    * The queued message being rewritten, if any, and the draft it displaced.
@@ -2116,6 +2145,13 @@ export default function App() {
                       Todos
                     </button>
                   )}
+                  <PromptPicker
+                    prompts={promptList.prompts}
+                    failed={promptList.failed}
+                    at={promptList.at}
+                    onOpen={promptList.load}
+                    onChoose={goToPrompt}
+                  />
                   {display.footer.showAgent && (
                   <AgentPicker
                     current={agent.current}
