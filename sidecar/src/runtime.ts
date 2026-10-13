@@ -2100,9 +2100,15 @@ export class SessionRuntime {
       }
 
       // Not output so much as a row the runtime wants added, but the difference does not
-      // survive into anything this app draws.
+      // survive into anything this app draws. The text it offers to write for you does:
+      // this is the one result kind the runtime attaches one to (#174).
       case 'add-timeline-entry':
-        return { kind: 'text', text: stripAnsi(result.entry.text), ...changed };
+        return {
+          kind: 'text',
+          text: stripAnsi(result.entry.text),
+          ...(result.prefillInput ? { prefill: result.prefillInput } : {}),
+          ...changed,
+        };
 
       // Sub-command pickers, model dialogues and the rest ask the client to run a piece of
       // its own interface. Named rather than swallowed, so an unsupported one reads as

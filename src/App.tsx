@@ -1362,6 +1362,17 @@ export default function App() {
       switch (outcome.kind) {
         case 'text':
           transcript.showLocal('command.output', { text: outcome.text, markdown: outcome.markdown });
+          /**
+           * Some commands end by offering the next thing to type - `/update` offers the
+           * install line to run, or `/exit` where a restart is what applies it (#174).
+           *
+           * Offered rather than written over the top, which is what the terminal does: the
+           * box was emptied before the command was invoked, so the only writing this can
+           * find is something typed while it was away, and the rule everywhere else here is
+           * that anything typed since wins. Nothing is lost by declining it either - the row
+           * above names the same command the offer carries.
+           */
+          if (outcome.prefill) drafts.suggest(sessionId, outcome.prefill);
           break;
 
         // The command wrote the prompt; the transcript already shows the command that did

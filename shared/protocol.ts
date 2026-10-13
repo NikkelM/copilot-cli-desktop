@@ -924,7 +924,21 @@ export type McpServerConfig =
  */
 export type CommandOutcome = (
   /** Output to show. Already stripped of terminal escapes, which this app cannot draw. */
-  | { kind: 'text'; text: string; markdown?: boolean }
+  | {
+      kind: 'text';
+      text: string;
+      markdown?: boolean;
+      /**
+       * Text the command offers to write for you, which the composer takes up (#174).
+       *
+       * Only this kind carries it, unlike `settingsChanged` below: the runtime declares it
+       * on `add-timeline-entry` alone, which is the result that becomes this one. `/update`
+       * is what produces it in practice - `/exit` where a restart applies the update, or
+       * `!npm i -g @github/copilot@…` where the install came from npm - and an extension's
+       * own command can return one too.
+       */
+      prefill?: string;
+    }
   /** The command wants a prompt sent to the agent on the user's behalf. */
   | { kind: 'prompt'; prompt: string; notice?: string }
   /** It did its work itself; the message, when there is one, is the confirmation. */
