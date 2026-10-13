@@ -23,6 +23,16 @@ export function usePromptList(sessionId: string | null, since: number) {
   const [at, setAt] = useState<string | null>(null);
   /** What the session had said when the list was read, so a stale one is read again. */
   const read = useRef<number | null>(null);
+  /**
+   * Which session the read belongs to, so a late answer cannot land on another.
+   *
+   * This read is the slowest in the app - a second on the largest log here - which makes it
+   * the one most likely to come back after the reader has moved on. Another session's
+   * prompts would be read as this one's, and choosing from them would jump this session to
+   * wherever a moment from a different log happened to fall.
+   */
+  const asking = useRef<string | null>(null);
+  asking.current = sessionId;
 
   // A list belongs to the session it was read from, and none of it survives moving on.
   useEffect(() => {
@@ -35,11 +45,15 @@ export function usePromptList(sessionId: string | null, since: number) {
   const load = useCallback(() => {
     if (!sessionId || read.current === since) return;
 
+    const forSession = sessionId;
     read.current = since;
     setFailed(null);
-    sessionPrompts(sessionId)
-      .then(setPrompts)
+    sessionPrompts(forSession)
+      .then((found) => {
+        if (asking.current === forSession) setPrompts(found);
+      })
       .catch((error: unknown) => {
+        if (asking.current !== forSession) return;
         // Askable again, since a read that failed is not an answer.
         read.current = null;
         setFailed(messageOf(error));

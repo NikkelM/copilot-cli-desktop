@@ -9,6 +9,9 @@ vi.mock('./sidecar', () => ({ sessionTodos: (id: string) => sessionTodos(id) }))
 
 import { useTodos } from './useTodos';
 
+/** The hook's own debounce, which these tests have to outwait. */
+const SETTLE_MS = 150;
+
 const todo = (id: string): Todo => ({ id, title: `Todo ${id}`, status: 'pending', dependsOn: [] });
 
 beforeEach(() => {
@@ -169,6 +172,66 @@ describe('keeping up with the agent’s todo list', () => {
     act(() => answers[0]!([todo('from-s1')]));
     await settle();
 
+    expect(view.result.current.todos).toEqual([]);
+  });
+});
+
+/**
+ * The announcement is subscribed to once, when the app starts, so whatever `changed` was
+ * then is the one that answers for the rest of the run.
+ *
+ * At that moment there is no session open. A `changed` built around a captured `sessionId`
+ * was therefore built around `null`, and every announcement from the agent ran the branch
+ * that empties the list - taking the Todos button with it, since the header draws that only
+ * where there is something in the list. The live half of #172 had never worked.
+ *
+ * Held on purpose rather than taken fresh: a test that calls `result.current.changed()` is
+ * by construction calling the newest one, which is exactly the version that was never the
+ * problem.
+ */
+describe('the callback the event subscription is holding', () => {
+  it('reads the session open now, not the one open when it was made', async () => {
+    const view = watching(null);
+    // Kept as the app keeps it: taken once, never taken again.
+    const held = view.result.current.changed;
+
+    view.rerender({ id: 's1' });
+    await settle();
+    expect(view.result.current.todos).toHaveLength(1);
+
+    sessionTodos.mockResolvedValue([todo('a'), todo('b')]);
+    act(() => held());
+    await act(async () => void vi.advanceTimersByTime(SETTLE_MS));
+    await settle();
+
+    expect(sessionTodos).toHaveBeenLastCalledWith('s1');
+    expect(view.result.current.todos).toHaveLength(2);
+  });
+
+  /** And it keeps up with the reader, rather than answering for wherever it was made. */
+  it('follows the reader from one session to another', async () => {
+    const view = watching('s1');
+    const held = view.result.current.changed;
+
+    view.rerender({ id: 's2' });
+    await settle();
+
+    act(() => held());
+    await act(async () => void vi.advanceTimersByTime(SETTLE_MS));
+    await settle();
+
+    expect(sessionTodos).toHaveBeenLastCalledWith('s2');
+  });
+
+  /** With nothing open there is nothing to ask about, which is the only time it empties. */
+  it('asks nothing when no session is open', async () => {
+    const view = watching(null);
+    sessionTodos.mockClear();
+
+    act(() => view.result.current.changed());
+    await act(async () => void vi.advanceTimersByTime(SETTLE_MS));
+
+    expect(sessionTodos).not.toHaveBeenCalled();
     expect(view.result.current.todos).toEqual([]);
   });
 });

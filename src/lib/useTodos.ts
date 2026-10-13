@@ -30,12 +30,20 @@ const SETTLE_MS = 150;
 export function useTodos(sessionId: string | null) {
   const [todos, setTodos] = useState<Todo[]>([]);
 
-  /** Which session the list on hand belongs to, so a late answer cannot land on another. */
+  /**
+   * Which session the list on hand belongs to, so a late answer cannot land on another.
+   *
+   * Read by `read` as well as checked by it, which is what keeps both of the callbacks
+   * below stable. The event that calls `changed` is subscribed to once, when the app starts,
+   * so it holds whichever `changed` existed then - and one built around a captured
+   * `sessionId` was built when there was no session, so every announcement from the agent
+   * emptied the list and took the Todos button with it.
+   */
   const asking = useRef<string | null>(null);
   asking.current = sessionId;
 
   const read = useCallback(() => {
-    const forSession = sessionId;
+    const forSession = asking.current;
     if (!forSession) {
       setTodos([]);
       return;
@@ -53,10 +61,12 @@ export function useTodos(sessionId: string | null) {
       .catch(() => {
         if (asking.current === forSession) setTodos([]);
       });
-  }, [sessionId]);
+  }, []);
 
-  // On arriving at a session, which is when there is first something to ask about.
-  useEffect(read, [read]);
+  // On arriving at a session, which is when there is first something to ask about. Keyed on
+  // the session rather than on `read`, which no longer changes with it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(read, [sessionId]);
 
   const settling = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => void (settling.current && clearTimeout(settling.current)), []);

@@ -4479,6 +4479,7 @@ describe('SessionRuntime watching a running turn', () => {
   beforeEach(async () => {
     liveMod = await import('./liveChanges.js');
     liveMod.forgetLive('a');
+    liveMod.forgetLive('b');
   });
 
   /** A write and the diff it reports, which is what the tracker reads. */
@@ -4499,6 +4500,39 @@ describe('SessionRuntime watching a running turn', () => {
     });
   };
 
+  /**
+   * Releasing a session is releasing everything held for it, including this.
+   *
+   * `evict` does as it is told, up to and including a session mid-request, and
+   * `deleteSession` always goes through it. What a turn had changed so far is an account of
+   * a turn in progress and means nothing once the session has gone: kept, a deleted session
+   * holds it for as long as the app is open, and a session released mid-turn has it merged
+   * into the next resume - counting those lines twice and marking them as still being
+   * written.
+   */
+  it('lets go of what the turn had changed when the session is released', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    wrote(sessions.get('a')!, 'a.ts');
+    expect((await live()).hasLive('a')).toBe(true);
+
+    await runtime.evict('a');
+
+    expect((await live()).hasLive('a')).toBe(false);
+  });
+
+  /** And only that session's: another one's turn is still running. */
+  it('leaves another session running turn alone', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'make a file');
+    await runtime.send('b', 'make another');
+    wrote(sessions.get('a')!, 'a.ts');
+    wrote(sessions.get('b')!, 'b.ts', 'c2');
+
+    await runtime.evict('a');
+
+    expect((await live()).hasLive('b')).toBe(true);
+  });
   it('keeps what a file tool changed', async () => {
     const { runtime, sessions } = makeRuntime();
     await runtime.send('a', 'make a file');
@@ -4973,5 +5007,90 @@ describe('rewriting what a waiting message carries', () => {
     const [item] = await runtime.queue('s1');
 
     expect(item?.attachments).toHaveLength(2);
+  });
+});
+
+/**
+ * What this app remembers about a sent message belongs to the session it was sent to.
+ *
+ * The queue is read one session at a time, and the forgetting at the end of that read can
+ * only see the session it was asked about. Keyed by message alone, a read of any queue swept
+ * every other session's entries away - and the window refreshes a queue on an event from any
+ * session at all, so that was the common case rather than an edge.
+ */
+describe('a queue read in one session and a message sent in another', () => {
+  /** Put a message in a session's queue and answer for it when that queue is read. */
+  const waiting = async (
+    runtime: Awaited<ReturnType<typeof makeRuntime>>['runtime'],
+    sessions: ReturnType<typeof makeRuntime>['sessions'],
+    sessionId: string,
+    files: unknown[] = [],
+  ) => {
+    const { messageId } = await runtime.send(sessionId, 'mine', 'enqueue', files as never);
+    sessions
+      .get(sessionId)!
+      .rpc.queue.pendingItems.mockResolvedValue({
+        items: [{ id: 'q1', messageId, kind: 'message', displayText: 'mine', agentMode: 'agent' }],
+        steeringMessages: [],
+      });
+    return messageId;
+  };
+
+  it('still takes back the other session, after the one queue was read', async () => {
+    const { runtime, sessions } = makeRuntime();
+    const other = await waiting(runtime, sessions, 's2');
+    await waiting(runtime, sessions, 's1');
+    sessions.get('s2')!.rpc.queue.withdrawMessage.mockResolvedValue({ removed: true, interrupted: false });
+
+    await runtime.queue('s1');
+
+    await expect(runtime.withdraw('s2', other)).resolves.toEqual({ removed: true, interrupted: false });
+  });
+
+  /** The worst of it: the edit reported success and the files were quietly dropped. */
+  it('still carries the other session files into a rewrite', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await waiting(runtime, sessions, 's2', [{ type: 'file', path: 'a.png' }]);
+    await waiting(runtime, sessions, 's1');
+
+    await runtime.queue('s1');
+
+    await expect(runtime.queueEdit('s2', 'q1', 'with another', [
+      { type: 'file', path: 'a.png' },
+      { type: 'file', path: 'b.png' },
+    ] as never)).resolves.toBe(true);
+    expect(sessions.get('s2')!.rpc.queue.insertAt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          attachments: [
+            expect.objectContaining({ path: 'a.png' }),
+            expect.objectContaining({ path: 'b.png' }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('still says what the other session message carried', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await waiting(runtime, sessions, 's2', [{ type: 'file', path: 'a.png' }]);
+    await waiting(runtime, sessions, 's1');
+
+    await runtime.queue('s1');
+
+    const [item] = await runtime.queue('s2');
+    expect(item?.attachments).toHaveLength(1);
+  });
+
+  /** And the forgetting itself still happens, for the session actually read. */
+  it('forgets its own message once the queue stops listing it', async () => {
+    const { runtime, sessions } = makeRuntime();
+    const mine = await waiting(runtime, sessions, 's1');
+    sessions.get('s1')!.rpc.queue.pendingItems.mockResolvedValue({ items: [], steeringMessages: [] });
+
+    await runtime.queue('s1');
+
+    // Nothing is known about it any more, so there is nothing to take back by name.
+    await expect(runtime.withdraw('s1', mine)).resolves.toEqual({ removed: false, interrupted: false });
   });
 });

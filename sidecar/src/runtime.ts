@@ -162,9 +162,19 @@ const ANSWERS_KEPT = 64;
  */
 const CALLERS_KEPT = 256;
 
+/**
+ * How a sent message is remembered: by the session as well as by the message.
+ *
+ * A colon is safe between them because a session id is a UUID and a message id is the
+ * runtime's own, neither of which contains one - and even if it did, the only thing read
+ * back out of the key is the session prefix, which is matched with the same separator.
+ */
+function sentKey(sessionId: string, messageId: string): string {
+  return `${sessionId}:${messageId}`;
+}
+
 /** Drop the oldest entries until a map is back within its bound. */
-function bound<T>(entries: Map<string, T>, limit: number): void {
-  // Insertion order, so this drops the least recently added rather than an arbitrary one.
+function bound<T>(entries: Map<string, T>, limit: number): void {  // Insertion order, so this drops the least recently added rather than an arbitrary one.
   for (const oldest of [...entries.keys()].slice(0, entries.size - limit)) entries.delete(oldest);
 }
 
@@ -433,8 +443,14 @@ export class SessionRuntime {
    *
    * Only grows while a message is waiting: an entry is dropped once the queue stops listing
    * it, which is the moment it stopped being something anybody can ask about.
+   *
+   * Keyed by the session as well as the message. The queue is read one session at a time,
+   * and the forgetting below can only see the session it was asked about - so a map keyed by
+   * message alone had every other session's entries swept away by a queue read anywhere,
+   * which took their files, their Take back and their rewrite with them.
    */
   private readonly sent = new Map<string, { prompt: string; attachments: Attachment[] }>();
+
   private readonly onElicitationRequest?: (
     sessionId: string,
     requestId: string,
@@ -1440,6 +1456,11 @@ export class SessionRuntime {
     entry.unsubscribe();
     this.loaded.delete(sessionId);
     this.abandonPending(sessionId);
+    // What the turn had changed so far, which is only ever an account of a turn in progress.
+    // A session let go mid-request keeps it otherwise, and the next resume merges it into
+    // the changes read from disk - counting those lines twice and marking them as still
+    // being written. A deleted session keeps it for as long as the app is open.
+    forgetLive(sessionId);
 
     const index = this.order.indexOf(sessionId);
     if (index !== -1) this.order.splice(index, 1);
@@ -1493,7 +1514,7 @@ export class SessionRuntime {
      * session is still listed, still removable and still editable; it just cannot say
      * whether anything came with it, and cannot be taken back.
      */
-    this.sent.set(messageId, { prompt, attachments: attachments ?? [] });
+    this.sent.set(sentKey(sessionId, messageId), { prompt, attachments: attachments ?? [] });
 
     // The work starts here rather than at the first `assistant.turn_start`, so that nothing
     // in the moment before the runtime announces the turn can evict the session or mistake
@@ -1664,12 +1685,13 @@ export class SessionRuntime {
     return this.loaded.has(sessionId);
   }
 
-  async queue(sessionId: string): Promise<QueuedItem[]> {    const live = this.loaded.get(sessionId)?.session;
+  async queue(sessionId: string): Promise<QueuedItem[]> {
+    const live = this.loaded.get(sessionId)?.session;
     if (!live) return [];
 
     const { items } = await live.rpc.queue.pendingItems();
     const queued = items.map((item) => {
-      const mine = item.messageId ? this.sent.get(item.messageId) : undefined;
+      const mine = item.messageId ? this.sent.get(sentKey(sessionId, item.messageId)) : undefined;
       return {
         id: item.id,
         kind: item.kind === 'message' ? 'message' : item.kind === 'command' ? 'command' : 'other',
@@ -1681,8 +1703,16 @@ export class SessionRuntime {
 
     // Forgotten as soon as the queue stops listing it, which is the moment nobody can ask
     // about it any more. Without this the map would grow for as long as the app is open.
-    const waiting = new Set(items.map((item) => item.messageId).filter(Boolean));
-    for (const id of this.sent.keys()) if (!waiting.has(id)) this.sent.delete(id);
+    //
+    // Only this session's, because only this session's queue was read. Sweeping the whole
+    // map meant every other session's messages were forgotten the moment anything happened
+    // in any queue - and the frontend refreshes on an event from any session at all, so
+    // that was most of the time rather than an edge.
+    const mine = `${sessionId}:`;
+    const waiting = new Set(
+      items.map((item) => item.messageId).filter((id): id is string => Boolean(id)).map((id) => sentKey(sessionId, id)),
+    );
+    for (const key of this.sent.keys()) if (key.startsWith(mine) && !waiting.has(key)) this.sent.delete(key);
 
     return queued;
   }
@@ -1720,7 +1750,7 @@ export class SessionRuntime {
     const { items } = await live.rpc.queue.pendingItems();
     const at = items.findIndex((item) => item.id === id);
     const item = at === -1 ? undefined : items[at];
-    const mine = item?.messageId ? this.sent.get(item.messageId) : undefined;
+    const mine = item?.messageId ? this.sent.get(sentKey(sessionId, item.messageId)) : undefined;
 
     const had = mine?.attachments ?? [];
     const wants = attachments ?? had;
@@ -1731,7 +1761,7 @@ export class SessionRuntime {
     // because they wrote it. The two differ only where this app rewrites a prompt.
     if (sameFiles || !mine) {
       const { updated } = await live.rpc.queue.updateText({ id, prompt: text, displayPrompt: text });
-      if (updated && mine && item?.messageId) this.sent.set(item.messageId, { ...mine, prompt: text });
+      if (updated && mine && item?.messageId) this.sent.set(sentKey(sessionId, item.messageId), { ...mine, prompt: text });
       return updated;
     }
 
@@ -1769,11 +1799,11 @@ export class SessionRuntime {
      * Without it the message would be listed as carrying nothing a moment after being
      * given its files.
      */
-    if (item?.messageId) this.sent.delete(item.messageId);
+    if (item?.messageId) this.sent.delete(sentKey(sessionId, item.messageId));
     const { items: after } = await live.rpc.queue.pendingItems();
     const landed = after.find((entry) => entry.id === fresh);
     if (landed?.messageId) {
-      this.sent.set(landed.messageId, { prompt: text, attachments: wants });
+      this.sent.set(sentKey(sessionId, landed.messageId), { prompt: text, attachments: wants });
     }
     return true;
   }
@@ -1832,14 +1862,14 @@ export class SessionRuntime {
    */
   async withdraw(sessionId: string, messageId: string): Promise<{ removed: boolean; interrupted: boolean }> {
     const live = this.loaded.get(sessionId)?.session;
-    const mine = this.sent.get(messageId);
+    const mine = this.sent.get(sentKey(sessionId, messageId));
     if (!live || !mine) return { removed: false, interrupted: false };
 
     const { removed, interrupted } = await live.rpc.queue.withdrawMessage({
       messageId,
       expectedPrompt: mine.prompt,
     });
-    if (removed) this.sent.delete(messageId);
+    if (removed) this.sent.delete(sentKey(sessionId, messageId));
     return { removed, interrupted };
   }
 
