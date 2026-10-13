@@ -1,4 +1,5 @@
 import type { Attachment, TranscriptEvent } from '../../shared/protocol';
+import { hookFailed } from '../../shared/protocol';
 import { stripAnsi } from '../../shared/ansi';
 import { relativise } from './paths';
 
@@ -446,13 +447,28 @@ const TRIGGER: Record<string, ToolEntry['skill']> = {
  * through can tell a missing case from a dead one. The test that keeps this honest reads
  * this file and fails if any of these ever acquires a case, which is the only place the
  * question can still be asked.
+ *
+ * `hook.end` is not among them, because the rare one that failed is worth a row (#244). It
+ * is dropped by `ranCleanly` instead, which keeps the same property for all but a handful:
+ * 74 of the 185,479 hook runs in the 218 logs here failed, so 185,405 of them still never
+ * reach the switch.
  */
 export const DRAWS_NOTHING: ReadonlySet<string> = new Set([
   'assistant.turn_start',
   'assistant.turn_end',
   'hook.start',
-  'hook.end',
 ]);
+
+/**
+ * A hook that did its job, which is all but a handful of them.
+ *
+ * Dropped here rather than in the case below so the common one costs what it always did.
+ * The rule itself is the protocol's, since the sidecar applies it too when it decides what
+ * a page is made of - two copies of it would be two things to keep in step.
+ */
+function ranCleanly(event: TranscriptEvent): boolean {
+  return event.type === 'hook.end' && !hookFailed(event.data);
+}
 
 /** Longest question shown in a row header before clamping. */
 const MAX_HEADER = 140;
@@ -503,7 +519,7 @@ export function toEntries(
   // covers the recursive call a subagent's work makes, and means a synthesised row for a
   // delegation this page cannot see starts at the agent's first visible event rather than at
   // a hook that happened to fire just before it.
-  const events = all.filter((event) => !DRAWS_NOTHING.has(event.type));
+  const events = all.filter((event) => !DRAWS_NOTHING.has(event.type) && !ranCleanly(event));
 
   const entries: Entry[] = [];
   /** Thinking already shown as it was written, so the message repeating it is skipped. */
@@ -878,6 +894,40 @@ export function toEntries(
           body: text(data, 'message') ?? 'Session error',
         });
         break;
+
+      /**
+       * A hook that loaded fine and then failed while it ran (#244).
+       *
+       * Only reached by a failure; the rest were dropped above. A row rather than a line in
+       * the Environment panel, which is where the load-time errors live: measured over the
+       * logs here these come one at a time - never more than two in a row - so the noise the
+       * timeline was protecting itself from does not arrive, and the panel is somewhere
+       * nobody looks unless they are already suspicious.
+       *
+       * The point is that a hook which stops working is otherwise indistinguishable from one
+       * that had nothing to do: a notification that never fires looks exactly like a quiet
+       * turn. Naming the file is what makes it fixable, since a reader with several hooks has
+       * no other way to tell which one went wrong.
+       *
+       * Preformatted, because the source is a Windows path and markdown eats the backslashes
+       * that precede punctuation - `.copilot` would arrive having lost its separator.
+       */
+      case 'hook.end': {
+        const error = (data.error ?? {}) as Record<string, unknown>;
+        const what = text(data, 'hookType') ?? 'A';
+        const why = text(error, 'message') ?? 'it failed without saying why';
+        const where = text(error, 'source');
+
+        entries.push({
+          kind: 'message',
+          key,
+          variant: 'failed',
+          body: `${what} hook failed: ${why}${where ? `\n${where}` : ''}`,
+          preformatted: true,
+          at: event.timestamp,
+        });
+        break;
+      }
 
       /**
        * The conversation being summarised to make room in the window (#211).

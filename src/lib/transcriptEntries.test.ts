@@ -1328,12 +1328,22 @@ describe('events that draw nothing', () => {
   });
 
   it('names the ones a long log is mostly made of', () => {
-    expect([...DRAWS_NOTHING].sort()).toEqual([
-      'assistant.turn_end',
-      'assistant.turn_start',
-      'hook.end',
-      'hook.start',
-    ]);
+    expect([...DRAWS_NOTHING].sort()).toEqual(['assistant.turn_end', 'assistant.turn_start', 'hook.start']);
+  });
+
+  /**
+   * `hook.end` is not in the set, because the rare one that failed is worth a row (#244).
+   * It is dropped by its own test instead, which has to keep the same property for the
+   * common case: 74 of the 185,479 hook runs across the 218 logs here failed.
+   */
+  it('still drops a hook that did its job', () => {
+    expect(toEntries([event('hook.end', { hookType: 'agentStop', success: true })], CWD)).toEqual([]);
+  });
+
+  /** Saying nothing about how it went is not the same as saying it went badly. */
+  it('drops one that said nothing about how it went', () => {
+    expect(toEntries([event('hook.end', { hookType: 'agentStop' })], CWD)).toEqual([]);
+    expect(toEntries([event('hook.end', {})], CWD)).toEqual([]);
   });
 
   it.each([...DRAWS_NOTHING])('draws nothing for %s', (type) => {
@@ -1380,6 +1390,67 @@ describe('events that draw nothing', () => {
     );
 
     expect(entries.map((e) => (e as MessageEntry).body)).toEqual(['first', 'second', 'third']);
+  });
+});
+
+/**
+ * A hook that loaded fine and then failed while it ran (#244).
+ *
+ * Silent until now, and measurably so: 74 of the 185,479 hook runs across the 218 logs on
+ * this machine failed, spread over 12 sessions, and not one of them left a mark anywhere in
+ * the app. A hook that stops working is worse than one that never ran, because a
+ * notification that never fires looks exactly like a turn with nothing to announce.
+ */
+describe('a hook that failed while it ran', () => {
+  const failure = (over: Record<string, unknown> = {}) =>
+    event(
+      'hook.end',
+      {
+        hookType: 'agentStop',
+        success: false,
+        error: {
+          message: 'HookTimeoutError: Hook command timed out after 5 seconds',
+          source: 'C:\\Users\\nikke\\.copilot\\hooks\\sounds.json',
+        },
+        ...over,
+      },
+      'e1',
+    );
+
+  const drawn = (over: Record<string, unknown> = {}) => toEntries([failure(over)], CWD)[0] as MessageEntry | undefined;
+
+  it('says which hook it was, what went wrong, and where it came from', () => {
+    const entry = drawn();
+
+    expect(entry?.variant).toBe('failed');
+    expect(entry?.body).toBe(
+      'agentStop hook failed: HookTimeoutError: Hook command timed out after 5 seconds\nC:\\Users\\nikke\\.copilot\\hooks\\sounds.json',
+    );
+  });
+
+  /**
+   * Shown as written rather than as markdown. The source is a Windows path and markdown
+   * drops a backslash that precedes punctuation, so `\.copilot` would arrive having lost
+   * the separator that makes it a path.
+   */
+  it('keeps the path it names intact', () => {
+    expect(drawn()?.preformatted).toBe(true);
+  });
+
+  /** The other failure in these logs names no file at all: `os error 267` from a bad cwd. */
+  it('reports one that names no file', () => {
+    const entry = drawn({ error: { message: 'Error: The directory name is invalid. (os error 267)' } });
+
+    expect(entry?.body).toBe('agentStop hook failed: Error: The directory name is invalid. (os error 267)');
+  });
+
+  it('reports one that says nothing about why', () => {
+    expect(drawn({ error: undefined })?.body).toBe('agentStop hook failed: it failed without saying why');
+  });
+
+  /** Every hook type in these logs fails sometimes, so none of them may be special-cased. */
+  it.each(['userPromptSubmitted', 'agentStop', 'preToolUse', 'sessionStart'])('reports a failed %s hook', (type) => {
+    expect(drawn({ hookType: type })?.body).toContain(`${type} hook failed`);
   });
 });
 /**

@@ -227,7 +227,7 @@ export function useTranscript(sessionId: string | null, onError: (message: strin
      *
      * Rows this app invents are not pushed, so none of them comes through here.
      */
-    if (!showsInTranscript(event.type)) return;
+    if (!showsInTranscript(event.type, event.data)) return;
 
     // Captured here rather than read inside the updater below, which React may run later
     // and more than once: the session on screen at that point is not necessarily the one

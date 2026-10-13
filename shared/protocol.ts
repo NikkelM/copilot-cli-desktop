@@ -1215,6 +1215,10 @@ export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
   'session.model_change',
   'command.output',
   'command.failed',
+  // The rare hook that loaded fine and then failed while it ran. The rest are dropped by
+  // the renderer, which is where the measurement lives: 74 of the 185,479 hook runs across
+  // the 218 logs here failed, so this carries a handful and discards the rest (#244).
+  'hook.end',
   'abort',
   'session.idle',
   'session.shutdown',
@@ -1228,6 +1232,17 @@ export const TRANSCRIPT_EVENT_TYPES: readonly string[] = [
 const SHOWN = new Set(TRANSCRIPT_EVENT_TYPES);
 
 /**
+ * Whether a hook run is the rare one worth carrying.
+ *
+ * Only an explicit `false`: a run that says nothing about how it went is not a run that went
+ * badly, and treating silence as failure would put a red row under every hook on a build
+ * that stopped sending the field.
+ */
+export function hookFailed(data: unknown): boolean {
+  return (data as { success?: unknown } | undefined)?.success === false;
+}
+
+/**
  * Whether the parent transcript would draw anything for this event.
  *
  * `agentId` marks a subagent's own work, which the root agent's events never carry. It is
@@ -1238,9 +1253,15 @@ const SHOWN = new Set(TRANSCRIPT_EVENT_TYPES);
  * That is a decision about what a transcript is, not about what a page costs. A subagent is
  * 4% to 73% of a delegating session's drawable events, so it remains the largest thing in a
  * page and the first candidate for anything that needs one smaller.
+ *
+ * `hook.end` is the one type the answer depends on more than the name: a failure is worth a
+ * row and the rest are not, and there are a great many of the rest - 185,405 of the 185,479
+ * hook runs across the 218 logs here. Deciding it here rather than at each reader is what
+ * keeps the sidecar from paying out a page of events that draw nothing (#244).
  */
-export function showsInTranscript(type: string): boolean {
-  return SHOWN.has(type);
+export function showsInTranscript(type: string, data?: unknown): boolean {
+  if (!SHOWN.has(type)) return false;
+  return type !== 'hook.end' || hookFailed(data);
 }
 
 /**

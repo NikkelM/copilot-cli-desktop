@@ -147,7 +147,7 @@ export function useSubagents() {
      * one to the other asked whether ten was at least twenty-two, so the answer was always
      * no and a finished run could never be handed over (#180).
      */
-    const drawable = held.events.filter((event) => showsInTranscript(event.type)).length;
+    const drawable = held.events.filter((event) => showsInTranscript(event.type, event.data)).length;
     if (stored.length < drawable) return;
 
     settled.current.add(agentId);

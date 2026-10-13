@@ -75,5 +75,7 @@ export function useAgentEvents(
   // Neither can be shown to be whole, so the fuller one wins. Counted against what the log
   // is able to hold: the live stream carries a run's machinery too, and the log carries only
   // what is drawn.
-  return read.events.length >= held.filter((event) => showsInTranscript(event.type)).length ? read.events : held;
+  return read.events.length >= held.filter((event) => showsInTranscript(event.type, event.data)).length
+    ? read.events
+    : held;
 }

@@ -124,12 +124,25 @@ describe('the events the transcript is sent', () => {
     expect([...protocol.TRANSCRIPT_EVENT_TYPES].sort()).toEqual([...rendered].sort());
   });
 
-  it.each(['system.message', 'hook.start', 'hook.end', 'assistant.turn_start', 'assistant.turn_end'])(
+  it.each(['system.message', 'hook.start', 'assistant.turn_start', 'assistant.turn_end'])(
     'does not carry %s, which draws nothing and is the bulk of a page',
     (type) => {
       expect(protocol.showsInTranscript(type)).toBe(false);
     },
   );
+
+  /**
+   * `hook.end` is carried, unlike its start: almost every one draws nothing, and what
+   * decides it is the event rather than the type. Asked here with both answers, since the
+   * sidecar uses this to decide what a page is made of and a page of successful hook runs
+   * would be a page of nothing (#244).
+   */
+  it('carries a hook that failed, and not one that worked', () => {
+    expect(protocol.showsInTranscript('hook.end', { hookType: 'agentStop', success: false })).toBe(true);
+    expect(protocol.showsInTranscript('hook.end', { hookType: 'agentStop', success: true })).toBe(false);
+    expect(protocol.showsInTranscript('hook.end', {})).toBe(false);
+    expect(protocol.showsInTranscript('hook.end')).toBe(false);
+  });
 
   it.each(['user.message', 'assistant.message', 'tool.execution_complete'])('carries %s', (type) => {
     expect(protocol.showsInTranscript(type)).toBe(true);

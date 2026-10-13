@@ -155,7 +155,7 @@ export async function readTranscript(
        * readers share: those exist to read events the transcript never shows.
        */
       const located = locateEvents(buffer, start, reachedStart).filter((entry) =>
-        showsInTranscript(entry.event.type),
+        showsInTranscript(entry.event.type, entry.event.data),
       );
 
       if (located.length >= limit || reachedStart || window >= MAX_WINDOW) {
@@ -217,7 +217,7 @@ export async function readAgentTranscript(sessionId: string, agentId: string): P
 
       const mine = locateEvents(buffer, start, reachedStart)
         .map((entry) => entry.event)
-        .filter((event) => event.agentId === agentId && showsInTranscript(event.type));
+        .filter((event) => event.agentId === agentId && showsInTranscript(event.type, event.data));
 
       // The announcement that opened the run, so everything it did is behind us.
       const whole = mine.some((event) => event.type === 'subagent.started');
