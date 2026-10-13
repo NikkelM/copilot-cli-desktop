@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 
-import { nameOf } from '../lib/paths';
+import { isPreviewable, nameOf } from '../lib/paths';
 import { previewImage } from '../lib/sidecar';
-import { PREVIEWABLE, type Attachment } from '../../shared/protocol';
-
+import { type Attachment } from '../../shared/protocol';
 /**
  * Files riding along with the next message.
  *
@@ -145,10 +144,4 @@ export function Attachments({
       )}
     </div>
   );
-}
-
-/** Whether the file is one the sidecar would hand back, decided before asking it. */
-function isPreviewable(path: string): boolean {
-  const dot = path.lastIndexOf('.');
-  return dot > 0 && path.slice(dot).toLowerCase() in PREVIEWABLE;
 }

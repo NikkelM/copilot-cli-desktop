@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import type { TranscriptEvent } from '../../shared/protocol';
@@ -8,6 +8,24 @@ import { ASSUMED_DISPLAY } from '../lib/useCliDisplay';
 import { Transcript } from './Transcript';
 import { resetStores } from '../lib/store';
 
+const previewImage = vi.hoisted(() => vi.fn());
+const revealItemInDir = vi.hoisted(() => vi.fn());
+
+// Only the two this file drives; the rest of each module is left as it is, so nothing else
+// in the transcript's own graph loses the function it imports.
+vi.mock('../lib/sidecar', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/sidecar')>()),
+  previewImage: (...args: unknown[]) => previewImage(...args),
+}));
+vi.mock('@tauri-apps/plugin-opener', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  revealItemInDir: (...args: unknown[]) => revealItemInDir(...args),
+}));
+
+beforeEach(() => {
+  previewImage.mockReset().mockResolvedValue('data:image/png;base64,AAA');
+  revealItemInDir.mockReset().mockResolvedValue(undefined);
+});
 const event = (type: string, data: Record<string, unknown>, id: string): TranscriptEvent => ({ type, data, id });
 
 const shell = (id: string, command: string, callId: string) => [
@@ -3368,5 +3386,121 @@ describe('finding past what is loaded', () => {
     rerender(draw({ hasOlder: false, events: [said('an older fox', 'e0'), said('a fox here', 'e1')] }));
 
     expect(findCount(), 'still on the same row, now second').toBe('2 of 2');
+  });
+});
+
+/**
+ * Two things a tool row can do with the path it already has (#116).
+ *
+ * Expanding a `view` of an image showed `Viewed image file successfully.` - the sentence the
+ * tool owed the agent, shown to the one audience it was never written for. And the file it
+ * named was plain text, so finding it meant retyping the path.
+ */
+describe('a tool call that named a file', () => {
+  const viewed = (path: string, output = 'Viewed image file successfully.', success = true) => [
+    event('tool.execution_start', { toolCallId: 't1', toolName: 'view', arguments: { path } }, 'e1'),
+    event('tool.execution_complete', { toolCallId: 't1', success, result: { content: output } }, 'e2'),
+  ];
+
+  const drawn = (events: TranscriptEvent[], onError = vi.fn()) => ({
+    onError,
+    ...render(
+      <Transcript
+        events={events}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+        onError={onError}
+      />,
+    ),
+  });
+
+  // By its class rather than its name: the head carries the tool, the summary and the counts,
+  // so matching on text would be matching on a sentence that changes with the fixture.
+  const expand = async () => userEvent.click(document.querySelector('.tool-head') as HTMLElement);
+
+  describe('showing the picture instead of describing it', () => {
+    it('draws the image a view looked at', async () => {
+      const { container } = drawn(viewed('C:\\shots\\a.png'));
+
+      await expand();
+
+      await waitFor(() => expect(container.querySelector('.tool-picture')).toBeTruthy());
+      expect(container.querySelector('.tool-picture')?.getAttribute('src')).toBe('data:image/png;base64,AAA');
+      expect(screen.queryByText('Viewed image file successfully.')).toBeNull();
+    });
+
+    it('reads it through the sidecar, since the webview cannot open a file path', async () => {
+      drawn(viewed('C:\\shots\\a.png'));
+
+      await expand();
+
+      await waitFor(() => expect(previewImage).toHaveBeenCalledWith('C:\\shots\\a.png'));
+    });
+
+    /** Asked only where the name says it could be one, so a text file costs no round trip. */
+    it('leaves a file that is not a picture as the text it returned', async () => {
+      const { container } = drawn(viewed('C:\\work\\main.ts', 'export function main() {}'));
+
+      await expand();
+
+      expect(container.querySelector('.tool-picture')).toBeNull();
+      expect(screen.getByText('export function main() {}')).toBeTruthy();
+      expect(previewImage).not.toHaveBeenCalled();
+    });
+
+    /** The file may be gone, too large, or not the picture its name claims. */
+    it('falls back to what the tool said when the bytes cannot be had', async () => {
+      previewImage.mockResolvedValue(null);
+      const { container } = drawn(viewed('C:\\shots\\gone.png'));
+
+      await expand();
+
+      await waitFor(() => expect(screen.getByText('Viewed image file successfully.')).toBeTruthy());
+      expect(container.querySelector('.tool-picture')).toBeNull();
+    });
+
+    /** A failed call has an error to read, and that is the thing worth showing. */
+    it('leaves a failed call showing why it failed', async () => {
+      const { container } = drawn(viewed('C:\\shots\\a.png', 'No such file', false));
+
+      await expand();
+
+      expect(container.querySelector('.tool-picture')).toBeNull();
+      expect(previewImage).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('opening the file it named', () => {
+    it('shows the file in its folder rather than opening it', async () => {
+      drawn(viewed('C:\\work\\main.ts', 'ok'));
+
+      await expand();
+      await userEvent.click(document.querySelector('.tool-path') as HTMLElement);
+
+      expect(revealItemInDir).toHaveBeenCalledExactlyOnceWith('C:\\work\\main.ts');
+    });
+
+    /** A tool names a file that may since have moved, and a click that does nothing is worse. */
+    it('says so when the file is no longer there', async () => {
+      revealItemInDir.mockRejectedValue(new Error('no such file'));
+      const { onError } = drawn(viewed('C:\\work\\gone.ts', 'ok'));
+
+      await expand();
+      await userEvent.click(document.querySelector('.tool-path') as HTMLElement);
+
+      await waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('C:\\work\\gone.ts')));
+    });
+
+    it('offers nothing to open on a row that named no file', async () => {
+      const { container } = drawn(shell('e1', 'ls', 't1'));
+
+      await expand();
+
+      expect(container.querySelector('.tool-path')).toBeNull();
+    });
   });
 });

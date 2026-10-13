@@ -7716,3 +7716,37 @@ pre.fatal,
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
+/* The file a tool row named, as somewhere to go rather than something to read (#116).
+   Under the header rather than in it: the header is one button, and a button inside a
+   button is neither valid nor reachable. */
+.tool-path {
+  display: block;
+  width: 100%;
+  padding: 2px 8px 6px calc(var(--font-base) * 1.9);
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font-family: ui-monospace, monospace;
+  font-size: var(--font-sm);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.tool-path:hover,
+.tool-path:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* A picture a tool looked at. Capped so a screenshot taken on a tall monitor does not take
+   the whole transcript with it, and left at its own aspect ratio inside that. */
+.tool-picture {
+  display: block;
+  max-width: 100%;
+  max-height: 60vh;
+  margin: 4px 8px 8px calc(var(--font-base) * 1.9);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: contain;
+}

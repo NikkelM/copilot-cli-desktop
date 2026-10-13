@@ -4,6 +4,9 @@ import type { TranscriptEvent } from '../../shared/protocol';
 import { sameEntry, toEntries, type Entry, type ReasoningEntry, type ToolEntry } from '../lib/transcriptEntries';
 import { useBudgetedEntries } from '../lib/useBudgetedEntries';
 import { fileBadge } from '../lib/fileBadge';
+import { isPreviewable, nameOf } from '../lib/paths';
+import { previewImage } from '../lib/sidecar';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { changesByTurn, type ShowTurnChanges } from '../lib/turnChanges';
 import { TurnSummary, type TurnView } from './TurnSummary';
 import { countChanges, parsePatch } from '../lib/patch';
@@ -304,6 +307,7 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
     Boolean(choices) ||
     Boolean(entry.command) ||
     Boolean(patch) ||
+    Boolean(entry.path) ||
     Boolean(entry.children?.length);
   const lines = entry.output ? entry.output.split('\n').length : 0;
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 'es'}`;
@@ -332,6 +336,15 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         : lines > 0
           ? `${lines} ${lines === 1 ? 'line' : 'lines'}`
           : null;
+
+  /**
+   * A tool that looked at a picture, which is worth drawing rather than describing (#116).
+   *
+   * Expanding one of these showed `Viewed image file successfully.` - the sentence the tool
+   * owed the agent, handed to the one audience it was never written for. Only where the call
+   * went well: a failed one has an error to read, and that is the thing to show.
+   */
+  const picture = entry.status === 'ok' && entry.path && isPreviewable(entry.path) ? entry.path : null;
 
   return (
     <div className={`tool ${entry.status}${entry.truncation ? ' lossy' : ''}${open ? ' open' : ''}`}>
@@ -413,6 +426,10 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
           <Elapsed since={entry.startedAt} until={entry.endedAt} floor={TOOL_DURATION_MS} />
         )}
       </button>
+      {/* The file this row named, as a way to find it. Outside the fold's own button, since
+          a button inside a button is neither valid nor reachable - and under the header
+          rather than in it, where it would compete with the summary for the line. */}
+      {open && entry.path && <RevealPath path={entry.path} />}
       {open &&
         (entry.children?.length ? (
           /* The subagent's own timeline, drawn by the same rows the parent uses: its
@@ -444,6 +461,8 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
           </ul>
         ) : patch ? (
           <Diff lines={patch} />
+        ) : picture ? (
+          <ToolPicture path={picture} instead={entry.output} />
         ) : (
           <>
             {entry.output && <pre className="tool-output">{entry.output}</pre>}
@@ -454,6 +473,67 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         ))}
     </div>
   );
+}
+
+/**
+ * The file a tool named, as somewhere to go rather than something to read (#116).
+ *
+ * The folder rather than the file, which is the same choice the attachment chips make:
+ * opening the file hands it to whatever claims the extension, which is rarely what was
+ * wanted and is not undoable.
+ *
+ * Tried rather than checked first. A tool call names a file that may since have been moved
+ * or deleted, and asking whether it exists before offering the click would be a race as
+ * well as a second read - so the click is always offered and a failure is reported, which
+ * is what the attachment chips settled on for the same question.
+ */
+function RevealPath({ path }: { path: string }) {
+  const report = useContext(Reports);
+
+  return (
+    <button
+      type="button"
+      className="tool-path"
+      title={`Show ${path} in its folder`}
+      onClick={() =>
+        revealItemInDir(path).catch(() => report(`Could not show ${path}. It may have been moved or deleted.`))
+      }
+    >
+      {path}
+    </button>
+  );
+}
+
+/**
+ * A picture a tool looked at, drawn rather than described (#116).
+ *
+ * Read through the sidecar: the webview cannot load `file://`, and a scope wide enough to
+ * cover a file the agent happened to open would be most of the disk.
+ *
+ * Falls back to what the tool said when the bytes cannot be had - the file may be gone, too
+ * large, or not the picture its name claims - because the sentence it wrote is then the only
+ * account of what happened.
+ */
+function ToolPicture({ path, instead }: { path: string; instead: string | null }) {
+  const [data, setData] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let wanted = true;
+    void previewImage(path)
+      .catch(() => null)
+      .then((url) => {
+        if (wanted) setData(url);
+      });
+
+    return () => {
+      wanted = false;
+    };
+  }, [path]);
+
+  if (data === undefined) return <pre className="tool-output">Reading the picture.</pre>;
+  if (data === null) return instead ? <pre className="tool-output">{instead}</pre> : null;
+
+  return <img className="tool-picture" src={data} alt={nameOf(path)} />;
 }
 
 interface TranscriptProps {
