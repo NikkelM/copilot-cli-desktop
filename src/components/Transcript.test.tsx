@@ -1350,11 +1350,11 @@ describe("what the CLI's settings say to draw", () => {
         events={[
           { ...event('user.message', { content: 'hello' }, 'e0'), timestamp: '2026-01-02T03:04:05.000Z' },
           event('assistant.reasoning', { reasoningId: 'r1', content: 'weighing two approaches' }, 'e1'),
-          // Three seconds apart, since a duration under two is not worth saying and would
-          // be left out whatever the setting says.
+          // Six seconds apart, so the call is over the floor the CLI puts on a duration and
+          // the setting is what decides whether it is drawn.
           ...shell('e2', 'ls', 't1').map((e, at) => ({
             ...e,
-            timestamp: at === 0 ? '2026-01-02T03:04:06.000Z' : '2026-01-02T03:04:09.000Z',
+            timestamp: at === 0 ? '2026-01-02T03:04:06.000Z' : '2026-01-02T03:04:12.000Z',
           })),
         ]}
         sessionId="s1"
@@ -1393,6 +1393,36 @@ describe("what the CLI's settings say to draw", () => {
 
   it('leaves off how long a tool took when the CLI says not to show it', () => {
     const { container } = drawn({ showToolDurations: false });
+
+    expect(container.querySelector('.elapsed')).toBeNull();
+  });
+
+  it('shows how long a tool took when the CLI says to', () => {
+    const { container } = drawn({});
+
+    expect(container.querySelector('.elapsed')?.textContent).toBe('6s');
+  });
+
+  /**
+   * The CLI puts a floor of five seconds under a tool call's duration, and this app matches
+   * it: a transcript where most rows carry a number is one where the number stops meaning
+   * the call was slow (#264).
+   */
+  it('says nothing about a call the CLI would leave silent', () => {
+    const { container } = render(
+      <Transcript
+        events={shell('e2', 'ls', 't1').map((e, at) => ({
+          ...e,
+          timestamp: at === 0 ? '2026-01-02T03:04:06.000Z' : '2026-01-02T03:04:09.000Z',
+        }))}
+        sessionId="s1"
+        cwd={null}
+        hasOlder={false}
+        loadingOlder={false}
+        onLoadOlder={() => {}}
+        display={ASSUMED_DISPLAY}
+      />,
+    );
 
     expect(container.querySelector('.elapsed')).toBeNull();
   });

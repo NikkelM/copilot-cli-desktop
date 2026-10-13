@@ -16,7 +16,7 @@ import { read, save } from '../lib/store';
 import { ASSUMED_DISPLAY, type CliDisplay } from '../lib/useCliDisplay';
 import { CopyButton } from './CopyButton';
 import { Diff } from './Diff';
-import { Elapsed } from './Elapsed';
+import { Elapsed, TOOL_DURATION_MS } from './Elapsed';
 import { ChevronIcon } from './Icons';
 import { Attachments } from './Attachments';
 import { Markdown } from './Markdown';
@@ -407,8 +407,11 @@ function ToolRow({ entry }: { entry: ToolEntry }) {
         {count && <span className="tool-lines">{count}</span>}
         {/* How long it has been going, which is what makes a slow command feel like
             progress rather than a hang. Kept once it finishes: knowing a command took two
-            minutes is worth as much afterwards. */}
-        {shows.showToolDurations && <Elapsed since={entry.startedAt} until={entry.endedAt} />}
+            minutes is worth as much afterwards. Floored where the CLI floors it, so the
+            same call is silent in both (#264). */}
+        {shows.showToolDurations && (
+          <Elapsed since={entry.startedAt} until={entry.endedAt} floor={TOOL_DURATION_MS} />
+        )}
       </button>
       {open &&
         (entry.children?.length ? (

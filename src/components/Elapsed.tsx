@@ -5,15 +5,28 @@ import { useElapsed, useRemaining } from '../lib/useElapsed';
 const WORTH_SAYING_MS = 2000;
 
 /**
+ * The floor the CLI puts on a tool call's duration, which this app matches (#264).
+ *
+ * Higher than the one above, and deliberately: the composer's counter answers "is this
+ * progressing", where two seconds of silence is already worth breaking. A tool row is a
+ * record of how long something took, and a transcript where most rows carry a number is one
+ * where the number stops meaning "this was slow".
+ *
+ * Read out of the CLI rather than chosen: its own constant is 5000, applied to a finished
+ * call and to one still running alike.
+ */
+export const TOOL_DURATION_MS = 5000;
+
+/**
  * How long something took, or has been taking.
  *
  * Its own component so the clock behind it belongs to the one row that shows it. A ticking
  * value held any higher would re-render every row in the transcript once a second, at a
  * cost that grows with the length of the conversation rather than with how much is running.
  */
-export function Elapsed({ since, until }: { since?: string; until?: string }) {
+export function Elapsed({ since, until, floor = WORTH_SAYING_MS }: { since?: string; until?: string; floor?: number }) {
   const ms = useElapsed(since, until);
-  if (ms === null || ms < WORTH_SAYING_MS) return null;
+  if (ms === null || ms < floor) return null;
 
   return <span className="elapsed">{formatElapsed(ms)}</span>;
 }
