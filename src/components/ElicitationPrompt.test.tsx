@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { PendingElicitation } from '../../shared/protocol';
 import { ElicitationPrompt } from './ElicitationPrompt';
+import { useShortcuts } from '../lib/useShortcuts';
 
 const question: PendingElicitation = {
   sessionId: 's1',
@@ -258,5 +259,39 @@ describe('a question written as markdown', () => {
     expect(message?.querySelector('table td')?.textContent).toBe('Styx');
     expect(message?.querySelector('li strong')?.textContent).toBe('Tartarus:');
     expect(screen.getByText('How should I apply it?')).toBeTruthy();
+  });
+});
+/**
+ * A question with nothing to choose from is answered by typing, so the field is where the
+ * keyboard belongs.
+ *
+ * The container holds it while there are choices for the arrows to walk. With none it only
+ * stands between the reader and the box, and it is not a field - so a question mark pressed
+ * there reached the window, which reads one as a request for the shortcut list.
+ */
+describe('a question with nothing to choose from', () => {
+  const open: PendingElicitation = { ...question, choices: [] };
+
+  it('puts the keyboard in the field rather than on the prompt', () => {
+    render(<ElicitationPrompt pending={open} onResolve={vi.fn()} />);
+
+    expect((document.activeElement as HTMLElement)?.tagName).toBe('INPUT');
+  });
+
+  it('leaves a question mark to the field', async () => {
+    const on = vi.fn();
+    renderHook(() => useShortcuts(on, () => ''));
+    render(<ElicitationPrompt pending={open} onResolve={vi.fn()} />);
+
+    await userEvent.keyboard('?');
+
+    expect(on).not.toHaveBeenCalled();
+  });
+
+  /** The choices are what the container is for, so with some it keeps the keyboard. */
+  it('keeps the keyboard on the prompt while there are choices to walk', () => {
+    render(<ElicitationPrompt pending={question} onResolve={vi.fn()} />);
+
+    expect((document.activeElement as HTMLElement)?.classList.contains('elicitation')).toBe(true);
   });
 });

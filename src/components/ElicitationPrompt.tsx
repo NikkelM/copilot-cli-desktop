@@ -35,10 +35,22 @@ export function ElicitationPrompt({ pending, onResolve }: ElicitationPromptProps
   const containerRef = useRef<HTMLElement>(null);
   const freeformRef = useRef<HTMLInputElement>(null);
 
-  // Take focus so the prompt is answerable from the keyboard the moment it appears,
-  // without having to click into it first.
+  /**
+   * Take focus so the prompt is answerable from the keyboard the moment it appears,
+   * without having to click into it first.
+   *
+   * The container itself while there are choices, because walking them with the arrows is
+   * what it is for, and a character typed at it is carried into the box. With nothing to
+   * walk it would only stand between the reader and the field while being no field itself,
+   * so every key pressed there went to the window instead - and the window reads a question
+   * mark as a request for the shortcut list rather than as the answer somebody is typing.
+   */
   useEffect(() => {
-    containerRef.current?.focus();
+    const [first] = Object.keys(fields);
+    const walkable = first ? optionsOf(fields[first] as Field).length > 0 : false;
+    const box = walkable ? null : containerRef.current?.querySelector<HTMLElement>('input, textarea');
+    (box ?? containerRef.current)?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function set(name: string, value: ElicitationFieldValue) {
