@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import type { SessionPrompt } from '../../shared/protocol';
@@ -177,31 +177,86 @@ describe('the list of a session prompts', () => {
 
   /**
    * A dropdown holding every prompt of a long session is one nobody can scroll - there are
-   * 2,050 on the largest log here. The newest are the end somebody jumps to most, and the
-   * filter reaches the rest, so what is capped is what is drawn rather than what is findable.
+   * 2,050 on the largest log here. A page is drawn at a time and the next arrives on
+   * reaching the bottom, so what is bounded is the laying out rather than what is reachable.
+   *
+   * jsdom lays nothing out, so the list's measurements are the test's to state.
    */
   describe('a session with thousands of them', () => {
-    const many = Array.from({ length: 260 }, (_, index) =>
+    const many = Array.from({ length: 460 }, (_, index) =>
       prompt(`2026-01-01T00:00:${String(index % 60).padStart(2, '0')}.${String(index).padStart(3, '0')}Z`, `prompt ${index}`),
     );
 
-    it('draws only the newest, and says how many are left', async () => {
-      picker({ prompts: many });
+    /** Scroll the list to a position, having told it how big it is. */
+    const scrollTo = (top: number) => {
+      const list = screen.getByRole('listbox');
+      for (const [name, value] of [
+        ['scrollHeight', 1000],
+        ['clientHeight', 300],
+        ['scrollTop', top],
+      ] as const) {
+        Object.defineProperty(list, name, { configurable: true, value });
+      }
+      fireEvent.scroll(list);
+    };
 
+    const openList = async (prompts = many) => {
+      picker({ prompts });
       await userEvent.click(screen.getByRole('button', { name: /Prompts/ }));
+    };
+
+    it('draws one page to begin with, and says how many are left', async () => {
+      await openList();
 
       expect(rows()).toHaveLength(200);
-      expect(screen.getByText('60 older. Filter to reach them.')).toBeTruthy();
+      expect(screen.getByText('260 older')).toBeTruthy();
     });
 
-    it('reaches the rest through the filter', async () => {
-      picker({ prompts: many });
+    it('draws the next page on reaching the bottom', async () => {
+      await openList();
 
-      await userEvent.click(screen.getByRole('button', { name: /Prompts/ }));
-      await userEvent.type(screen.getByRole('searchbox'), 'prompt 259');
+      scrollTo(700);
+
+      expect(rows()).toHaveLength(400);
+      expect(screen.getByText('60 older')).toBeTruthy();
+    });
+
+    it('keeps going until there are none left', async () => {
+      await openList();
+
+      scrollTo(700);
+      scrollTo(700);
+
+      expect(rows()).toHaveLength(460);
+      expect(screen.queryByText(/older/)).toBeNull();
+    });
+
+    /** Scrolling within the page is reading it, not asking for more. */
+    it('draws no more while there is still page to scroll', async () => {
+      await openList();
+
+      scrollTo(300);
+
+      expect(rows()).toHaveLength(200);
+    });
+
+    /** Narrowing puts a different list under the reader, who is back at the top of it. */
+    it('goes back to one page when the filter changes', async () => {
+      await openList();
+      scrollTo(700);
+      expect(rows()).toHaveLength(400);
+
+      await userEvent.type(screen.getByRole('searchbox'), 'prompt');
+
+      expect(rows()).toHaveLength(200);
+    });
+
+    it('reaches the rest through the filter as well', async () => {
+      await openList();
+      await userEvent.type(screen.getByRole('searchbox'), 'prompt 459');
 
       expect(rows()).toHaveLength(1);
-      expect(screen.queryByText(/older\. Filter to reach them\./)).toBeNull();
+      expect(screen.queryByText(/older/)).toBeNull();
     });
   });
 });

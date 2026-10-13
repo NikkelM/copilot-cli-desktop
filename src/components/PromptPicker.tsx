@@ -16,14 +16,16 @@ interface PromptPickerProps {
 }
 
 /**
- * How many rows are drawn before the list asks to be narrowed.
+ * How many rows are drawn at a time.
  *
  * A long session has thousands of these - 2,050 on the largest log here - and a dropdown
- * holding all of them is a dropdown nobody can scroll. The newest are the end somebody
- * jumps to most, and the filter reaches the rest, so this is a cap on what is drawn rather
- * than on what can be found.
+ * holding all of them is a dropdown nobody can scroll. More arrive on reaching the bottom,
+ * so this bounds what is laid out at once rather than what can be reached.
  */
-const DRAWN = 200;
+const PAGE = 200;
+
+/** How close to the bottom asks for the next page, matching what the transcript uses at its top. */
+const NEXT_PAGE_THRESHOLD_PX = 120;
 
 /**
  * The prompts of a session, to navigate it by.
@@ -39,6 +41,8 @@ const DRAWN = 200;
 export function PromptPicker({ prompts, failed, onOpen, onChoose, at }: PromptPickerProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState('');
+  /** How many of the matches are laid out, which grows as the list is scrolled. */
+  const [drawn, setDrawn] = useState(PAGE);
   const box = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
 
@@ -69,7 +73,27 @@ export function PromptPicker({ prompts, failed, onOpen, onChoose, at }: PromptPi
     return wanted ? all.filter((prompt) => prompt.text.toLowerCase().includes(wanted)) : all;
   }, [prompts, filter]);
 
-  const shown = matching.slice(0, DRAWN);
+  // Narrowing puts a different list under the reader, and they are back at the top of it.
+  useEffect(() => setDrawn(PAGE), [filter]);
+
+  const shown = matching.slice(0, drawn);
+
+  /**
+   * Reaching the bottom draws the next page.
+   *
+   * Grown rather than asked for, since every prompt is already in hand: what the page bounds
+   * is the laying out, which is the part that costs on a list of thousands. Short of the
+   * bottom rather than at it, so the rows are there before the scroll arrives.
+   */
+  function onScroll(event: React.UIEvent<HTMLDivElement>) {
+    const list = event.currentTarget;
+    if (list.scrollHeight - list.scrollTop - list.clientHeight > NEXT_PAGE_THRESHOLD_PX) return;
+
+    // Stopping at the end draws nothing different - `slice` bounds it either way - so no
+    // test can tell this from growing for ever. What it saves is a state change, and so a
+    // render of the whole list, on every scroll event once there is nothing left to add.
+    setDrawn((count) => (count < matching.length ? count + PAGE : count));
+  }
 
   function toggle() {
     if (open) {
@@ -79,6 +103,7 @@ export function PromptPicker({ prompts, failed, onOpen, onChoose, at }: PromptPi
 
     setOpen(true);
     setFilter('');
+    setDrawn(PAGE);
     // Reading the whole log is not free, so it waits for somebody to actually want the list.
     onOpen();
   }
@@ -151,7 +176,7 @@ export function PromptPicker({ prompts, failed, onOpen, onChoose, at }: PromptPi
             <p className="prompts-loading">{prompts.length === 0 ? 'Nothing asked yet.' : 'No prompt says that.'}</p>
           )}
 
-          <div className="prompts-list" role="listbox" aria-label="Prompts" onKeyDown={onRowKey}>
+          <div className="prompts-list" role="listbox" aria-label="Prompts" onKeyDown={onRowKey} onScroll={onScroll}>
             {shown.map((prompt) => (
               <button
                 type="button"
@@ -165,15 +190,12 @@ export function PromptPicker({ prompts, failed, onOpen, onChoose, at }: PromptPi
                 <span className="prompt-row-when">{formatRelative(prompt.at)}</span>
               </button>
             ))}
+            {/* Inside the list rather than under it, so it is what the scroll arrives at and
+                the reader sees why there is a pause before the next rows appear. */}
+            {matching.length > shown.length && (
+              <p className="prompts-loading">{matching.length - shown.length} older</p>
+            )}
           </div>
-
-          {/* Said rather than silently cut, so a reader looking for something older knows the
-              filter is the way to it rather than concluding it is not here. */}
-          {matching.length > shown.length && (
-            <p className="prompts-loading">
-              {matching.length - shown.length} older. Filter to reach them.
-            </p>
-          )}
         </div>
       )}
     </div>
