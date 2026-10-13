@@ -95,7 +95,10 @@ export function sessionPreviews(sessionIds: readonly string[]): Record<string, s
     try {
       fd = openSync(sessionEventLog(sessionId), 'r');
     } catch {
-      // No log is a session that has never run, which is not a failure worth reporting.
+      // No log is a session that has never run, or one that has been deleted. Either way
+      // there is nothing to remember about it, and a session that has gone would otherwise
+      // be held here by the memory of when it had not.
+      seen.delete(sessionId);
       continue;
     }
 

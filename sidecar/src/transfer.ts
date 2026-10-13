@@ -169,11 +169,19 @@ export async function importSession(
 
   const total = entries.reduce((sum, entry) => sum + entry.bytes, 0);
   let done = 0;
+  /**
+   * The bundle itself, held so it can be closed however this ends.
+   *
+   * It closes itself on reaching the end, which is the path that works. A read that fails
+   * part way through rejects instead, and the handle was then held until the process exited.
+   */
+  let bundle: yauzl.ZipFile | undefined;
 
   try {
     await new Promise<void>((resolve, reject) => {
       yauzl.open(fromPath, { lazyEntries: true }, (error, zip) => {
         if (error || !zip) return reject(new Error('That file is not a session bundle.'));
+        bundle = zip;
 
         zip.on('entry', (entry: yauzl.Entry) => {
           if (entry.fileName.endsWith('/')) return zip.readEntry();
@@ -216,6 +224,8 @@ export async function importSession(
   } catch (error) {
     rmSync(staging, { recursive: true, force: true });
     throw error;
+  } finally {
+    bundle?.close();
   }
 }
 

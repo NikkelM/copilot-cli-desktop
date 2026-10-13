@@ -243,6 +243,10 @@ impl Supervisor {
             // is owed an answer this sidecar will never give.
             *supervisor.link.lock().unwrap() = None;
             let _ = child.kill();
+            // Reaped as well as killed. `kill` only asks; on Unix the process stays in the
+            // table as a zombie until somebody collects its status, which on a long run of
+            // restarts is one per restart. Harmless on Windows, where `kill` is the end of it.
+            let _ = child.wait();
             fail_all(&supervisor.pending, SIDECAR_RESTARTING);
 
             let restarted = match next_attempt(attempt, started.elapsed()) {
@@ -266,7 +270,17 @@ impl Supervisor {
     /// Resolve replies by id and forward notifications, until the sidecar's output ends.
     fn read(&self, stdout: std::process::ChildStdout) {
         for line in BufReader::new(stdout).lines() {
-            let Ok(line) = line else { break };
+            let line = match line {
+                Ok(line) => line,
+                // One line that is not valid UTF-8 is not the end of the stream: the reader
+                // has already stepped over it, so the next reply is still to come. Nothing
+                // the sidecar writes can produce one today - `JSON.stringify` escapes even a
+                // lone surrogate - but abandoning every later reply over a single bad line
+                // would look exactly like the sidecar having died.
+                Err(error) if error.kind() == std::io::ErrorKind::InvalidData => continue,
+                // Anything else is the pipe itself in trouble, and carrying on would spin.
+                Err(_) => break,
+            };
             let Ok(message) = serde_json::from_str::<Value>(&line) else {
                 continue;
             };

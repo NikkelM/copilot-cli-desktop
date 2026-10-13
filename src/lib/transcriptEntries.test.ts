@@ -2043,3 +2043,36 @@ describe('a session changing only how hard it thinks', () => {
     ).toEqual([]);
   });
 });
+
+/**
+ * A call the turn ended under, where the event that ended it carried no moment.
+ *
+ * An end equal to the start says the duration is unknown, which is what it is. Left unset
+ * the row counts upwards for as long as the transcript stays open, which is the very thing
+ * cancelling it exists to stop.
+ */
+describe('a tool call cancelled by an event with no clock on it', () => {
+  const started = {
+    type: 'tool.execution_start',
+    id: 'e1',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    data: { toolCallId: 't1', toolName: 'powershell', arguments: { command: 'sleep 90' } },
+  } as TranscriptEvent;
+
+  it('ends it where it began rather than leaving it running', () => {
+    const [entry] = toEntries([started, { type: 'abort', id: 'e2', data: {} } as TranscriptEvent], CWD);
+
+    expect(entry?.kind === 'tool' && entry.status).toBe('cancelled');
+    expect(entry?.kind === 'tool' && entry.endedAt).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  /** And takes the moment when there is one, which is the ordinary case. */
+  it('ends it when the turn ended, where that is known', () => {
+    const [entry] = toEntries(
+      [started, { type: 'abort', id: 'e2', timestamp: '2026-01-01T00:01:30.000Z', data: {} } as TranscriptEvent],
+      CWD,
+    );
+
+    expect(entry?.kind === 'tool' && entry.endedAt).toBe('2026-01-01T00:01:30.000Z');
+  });
+});

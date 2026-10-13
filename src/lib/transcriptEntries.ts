@@ -251,7 +251,11 @@ function attachmentsIn(data: Record<string, unknown>): Attachment[] | undefined 
 function cancel(pending: Map<string, ToolEntry>, at?: string): void {
   for (const entry of pending.values()) {
     entry.status = 'cancelled';
-    entry.endedAt = at;
+    // Back to where it started where the event that ended the turn carried no moment of its
+    // own. An end equal to the start says the duration is unknown, which is what it is; left
+    // unset the row would go on counting for as long as the transcript stayed open, which is
+    // the very thing this exists to stop.
+    entry.endedAt = at ?? entry.startedAt;
   }
   pending.clear();
 }
