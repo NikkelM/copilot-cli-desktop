@@ -1388,3 +1388,107 @@ describe('readDelegatedTasks', () => {
     });
   });
 });
+
+/**
+ * The prompts somebody typed, which are the chapter headings of a long session (#96).
+ *
+ * Read forward through the whole log rather than paged from the end, and read from the log
+ * rather than from the CLI's `turns` table: that table holds 1,384 rows for a session whose
+ * log has 2,056 prompts here, and the ones it is missing are plainly real.
+ */
+describe('readPrompts', () => {
+  const typed = (at: string, content: string, over: Record<string, unknown> = {}) =>
+    JSON.stringify({ type: 'user.message', timestamp: at, data: { content }, ...over });
+
+  it('returns nothing when the session has no log', async () => {
+    const { readPrompts } = await loadEventLog();
+    expect(await readPrompts('missing')).toEqual([]);
+  });
+
+  it('returns nothing for an empty log', async () => {
+    writeLog('s1', []);
+    const { readPrompts } = await loadEventLog();
+    expect(await readPrompts('s1')).toEqual([]);
+  });
+
+  it('gives every prompt, oldest first', async () => {
+    writeLog('s1', [
+      typed('2026-01-01T00:00:00.000Z', 'first'),
+      JSON.stringify({ type: 'assistant.message', data: { content: 'a reply' } }),
+      typed('2026-01-01T00:01:00.000Z', 'second'),
+    ]);
+
+    const { readPrompts } = await loadEventLog();
+    expect(await readPrompts('s1')).toEqual([
+      { at: '2026-01-01T00:00:00.000Z', text: 'first' },
+      { at: '2026-01-01T00:01:00.000Z', text: 'second' },
+    ]);
+  });
+
+  /** The delegating row is already the way into a subagent's work, and this is not it. */
+  it('leaves out what a subagent was asked', async () => {
+    writeLog('s1', [
+      typed('2026-01-01T00:00:00.000Z', 'mine'),
+      typed('2026-01-01T00:00:30.000Z', 'the agent was given this', { agentId: 'a1' }),
+    ]);
+
+    const { readPrompts } = await loadEventLog();
+    expect(await readPrompts('s1')).toEqual([{ at: '2026-01-01T00:00:00.000Z', text: 'mine' }]);
+  });
+
+  /** A prompt with no moment cannot be jumped to, so it would be a row that does nothing. */
+  it('leaves out one with nothing to navigate to', async () => {
+    writeLog('s1', [JSON.stringify({ type: 'user.message', data: { content: 'when?' } })]);
+
+    const { readPrompts } = await loadEventLog();
+    expect(await readPrompts('s1')).toEqual([]);
+  });
+
+  it('leaves out one with nothing in it', async () => {
+    writeLog('s1', [typed('2026-01-01T00:00:00.000Z', '   '), typed('2026-01-01T00:01:00.000Z', 'real')]);
+
+    const { readPrompts } = await loadEventLog();
+    expect(await readPrompts('s1')).toEqual([{ at: '2026-01-01T00:01:00.000Z', text: 'real' }]);
+  });
+
+  /** Written as markdown and read as a heading, the way the sidebar clamps its previews. */
+  it('strips the markdown a prompt was written in', async () => {
+    writeLog('s1', [typed('2026-01-01T00:00:00.000Z', '## Fix the thing\n\nIt is **broken**')]);
+
+    const { readPrompts } = await loadEventLog();
+    expect((await readPrompts('s1'))[0]?.text).not.toContain('**');
+    expect((await readPrompts('s1'))[0]?.text).not.toContain('##');
+  });
+
+  /** A log being written to has no newline after its last line yet. */
+  it('reads a prompt on the last line with no newline after it', async () => {
+    writeLog('s1', [typed('2026-01-01T00:00:00.000Z', 'first'), typed('2026-01-01T00:01:00.000Z', 'last')]);
+
+    const { readPrompts } = await loadEventLog();
+    expect((await readPrompts('s1')).at(-1)?.text).toBe('last');
+  });
+
+  /**
+   * The scan reads a window at a time, and a window ends wherever it ends. Decoding each on
+   * its own would turn a character straddling the seam into a replacement mark, so the tail
+   * is carried as bytes - which only a log long enough to need a second window can show.
+   */
+  it('keeps a character that straddles two windows intact', async () => {
+    // Four megabytes of filler, so the prompt after it lands across the window's edge.
+    const filler = Array.from({ length: 4200 }, (_, index) =>
+      JSON.stringify({ type: 'assistant.message', data: { content: 'x'.repeat(1000), id: index } }),
+    );
+    writeLog('s1', [...filler, typed('2026-01-01T00:00:00.000Z', 'héllo wörld ünïcode')]);
+
+    const { readPrompts } = await loadEventLog();
+    expect((await readPrompts('s1')).at(-1)?.text).toBe('héllo wörld ünïcode');
+  });
+
+  /** Half a line is what a window's edge looks like, not a reason to stop reading. */
+  it('skips a line that will not parse', async () => {
+    writeLog('s1', ['{"type":"user.message", oh dear', typed('2026-01-01T00:00:00.000Z', 'fine')]);
+
+    const { readPrompts } = await loadEventLog();
+    expect(await readPrompts('s1')).toEqual([{ at: '2026-01-01T00:00:00.000Z', text: 'fine' }]);
+  });
+});

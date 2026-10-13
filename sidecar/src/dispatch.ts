@@ -15,6 +15,7 @@ import {
   locateTurn,
   readAgentTranscript,
   readDelegatedTasks,
+  readPrompts,
   readTranscript,
 } from './eventLog.js';
 import { updateCli } from './updateCli.js';
@@ -159,6 +160,8 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
       // runs to the end of the log.
       return { cursor: until === undefined ? null : await locateTurn(sessionId, until) };
     },
+
+    'sessions.prompts': async ({ sessionId }) => ({ prompts: await readPrompts(sessionId) }),
 
     'cliSettings.list': () => ({ settings: cliSettingsSchema(), values: readCliSettings() }),
 

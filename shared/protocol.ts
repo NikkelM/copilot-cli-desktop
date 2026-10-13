@@ -1130,8 +1130,21 @@ export interface WikiSearchResult {
   excerpt?: string;
 }
 
-/** The diff for one changed file, or why there is not one. */
-export interface FileDiff {
+/**
+ * One prompt somebody typed, for a list to navigate a long session by (#96).
+ *
+ * The moment rather than an offset, because that is what `sessions.locate` takes: it halves
+ * the log to find where a moment is, so a jump costs a dozen small reads whatever the log's
+ * size, and a cursor cached here would go stale the moment the session said anything more.
+ */
+export interface SessionPrompt {
+  /** When it was sent, which is the handle `sessions.locate` turns into a place to read from. */
+  at: string;
+  /** The first of it, clamped and stripped of markdown the way the sidebar's previews are. */
+  text: string;
+}
+
+/** The diff for one changed file, or why there is not one. */export interface FileDiff {
   /** Unified diff from what the session found to what it left. */
   patch: string | null;
   /**
@@ -1444,8 +1457,17 @@ export interface SidecarRequests {
    * than scanned, so this is a dozen small reads whatever the log's size. Null when the log
    * does not reach that far, which a truncated one will not (#30).
    */
-  'sessions.locate': {
-    params: {
+  /**
+   * Every prompt somebody typed into a session, oldest first, for navigating by (#96).
+   *
+   * Costs no session: read from the log, which is the only place the answer is whole - the
+   * CLI's own `turns` table holds roughly half of them on the sessions long enough to need
+   * this. The whole file is read, since a list missing most of a long session is the
+   * opposite of a way to navigate it, which is a second on the largest log on this machine
+   * and milliseconds on an ordinary one.
+   */
+  'sessions.prompts': { params: { sessionId: string }; result: { prompts: SessionPrompt[] } };
+  'sessions.locate': {    params: {
       sessionId: string;
       /** A search result's handle, which the database turns into the moment it happened. */
       source?: string;
@@ -2037,6 +2059,7 @@ export const SIDECAR_METHODS = [
   'sessions.fork',
   'sessions.search',
   'sessions.locate',
+  'sessions.prompts',
   'bin.list',
   'bin.restore',
   'bin.purge',

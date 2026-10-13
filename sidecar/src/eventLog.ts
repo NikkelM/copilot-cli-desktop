@@ -15,10 +15,12 @@ import type {
   SessionAgent,
   SessionModel,
   SessionMode,
+  SessionPrompt,
   SessionUsage,
   TranscriptEvent,
 } from '../../shared/protocol.js';
 import { isSidekick, showsInTranscript } from '../../shared/protocol.js';
+import { toPreview } from '../../shared/preview.js';
 import { sessionEventLog } from './paths.js';
 
 /** Default cap on events per read; logs reach hundreds of thousands of entries. */
@@ -34,6 +36,23 @@ const DEFAULT_TASKS = 30;
 
 /** First slice read from the end of the range. Comfortably covers a typical 500 events. */
 const INITIAL_WINDOW = 256 * 1024;
+
+/**
+ * How much of the log a prompt scan reads at a time.
+ *
+ * Forward rather than backward, unlike everything else here, because the list has to be
+ * whole: one built from the tail would be missing most of a long session, which is the
+ * opposite of a way to navigate it (#96). Measured on the largest log on this machine -
+ * 1,117 MB - at 1.16 seconds for all 2,056 prompts, so the whole-file read it looks like
+ * is affordable for something asked for by opening a menu. A typical session is a few
+ * milliseconds.
+ */
+const SCAN_WINDOW = 4 * 1024 * 1024;
+
+/** How much of a prompt the list carries: a chapter heading, not the chapter. */
+const PROMPT_ROOM = 300;
+
+const NEWLINE = 0x0a;
 
 /** How much the window grows when the tail did not hold enough events. */
 const GROWTH_FACTOR = 4;
@@ -821,6 +840,91 @@ export async function locateTurn(sessionId: string, until: string | null): Promi
   } finally {
     await file.close();
   }
+}
+
+/**
+ * Every prompt somebody typed into a session, oldest first, for navigating by (#96).
+ *
+ * Read from the log rather than from the CLI's `turns` table, which looks like the obvious
+ * source and is not: measured over this machine it holds 1,384 rows for a session whose log
+ * has 2,056 prompts, and 411 for one with 1,039 - and the missing ones are plainly real,
+ * long, typed prompts rather than machinery. `sessionPreview` reached the same conclusion
+ * about the same table for its own question. The log is the only place the answer is whole.
+ *
+ * Forward through the whole file, which is the one read here that does not page: a list
+ * missing most of a long session is the opposite of a way to navigate it. The cost is a
+ * second on the largest log on this machine and milliseconds on an ordinary one.
+ *
+ * A subagent's own prompts are left out. They are the delegating turn's work rather than
+ * the conversation's, and the row that delegated them is already the way in.
+ */
+export async function readPrompts(sessionId: string): Promise<SessionPrompt[]> {
+  const path = sessionEventLog(sessionId);
+  if (!existsSync(path)) return [];
+
+  const file = await open(path, 'r');
+  try {
+    const { size } = await file.stat();
+    const prompts: SessionPrompt[] = [];
+    const chunk = Buffer.allocUnsafe(SCAN_WINDOW);
+    /**
+     * The tail of the last chunk, carried as bytes rather than as text.
+     *
+     * A chunk boundary falls wherever it falls, including the middle of a character, and
+     * decoding each one on its own would turn that character into a replacement mark in
+     * whichever prompt happened to straddle the seam.
+     */
+    let carry = Buffer.alloc(0);
+    let at = 0;
+
+    while (at < size) {
+      const { bytesRead } = await file.read(chunk, 0, Math.min(SCAN_WINDOW, size - at), at);
+      if (bytesRead === 0) break;
+      at += bytesRead;
+
+      const read = chunk.subarray(0, bytesRead);
+      const held = carry.length === 0 ? read : Buffer.concat([carry, read]);
+      let from = 0;
+      for (;;) {
+        const end = held.indexOf(NEWLINE, from);
+        if (end === -1) break;
+        takePrompt(held.toString('utf8', from, end), prompts);
+        from = end + 1;
+      }
+      // Copied, since the buffer it points into is about to be read over.
+      carry = Buffer.from(held.subarray(from));
+    }
+
+    // A log being written to has no newline after its last line yet.
+    if (carry.length > 0) takePrompt(carry.toString('utf8'), prompts);
+    return prompts;
+  } finally {
+    await file.close();
+  }
+}
+
+/** Add this line to the list, if it is a prompt somebody typed. */
+function takePrompt(line: string, into: SessionPrompt[]): void {
+  // Cheaper than parsing every line of a gigabyte to find out it was a tool result: all but
+  // a thousandth of them are not this, and the scan is what the whole read costs.
+  if (!line.includes('"user.message"')) return;
+
+  let event: TranscriptEvent;
+  try {
+    event = JSON.parse(line) as TranscriptEvent;
+  } catch {
+    return;
+  }
+
+  if (event.type !== 'user.message' || event.agentId || !event.timestamp) return;
+
+  const content = (event.data as { content?: unknown } | undefined)?.content;
+  if (typeof content !== 'string') return;
+
+  // The same clamping the sidebar's previews use, so a prompt written as markdown reads as
+  // a heading rather than as its punctuation.
+  const text = toPreview(content, PROMPT_ROOM);
+  if (text) into.push({ at: event.timestamp, text });
 }
 
 /**
