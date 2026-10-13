@@ -26,11 +26,24 @@ export function useTauriEvent(subscribe: Subscribe, deps: unknown[] = []): void 
     let cancelled = false;
     let off: (() => void) | undefined;
 
-    void subscribe().then((unlisten) => {
-      // The effect was already cleaned up while registration was in flight.
-      if (cancelled) unlisten();
-      else off = unlisten;
-    });
+    void subscribe()
+      .then((unlisten) => {
+        // The effect was already cleaned up while registration was in flight.
+        if (cancelled) unlisten();
+        else off = unlisten;
+      })
+      /**
+       * A channel that never subscribed is the quietest failure in the app.
+       *
+       * Everything the runtime says arrives through one of these, so a rejected `listen`
+       * leaves a window that looks idle while the agent works - absent news rather than bad
+       * news, which is the one shape a reader cannot tell from nothing happening. There is
+       * nowhere here to put it in front of them, so it goes where a developer will find it
+       * rather than nowhere at all.
+       */
+      .catch((error: unknown) => {
+        console.error('A Tauri event channel could not be subscribed to; its updates will not arrive.', error);
+      });
 
     return () => {
       cancelled = true;

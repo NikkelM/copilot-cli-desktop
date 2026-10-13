@@ -5,7 +5,8 @@ import { PREVIEWABLE } from '../../shared/protocol';
  *
  * Both separators, because a path can come from the clipboard, from a picker or from the
  * sidecar, and only one of those three is guaranteed to have been through Node.
- */export function nameOf(path: string): string {
+ */
+export function nameOf(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? path;
 }

@@ -33,7 +33,7 @@ afterEach(() => {
 describe('readTranscript', () => {
   it('returns nothing when the session has no log', async () => {
     const { readTranscript } = await loadEventLog();
-    expect(await readTranscript('missing')).toEqual({ events: [], truncated: false, nextBefore: null });
+    expect(await readTranscript('missing')).toEqual({ events: [], nextBefore: null });
   });
 
 
@@ -42,7 +42,6 @@ describe('readTranscript', () => {
     const { readTranscript } = await loadEventLog();
     expect(await readTranscript('s')).toEqual({
       events: [],
-      truncated: false,
       nextBefore: null,
       // Nothing written yet is a session that is new, not one that has lost anything.
       reopenable: true,
@@ -55,7 +54,7 @@ describe('readTranscript', () => {
 
     const result = await readTranscript('s');
     expect(result.events.map((e) => (e.data as { content: string }).content)).toEqual(['m1', 'm2', 'm3']);
-    expect(result.truncated).toBe(false);
+    expect(result.nextBefore).toBeNull();
   });
 
   it('keeps the newest events and reports truncation', async () => {
@@ -69,7 +68,7 @@ describe('readTranscript', () => {
     expect(result.events).toHaveLength(10);
     expect((result.events[0]?.data as { content: string }).content).toBe('m40');
     expect((result.events[9]?.data as { content: string }).content).toBe('m49');
-    expect(result.truncated).toBe(true);
+    expect(result.nextBefore).not.toBeNull();
   });
 
   /**
@@ -195,7 +194,6 @@ describe('readTranscript', () => {
 
       expect(await readTranscript('s')).toEqual({
         events: [],
-        truncated: false,
         nextBefore: null,
         reopenable: true,
       });
@@ -265,7 +263,7 @@ describe('paging back through history', () => {
 
     const result = await readTranscript('s', 10);
     expect(result.nextBefore).toBeNull();
-    expect(result.truncated).toBe(false);
+    expect(result.nextBefore).toBeNull();
   });
 
   it('walks the entire log in pages without gaps or repeats', async () => {
@@ -316,7 +314,6 @@ describe('paging back through history', () => {
 
     expect(older.events.map(content)).toEqual(['m0', 'm1', 'm2']);
     expect(older.nextBefore).toBeNull();
-    expect(older.truncated).toBe(false);
   });
 
   it('pages correctly when the window has to grow', async () => {
@@ -1490,5 +1487,69 @@ describe('readPrompts', () => {
 
     const { readPrompts } = await loadEventLog();
     expect(await readPrompts('s1')).toEqual([{ at: '2026-01-01T00:00:00.000Z', text: 'fine' }]);
+  });
+});
+/**
+ * A window opens wherever the arithmetic puts it, which is sometimes inside a character.
+ *
+ * Decoding those stray bytes gives one replacement mark each, and a replacement mark
+ * re-encodes to three bytes - so an offset measured by re-encoding the decoded first line
+ * came out several bytes further along than the line really began. Continuation bytes are
+ * about 0.05% of a real log here, so roughly one window start in two thousand lands inside
+ * one. Harmless while every reader treats an offset as an exclusive bound; wrong the moment
+ * one is used as a start.
+ */
+describe('a window that opens inside a character', () => {
+  /** A log whose first window boundary is guaranteed to fall mid-character. */
+  const splitAt = (sessionId: string) => {
+    const WINDOW = 256 * 1024;
+    const said = (n: number, text: string) => JSON.stringify({ type: 'assistant.message', data: { content: text }, id: `e${n}` });
+
+    const lines: string[] = [];
+    while (Buffer.byteLength(lines.join('\n'), 'utf8') < WINDOW + 8 * 1024) {
+      lines.push(said(lines.length, 'héllo wörld '.repeat(40)));
+    }
+
+    // The window opens `size - WINDOW` from the start, so a byte added at the end moves that
+    // boundary one along. Padded a byte at a time until it lands inside a character rather
+    // than on one's first byte.
+    for (let pad = 0; pad < 8; pad += 1) {
+      const body = [...lines, said(lines.length, 'z'.repeat(pad + 1))].join('\n');
+      const bytes = Buffer.from(body, 'utf8');
+      const start = bytes.length - WINDOW;
+      const byte = bytes[start] ?? 0;
+      // 0b10xxxxxx is a continuation byte: the middle of a character rather than its start.
+      if (byte >= 0x80 && byte < 0xc0) {
+        writeLog(sessionId, [body]);
+        return { bytes, start };
+      }
+    }
+
+    throw new Error('could not land a window boundary inside a character');
+  };
+
+  it('hands back an offset that is where the line actually begins', async () => {
+    const { bytes } = splitAt('s1');
+    const { readTranscript } = await loadEventLog();
+
+    // A limit well under what the window holds, so the read stops inside the file and has
+    // an offset to hand back rather than reaching the start.
+    const { nextBefore } = await readTranscript('s1', 50);
+
+    expect(nextBefore).not.toBeNull();
+    // The offset names a place to read back from, so it has to be the first byte of a line.
+    expect(bytes.subarray(nextBefore!, nextBefore! + 1).toString('utf8')).toBe('{');
+  });
+
+  /** And the page read back from it begins where the first page left off. */
+  it('reads back from it without losing or repeating a line', async () => {
+    splitAt('s1');
+    const { readTranscript } = await loadEventLog();
+
+    const first = await readTranscript('s1', 50);
+    const older = await readTranscript('s1', 50, first.nextBefore ?? undefined);
+
+    const ids = new Set(older.events.map((e) => e.id));
+    expect(first.events.every((e) => !ids.has(e.id))).toBe(true);
   });
 });

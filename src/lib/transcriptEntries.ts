@@ -1214,6 +1214,12 @@ export function toEntries(
       status: 'ok',
       output: null,
       startedAt: own[0]?.timestamp,
+      // The last thing it was seen to do, which is the honest end for a row whose own start
+      // is off the page. Without it the row has a beginning and no end, and a duration with
+      // no end is one still running: a task finished last week ticked upwards once a second
+      // for as long as the page was open. A run still working pushes this along as its
+      // events arrive, so the figure stays right either way.
+      endedAt: own[own.length - 1]?.timestamp,
       delegated: { agent },
       children: toEntries(own, cwd, abandoned, agentId),
     });

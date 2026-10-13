@@ -217,11 +217,14 @@ export interface GetTranscriptParams {
 
 export interface GetTranscriptResult {
   events: TranscriptEvent[];
-  /** True when older events exist before the ones returned. */
-  truncated: boolean;
   /**
    * Cursor for fetching the page before this one, or null at the start of the log.
    * A byte offset into events.jsonl, pointing at the first event returned here.
+   *
+   * Null is also how "there is nothing older" is said. There was a `truncated` flag beside
+   * this that said the same thing a second way, and nothing ever read it - while the same
+   * name on `sessions.agents` is read, which made one word mean two things depending on
+   * which page it came back on.
    */
   nextBefore: number | null;
   /**
@@ -509,11 +512,6 @@ export interface ResolvePermissionParams {
 }
 
 /**
- * A tool permission request awaiting a decision.
- * `request` is the SDK's PermissionRequest, a union discriminated by `kind`
- * (shell, write, read, mcp, custom-tool, url, ...).
- */
-/**
  * The subagent behind a request, where one is behind it (#229).
  *
  * Absent for the session's own agent, which is the ordinary case: the runtime marks an
@@ -531,6 +529,11 @@ export interface AskedBy {
   name?: string;
 }
 
+/**
+ * A tool permission request awaiting a decision.
+ * `request` is the SDK's PermissionRequest, a union discriminated by `kind`
+ * (shell, write, read, mcp, custom-tool, url, ...).
+ */
 export interface PendingPermission {
   sessionId: string;
   requestId: string;
@@ -1362,13 +1365,6 @@ export interface SidecarRequests {
   'sessions.shell': { params: { sessionId: string; requestId: string; command: string }; result: ShellResult };
   'sessions.cancelShell': { params: { sessionId: string; requestId: string }; result: void };
   /**
-   * Bring a session into memory before anything is asked of it.
-   *
-   * The opposite of `sessions.evict`. Nothing is resumed until it is needed, which is what
-   * makes a long list free - but it means the first message waits on a resume, and somebody
-   * who knows they are about to use a session can pay that while they are still reading.
-   */
-  /**
    * Give a session a name of somebody's choosing.
    *
    * Costs no session: the name lives in a file beside the transcript rather than in the
@@ -1419,7 +1415,16 @@ export interface SidecarRequests {
    * update that could not run is not a reason to interrupt anybody.
    */
   'runtime.update': { params: Record<string, never>; result: { ran: boolean; said?: string; failed?: string } };
-  'sessions.load': { params: { sessionId: string }; result: void };  'sessions.evict': { params: { sessionId: string }; result: void };  /**
+  /**
+   * Bring a session into memory before anything is asked of it.
+   *
+   * The opposite of `sessions.evict`. Nothing is resumed until it is needed, which is what
+   * makes a long list free - but it means the first message waits on a resume, and somebody
+   * who knows they are about to use a session can pay that while they are still reading.
+   */
+  'sessions.load': { params: { sessionId: string }; result: void };
+  'sessions.evict': { params: { sessionId: string }; result: void };
+  /**
    * Delete a session, or put it in the bin for as long as the reader asked for.
    *
    * With no retention the CLI deletes the session's state directory, which is where the
@@ -1451,13 +1456,6 @@ export interface SidecarRequests {
    */
   'sessions.search': { params: { query: string }; result: { matches: SessionMatch[] } };
   /**
-   * Where to open a session so a match is on the page, as a cursor to read back from.
-   *
-   * Costs no session: the moment comes from the CLI's database and the log is halved rather
-   * than scanned, so this is a dozen small reads whatever the log's size. Null when the log
-   * does not reach that far, which a truncated one will not (#30).
-   */
-  /**
    * Every prompt somebody typed into a session, oldest first, for navigating by (#96).
    *
    * Costs no session: read from the log, which is the only place the answer is whole - the
@@ -1467,7 +1465,15 @@ export interface SidecarRequests {
    * and milliseconds on an ordinary one.
    */
   'sessions.prompts': { params: { sessionId: string }; result: { prompts: SessionPrompt[] } };
-  'sessions.locate': {    params: {
+  /**
+   * Where to open a session so a match is on the page, as a cursor to read back from.
+   *
+   * Costs no session: the moment comes from the CLI's database and the log is halved rather
+   * than scanned, so this is a dozen small reads whatever the log's size. Null when the log
+   * does not reach that far, which a truncated one will not (#30).
+   */
+  'sessions.locate': {
+    params: {
       sessionId: string;
       /** A search result's handle, which the database turns into the moment it happened. */
       source?: string;

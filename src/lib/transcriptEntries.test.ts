@@ -1218,6 +1218,39 @@ describe('subagent work whose delegating row is off the page', () => {
     { type: 'assistant.message', id: 'e3', data: { content: 'the session speaks' } },
   ] as TranscriptEvent[];
 
+  /**
+   * A row with a beginning and no end is a row still running, and the transcript draws a
+   * duration for one of those - ticking upwards once a second, for a delegation that may
+   * have finished last week. The last thing the page saw it do is the honest end.
+   */
+  it('ends where its work ends, rather than running for ever', () => {
+    const timed = [
+      { type: 'assistant.message', id: 'e1', agentId: 'a1', timestamp: '2026-01-01T00:00:00.000Z', data: { content: 'looking' } },
+      { type: 'assistant.message', id: 'e2', agentId: 'a1', timestamp: '2026-01-01T00:02:00.000Z', data: { content: 'found it' } },
+    ] as TranscriptEvent[];
+
+    const row = toEntries(timed, null).find((e) => e.kind === 'tool');
+
+    expect(row?.kind === 'tool' && row.startedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(row?.kind === 'tool' && row.endedAt).toBe('2026-01-01T00:02:00.000Z');
+  });
+
+  /** A run still working moves its own end along as its events arrive. */
+  it('moves its end along while the work is still arriving', () => {
+    const so_far = [
+      { type: 'assistant.message', id: 'e1', agentId: 'a1', timestamp: '2026-01-01T00:00:00.000Z', data: { content: 'looking' } },
+    ] as TranscriptEvent[];
+    const more = [
+      ...so_far,
+      { type: 'assistant.message', id: 'e2', agentId: 'a1', timestamp: '2026-01-01T00:05:00.000Z', data: { content: 'still' } },
+    ] as TranscriptEvent[];
+
+    const before = toEntries(so_far, null).find((e) => e.kind === 'tool');
+    const after = toEntries(more, null).find((e) => e.kind === 'tool');
+
+    expect(before?.kind === 'tool' && before.endedAt).toBe('2026-01-01T00:00:00.000Z');
+    expect(after?.kind === 'tool' && after.endedAt).toBe('2026-01-01T00:05:00.000Z');
+  });
   it('keeps the work rather than dropping it', () => {
     const entries = toEntries(page, null);
     const row = entries.find((e) => e.kind === 'tool');

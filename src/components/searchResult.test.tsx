@@ -80,7 +80,7 @@ function Harness() {
 
 beforeEach(() => {
   getTranscript.mockReset().mockImplementation((sessionId: string) =>
-    Promise.resolve({ events: pageOf(sessionId), truncated: true, nextBefore: null, reopenable: true }),
+    Promise.resolve({ events: pageOf(sessionId), nextBefore: null, reopenable: true }),
   );
 });
 

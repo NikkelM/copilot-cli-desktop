@@ -578,7 +578,7 @@ describe('giving back history reached by scrolling up', () => {
  */
 describe('a subagent streaming into the session that delegated it', () => {
   beforeEach(() => {
-    getTranscript.mockReset().mockResolvedValue({ events: [], truncated: false, nextBefore: null });
+    getTranscript.mockReset().mockResolvedValue({ events: [], nextBefore: null });
   });
 
   const live = (type: string, data: unknown, agentId?: string) =>
@@ -723,7 +723,7 @@ describe('a session that cannot be opened again', () => {
  */
 describe('opening at a turn somebody went looking for', () => {
   beforeEach(() => {
-    getTranscript.mockReset().mockResolvedValue({ events: [], truncated: false, nextBefore: null });
+    getTranscript.mockReset().mockResolvedValue({ events: [], nextBefore: null });
   });
 
   it('reads from the end when nothing sent it elsewhere', async () => {
@@ -779,7 +779,6 @@ describe('whose conversation is on screen', () => {
   it('shows nothing of the session just left, even before the next page arrives', async () => {
     getTranscript.mockResolvedValue({
       events: [reply('from the first session', 'a')],
-      truncated: false,
       nextBefore: null,
     });
 
@@ -801,7 +800,7 @@ describe('whose conversation is on screen', () => {
     const { rerender } = render(<Probe id="one" />);
     await waitFor(() => expect(seen[seen.length - 1]).toEqual(['from the first session']));
 
-    getTranscript.mockResolvedValue({ events: [reply('from the second', 'b')], truncated: false, nextBefore: null });
+    getTranscript.mockResolvedValue({ events: [reply('from the second', 'b')], nextBefore: null });
     const before = seen.length;
     rerender(<Probe id="two" />);
 
@@ -811,7 +810,7 @@ describe('whose conversation is on screen', () => {
   });
 
   it('shows the new page once it arrives', async () => {
-    getTranscript.mockResolvedValue({ events: [reply('from the second', 'b')], truncated: false, nextBefore: null });
+    getTranscript.mockResolvedValue({ events: [reply('from the second', 'b')], nextBefore: null });
     const { result, rerender } = renderHook(({ id }) => useTranscript(id, () => {}), {
       initialProps: { id: 'one' },
     });

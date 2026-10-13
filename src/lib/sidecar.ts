@@ -84,18 +84,6 @@ async function request<M extends SidecarMethod>(
 }
 
 /**
- * Bring a session into memory before anything is asked of it.
- *
- * Costs a resume, which is the thing this app otherwise refuses to pay until it has to. Paid
- * deliberately here, by somebody who knows they are about to use it.
- */
-/**
- * Tell the runtime what may stay in memory.
- *
- * Sent whenever it changes and once at startup: the runtime begins every run on its own
- * defaults and has no memory of what was chosen last time.
- */
-/**
  * Bring the Copilot CLI up to date.
  *
  * The CLI updates itself on startup by default and this app never gets that: the SDK spawns
@@ -105,6 +93,12 @@ export function updateCli(): Promise<{ ran: boolean; said?: string; failed?: str
   return request('runtime.update', {});
 }
 
+/**
+ * Tell the runtime what may stay in memory.
+ *
+ * Sent whenever it changes and once at startup: the runtime begins every run on its own
+ * defaults and has no memory of what was chosen last time.
+ */
 export function setRuntimeLimits(
   maxLoadedSessions: number,
   idleTimeoutMs: number,
@@ -125,6 +119,12 @@ export function renameSession(sessionId: string, name: string): Promise<void> {
   return request('sessions.rename', { sessionId, name });
 }
 
+/**
+ * Bring a session into memory before anything is asked of it.
+ *
+ * Costs a resume, which is the thing this app otherwise refuses to pay until it has to. Paid
+ * deliberately here, by somebody who knows they are about to use it.
+ */
 export function loadSession(sessionId: string): Promise<void> {
   return request('sessions.load', { sessionId });
 }

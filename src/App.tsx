@@ -566,13 +566,6 @@ export default function App() {
   }
 
   /**
-   * Attach files pasted into the composer.
-   *
-   * The session is named rather than read from state because the write is asynchronous:
-   * pasting and then moving to another session would otherwise attach the screenshot to
-   * whichever one happened to be open when the bytes finished landing.
-   */
-  /**
    * Decide what a pasted block leaves in the box (#55).
    *
    * Three answers. Most pastes are short and are left exactly where they land. A long one is
@@ -642,6 +635,13 @@ export default function App() {
     }
   }
 
+  /**
+   * Attach files pasted into the composer.
+   *
+   * The session is named rather than read from state because the write is asynchronous:
+   * pasting and then moving to another session would otherwise attach the screenshot to
+   * whichever one happened to be open when the bytes finished landing.
+   */
   async function handlePaste(sessionId: string, files: File[]) {
     try {
       const { attached, tooLarge } = await stashFiles(sessionId, files);
@@ -1422,13 +1422,6 @@ export default function App() {
   }
 
   /**
-   * Send a message to the agent.
-   *
-   * The text sent and the text shown are not always the same: a command that produces a
-   * prompt writes something longer than the transcript should carry, and has already put
-   * the command that produced it there. Null means it is shown somewhere already.
-   */
-  /**
    * Run a shell command the reader typed, rather than sending it to the agent.
    *
    * Goes through the runtime rather than being run beside it, so the command is emitted as
@@ -1457,6 +1450,13 @@ export default function App() {
     }
   }
 
+  /**
+   * Send a message to the agent.
+   *
+   * The text sent and the text shown are not always the same: a command that produces a
+   * prompt writes something longer than the transcript should carry, and has already put
+   * the command that produced it there. Null means it is shown somewhere already.
+   */
   async function send(sessionId: string, prompt: string, display: string | null) {
     setError(null);
     drafts.clear(sessionId);

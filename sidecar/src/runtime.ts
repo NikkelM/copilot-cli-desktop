@@ -1594,19 +1594,6 @@ export class SessionRuntime {
   }
 
   /**
-   * What a session has waiting behind the turn it is running.
-   *
-   * Read from the runtime rather than tracked here. This app used to keep its own list,
-   * on the belief that the runtime offered no way to ask - it does, and a second copy of
-   * a queue can only ever disagree with the first. The runtime's also holds things this
-   * app never put there: commands queued during a turn, model changes, and messages sent
-   * from a terminal attached to the same session.
-   *
-   * A session that is not loaded has no queue, and asking must not be what loads it: the
-   * sidebar asks about every session, and resuming each one to be told it has nothing
-   * waiting is the cost this app exists to avoid.
-   */
-  /**
    * The turns this session could be put back to (#156).
    *
    * Opens the session, unlike the change list, which reads the snapshots on disk: the
@@ -1685,6 +1672,19 @@ export class SessionRuntime {
     return this.loaded.has(sessionId);
   }
 
+  /**
+   * What a session has waiting behind the turn it is running.
+   *
+   * Read from the runtime rather than tracked here. This app used to keep its own list,
+   * on the belief that the runtime offered no way to ask - it does, and a second copy of
+   * a queue can only ever disagree with the first. The runtime's also holds things this
+   * app never put there: commands queued during a turn, model changes, and messages sent
+   * from a terminal attached to the same session.
+   *
+   * A session that is not loaded has no queue, and asking must not be what loads it: the
+   * sidebar asks about every session, and resuming each one to be told it has nothing
+   * waiting is the cost this app exists to avoid.
+   */
   async queue(sessionId: string): Promise<QueuedItem[]> {
     const live = this.loaded.get(sessionId)?.session;
     if (!live) return [];

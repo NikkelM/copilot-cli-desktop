@@ -138,7 +138,7 @@ export async function readTranscript(
   before?: number,
 ): Promise<GetTranscriptResult> {
   const path = sessionEventLog(sessionId);
-  if (!existsSync(path)) return { events: [], truncated: false, nextBefore: null };
+  if (!existsSync(path)) return { events: [], nextBefore: null };
 
   const file = await open(path, 'r');
   try {
@@ -150,7 +150,7 @@ export async function readTranscript(
     const answer = (result: Omit<GetTranscriptResult, 'reopenable'>): GetTranscriptResult =>
       reopenable === undefined ? result : { ...result, reopenable };
 
-    if (end === 0) return answer({ events: [], truncated: false, nextBefore: null });
+    if (end === 0) return answer({ events: [], nextBefore: null });
 
     let window = Math.min(INITIAL_WINDOW, end);
 
@@ -183,7 +183,6 @@ export async function readTranscript(
 
         return answer({
           events: kept.map((entry) => entry.event),
-          truncated: more,
           // Where the next page should stop reading. Points at the first event actually
           // returned, not the window start, since the window's first line is normally
           // partial and further events may be dropped when slicing to the limit.
@@ -933,26 +932,38 @@ function takePrompt(line: string, into: SessionPrompt[]): void {
  * Unless the window reaches the start of the file its first line began before it and is
  * incomplete, so it is skipped. That also discards any partial multi-byte character
  * introduced by starting mid-file.
+ *
+ * Split on the bytes rather than on the decoded text. A window opens wherever the arithmetic
+ * puts it, which is sometimes inside a character: decoding those stray bytes gives one
+ * replacement mark each, and a replacement mark re-encodes to three bytes - so an offset
+ * measured by re-encoding the decoded first line came out several bytes further along than
+ * the line really began. Every reader happens to treat an offset as an exclusive upper
+ * bound, where a few bytes too far still lands inside the same line, so nothing was visibly
+ * wrong; the first reader to use one as a start would have begun mid-line.
  */
 function locateEvents(buffer: Buffer, start: number, reachedStart: boolean): LocatedEvent[] {
   const events: LocatedEvent[] = [];
-  const lines = buffer.toString('utf8').split('\n');
-  let offset = start;
+  let at = 0;
+  let line = 0;
 
-  for (const [index, line] of lines.entries()) {
-    const lineStart = offset;
-    offset += Buffer.byteLength(line, 'utf8') + 1; // the newline that split() removed
+  while (at < buffer.length) {
+    const end = buffer.indexOf(NEWLINE, at);
+    const stop = end === -1 ? buffer.length : end;
 
-    if (index === 0 && !reachedStart) continue;
-
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    try {
-      events.push({ event: JSON.parse(trimmed) as TranscriptEvent, offset: lineStart });
-    } catch {
-      // A partially flushed trailing line is expected while a session is live.
+    if (line > 0 || reachedStart) {
+      const trimmed = buffer.toString('utf8', at, stop).trim();
+      if (trimmed) {
+        try {
+          events.push({ event: JSON.parse(trimmed) as TranscriptEvent, offset: start + at });
+        } catch {
+          // A partially flushed trailing line is expected while a session is live.
+        }
+      }
     }
+
+    line += 1;
+    if (end === -1) break;
+    at = end + 1;
   }
 
   return events;
