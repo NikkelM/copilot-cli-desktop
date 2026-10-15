@@ -91,6 +91,7 @@ import { nameOf } from './lib/paths';
 import { useFileDrop } from './lib/useFileDrop';
 import { useTodos } from './lib/useTodos';
 import { usePromptList } from './lib/usePromptList';
+import { useUnseen } from './lib/useUnseen';
 import { useActiveElsewhere } from './lib/useActiveElsewhere';
 import { useMarked } from './lib/useMarked';
 import { bulkActions } from './lib/bulkActions';
@@ -528,6 +529,14 @@ export default function App() {
   const skills = useDisabledSkills(selectedId);
   const prompts = usePrompts(selectedId, setError);
   /**
+   * What each session did while the reader was looking at something else (#265).
+   *
+   * Beside `prompts` because it reads what they are still owed: being blocked is taken from
+   * the outstanding prompts rather than remembered, so a question answered from another
+   * window stops counting the moment the prompt goes.
+   */
+  const unseen = useUnseen(selectedId, prompts.blocking);
+  /**
    * Starting a session is the one action here that costs a Copilot process before anything
    * has been said, so it says it is working rather than appearing to have done nothing.
    */
@@ -749,6 +758,9 @@ export default function App() {
       // Every session's, not just the one on screen: a delegation in a session the reader
       // has looked away from is still work they asked for and may come back to.
       subagents.observe(sessionId, event);
+      // What a session did while the reader was elsewhere, which is what every surface
+      // under #85 has to read. Also every session's, and for the same reason.
+      unseen.observe(sessionId, event);
 
       // The queue belongs to whichever session owns it rather than to the one on screen: a
       // session left running keeps its queue while the reader is elsewhere, and it must be
@@ -1581,6 +1593,7 @@ export default function App() {
     (target: SessionSummary) => {
       if (target.sessionId === selectedId) setSelectedId(null);
       sessions.drop(target.sessionId);
+      unseen.forget(target.sessionId);
 
       deleteSession(target.sessionId)
         .then(() => sessions.refresh())
@@ -1589,7 +1602,7 @@ export default function App() {
           setError(explain(e));
         });
     },
-    [selectedId, sessions],
+    [selectedId, sessions, unseen.forget],
   );
 
   /**
