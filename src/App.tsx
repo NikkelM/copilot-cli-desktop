@@ -132,6 +132,7 @@ import { readOverrides, resolveBindings } from './lib/bindings';
 import { useKeying } from './lib/useKeying';
 import { focusRegion, focusToggle, inSidebar, stepRegion } from './lib/regions';
 import { useTaskbar } from './lib/useTaskbar';
+import { useAttention } from './lib/useAttention';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
 import { useTauriEvent } from './lib/useTauriEvent';
@@ -1563,6 +1564,20 @@ export default function App() {
   );
 
   useTaskbar(sessions.working.size > 0, display.taskbarPresence);
+
+  /**
+   * How many sessions are stopped on a question the reader has not seen (#266).
+   *
+   * From the unseen marks rather than from `activity`, which counts the session on screen
+   * too: flashing the taskbar for a question that is already in front of them is the one
+   * case the epic rules out.
+   */
+  const waitingElsewhere = useMemo(
+    () => Object.values(unseen.marks).filter((mark) => mark === 'blocked').length,
+    [unseen.marks],
+  );
+
+  useAttention(waitingElsewhere);
 
   /** Sessions stopped on a question, for the fold control to mark while the sidebar is away. */
   const waitingCount = useMemo(
