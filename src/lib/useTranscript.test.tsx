@@ -820,3 +820,28 @@ describe('whose conversation is on screen', () => {
     await waitFor(() => expect(bodies(result.current.events)).toEqual(['from the second']));
   });
 });
+
+/**
+ * App subscribes to the runtime once, when it starts, and holds whatever callbacks it was
+ * given then for the rest of the run. One that changes identity when the reader opens
+ * another session is therefore one the subscription will never be handed again: it goes on
+ * answering for whichever session was open at the moment the app started, which was none.
+ *
+ * That is how the live half of the todo list came to have never worked. The rule is cheap to
+ * state and cheap to check, so it is checked here rather than left to be remembered.
+ */describe('the identity App subscribes with', () => {
+  beforeEach(() => {
+    getTranscript.mockReset().mockResolvedValue({ events: [], nextBefore: null });
+  });
+
+  it('survives the reader moving to another session', () => {
+    const view = renderHook(({ id }: { id: string }) => useTranscript(id, () => {}), {
+      initialProps: { id: 's1' },
+    });
+    const { push } = view.result.current;
+
+    view.rerender({ id: 's2' });
+
+    expect(view.result.current.push).toBe(push);
+  });
+});

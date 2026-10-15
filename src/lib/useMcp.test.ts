@@ -169,3 +169,22 @@ describe('the form the panel is showing', () => {
     expect(result.current.editing).toBe('');
   });
 });
+
+/**
+ * App subscribes to the runtime once, when it starts, and holds whatever callbacks it was
+ * given then for the rest of the run. One that changes identity when the reader opens
+ * another session is therefore one the subscription will never be handed again: it goes on
+ * answering for whichever session was open at the moment the app started, which was none.
+ *
+ * That is how the live half of the todo list came to have never worked. The rule is cheap to
+ * state and cheap to check, so it is checked here rather than left to be remembered.
+ */describe('the identity App subscribes with', () => {
+  it('survives the reader moving to another session', () => {
+    const view = draw('s1');
+    const { reread } = view.result.current;
+
+    view.rerender({ id: 's2' });
+
+    expect(view.result.current.reread).toBe(reread);
+  });
+});

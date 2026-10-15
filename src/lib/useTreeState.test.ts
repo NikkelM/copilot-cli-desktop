@@ -97,3 +97,22 @@ describe('useTreeState', () => {
     expect(result.current.state).toBeNull();
   });
 });
+
+/**
+ * App subscribes to the runtime once, when it starts, and holds whatever callbacks it was
+ * given then for the rest of the run. One that changes identity when the reader opens
+ * another session is therefore one the subscription will never be handed again: it goes on
+ * answering for whichever session was open at the moment the app started, which was none.
+ *
+ * That is how the live half of the todo list came to have never worked. The rule is cheap to
+ * state and cheap to check, so it is checked here rather than left to be remembered.
+ */describe('the identity App subscribes with', () => {
+  it('survives the reader moving to another directory', () => {
+    const view = renderHook(({ cwd }: { cwd: string }) => useTreeState(cwd), { initialProps: { cwd: 'C:\\one' } });
+    const { refresh } = view.result.current;
+
+    view.rerender({ cwd: 'C:\\two' });
+
+    expect(view.result.current.refresh).toBe(refresh);
+  });
+});
