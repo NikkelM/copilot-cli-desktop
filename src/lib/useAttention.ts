@@ -14,6 +14,12 @@ import { getCurrentWindow, UserAttentionType } from '@tauri-apps/api/window';
  * session stays stopped. The API ignores the call outright when the app is already focused,
  * so there is nobody to tell and nothing to suppress here.
  *
+ * That last part is why the count handed in is every session stopped on a question rather
+ * than only the ones the reader is away from. Excluding the open session was tried and was
+ * wrong: it is the one most likely to be asking, and from another window it is as invisible
+ * as any other. Being able to see a session means being at the app, which the API already
+ * checks better than this can.
+ *
  * Only when the number rises, since a flash already running needs no restarting and the
  * count falling means one was answered rather than another arriving.
  */

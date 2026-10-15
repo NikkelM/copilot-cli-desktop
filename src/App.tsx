@@ -1566,18 +1566,17 @@ export default function App() {
   useTaskbar(sessions.working.size > 0, display.taskbarPresence);
 
   /**
-   * How many sessions are stopped on a question the reader has not seen (#266).
+   * Flash the taskbar when anything stops to ask, including the session on screen (#266).
    *
-   * From the unseen marks rather than from `activity`, which counts the session on screen
-   * too: flashing the taskbar for a question that is already in front of them is the one
-   * case the epic rules out.
+   * Not filtered to the sessions the reader is away from, which is what the unseen marks
+   * do: that rule assumes the reader is looking at the app at all, and the whole point of
+   * this is the case where they are not. A question in the open session is exactly as
+   * invisible as any other from another window.
+   *
+   * Nothing is needed to suppress it while they are here, because the Tauri call ignores
+   * itself outright when the app has focus.
    */
-  const waitingElsewhere = useMemo(
-    () => Object.values(unseen.marks).filter((mark) => mark === 'blocked').length,
-    [unseen.marks],
-  );
-
-  useAttention(waitingElsewhere);
+  useAttention(prompts.blocking.length);
 
   /** Sessions stopped on a question, for the fold control to mark while the sidebar is away. */
   const waitingCount = useMemo(
