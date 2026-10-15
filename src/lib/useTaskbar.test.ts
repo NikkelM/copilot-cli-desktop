@@ -8,7 +8,7 @@ const setProgressBar = vi.fn(() => Promise.resolve());
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: () => ({ setProgressBar }),
-  ProgressBarStatus: { Normal: 'normal', None: 'none' },
+  ProgressBarStatus: { Normal: 'normal', None: 'none', Indeterminate: 'indeterminate' },
 }));
 
 beforeEach(() => setProgressBar.mockClear());
@@ -17,7 +17,7 @@ describe('the taskbar button while a session works', () => {
   it('paints while something is working', () => {
     renderHook(() => useTaskbar(true));
 
-    expect(setProgressBar).toHaveBeenCalledWith({ status: 'normal', progress: 100 });
+    expect(setProgressBar).toHaveBeenCalledWith({ status: 'indeterminate' });
   });
 
   it('clears when nothing is', () => {
@@ -70,7 +70,7 @@ describe('when the CLI says not to paint the taskbar', () => {
   it('paints when the CLI does not say otherwise', () => {
     renderHook(() => useTaskbar(true));
 
-    expect(setProgressBar).toHaveBeenCalledWith({ status: 'normal', progress: 100 });
+    expect(setProgressBar).toHaveBeenCalledWith({ status: 'indeterminate' });
   });
 
   // The switch moving is as much a reason to repaint as the work starting or stopping.
@@ -83,5 +83,21 @@ describe('when the CLI says not to paint the taskbar', () => {
     rerender({ wanted: false });
 
     expect(setProgressBar).toHaveBeenCalledWith({ status: 'none' });
+  });
+});
+
+/**
+ * The detail that makes the bar move rather than fill (#272).
+ *
+ * `tao` sets the state, and then calls `SetProgressValue` only if a progress value came
+ * with it - and a value puts the button back to a normal filled bar. So the marquee is not
+ * only a matter of asking for the right status: it is also a matter of sending no number
+ * alongside it, which is easy to add back in good faith.
+ */
+describe('asking for a bar that moves', () => {
+  it('sends no progress value, which would fill it instead', () => {
+    renderHook(() => useTaskbar(true));
+
+    expect(setProgressBar).toHaveBeenCalledWith({ status: 'indeterminate' });
   });
 });
