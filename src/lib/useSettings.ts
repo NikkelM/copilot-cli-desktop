@@ -61,6 +61,26 @@ export const SIDEBAR_PREVIEW_LINES = 'sidebarPreviewLines';
 export const SHORTCUTS = 'shortcuts';
 
 /**
+ * Which surfaces say what, when a session wants something (#270).
+ *
+ * One key per surface and state rather than one per surface, because the three states are
+ * not equally worth interrupting for: somebody may well want the taskbar flashing the
+ * moment a session is blocked and nothing at all when one merely finishes.
+ *
+ * The sidebar marks are deliberately absent. They are passive and only visible once the app
+ * is open, so there is nothing to protect the reader from and nothing to switch off.
+ */
+export const FLASH_BLOCKED = 'flashBlocked';
+export const FLASH_FINISHED = 'flashFinished';
+export const FLASH_FAILED = 'flashFailed';
+export const BADGE_BLOCKED = 'badgeBlocked';
+export const BADGE_FINISHED = 'badgeFinished';
+export const BADGE_FAILED = 'badgeFailed';
+export const NOTIFY_BLOCKED = 'notifyBlocked';
+export const NOTIFY_FINISHED = 'notifyFinished';
+export const NOTIFY_FAILED = 'notifyFailed';
+
+/**
  * The most lines of a reply a sidebar row will give up.
  *
  * Past this a row stops being a row: five lines of prose under every title is a list of
@@ -169,6 +189,25 @@ export interface Settings {
    * a settings key. Parsed by `readOverrides`, which drops anything it cannot make sense of.
    */
   shortcuts: string;
+  /**
+   * Which surfaces say what, when a session wants something (#270).
+   *
+   * Flashing defaults to the blocked state alone, which is what it shipped as: it keeps
+   * going until the app is focused, so it is the loudest of the three and the only one
+   * that suits a session that has actually stopped. Counting defaults to everything,
+   * because a number on an icon interrupts nobody. Notifying is the one that puts
+   * something over the window in front of you, so only the state that is owed an answer
+   * starts switched on.
+   */
+  flashBlocked: boolean;
+  flashFinished: boolean;
+  flashFailed: boolean;
+  badgeBlocked: boolean;
+  badgeFinished: boolean;
+  badgeFailed: boolean;
+  notifyBlocked: boolean;
+  notifyFinished: boolean;
+  notifyFailed: boolean;
 }
 
 /** The ten minutes the runtime uses when nobody has said otherwise. */
@@ -223,6 +262,20 @@ export function readSettings(): Settings {
     scale: readScale(),
     textScale: readTextScale(),
     shortcuts: read('settings', SHORTCUTS) ?? '',
+    /*
+     * Each on unless it was turned off outright, except the three that start off, which
+     * only the exact stored true turns on. Either way nothing unexpected in the file can
+     * make the app louder than it was.
+     */
+    flashBlocked: read('settings', FLASH_BLOCKED) !== 'false',
+    flashFinished: read('settings', FLASH_FINISHED) === 'true',
+    flashFailed: read('settings', FLASH_FAILED) === 'true',
+    badgeBlocked: read('settings', BADGE_BLOCKED) !== 'false',
+    badgeFinished: read('settings', BADGE_FINISHED) !== 'false',
+    badgeFailed: read('settings', BADGE_FAILED) !== 'false',
+    notifyBlocked: read('settings', NOTIFY_BLOCKED) !== 'false',
+    notifyFinished: read('settings', NOTIFY_FINISHED) === 'true',
+    notifyFailed: read('settings', NOTIFY_FAILED) === 'true',
   };
 }
 
@@ -374,4 +427,13 @@ const KEYS: Record<keyof Settings, string> = {
   scale: SCALE_KEY,
   textScale: TEXT_SCALE_KEY,
   shortcuts: SHORTCUTS,
+  flashBlocked: FLASH_BLOCKED,
+  flashFinished: FLASH_FINISHED,
+  flashFailed: FLASH_FAILED,
+  badgeBlocked: BADGE_BLOCKED,
+  badgeFinished: BADGE_FINISHED,
+  badgeFailed: BADGE_FAILED,
+  notifyBlocked: NOTIFY_BLOCKED,
+  notifyFinished: NOTIFY_FINISHED,
+  notifyFailed: NOTIFY_FAILED,
 };

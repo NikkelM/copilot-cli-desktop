@@ -343,6 +343,7 @@ const CATEGORIES = [
   { id: 'cli', label: 'Copilot CLI' },
   { id: 'keyboard', label: 'Keyboard' },
   { id: 'sessions', label: 'New sessions' },
+  { id: 'notifications', label: 'Notifications' },
   { id: 'management', label: 'Session management' },
   { id: 'transcript', label: 'Transcript' },
 ] as const satisfies readonly { id: string; label: string }[];
@@ -398,6 +399,22 @@ const INDEX: Record<CategoryId, Searchable[]> = {
   sessions: [
     { label: 'Model', keywords: 'effort reasoning context window default' },
     { label: 'Default working directory', keywords: 'folder path cwd start home' },
+  ],
+  /*
+   * Three rows per surface rather than one, because the states are what somebody is
+   * actually searching for: a reader who wants to stop being interrupted looks for what is
+   * interrupting them, not for the surface it arrives on.
+   */
+  notifications: [
+    { label: 'Flash the taskbar when a session needs an answer', keywords: 'notify alert flash taskbar attention blocked question permission' },
+    { label: 'Flash the taskbar when a session finishes', keywords: 'notify alert flash taskbar attention finished done reply' },
+    { label: 'Flash the taskbar when a session fails', keywords: 'notify alert flash taskbar attention failed error' },
+    { label: 'Count sessions needing an answer on the taskbar icon', keywords: 'notify badge count taskbar icon overlay blocked question' },
+    { label: 'Count finished sessions on the taskbar icon', keywords: 'notify badge count taskbar icon overlay finished done' },
+    { label: 'Count failed sessions on the taskbar icon', keywords: 'notify badge count taskbar icon overlay failed error' },
+    { label: 'Notify when a session needs an answer', keywords: 'notify toast desktop os notification blocked question permission' },
+    { label: 'Notify when a session finishes', keywords: 'notify toast desktop os notification finished done reply' },
+    { label: 'Notify when a session fails', keywords: 'notify toast desktop os notification failed error' },
   ],
   appearance: [
     { label: 'App scale', keywords: 'size zoom bigger smaller' },
@@ -1076,6 +1093,94 @@ export function SettingsWindow({
 
             {/* What the transcript reports, rather than how large it is drawn: a reader who
                 turns this off is not changing how anything looks but what it says. */}
+            {shown.id === 'notifications' && (
+              <>
+                {/* Grouped by surface rather than by state, because turning one surface
+                    down is the common move: somebody tired of the taskbar flashing wants
+                    all of it gone, not the blocked half of it. */}
+                <h4 className="settings-subhead">Flash the taskbar</h4>
+
+                {shows('Flash the taskbar when a session needs an answer') && (
+                  <TickField
+                    label="Flash the taskbar when a session needs an answer"
+                    checked={draft.flashBlocked}
+                    onChange={(checked) => edit('flashBlocked', checked)}
+                    hint="Keeps flashing until the app is in focus, which is how long the session stays stopped."
+                  />
+                )}
+
+                {shows('Flash the taskbar when a session finishes') && (
+                  <TickField
+                    label="Flash the taskbar when a session finishes"
+                    checked={draft.flashFinished}
+                    onChange={(checked) => edit('flashFinished', checked)}
+                  />
+                )}
+
+                {shows('Flash the taskbar when a session fails') && (
+                  <TickField
+                    label="Flash the taskbar when a session fails"
+                    checked={draft.flashFailed}
+                    onChange={(checked) => edit('flashFailed', checked)}
+                  />
+                )}
+
+                <h4 className="settings-subhead">Count on the taskbar icon</h4>
+
+                {shows('Count sessions needing an answer on the taskbar icon') && (
+                  <TickField
+                    label="Count sessions needing an answer on the taskbar icon"
+                    checked={draft.badgeBlocked}
+                    onChange={(checked) => edit('badgeBlocked', checked)}
+                    hint="A number over the icon, up to 9+."
+                  />
+                )}
+
+                {shows('Count finished sessions on the taskbar icon') && (
+                  <TickField
+                    label="Count finished sessions on the taskbar icon"
+                    checked={draft.badgeFinished}
+                    onChange={(checked) => edit('badgeFinished', checked)}
+                  />
+                )}
+
+                {shows('Count failed sessions on the taskbar icon') && (
+                  <TickField
+                    label="Count failed sessions on the taskbar icon"
+                    checked={draft.badgeFailed}
+                    onChange={(checked) => edit('badgeFailed', checked)}
+                  />
+                )}
+
+                <h4 className="settings-subhead">Notify outside the app</h4>
+
+                {shows('Notify when a session needs an answer') && (
+                  <TickField
+                    label="Notify when a session needs an answer"
+                    checked={draft.notifyBlocked}
+                    onChange={(checked) => edit('notifyBlocked', checked)}
+                    hint="The only one that reaches you while the window is behind something else."
+                  />
+                )}
+
+                {shows('Notify when a session finishes') && (
+                  <TickField
+                    label="Notify when a session finishes"
+                    checked={draft.notifyFinished}
+                    onChange={(checked) => edit('notifyFinished', checked)}
+                  />
+                )}
+
+                {shows('Notify when a session fails') && (
+                  <TickField
+                    label="Notify when a session fails"
+                    checked={draft.notifyFailed}
+                    onChange={(checked) => edit('notifyFailed', checked)}
+                  />
+                )}
+              </>
+            )}
+
             {shown.id === 'transcript' && (
               <>
                 {shows('Summarise what a turn changed') && (

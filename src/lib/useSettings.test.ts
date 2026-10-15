@@ -53,6 +53,15 @@ const SAVED_SHAPE = {
   sidebarTags: true,
   sidebarPreviewLines: 2,
   shortcuts: '',
+  flashBlocked: true,
+  flashFinished: false,
+  flashFailed: false,
+  badgeBlocked: true,
+  badgeFinished: true,
+  badgeFailed: true,
+  notifyBlocked: true,
+  notifyFinished: false,
+  notifyFailed: false,
 };
 
 beforeEach(() => {
@@ -225,23 +234,10 @@ describe('changing a setting', () => {
     const { settings } = renderHook(() => useSettings()).result.current;
 
     expect(settings).toEqual({
+      ...SAVED_SHAPE,
       maxLoaded: 4,
       idleMinutes: 25,
       confirmDelete: false,
-  binRetentionDays: 7,
-  permissionMinutes: 5,
-      allowAll: false,
-      workingDirectory: '',
-      updateOnStart: false,
-      scale: 1,
-      textScale: 1,
-      defaultModel: '',
-      defaultEffort: '',
-      defaultContext: '', defaultAutoTier: '',
-      turnSummary: 'always',
-      sidebarTags: true,
-      sidebarPreviewLines: 2,
-      shortcuts: '',
     });
   });
 
@@ -262,23 +258,8 @@ describe('changing a setting', () => {
     act(() => result.current.apply({ maxLoaded: 3 }));
 
     expect(result.current.settings).toEqual({
+      ...SAVED_SHAPE,
       maxLoaded: 3,
-      idleMinutes: 10,
-      confirmDelete: true,
-  binRetentionDays: 7,
-  permissionMinutes: 5,
-      allowAll: false,
-      workingDirectory: '',
-      updateOnStart: false,
-      scale: 1,
-      textScale: 1,
-      defaultModel: '',
-      defaultEffort: '',
-      defaultContext: '', defaultAutoTier: '',
-      turnSummary: 'always',
-      sidebarTags: true,
-      sidebarPreviewLines: 2,
-      shortcuts: '',
     });
   });
 

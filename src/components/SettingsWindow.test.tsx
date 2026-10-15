@@ -29,6 +29,15 @@ const SAVED: Settings = {
   sidebarTags: true,
   sidebarPreviewLines: 2,
   shortcuts: '',
+  flashBlocked: true,
+  flashFinished: false,
+  flashFailed: false,
+  badgeBlocked: true,
+  badgeFinished: true,
+  badgeFailed: true,
+  notifyBlocked: true,
+  notifyFinished: false,
+  notifyFailed: false,
   };
 
 const show = (over: Partial<Settings> = {}) => {
@@ -1871,6 +1880,7 @@ describe('searching the settings', () => {
       'Copilot CLI',
       'Keyboard',
       'New sessions',
+      'Notifications',
       'Session management',
       'Transcript',
     ]);
@@ -1943,7 +1953,7 @@ describe('searching the settings', () => {
 
     await userEvent.clear(search());
 
-    expect(categories()).toHaveLength(6);
+    expect(categories()).toHaveLength(7);
     expect(screen.getByLabelText('Sessions kept in memory')).toBeTruthy();
   });
 
@@ -2170,5 +2180,119 @@ describe('how much of the last reply the sidebar shows', () => {
     await openAppearance();
 
     expect(lines()).toBeTruthy();
+  });
+});
+/**
+ * Which surfaces say what, when a session wants something (#270).
+ *
+ * Three surfaces times three states, because the states are not equally worth interrupting
+ * for: the taskbar flashing the moment a session stops is wanted by people who want nothing
+ * at all when one merely finishes.
+ */
+describe('the Notifications category', () => {
+  const open = async () => {
+    show();
+    await userEvent.click(tab('Notifications'));
+  };
+
+  it('offers each surface for each state', async () => {
+    await open();
+
+    for (const label of [
+      'Flash the taskbar when a session needs an answer',
+      'Flash the taskbar when a session finishes',
+      'Flash the taskbar when a session fails',
+      'Count sessions needing an answer on the taskbar icon',
+      'Count finished sessions on the taskbar icon',
+      'Count failed sessions on the taskbar icon',
+      'Notify when a session needs an answer',
+      'Notify when a session finishes',
+      'Notify when a session fails',
+    ]) {
+      expect(screen.getByLabelText(label), label).toBeTruthy();
+    }
+  });
+
+  /**
+   * Upgrading should not make a quiet app loud. Flashing keeps going until the app is
+   * focused, so only the state that has actually stopped starts it; a notification puts
+   * something over the window in front of you, so the same goes there. A number on an icon
+   * interrupts nobody, so it counts everything.
+   */
+  it('starts with only the states worth interrupting for', async () => {
+    await open();
+
+    const on = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).checked;
+
+    expect(on('Flash the taskbar when a session needs an answer')).toBe(true);
+    expect(on('Flash the taskbar when a session finishes')).toBe(false);
+    expect(on('Flash the taskbar when a session fails')).toBe(false);
+
+    expect(on('Count sessions needing an answer on the taskbar icon')).toBe(true);
+    expect(on('Count finished sessions on the taskbar icon')).toBe(true);
+    expect(on('Count failed sessions on the taskbar icon')).toBe(true);
+
+    expect(on('Notify when a session needs an answer')).toBe(true);
+    expect(on('Notify when a session finishes')).toBe(false);
+    expect(on('Notify when a session fails')).toBe(false);
+  });
+
+  it('saves a surface the reader turned off', async () => {
+    const { onSave } = show();
+    await userEvent.click(tab('Notifications'));
+
+    await userEvent.click(screen.getByLabelText('Flash the taskbar when a session needs an answer'));
+    await userEvent.click(commit());
+
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ flashBlocked: false }));
+  });
+
+  /**
+   * Nine controls over nine settings, where six of them share a default. Checked against a
+   * pattern where no neighbour agrees, so a control wired to the setting beside it shows up
+   * here rather than looking right for as long as the two defaults happen to match.
+   */
+  it('draws each control from its own setting', async () => {
+    const mixed = {
+      flashBlocked: false,
+      flashFinished: true,
+      flashFailed: false,
+      badgeBlocked: true,
+      badgeFinished: false,
+      badgeFailed: true,
+      notifyBlocked: false,
+      notifyFinished: true,
+      notifyFailed: false,
+    };
+    show(mixed);
+    await userEvent.click(tab('Notifications'));
+
+    const on = (label: string) => (screen.getByLabelText(label) as HTMLInputElement).checked;
+
+    expect({
+      flashBlocked: on('Flash the taskbar when a session needs an answer'),
+      flashFinished: on('Flash the taskbar when a session finishes'),
+      flashFailed: on('Flash the taskbar when a session fails'),
+      badgeBlocked: on('Count sessions needing an answer on the taskbar icon'),
+      badgeFinished: on('Count finished sessions on the taskbar icon'),
+      badgeFailed: on('Count failed sessions on the taskbar icon'),
+      notifyBlocked: on('Notify when a session needs an answer'),
+      notifyFinished: on('Notify when a session finishes'),
+      notifyFailed: on('Notify when a session fails'),
+    }).toEqual(mixed);
+  });
+
+  /** A category with nothing matching vanishes from the list, so its rows have to be indexed. */
+  it('is found by searching for what it does rather than its name', async () => {
+    show();
+
+    await userEvent.type(screen.getByLabelText('Search settings'), 'flash');
+
+    expect([...document.querySelectorAll('.settings-tab')].map((node) => node.textContent)).toEqual([
+      'Notifications',
+    ]);
+
+    await userEvent.click(tab('Notifications'));
+    expect(screen.getByLabelText('Flash the taskbar when a session needs an answer')).toBeTruthy();
   });
 });

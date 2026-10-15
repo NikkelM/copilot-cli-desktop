@@ -1566,7 +1566,7 @@ export default function App() {
   useTaskbar(sessions.working.size > 0, display.taskbarPresence);
 
   /**
-   * Flash the taskbar when anything stops to ask, including the session on screen (#266).
+   * Flash the taskbar when anything wants the reader, including the session on screen (#266).
    *
    * Not filtered to the sessions the reader is away from, which is what the unseen marks
    * do: that rule assumes the reader is looking at the app at all, and the whole point of
@@ -1575,8 +1575,20 @@ export default function App() {
    *
    * Nothing is needed to suppress it while they are here, because the Tauri call ignores
    * itself outright when the app has focus.
+   *
+   * The states a reader asked not to be flashed for are dropped before counting rather than
+   * inside the hook, so a surface that was switched off makes no platform call at all (#270).
    */
-  useAttention(prompts.blocking.length);
+  const flashing = useMemo(() => {
+    const blocked = settings.flashBlocked ? prompts.blocking.length : 0;
+    const ended = Object.values(unseen.marks).filter(
+      (mark) =>
+        (mark === 'finished' && settings.flashFinished) || (mark === 'failed' && settings.flashFailed),
+    ).length;
+    return blocked + ended;
+  }, [prompts.blocking, unseen.marks, settings.flashBlocked, settings.flashFinished, settings.flashFailed]);
+
+  useAttention(flashing);
 
   /** Sessions stopped on a question, for the fold control to mark while the sidebar is away. */
   const waitingCount = useMemo(
