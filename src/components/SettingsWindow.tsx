@@ -1105,7 +1105,6 @@ export function SettingsWindow({
                     label="Flash the taskbar when a session needs an answer"
                     checked={draft.flashBlocked}
                     onChange={(checked) => edit('flashBlocked', checked)}
-                    hint="Keeps flashing until the app is in focus, which is how long the session stays stopped."
                   />
                 )}
 
@@ -1132,7 +1131,6 @@ export function SettingsWindow({
                     label="Count sessions needing an answer on the taskbar icon"
                     checked={draft.badgeBlocked}
                     onChange={(checked) => edit('badgeBlocked', checked)}
-                    hint="A number over the icon, up to 9+."
                   />
                 )}
 
@@ -1159,7 +1157,6 @@ export function SettingsWindow({
                     label="Notify when a session needs an answer"
                     checked={draft.notifyBlocked}
                     onChange={(checked) => edit('notifyBlocked', checked)}
-                    hint="The only one that reaches you while the window is behind something else."
                   />
                 )}
 
