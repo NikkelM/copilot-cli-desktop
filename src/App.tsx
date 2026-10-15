@@ -133,6 +133,7 @@ import { useKeying } from './lib/useKeying';
 import { focusRegion, focusToggle, inSidebar, stepRegion } from './lib/regions';
 import { useTaskbar } from './lib/useTaskbar';
 import { useAttention } from './lib/useAttention';
+import { useBadge, type BadgeTone } from './lib/useBadge';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
 import { useTauriEvent } from './lib/useTauriEvent';
@@ -1589,6 +1590,35 @@ export default function App() {
   }, [prompts.blocking, unseen.marks, settings.flashBlocked, settings.flashFinished, settings.flashFailed]);
 
   useAttention(flashing);
+
+  /**
+   * What the taskbar icon counts, and which state colours it (#267).
+   *
+   * From the unseen marks rather than from everything blocked, unlike the flash: this one
+   * stays on the icon rather than firing once, so a session the reader is already looking
+   * at would go on claiming their attention after they had given it.
+   *
+   * The tone is the most urgent state among them, since a number cannot say which of the
+   * three it is about and the reader is deciding whether to come back.
+   */
+  const badge = useMemo(() => {
+    const counted = Object.values(unseen.marks).filter(
+      (mark) =>
+        (mark === 'blocked' && settings.badgeBlocked) ||
+        (mark === 'finished' && settings.badgeFinished) ||
+        (mark === 'failed' && settings.badgeFailed),
+    );
+    const tone: BadgeTone | null = counted.includes('blocked')
+      ? 'blocked'
+      : counted.includes('failed')
+        ? 'failed'
+        : counted.includes('finished')
+          ? 'finished'
+          : null;
+    return { count: counted.length, tone };
+  }, [unseen.marks, settings.badgeBlocked, settings.badgeFinished, settings.badgeFailed]);
+
+  useBadge(badge.count, badge.tone);
 
   /** Sessions stopped on a question, for the fold control to mark while the sidebar is away. */
   const waitingCount = useMemo(
