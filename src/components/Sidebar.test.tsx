@@ -3737,3 +3737,89 @@ describe('walking into what a session delegated', () => {
     expect(document.querySelector('.session-menu')).toBeTruthy();
   });
 });
+
+/**
+ * What a session did while the reader was looking at something else (#269).
+ *
+ * The row has one indicator, and these take it: a finish or a failure the reader has not
+ * seen is the claim they can act on, where the activity dot only says what is resident.
+ */
+describe('what a session did unseen', () => {
+  const drawWith = (unseen: Record<string, 'finished' | 'failed' | 'blocked'>, activity = {}) =>
+    render(
+      <Sidebar
+        sessions={sessions}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={activity}
+        unseen={unseen}
+      />,
+    );
+
+  const indicators = () => [...document.querySelectorAll('.session .activity')].map((n) => n.className);
+
+  it('marks a session that finished while the reader was elsewhere', () => {
+    drawWith({ 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8': 'finished' });
+
+    expect(indicators()).toEqual(['activity unseen-finished']);
+    expect(screen.getByLabelText(/finished while you were elsewhere/i)).toBeTruthy();
+  });
+
+  it('marks a session that ended in an error differently', () => {
+    drawWith({ 'f1ec2c40-9eb5-4bc8-85b4-06f03ee654c8': 'failed' });
+
+    expect(indicators()).toEqual(['activity unseen-failed']);
+    expect(screen.getByLabelText(/ended in an error/i)).toBeTruthy();
+  });
+
+  /**
+   * A session is usually released once it finishes, so the mark normally has the row to
+   * itself. When it does not, the thing the reader can act on is the one worth drawing.
+   */
+  it('takes the indicator from the activity dot when a finished session is still loaded', () => {
+    render(
+      <Sidebar
+        sessions={[session({ sessionId: 'a', title: 'Loaded', loaded: true })]}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{ a: { state: 'idle', queued: 0 } }}
+        unseen={{ a: 'finished' }}
+      />,
+    );
+
+    expect(indicators()).toEqual(['activity unseen-finished']);
+  });
+
+  /**
+   * Being blocked is already on the row as an activity dot, and a blocked session is always
+   * loaded: releasing one abandons its prompts. Drawing it twice would say it twice.
+   */
+  it('leaves a blocked session to its activity dot', () => {
+    render(
+      <Sidebar
+        sessions={[session({ sessionId: 'a', title: 'Asking', loaded: true })]}
+        selectedId={null}
+        onSelect={() => {}}
+        onCreate={() => {}}
+        onWiki={() => {}}
+        creating={false}
+        activity={{ a: { state: 'blocked', queued: 0 } }}
+        unseen={{ a: 'blocked' }}
+      />,
+    );
+
+    expect(indicators()).toEqual(['activity activity-blocked']);
+  });
+
+  it('draws nothing for a session with nothing to report', () => {
+    drawWith({});
+
+    expect(indicators()).toEqual([]);
+  });
+});

@@ -47,6 +47,23 @@ export interface UnseenMarks {
  * carries a mark, because the reader can see it. Holding that in one place is what keeps
  * the taskbar, the sidebar and any notification from disagreeing about what counts as seen.
  */
+/**
+ * What the mark says when hovered, and what a reader is told it means.
+ *
+ * Only the two that are drawn: being blocked is already on the row as an activity dot, since
+ * a session cannot be blocked without being loaded - releasing one abandons its prompts.
+ */
+export function describeUnseen(mark: Unseen): string | null {
+  switch (mark) {
+    case 'finished':
+      return 'Finished while you were elsewhere. The reply is waiting';
+    case 'failed':
+      return 'Ended in an error while you were elsewhere';
+    default:
+      return null;
+  }
+}
+
 export function useUnseen(selectedId: string | null, blocking: readonly Blocking[]): UnseenMarks {
   const [ended, setEnded] = useState<Record<string, Ended>>({});
 

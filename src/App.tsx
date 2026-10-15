@@ -1871,6 +1871,7 @@ export default function App() {
         creating={creating}
         maxLoaded={sessions.maxLoaded}
         activity={activity}
+        unseen={unseen.marks}
         loading={sessions.loading}
         activeElsewhere={elsewhere.active}
         marked={marked}

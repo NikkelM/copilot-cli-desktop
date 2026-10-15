@@ -795,6 +795,27 @@ body {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 25%, transparent);
 }
 
+/*
+ * What a session did while the reader was elsewhere (#269).
+ *
+ * In the activity dot's place and winning it, because "you have not seen this" is a claim
+ * about the reader rather than about the session, and it is the one they can act on. Mostly
+ * the two never meet: a session that finishes is released by the idle rule and stops having
+ * an activity dot at all.
+ *
+ * A filled disc, which is what an unread mark is everywhere else, and the one shape the
+ * activity vocabulary leaves free in a static form: idle is green, loading is blue but
+ * breathes, and neither of these does.
+ */
+.unseen-finished {
+  background: var(--accent);
+}
+
+/** The same mark in the colour of the thing it reports, since a failure is not a finish. */
+.unseen-failed {
+  background: var(--danger);
+}
+
 .session-meta {
   color: var(--text-muted);
   font-size: var(--font-md);

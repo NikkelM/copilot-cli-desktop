@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent
 
 import { findSessions } from '../lib/sidecar';
 import { describeActivity, type ActivityMark } from '../lib/activity';
+import { describeUnseen, type Unseen } from '../lib/useUnseen';
 import { useRelative } from '../lib/useRelative';
 import { ChevronIcon, GearIcon } from './Icons';
 import { SessionMenu, type SessionAction } from './SessionMenu';
@@ -41,6 +42,8 @@ interface SidebarProps {
   maxLoaded?: number;
   /** What each session is doing, keyed by id. Absent means resident and idle (#115). */
   activity: Record<string, ActivityMark>;
+  /** What each session did while the reader was elsewhere, keyed by id (#269). */
+  unseen?: Readonly<Record<string, Unseen>>;
   /**
    * Sessions being resumed, which group with the resident ones.
    *
@@ -254,6 +257,7 @@ export function Sidebar({
   creating,
   maxLoaded,
   activity,
+  unseen,
   loading = EMPTY,
   activeElsewhere,
   marked,
@@ -1158,6 +1162,7 @@ export function Sidebar({
                               session={session}
                               selectedId={selectedId}
                               activity={activity[session.sessionId]}
+              unseen={unseen?.[session.sessionId]}
                               elsewhere={activeElsewhere?.includes(session.sessionId)}
                             />
                             {onFavourite && (
@@ -1260,6 +1265,7 @@ export function Sidebar({
                           session={session}
                           selectedId={selectedId}
                           activity={activity[session.sessionId]}
+              unseen={unseen?.[session.sessionId]}
                           elsewhere={activeElsewhere?.includes(session.sessionId)}
                         />
                       </div>
@@ -1629,15 +1635,28 @@ function Row({
   session,
   selectedId,
   activity,
+  unseen,
   elsewhere,
 }: {
   session: SessionSummary;
   selectedId: string | null;
   activity?: ActivityMark;
+  /** What this session did while the reader was elsewhere, which outranks what it is doing. */
+  unseen?: Unseen;
   /** Some other Copilot has this session open, which this app cannot stop (#63). */
   elsewhere?: boolean;
 }) {
   const mark: ActivityMark = activity ?? { state: 'idle', queued: 0 };
+  /**
+   * What the row draws in the one indicator it has.
+   *
+   * An unseen finish or failure wins over the activity dot, because it is the claim the
+   * reader can act on, and because the two rarely meet: a session that finishes is released
+   * by the idle rule and stops having an activity dot at all. Being blocked is not drawn
+   * here - a blocked session is always loaded, since releasing one abandons its prompts, so
+   * the activity dot is already saying it.
+   */
+  const says = unseen === 'finished' || unseen === 'failed' ? describeUnseen(unseen) : null;
   const shown = session.title === null ? 'Untitled session' : clipTitle(session.title);
   /**
    * The whole name, only where the one on screen is not it.
@@ -1682,8 +1701,12 @@ function Row({
 
             Kept when the row is short: it is the one thing on it that is not a reminder of
             what the session is, but a claim about what it is doing now (#187). */}
-        {(session.loaded || mark.state === 'loading') && (
-          <span className={`activity activity-${mark.state}`} role="img" aria-label={describeActivity(mark)} />
+        {says ? (
+          <span className={`activity unseen-${unseen}`} role="img" aria-label={says} />
+        ) : (
+          (session.loaded || mark.state === 'loading') && (
+            <span className={`activity activity-${mark.state}`} role="img" aria-label={describeActivity(mark)} />
+          )
         )}
       </span>
       <span className="session-meta">
