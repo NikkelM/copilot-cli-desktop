@@ -134,6 +134,7 @@ import { focusRegion, focusToggle, inSidebar, stepRegion } from './lib/regions';
 import { useTaskbar } from './lib/useTaskbar';
 import { useAttention } from './lib/useAttention';
 import { useBadge, type BadgeTone } from './lib/useBadge';
+import { useNotify } from './lib/useNotify';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
 import { useTauriEvent } from './lib/useTauriEvent';
@@ -1583,8 +1584,14 @@ export default function App() {
   const wanting = useMemo(() => {
     const by: Record<string, Unseen> = { ...unseen.marks };
     for (const { sessionId } of prompts.blocking) by[sessionId] = 'blocked';
-    return Object.values(by);
-  }, [unseen.marks, prompts.blocking]);
+
+    const named = new Map(sessions.all.map((each) => [each.sessionId, each.title]));
+    return Object.entries(by).map(([sessionId, mark]) => ({
+      sessionId,
+      mark,
+      title: named.get(sessionId) ?? null,
+    }));
+  }, [unseen.marks, prompts.blocking, sessions.all]);
 
   /**
    * The states a reader asked not to be flashed for are dropped before counting rather than
@@ -1593,7 +1600,7 @@ export default function App() {
   const flashing = useMemo(
     () =>
       wanting.filter(
-        (mark) =>
+        ({ mark }) =>
           (mark === 'blocked' && settings.flashBlocked) ||
           (mark === 'finished' && settings.flashFinished) ||
           (mark === 'failed' && settings.flashFailed),
@@ -1610,12 +1617,14 @@ export default function App() {
    * three it is about and the reader is deciding whether to come back.
    */
   const badge = useMemo(() => {
-    const counted = wanting.filter(
-      (mark) =>
-        (mark === 'blocked' && settings.badgeBlocked) ||
-        (mark === 'finished' && settings.badgeFinished) ||
-        (mark === 'failed' && settings.badgeFailed),
-    );
+    const counted = wanting
+      .map(({ mark }) => mark)
+      .filter(
+        (mark) =>
+          (mark === 'blocked' && settings.badgeBlocked) ||
+          (mark === 'finished' && settings.badgeFinished) ||
+          (mark === 'failed' && settings.badgeFailed),
+      );
     const tone: BadgeTone | null = counted.includes('blocked')
       ? 'blocked'
       : counted.includes('failed')
@@ -1627,6 +1636,20 @@ export default function App() {
   }, [wanting, settings.badgeBlocked, settings.badgeFinished, settings.badgeFailed]);
 
   useBadge(badge.count, badge.tone);
+
+  /** The same list again, for the one surface that reaches a window behind another (#268). */
+  const notifying = useMemo(
+    () =>
+      wanting.filter(
+        ({ mark }) =>
+          (mark === 'blocked' && settings.notifyBlocked) ||
+          (mark === 'finished' && settings.notifyFinished) ||
+          (mark === 'failed' && settings.notifyFailed),
+      ),
+    [wanting, settings.notifyBlocked, settings.notifyFinished, settings.notifyFailed],
+  );
+
+  useNotify(notifying);
 
   /** Sessions stopped on a question, for the fold control to mark while the sidebar is away. */
   const waitingCount = useMemo(

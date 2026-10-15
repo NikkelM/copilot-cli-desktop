@@ -632,6 +632,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         // Restores the size, position and maximised state the window was left in. The
         // plugin clamps a restored position to a monitor that still exists, which doing
         // this by hand would have to get right for an unplugged screen or a resolution
