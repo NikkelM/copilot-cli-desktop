@@ -91,7 +91,7 @@ import { nameOf } from './lib/paths';
 import { useFileDrop } from './lib/useFileDrop';
 import { useTodos } from './lib/useTodos';
 import { usePromptList } from './lib/usePromptList';
-import { useUnseen } from './lib/useUnseen';
+import { useUnseen, type Unseen } from './lib/useUnseen';
 import { useActiveElsewhere } from './lib/useActiveElsewhere';
 import { useMarked } from './lib/useMarked';
 import { bulkActions } from './lib/bulkActions';
@@ -1567,42 +1567,50 @@ export default function App() {
   useTaskbar(sessions.working.size > 0, display.taskbarPresence);
 
   /**
-   * Flash the taskbar when anything wants the reader, including the session on screen (#266).
+   * Everything that wants the reader, whichever session it is in (#266, #267).
    *
-   * Not filtered to the sessions the reader is away from, which is what the unseen marks
-   * do: that rule assumes the reader is looking at the app at all, and the whole point of
-   * this is the case where they are not. A question in the open session is exactly as
-   * invisible as any other from another window.
+   * Blocked is taken from the outstanding prompts rather than from the unseen marks, which
+   * leave out the session on screen. That rule is for the sidebar, where the reader is by
+   * definition looking at the app: from another window the open session is exactly as
+   * invisible as any other, and it is the one most likely to be asking, since it is the one
+   * they just sent work to. Measured twice, once per surface, by asking a question in the
+   * open session from another window and getting nothing.
    *
-   * Nothing is needed to suppress it while they are here, because the Tauri call ignores
-   * itself outright when the app has focus.
-   *
+   * One list for both surfaces, so the taskbar cannot flash for something it then declines
+   * to count. Keyed by session first, so a session that finished and then asked a question
+   * is one thing wanting an answer rather than two.
+   */
+  const wanting = useMemo(() => {
+    const by: Record<string, Unseen> = { ...unseen.marks };
+    for (const { sessionId } of prompts.blocking) by[sessionId] = 'blocked';
+    return Object.values(by);
+  }, [unseen.marks, prompts.blocking]);
+
+  /**
    * The states a reader asked not to be flashed for are dropped before counting rather than
    * inside the hook, so a surface that was switched off makes no platform call at all (#270).
    */
-  const flashing = useMemo(() => {
-    const blocked = settings.flashBlocked ? prompts.blocking.length : 0;
-    const ended = Object.values(unseen.marks).filter(
-      (mark) =>
-        (mark === 'finished' && settings.flashFinished) || (mark === 'failed' && settings.flashFailed),
-    ).length;
-    return blocked + ended;
-  }, [prompts.blocking, unseen.marks, settings.flashBlocked, settings.flashFinished, settings.flashFailed]);
+  const flashing = useMemo(
+    () =>
+      wanting.filter(
+        (mark) =>
+          (mark === 'blocked' && settings.flashBlocked) ||
+          (mark === 'finished' && settings.flashFinished) ||
+          (mark === 'failed' && settings.flashFailed),
+      ).length,
+    [wanting, settings.flashBlocked, settings.flashFinished, settings.flashFailed],
+  );
 
   useAttention(flashing);
 
   /**
    * What the taskbar icon counts, and which state colours it (#267).
    *
-   * From the unseen marks rather than from everything blocked, unlike the flash: this one
-   * stays on the icon rather than firing once, so a session the reader is already looking
-   * at would go on claiming their attention after they had given it.
-   *
    * The tone is the most urgent state among them, since a number cannot say which of the
    * three it is about and the reader is deciding whether to come back.
    */
   const badge = useMemo(() => {
-    const counted = Object.values(unseen.marks).filter(
+    const counted = wanting.filter(
       (mark) =>
         (mark === 'blocked' && settings.badgeBlocked) ||
         (mark === 'finished' && settings.badgeFinished) ||
@@ -1616,7 +1624,7 @@ export default function App() {
           ? 'finished'
           : null;
     return { count: counted.length, tone };
-  }, [unseen.marks, settings.badgeBlocked, settings.badgeFinished, settings.badgeFailed]);
+  }, [wanting, settings.badgeBlocked, settings.badgeFinished, settings.badgeFailed]);
 
   useBadge(badge.count, badge.tone);
 
