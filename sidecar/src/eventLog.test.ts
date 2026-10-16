@@ -473,6 +473,7 @@ describe('lastModel', () => {
    * What the window cap got wrong. A log here runs 106MB between one mention of a model and
    * the next, so a read that stops at 32MB finds nothing and falls back to the opening line -
    * reporting a model the session was moved off months earlier as the one it runs on now.
+   * The fixture writes 34MB, so its ceiling allows for slower Windows runner storage.
    */
   it('reaches back past any fixed window for the last model', async () => {
     const bulk = JSON.stringify({ type: 'user.message', data: { content: 'x'.repeat(10_000) } });
@@ -482,7 +483,7 @@ describe('lastModel', () => {
     const { lastModel } = await loadEventLog();
 
     expect((await lastModel('s1'))?.model).toBe('gpt-5.6-sol-fast');
-  });
+  }, 15_000);
 
   // A delegated run announces the model it was given the same way a session does, and four
   // starting at once is four such lines three milliseconds apart.
