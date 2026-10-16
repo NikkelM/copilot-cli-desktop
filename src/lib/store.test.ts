@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke }));
 
-import { forget, loadStores, read, resetStores, save } from './store';
+import { flushStores, forget, loadStores, read, resetStores, save } from './store';
 
 /**
  * Load, let the write that migration schedules land, and forget it happened.
@@ -192,6 +192,65 @@ describe('taking over from the webview store', () => {
 });
 
 describe('writing back', () => {
+  it('flushes the latest snapshots before an installer closes the app and cancels delayed duplicates', async () => {
+    withShell(() => '{}');
+    await loadStores();
+    save('settings', 'appAutoDownload', 'false');
+    save('sessions', 'sessionPlanDrafts', '{"a":{"content":"unsaved","revision":"r1"}}');
+    await flushStores();
+    expect(invoke).toHaveBeenCalledWith('write_store', {
+      store: 'settings', contents: JSON.stringify({ appAutoDownload: 'false' }, null, 2),
+    });
+    expect(invoke).toHaveBeenCalledWith('write_store', {
+      store: 'sessions',
+      contents: JSON.stringify({ sessionPlanDrafts: '{"a":{"content":"unsaved","revision":"r1"}}' }, null, 2),
+    });
+    invoke.mockClear();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('keeps a delayed older write from replacing the latest snapshot', async () => {
+    withShell(() => '{}');
+    await loadStores();
+    let finish!: () => void;
+    const snapshots: string[] = [];
+    let persisted = '';
+    invoke.mockImplementation((command: string, args: { store: string; contents: string }) => {
+      if (command !== 'write_store' || args.store !== 'settings') return Promise.resolve();
+      snapshots.push(args.contents);
+      if (snapshots.length === 1) {
+        return new Promise<void>((resolve) => {
+          finish = () => {
+            persisted = args.contents;
+            resolve();
+          };
+        });
+      }
+      persisted = args.contents;
+      return Promise.resolve();
+    });
+    save('settings', 'value', 'old');
+    await vi.advanceTimersByTimeAsync(500);
+    save('settings', 'value', 'new');
+    const flushed = flushStores();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(snapshots).toHaveLength(1);
+    finish();
+    await flushed;
+    expect(snapshots.map((text) => JSON.parse(text).value)).toEqual(['old', 'new']);
+    expect(JSON.parse(persisted).value).toBe('new');
+  });
+
+  it('rejects an explicit flush that cannot reach disk', async () => {
+    withShell(() => '{}');
+    await loadStores();
+    invoke.mockRejectedValue(new Error('disk full'));
+    save('settings', 'value', 'keep me');
+    await expect(flushStores()).rejects.toThrow('disk full');
+    expect(read('settings', 'value')).toBe('keep me');
+  });
+
   it('writes what changed, once the changes stop', async () => {
     withShell();
     await loadStores();

@@ -14,6 +14,7 @@ dist-ssr
 
 # Compiled sidecar output
 sidecar/dist
+release-artifacts/
 
 # Editor directories and files
 .vscode/*

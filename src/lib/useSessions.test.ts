@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { SessionSummary, TranscriptEvent } from '../../shared/protocol';
 import { useSessions } from './useSessions';
+import { read, save } from './store';
 
 const { listSessions, runtimeStatus } = vi.hoisted(() => ({
   listSessions: vi.fn(),
@@ -65,6 +66,106 @@ describe('useSessions', () => {
 
 
   describe('the active group', () => {
+    it('expires saved positions at seven days unloaded, keeping recent and legacy positions', async () => {
+      const week = 7 * 24 * 60 * 60 * 1000;
+      const now = Date.now();
+      save('sessions', 'activeSessionOrder', JSON.stringify(['expired', 'recent', 'legacy']));
+      save('sessions', 'activeSessionLastLoaded', JSON.stringify({ expired: now - week, recent: now - week + 60_000 }));
+      const first = await listed();
+      expect(JSON.parse(read('sessions', 'activeSessionOrder')!)).toEqual(['recent', 'legacy']);
+      expect(JSON.parse(read('sessions', 'activeSessionLastLoaded')!)).toEqual({
+        recent: now - week + 60_000, legacy: expect.any(Number),
+      });
+      first.unmount();
+      const next = await listed();
+      act(() => next.result.current.observeLoaded('expired', true));
+      expect(JSON.parse(read('sessions', 'activeSessionOrder')!)).toEqual(['expired', 'recent', 'legacy']);
+    });
+
+    it('expires unloaded positions while open and checks expiry before reactivation', async () => {
+      const week = 7 * 24 * 60 * 60 * 1000;
+      save('sessions', 'activeSessionOrder', JSON.stringify(['s1', 's2']));
+      listSessions.mockResolvedValue({ sessions: [summary('s1', { loaded: true }), summary('s2')] });
+      const view = await listed();
+      vi.useFakeTimers();
+      try {
+        act(() => view.result.current.observeLoaded('s2', true));
+        act(() => view.result.current.observeLoaded('s2', false));
+        const unloadedAt = Date.now();
+        vi.setSystemTime(unloadedAt + week - 1);
+        act(() => view.result.current.observeLoaded('s2', true));
+        expect(JSON.parse(read('sessions', 'activeSessionOrder')!)).toEqual(['s1', 's2']);
+        act(() => view.result.current.observeLoaded('s2', false));
+        vi.setSystemTime(Date.now() + week);
+        act(() => view.result.current.observeLoaded('s2', false, true));
+        expect(JSON.parse(read('sessions', 'activeSessionOrder')!)).toEqual(['s2', 's1']);
+        act(() => view.result.current.observeLoaded('s2', true));
+        vi.setSystemTime(Date.now() + week);
+        act(() => vi.advanceTimersByTime(60_000));
+        expect(JSON.parse(read('sessions', 'activeSessionOrder')!)).toEqual(['s2', 's1']);
+        act(() => view.result.current.observeLoaded('s2', false));
+        vi.setSystemTime(Date.now() + week);
+        act(() => vi.advanceTimersByTime(60_000));
+        expect(JSON.parse(read('sessions', 'activeSessionOrder')!)).toEqual(['s1']);
+      } finally {
+        view.unmount();
+        vi.useRealTimers();
+      }
+    });
+
+    it('reorders only active sessions, leaving inactive sessions sorted by last usage', async () => {
+      listSessions.mockResolvedValue({ sessions: [
+        summary('a', { loaded: true }), summary('b', { loaded: true }), summary('c', { loaded: true }),
+        summary('cold-old'), summary('cold-new', { updatedAt: '2026-02-01T00:00:00Z' }),
+      ] });
+      const { result } = await listed();
+      act(() => result.current.reorder('c', 'a'));
+      expect(result.current.all.map((s) => s.sessionId)).toEqual(['c', 'a', 'b', 'cold-new', 'cold-old']);
+      act(() => result.current.reorder('a', 'b', true));
+      expect(result.current.all.map((s) => s.sessionId)).toEqual(['c', 'b', 'a', 'cold-new', 'cold-old']);
+      const stored = read('sessions', 'activeSessionOrder');
+      act(() => result.current.reorder('cold-new', 'c'));
+      expect(result.current.all.map((s) => s.sessionId)).toEqual(['c', 'b', 'a', 'cold-new', 'cold-old']);
+      expect(read('sessions', 'activeSessionOrder')).toBe(stored);
+    });
+
+    it('keeps a manually placed session slot through unloading and reactivation', async () => {
+      listSessions.mockResolvedValue({ sessions: ['a', 'b', 'c'].map((id) => summary(id, { loaded: true })) });
+      const { result } = await listed();
+      act(() => result.current.reorder('c', 'b'));
+      act(() => result.current.observeLoaded('c', false));
+      expect(result.current.all.filter((s) => s.loaded).map((s) => s.sessionId)).toEqual(['a', 'b']);
+      act(() => result.current.observeLoaded('c', true));
+      expect(result.current.all.map((s) => s.sessionId)).toEqual(['a', 'c', 'b']);
+      act(() => result.current.observeLoaded('new', true));
+      expect(JSON.parse(read('sessions', 'activeSessionOrder')!)).toEqual(['new', 'a', 'c', 'b']);
+    });
+
+    it('restores manual ordering after remounting', async () => {
+      listSessions.mockResolvedValue({ sessions: ['a', 'b'].map((id) => summary(id, { loaded: true })) });
+      const first = await listed();
+      act(() => first.result.current.reorder('b', 'a'));
+      first.unmount();
+      const next = await listed();
+      expect(next.result.current.all.map((s) => s.sessionId)).toEqual(['b', 'a']);
+    });
+
+    it('restores a remembered slot as soon as a session starts loading', async () => {
+      save('sessions', 'activeSessionOrder', JSON.stringify(['s1', 's2']));
+      const { result } = await listed();
+      act(() => result.current.observeLoaded('s2', true));
+      act(() => result.current.observeLoaded('s1', false, true));
+      expect(result.current.all.map((s) => s.sessionId)).toEqual(['s1', 's2']);
+      act(() => result.current.observeLoaded('s1', true));
+      expect(result.current.all.map((s) => s.sessionId)).toEqual(['s1', 's2']);
+    });
+
+    it('does not let saved inactive slots change cold-session recency order', async () => {
+      save('sessions', 'activeSessionOrder', JSON.stringify(['s2', 's1']));
+      const { result } = await listed();
+      expect(result.current.all.map((s) => s.sessionId)).toEqual(['s1', 's2']);
+    });
+
     it('puts a session that wakes at the top', async () => {
       const { result } = await listed();
 

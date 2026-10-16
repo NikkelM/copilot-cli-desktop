@@ -52,6 +52,18 @@ describe('not drawing the page again for nothing', () => {
     expect(drawn).toBe(1);
   });
 
+  it('keeps plain document rendering memoised without a wiki list or link handler', () => {
+    const page = { path: 'plan.md' };
+    const draw = () => (
+      <WikiPageBody page={page} source="# Plan" raw={false} loading={false} onEdit={vi.fn()} />
+    );
+    const { rerender } = render(draw());
+
+    for (let again = 0; again < 5; again += 1) rerender(draw());
+
+    expect(drawn).toBe(1);
+  });
+
   it('does not draw it again when nothing about the page changed', () => {
     const [onOpen, onEdit] = [vi.fn(), vi.fn()];
     const { rerender } = render(draw(onOpen, onEdit));

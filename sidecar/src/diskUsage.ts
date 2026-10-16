@@ -14,8 +14,8 @@
 import { readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import type { SessionDisk } from '../../shared/protocol.js';
-import { copilotHome } from './paths.js';
+import type { SessionDisk, SessionDiskDetails } from '../../shared/protocol.js';
+import { copilotHome, sessionStateDir } from './paths.js';
 import { listSessions } from './sessionIndex.js';
 
 /**
@@ -28,26 +28,61 @@ import { listSessions } from './sessionIndex.js';
 const AT_ONCE = 32;
 
 /** Everything under a directory, added up, without holding the thread while it counts. */
-async function sizeOf(dir: string): Promise<number> {
+async function sizeOf(
+  dir: string,
+  strict = false,
+  details?: SessionDiskDetails,
+  category?: 'logBytes' | 'rewindBytes' | 'otherBytes',
+): Promise<number> {
   let entries;
   try {
     entries = await readdir(dir, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    if (strict && (error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     // Gone between listing and walking, which a session being deleted elsewhere can do.
     return 0;
   }
 
   const found = entries.map(async (entry) => {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) return sizeOf(path);
+    const bucket = category ?? (
+      entry.isDirectory() && entry.name === 'rewind-file-snapshots'
+        ? 'rewindBytes'
+        : entry.isFile() && entry.name === 'events.jsonl' ? 'logBytes' : 'otherBytes'
+    );
+    if (entry.isDirectory()) return sizeOf(path, strict, details, bucket);
     if (!entry.isFile()) return 0;
     return stat(path).then(
-      (info) => info.size,
-      () => 0,
+      (info) => {
+        if (details) {
+          details.files += 1;
+          details[bucket] += info.size;
+        }
+        return info.size;
+      },
+      (error: NodeJS.ErrnoException) => {
+        if (strict && error.code !== 'ENOENT') throw error;
+        return 0;
+      },
     );
   });
 
   return (await Promise.all(found)).reduce((total, size) => total + size, 0);
+}
+
+/** Measure only the requested session, without listing or opening any others */
+export async function singleSessionDiskUsage(sessionId: string): Promise<SessionDiskDetails> {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(sessionId)) throw new Error('Invalid session id');
+  const details: SessionDiskDetails = {
+    bytes: 0,
+    files: 0,
+    logBytes: 0,
+    rewindBytes: 0,
+    otherBytes: 0,
+    directory: sessionStateDir(sessionId),
+  };
+  details.bytes = await sizeOf(details.directory, true, details);
+  return details;
 }
 
 /**

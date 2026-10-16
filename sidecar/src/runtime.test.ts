@@ -388,6 +388,134 @@ async function sendAndFinish(
   sessions.get(id)?.emit({ type: 'session.idle', data: {} });
 }
 
+describe('preparing the runtime for an app update', () => {
+  const emptyQueue = (session: FakeSession) => {
+    session.rpc.queue.pendingItems.mockResolvedValue({ items: [], steeringMessages: [] });
+  };
+
+  it('does not stop a running session', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('a', 'keep working');
+    emptyQueue(harness.sessions.get('a')!);
+    await expect(harness.runtime.prepareUpdate()).rejects.toThrow('Wait for running sessions');
+    expect(harness.sessions.get('a')!.disconnected).toBe(false);
+    expect(harness.client.stop).not.toHaveBeenCalled();
+    expect(harness.runtime.updating).toBe(false);
+  });
+
+  it('does not abandon a pending question even if the session appears idle', async () => {
+    const onPermissionRequest = vi.fn();
+    const harness = makeRuntime({ onPermissionRequest });
+    await sendAndFinish(harness, 'a');
+    emptyQueue(harness.sessions.get('a')!);
+    const waiting = harness.permissionHandlers.get('a')!({ kind: 'shell' });
+    await vi.waitFor(() => expect(onPermissionRequest).toHaveBeenCalledOnce());
+    await expect(harness.runtime.prepareUpdate()).rejects.toThrow('pending questions');
+    expect(harness.sessions.get('a')!.disconnected).toBe(false);
+    await harness.runtime.shutdown();
+    await waiting;
+  });
+
+  it('protects a queued message already consumed but not yet at its first model call', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 'a');
+    const session = harness.sessions.get('a')!;
+    emptyQueue(session);
+    session.emit({ type: 'user.message', data: { content: 'next queued task' } });
+    await expect(harness.runtime.prepareUpdate()).rejects.toThrow('Wait for running sessions');
+    expect(session.disconnected).toBe(false);
+  });
+
+  it('does not confuse a child going idle with its parent finishing', async () => {
+    const harness = makeRuntime();
+    await harness.runtime.send('a', 'parent work');
+    const session = harness.sessions.get('a')!;
+    emptyQueue(session);
+    session.emit({ type: 'session.idle', agentId: 'child', data: {} });
+    await expect(harness.runtime.prepareUpdate()).rejects.toThrow('Wait for running sessions');
+    expect(session.disconnected).toBe(false);
+  });
+
+  it('protects an asynchronous subagent even after the main session has gone idle', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 'a');
+    const session = harness.sessions.get('a')!;
+    emptyQueue(session);
+    session.emit({
+      type: 'subagent.started', agentId: 'child',
+      data: { toolCallId: 'task', agentName: 'reviewer' },
+    });
+
+    await expect(harness.runtime.prepareUpdate()).rejects.toThrow('subagents');
+    session.emit({ type: 'subagent.completed', agentId: 'child', data: { toolCallId: 'task' } });
+    await harness.runtime.prepareUpdate();
+    expect(session.disconnected).toBe(true);
+    expect(harness.client.stop).toHaveBeenCalledOnce();
+  });
+
+  it('does not mistake runtime housekeeping for a user-delegated subagent', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 'a');
+    const session = harness.sessions.get('a')!;
+    emptyQueue(session);
+    session.emit({
+      type: 'subagent.started', agentId: 'sidekick-memory',
+      data: { toolCallId: 'housekeeping', agentName: 'memory' },
+    });
+    await harness.runtime.prepareUpdate();
+    expect(harness.client.stop).toHaveBeenCalledOnce();
+  });
+
+  it('does not discard queued messages and releases only update-owned drain holds', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 'a');
+    const session = harness.sessions.get('a')!;
+    await expect(harness.runtime.prepareUpdate()).rejects.toThrow('queued messages');
+    expect(session.disconnected).toBe(false);
+    expect(session.rpc.queue.clear).not.toHaveBeenCalled();
+    expect(session.rpc.queue.setDrainPaused.mock.calls).toEqual([[{ paused: true }], [{ paused: false }]]);
+  });
+
+  it('leaves a queue the user had paused in its original state', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 'a');
+    const session = harness.sessions.get('a')!;
+    session.rpc.queue.setDrainPaused.mockImplementation(async ({ paused }) => {
+      if (paused) throw new Error('queue_already_paused');
+      return undefined;
+    });
+    await expect(harness.runtime.prepareUpdate()).rejects.toThrow('queued messages');
+    expect(session.rpc.queue.setDrainPaused.mock.calls).toEqual([[{ paused: true }]]);
+    expect(session.disconnected).toBe(false);
+  });
+
+  it('disconnects idle sessions, locks new work, and can recover if installation fails', async () => {
+    const harness = makeRuntime();
+    await sendAndFinish(harness, 'a');
+    emptyQueue(harness.sessions.get('a')!);
+    await harness.runtime.prepareUpdate();
+    expect(harness.runtime.updating).toBe(true);
+    expect(harness.client.stop).toHaveBeenCalledOnce();
+    expect(harness.runtime.status().activeSessionIds).toEqual([]);
+    await expect(harness.runtime.send('b', 'new work')).rejects.toThrow('preparing');
+    harness.runtime.cancelUpdate();
+    await harness.runtime.send('b', 'new work');
+    expect(harness.runtime.isActive('b')).toBe(true);
+  });
+
+  it('does not race a session that is still starting', async () => {
+    const harness = makeRuntime();
+    let release!: () => void;
+    harness.client.start.mockImplementationOnce(() => new Promise<undefined>((resolve) => { release = () => resolve(undefined); }));
+    const loading = harness.runtime.load('a');
+    await vi.waitFor(() => expect(harness.client.start).toHaveBeenCalledOnce());
+    await expect(harness.runtime.prepareUpdate()).rejects.toThrow('Wait for running sessions');
+    expect(harness.client.stop).not.toHaveBeenCalled();
+    release();
+    await loading;
+  });
+});
+
 describe('SessionRuntime', () => {
   it('starts nothing until the first send', async () => {
     const { runtime, client } = makeRuntime();
@@ -1553,6 +1681,21 @@ describe('SessionRuntime queueing behind a running turn', () => {
 
     expect(result.queued).toBe(true);
     expect(modeOf(sessions.get('a')!, 1)).toBe('enqueue');
+  });
+
+  it('steers an ongoing turn when a plan-change notice explicitly requests immediate delivery', async () => {
+    const { runtime, sessions } = makeRuntime();
+    await runtime.send('a', 'first');
+    const session = sessions.get('a')!;
+    busy(session);
+    const prompt = 'The user edited `plan.md`. Reread it before continuing, adapt remaining work, and preserve their edits.';
+
+    const result = await runtime.send('a', prompt, 'immediate');
+
+    expect(result.queued).toBe(false);
+    expect(session.send.mock.lastCall?.[0]).toEqual({ prompt, mode: 'immediate' });
+    expect(session.abort).not.toHaveBeenCalled();
+    expect(session.disconnect).not.toHaveBeenCalled();
   });
 
   it('stops queueing once the request has finished', async () => {

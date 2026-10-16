@@ -8,8 +8,204 @@ import type { Settings } from '../lib/useSettings';
 import type { BinnedSession, CliSetting } from '../../shared/protocol';
 import type { CliSettingsState } from '../lib/useCliSettings';
 import { save } from '../lib/store';
+import * as sidecar from '../lib/sidecar';
 
 afterEach(cleanup);
+
+describe('disk usage details in settings', () => {
+  const cleanupRows = [
+    { sessionId: 'a', title: 'Cleanup A', bytes: 1000, updatedAt: null, listed: true },
+    { sessionId: 'ghost', title: 'Forgotten', bytes: 2000, updatedAt: null, listed: false },
+  ];
+
+  it('confirms a single deletion without closing Settings on Escape', async () => {
+    const onDeleteSessions = vi.fn(async () => {});
+    const onClose = vi.fn();
+    render(<SettingsWindow settings={SAVED} onSave={vi.fn()} onClose={onClose}
+      usage={cleanupRows} onDeleteSessions={onDeleteSessions} />);
+    await userEvent.click(tab('Session management'));
+    await userEvent.click(screen.getAllByRole('button', { name: /^Delete$/ })[0]!);
+    expect(screen.getByRole('alertdialog', { name: 'Delete this session?' })).toBeTruthy();
+    expect(onDeleteSessions).not.toHaveBeenCalled();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('confirms selected sessions and sends their ids including forgotten sessions', async () => {
+    const onDeleteSessions = vi.fn(async () => {});
+    render(<SettingsWindow settings={SAVED} onSave={vi.fn()} onClose={vi.fn()}
+      usage={cleanupRows} onDeleteSessions={onDeleteSessions} />);
+    await userEvent.click(tab('Session management'));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Cleanup A' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Forgotten' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Delete selected' }));
+    expect(screen.getByRole('alertdialog', { name: 'Delete 2 sessions?' })).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete 2 sessions' }));
+    expect(onDeleteSessions).toHaveBeenCalledExactlyOnceWith(['a', 'ghost']);
+  });
+
+  it('honours saved confirmation and retention settings rather than unsaved changes', async () => {
+    const onDeleteSessions = vi.fn(async () => {});
+    render(<SettingsWindow settings={{ ...SAVED, binRetentionDays: 0 }} onSave={vi.fn()} onClose={vi.fn()}
+      usage={cleanupRows} onDeleteSessions={onDeleteSessions} />);
+    await userEvent.click(tab('Session management'));
+    await userEvent.click(screen.getByLabelText('Ask before deleting a session'));
+    await userEvent.click(screen.getAllByRole('button', { name: /^Delete$/ })[0]!);
+    expect(screen.getByText('These sessions and their saved history will be permanently deleted.')).toBeTruthy();
+    expect(onDeleteSessions).not.toHaveBeenCalled();
+  });
+
+  it('deletes without confirmation when disabled and reports a failed cleanup inline', async () => {
+    const onDeleteSessions = vi.fn(async () => { throw new Error('Cannot delete this session'); });
+    render(<SettingsWindow settings={{ ...SAVED, confirmDelete: false }} onSave={vi.fn()} onClose={vi.fn()}
+      usage={cleanupRows} onDeleteSessions={onDeleteSessions} />);
+    await userEvent.click(tab('Session management'));
+    await userEvent.click(screen.getAllByRole('button', { name: /^Delete$/ })[0]!);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(onDeleteSessions).toHaveBeenCalledExactlyOnceWith(['a']);
+    expect((await screen.findByRole('alert')).textContent).toBe('Cannot delete this session');
+  });
+
+  it('opens details over settings and Escape returns to the unchanged settings window', async () => {
+    const measure = vi.spyOn(sidecar, 'singleSessionDiskUsage').mockResolvedValue({
+      bytes: 1250, files: 3, logBytes: 1000, rewindBytes: 200, otherBytes: 50,
+      directory: 'C:\\sessions\\chosen',
+    });
+    const onClose = vi.fn();
+    try {
+      render(
+        <SettingsWindow
+          settings={SAVED}
+          onSave={vi.fn()}
+          onClose={onClose}
+          usage={[{
+            sessionId: 'chosen', title: 'A large session', bytes: 1250,
+            updatedAt: null, listed: false,
+          }]}
+        />,
+      );
+      await userEvent.click(tab('Session management'));
+      const details = screen.getByRole('button', { name: 'Details' });
+      await userEvent.click(details);
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy();
+      expect(screen.getByRole('dialog', { name: 'Session disk usage' })).toBeTruthy();
+      await screen.findByText('200 B');
+      expect(measure).toHaveBeenCalledExactlyOnceWith('chosen');
+
+      await userEvent.keyboard('{Escape}');
+
+      expect(screen.queryByRole('dialog', { name: 'Session disk usage' })).toBeNull();
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeTruthy();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(details);
+    } finally {
+      measure.mockRestore();
+    }
+  });
+});
+
+describe('the renamed Shortcuts category', () => {
+  it('reopens the remembered keyboard category under its new name', () => {
+    save('sessions', 'settingsCategory', 'keyboard');
+    show();
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Shortcuts');
+    expect(screen.queryByRole('button', { name: 'Keyboard' })).toBeNull();
+  });
+
+  it('can still be found by searching for keyboard', async () => {
+    show();
+    await userEvent.type(screen.getByLabelText('Search settings'), 'keyboard');
+    await userEvent.click(tab('Shortcuts'));
+    expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Shortcuts');
+    expect(document.querySelectorAll('.shortcut-row').length).toBeGreaterThan(0);
+  });
+});
+
+describe('application preferences', () => {
+  const customSettings = {
+    directoryApplication: 'custom-editor',
+    directoryTargets: JSON.stringify([
+      { id: 'custom-editor', label: 'My editor', executable: 'C:\\editor.exe', args: ['{cwd}'] },
+    ]),
+  };
+  const installed = [{ id: 'folder', label: 'File Explorer' }, { id: 'custom-editor', label: 'My editor' }];
+
+  it('removes a draft application from the dropdown and restores both on discarding a category change', async () => {
+    const onSave = vi.fn();
+    render(<SettingsWindow settings={{ ...SAVED, ...customSettings }} onSave={onSave} onClose={vi.fn()}
+      applications={installed} />);
+    await userEvent.click(tab('Interface'));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove application' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Open working directories in' }));
+    expect(screen.queryByRole('option', { name: 'My editor' })).toBeNull();
+    expect(screen.queryByLabelText('Application 1 name')).toBeNull();
+    expect(screen.getByRole('option', { name: 'File Explorer' })).toBeTruthy();
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(tab('Session management'));
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+    await userEvent.click(tab('Interface'));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Open working directories in' }));
+    expect(screen.getByRole('option', { name: 'My editor' })).toBeTruthy();
+    await userEvent.keyboard('{Escape}');
+    expect((screen.getByLabelText('Application 1 name') as HTMLInputElement).value).toBe('My editor');
+    expect(screen.getByRole('combobox', { name: 'Open working directories in' }).textContent).toContain('My editor');
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('restores the application and dropdown option after closing without saving and reopening', async () => {
+    const settings = { ...SAVED, ...customSettings };
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    const view = render(<SettingsWindow settings={settings} onSave={onSave} onClose={onClose} applications={installed} />);
+    await userEvent.click(tab('Interface'));
+    await userEvent.click(screen.getByRole('button', { name: 'Remove application' }));
+    await userEvent.click(screen.getByRole('combobox', { name: 'Open working directories in' }));
+    expect(screen.queryByRole('option', { name: 'My editor' })).toBeNull();
+    await userEvent.keyboard('{Escape}');
+    await userEvent.click(leaveButton());
+    expect(onClose).toHaveBeenCalledTimes(1);
+    view.unmount();
+    render(<SettingsWindow settings={settings} onSave={onSave} onClose={onClose} applications={installed} />);
+    await userEvent.click(screen.getByRole('combobox', { name: 'Open working directories in' }));
+    expect(screen.getByRole('option', { name: 'My editor' })).toBeTruthy();
+    expect(screen.getByLabelText('Application 1 name')).toBeTruthy();
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('offers only detected targets and saves the default choice', async () => {
+    const onSave = vi.fn();
+    render(<SettingsWindow settings={SAVED} onSave={onSave} onClose={vi.fn()}
+      applications={[{ id: 'folder', label: 'File Explorer' }, { id: 'rider', label: 'Rider' }]} />);
+    await userEvent.click(tab('Interface'));
+    const choice = screen.getByLabelText('Open working directories in');
+    expect(screen.queryByRole('option', { name: 'VS Code' })).toBeNull();
+    await userEvent.click(choice);
+    await userEvent.click(screen.getByRole('option', { name: 'Rider' }));
+    await userEvent.click(commit());
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ directoryApplication: 'rider' }));
+  });
+
+  it('keeps incomplete custom targets out of saved settings and can discard them', async () => {
+    const onSave = vi.fn();
+    render(<SettingsWindow settings={SAVED} onSave={onSave} onClose={vi.fn()}
+      onPickApplication={async () => 'C:\\Editor\\editor.exe'} />);
+    await userEvent.click(tab('Interface'));
+    expect(screen.queryByRole('button', { name: 'Refresh installed applications' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Custom applications' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Add custom application' }));
+    await userEvent.clear(screen.getByLabelText('Application 1 name'));
+    expect((commit() as HTMLButtonElement).disabled).toBe(true);
+    expect((done() as HTMLButtonElement).disabled).toBe(true);
+    await userEvent.type(screen.getByLabelText('Application 1 name'), 'My editor');
+    expect((commit() as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(commit());
+    const saved = onSave.mock.calls[0]![0] as Settings;
+    expect(JSON.parse(saved.directoryTargets)).toEqual([expect.objectContaining({
+      label: 'My editor', executable: 'C:\\Editor\\editor.exe', args: ['{cwd}'],
+    })]);
+  });
+});
 
 const SAVED: Settings = {
   maxLoaded: 0,
@@ -20,6 +216,8 @@ const SAVED: Settings = {
   allowAll: false,
   workingDirectory: '',
   updateOnStart: false,
+  appAutoDownload: true,
+  appIncludePrereleases: false,
   scale: 1,
   textScale: 1,
   defaultModel: '',
@@ -29,6 +227,8 @@ const SAVED: Settings = {
   sidebarTags: true,
   sidebarPreviewLines: 2,
   shortcuts: '',
+  directoryApplication: 'folder',
+  directoryTargets: '[]',
   flashBlocked: true,
   flashFinished: false,
   flashFailed: false,
@@ -52,6 +252,45 @@ const show = (over: Partial<Settings> = {}) => {
 
   return { onSave, onClose, saved, unmount };
 };
+
+describe('desktop update settings', () => {
+  it('keeps the prerelease opt-in as an unsaved draft until Save', async () => {
+    const view = show();
+    await userEvent.click(tab('Updates'));
+    const field = screen.getByRole('checkbox', { name: 'Include prerelease updates' });
+    expect(field).toHaveProperty('checked', false);
+    await userEvent.click(field);
+    expect(view.onSave).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(view.onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ appIncludePrereleases: true }));
+  });
+
+  it('reflects an externally confirmed stable return without re-enabling prereleases in the draft', async () => {
+    const view = show({ appIncludePrereleases: true });
+    await userEvent.click(tab('Updates'));
+    view.saved({ ...SAVED, appIncludePrereleases: false });
+    expect(screen.getByRole('checkbox', { name: 'Include prerelease updates' })).toHaveProperty('checked', false);
+  });
+
+  it('keeps automatic downloads in the settings draft until Save', async () => {
+    const view = show();
+    await userEvent.click(tab('Updates'));
+    const field = screen.getByRole('checkbox', { name: 'Automatically download app updates' });
+    expect((field as HTMLInputElement).checked).toBe(true);
+    await userEvent.click(field);
+    expect(view.onSave).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(view.onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ appAutoDownload: false }));
+  });
+
+  it('finds the update controls through settings search', async () => {
+    show();
+    await userEvent.type(screen.getByRole('searchbox'), 'download');
+    await userEvent.click(tab('Updates'));
+    expect(screen.getByRole('checkbox', { name: 'Automatically download app updates' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Check for updates' })).toBeTruthy();
+  });
+});
 
 const kept = () => screen.getByLabelText('Sessions kept in memory') as HTMLInputElement;
 const idle = () => screen.getByLabelText('Release an idle session after') as HTMLInputElement;
@@ -78,12 +317,12 @@ describe('the settings window', () => {
   describe('where it opens next time', () => {
     it('opens where it was left', async () => {
       const first = show();
-      await userEvent.click(tab('Appearance'));
+      await userEvent.click(tab('Interface'));
       first.unmount();
 
       show();
 
-      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Appearance');
+      expect(screen.getByRole('heading', { level: 3 }).textContent).toBe('Interface');
     });
 
     /** Where the reader is, not a setting they are editing: closing unsaved still counts. */
@@ -700,7 +939,7 @@ describe('the defaults a new session starts with', () => {
       );
 
       await openSessions();
-      await userEvent.click(tab('Appearance'));
+      await userEvent.click(tab('Interface'));
       await openSessions();
 
       expect(onNeedModels).toHaveBeenCalledOnce();
@@ -753,7 +992,7 @@ describe('keeping the CLI up to date', () => {
  * effect while it is still a draft, and is put back if it is not saved (#139).
  */
 describe('the app scale', () => {
-  const openAppearance = () => userEvent.click(tab('Appearance'));
+  const openAppearance = () => userEvent.click(tab('Interface'));
   const readout = () => screen.getByLabelText('App scale') as HTMLInputElement;
   const applied = () => document.documentElement.style.getPropertyValue('--font-base');
 
@@ -852,7 +1091,7 @@ describe('the app scale', () => {
  * number gives you (#139).
  */
 describe('the text size, apart from the app scale', () => {
-  const openAppearance = () => userEvent.click(tab('Appearance'));
+  const openAppearance = () => userEvent.click(tab('Interface'));
   const size = () => screen.getByLabelText('Text size') as HTMLInputElement;
   const appScale = () => screen.getByLabelText('App scale') as HTMLInputElement;
   const base = () => document.documentElement.style.getPropertyValue('--font-base');
@@ -1128,7 +1367,36 @@ describe('the recycle bin', () => {
   };
 
   // Where the bin lives now, and where the window opens, so this is where it already is.
-  const openBin = () => userEvent.click(tab('Session management'));
+  const openBin = async () => {
+    await userEvent.click(tab('Session management'));
+    await userEvent.click(screen.getByRole('button', { name: /Waiting to be deleted/ }));
+  };
+
+  it('starts collapsed with the count and retention setting visible, and can collapse again', async () => {
+    withBin();
+    const toggle = screen.getByRole('button', { name: 'Waiting to be deleted (2)' });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByLabelText('Keep deleted sessions for (days)')).toBeTruthy();
+    expect(screen.queryByText('Wiki browser')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Restore' })).toBeNull();
+
+    await userEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(screen.getByText('Wiki browser')).toBeTruthy();
+    await userEvent.click(toggle);
+    expect(screen.queryByText('Wiki browser')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete now' })).toBeNull();
+  });
+
+  it('starts collapsed again when Settings is reopened', async () => {
+    withBin();
+    await openBin();
+    expect(screen.getByText('Wiki browser')).toBeTruthy();
+    cleanup();
+    withBin();
+    expect(screen.queryByText('Wiki browser')).toBeNull();
+    expect(screen.getByRole('button', { name: /Waiting to be deleted/ }).getAttribute('aria-expanded')).toBe('false');
+  });
 
   /** A section of session management now, rather than a category of its own. */
   it('is a section of session management rather than a category', () => {
@@ -1183,6 +1451,7 @@ describe('the recycle bin', () => {
     const { onRestore } = withBin();
     await openBin();
 
+    expect(screen.getAllByRole('button', { name: 'Restore' })[0]!.className).toBe('disk-action');
     await userEvent.click(screen.getAllByRole('button', { name: 'Restore' })[0]!);
 
     expect(onRestore).toHaveBeenCalledExactlyOnceWith('a');
@@ -1192,6 +1461,7 @@ describe('the recycle bin', () => {
     const { onPurge } = withBin();
     await openBin();
 
+    expect(screen.getAllByRole('button', { name: 'Delete now' })[1]!.className).toBe('disk-action destructive');
     await userEvent.click(screen.getAllByRole('button', { name: 'Delete now' })[1]!);
 
     expect(onPurge).toHaveBeenCalledExactlyOnceWith('b');
@@ -1201,7 +1471,7 @@ describe('the recycle bin', () => {
     const { onSave } = withBin();
     await openBin();
 
-    const days = screen.getByLabelText('Keep a deleted session for') as HTMLInputElement;
+    const days = screen.getByLabelText('Keep deleted sessions for (days)') as HTMLInputElement;
     await userEvent.clear(days);
     await userEvent.type(days, '30');
     await userEvent.click(commit());
@@ -1223,7 +1493,7 @@ describe('the recycle bin', () => {
    */
   describe('shortening how long one is kept', () => {
     const shorten = async (days: string) => {
-      const field = screen.getByLabelText('Keep a deleted session for') as HTMLInputElement;
+      const field = screen.getByLabelText('Keep deleted sessions for (days)') as HTMLInputElement;
       await userEvent.clear(field);
       if (days !== '') await userEvent.type(field, days);
     };
@@ -1447,7 +1717,7 @@ describe("the CLI's own settings", () => {
     const { onNeedCli } = withCli({ settings: schema, values: {} });
 
     await openCli();
-    await userEvent.click(tab('Appearance'));
+    await userEvent.click(tab('Interface'));
     await openCli();
 
     expect(onNeedCli).not.toHaveBeenCalled();
@@ -1525,7 +1795,7 @@ describe("the CLI's own settings", () => {
       withCli();
       await openCli();
 
-      expect((screen.getByLabelText('logLevel') as HTMLSelectElement).value).toBe('');
+      expect(screen.getByLabelText('logLevel').textContent).toContain('Default');
     });
 
     it('leaves a field empty rather than filling in a value nobody set', async () => {
@@ -1808,7 +2078,8 @@ describe("the CLI's own settings", () => {
       const { onWriteCli } = withCli();
       await openCli();
 
-      await userEvent.selectOptions(screen.getByLabelText('logLevel'), 'all');
+      await userEvent.click(screen.getByLabelText('logLevel'));
+      await userEvent.click(screen.getByRole('option', { name: 'all' }));
 
       expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ logLevel: 'all' });
     });
@@ -1817,7 +2088,8 @@ describe("the CLI's own settings", () => {
       const { onWriteCli } = withCli({ settings: schema, values: { logLevel: 'all' } });
       await openCli();
 
-      await userEvent.selectOptions(screen.getByLabelText('logLevel'), '');
+      await userEvent.click(screen.getByLabelText('logLevel'));
+      await userEvent.click(screen.getByRole('option', { name: 'Default' }));
 
       expect(onWriteCli).toHaveBeenCalledExactlyOnceWith({ logLevel: null });
     });
@@ -1876,13 +2148,14 @@ describe('searching the settings', () => {
     show();
 
     expect(categories()).toEqual([
-      'Appearance',
       'Copilot CLI',
-      'Keyboard',
+      'Interface',
       'New sessions',
       'Notifications',
       'Session management',
+      'Shortcuts',
       'Transcript',
+      'Updates',
     ]);
   });
 
@@ -1908,7 +2181,7 @@ describe('searching the settings', () => {
 
     await type('scale');
 
-    expect(categories()).toEqual(['Appearance']);
+    expect(categories()).toEqual(['Interface']);
   });
 
   /** Not shown empty and not disabled: a category with nothing in it is not listed at all. */
@@ -1953,7 +2226,7 @@ describe('searching the settings', () => {
 
     await userEvent.clear(search());
 
-    expect(categories()).toHaveLength(7);
+    expect(categories()).toHaveLength(8);
     expect(screen.getByLabelText('Sessions kept in memory')).toBeTruthy();
   });
 
@@ -1984,7 +2257,7 @@ describe('what the search is told a category holds', () => {
   it.each([
     ['Session management', 'management'],
     ['New sessions', 'sessions'],
-    ['Appearance', 'appearance'],
+    ['Interface', 'appearance'],
   ])('knows about every setting drawn in %s', async (name) => {
     show();
     await userEvent.click(tab(name));
@@ -2010,20 +2283,21 @@ describe('what the search is told a category holds', () => {
  * a single edit is left to the row that made it.
  */
 describe('summarising what a turn changed', () => {
-  const choice = () => screen.getByLabelText('Summarise what a turn changed') as HTMLSelectElement;
+  const choice = () => screen.getByLabelText('Summarise what a turn changed');
 
   it('shows which answer is in force', async () => {
     show({ turnSummary: 'multiple' });
     await userEvent.click(tab('Transcript'));
 
-    expect(choice().value).toBe('multiple');
+    expect(choice().textContent).toContain('Only when it changed more than one thing');
   });
 
   it('offers turning it off, and saves that', async () => {
     const { onSave } = show({ turnSummary: 'always' });
     await userEvent.click(tab('Transcript'));
 
-    await userEvent.selectOptions(choice(), 'off');
+    await userEvent.click(choice());
+    await userEvent.click(screen.getByRole('option', { name: 'Never' }));
     await userEvent.click(commit());
 
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ turnSummary: 'off' }));
@@ -2034,7 +2308,8 @@ describe('summarising what a turn changed', () => {
     const { onSave } = show({ turnSummary: 'always' });
     await userEvent.click(tab('Transcript'));
 
-    await userEvent.selectOptions(choice(), 'multiple');
+    await userEvent.click(choice());
+    await userEvent.click(screen.getByRole('option', { name: 'Only when it changed more than one thing' }));
 
     expect(onSave).not.toHaveBeenCalled();
   });
@@ -2045,7 +2320,7 @@ describe('summarising what a turn changed', () => {
    */
   it('is not among the appearance settings', async () => {
     show();
-    await userEvent.click(tab('Appearance'));
+    await userEvent.click(tab('Interface'));
 
     expect(screen.queryByLabelText('Summarise what a turn changed')).toBeNull();
   });
@@ -2058,7 +2333,7 @@ describe('summarising what a turn changed', () => {
  * rather than what anything reports. The tags themselves are untouched.
  */
 describe('showing tags in the sidebar', () => {
-  const openAppearance = () => userEvent.click(tab('Appearance'));
+  const openAppearance = () => userEvent.click(tab('Interface'));
 
   it('is offered where the rest of the drawing is', async () => {
     show();
@@ -2099,7 +2374,7 @@ describe('showing tags in the sidebar', () => {
  * into a list of paragraphs, and the list is what the sidebar is for.
  */
 describe('how much of the last reply the sidebar shows', () => {
-  const openAppearance = () => userEvent.click(tab('Appearance'));
+  const openAppearance = () => userEvent.click(tab('Interface'));
   const lines = () => screen.getByLabelText('Lines of the last reply in the sidebar') as HTMLInputElement;
   const more = () => screen.getByLabelText('More lines of the last reply in the sidebar') as HTMLButtonElement;
   const fewer = () => screen.getByLabelText('Fewer lines of the last reply in the sidebar') as HTMLButtonElement;
@@ -2190,6 +2465,20 @@ describe('how much of the last reply the sidebar shows', () => {
  * at all when one merely finishes.
  */
 describe('the Notifications category', () => {
+  it('groups flash and count under Taskbar, apart from Windows notifications', async () => {
+    show();
+    await userEvent.click(tab('Notifications'));
+    expect(screen.getAllByRole('heading', { level: 4 }).map((heading) => heading.textContent))
+      .toEqual(['Taskbar', 'Windows notifications']);
+    const headings = screen.getAllByRole('heading', { level: 4 });
+    const flash = screen.getByLabelText('Flash the taskbar when a session needs an answer');
+    const count = screen.getByLabelText('Count sessions needing an answer on the taskbar icon');
+    const notify = screen.getByLabelText('Notify when a session needs an answer');
+    expect(headings[0]!.compareDocumentPosition(flash) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(count.compareDocumentPosition(headings[1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(headings[1]!.compareDocumentPosition(notify) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   const open = async () => {
     show();
     await userEvent.click(tab('Notifications'));

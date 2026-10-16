@@ -44,6 +44,8 @@ const SAVED_SHAPE = {
   allowAll: false,
   workingDirectory: '',
   updateOnStart: false,
+  appAutoDownload: true,
+  appIncludePrereleases: false,
   scale: 1,
   textScale: 1,
   defaultModel: '',
@@ -53,6 +55,8 @@ const SAVED_SHAPE = {
   sidebarTags: true,
   sidebarPreviewLines: 2,
   shortcuts: '',
+  directoryApplication: 'folder',
+  directoryTargets: '[]',
   flashBlocked: true,
   flashFinished: false,
   flashFailed: false,
@@ -63,6 +67,45 @@ const SAVED_SHAPE = {
   notifyFinished: false,
   notifyFailed: false,
 };
+
+describe('remembering directory applications', () => {
+  it('persists the preferred target and multiple named custom executables', async () => {
+    const { useSettings } = await load();
+    const view = renderHook(() => useSettings());
+    const targets = JSON.stringify([
+      { id: 'custom-one', label: 'One', executable: 'C:\\one.exe', args: ['{cwd}'] },
+      { id: 'custom-two', label: 'Two', executable: 'C:\\two.exe', args: [] },
+    ]);
+    act(() => view.result.current.apply({ directoryApplication: 'custom-two', directoryTargets: targets }));
+    view.unmount();
+    const next = renderHook(() => useSettings());
+    expect(next.result.current.settings.directoryApplication).toBe('custom-two');
+    expect(next.result.current.settings.directoryTargets).toBe(targets);
+  });
+
+  describe('automatic desktop update downloads', () => {
+    it('keeps prereleases opt-in and persists the choice independently of automatic downloads', async () => {
+      const { useSettings } = await load();
+      const view = renderHook(() => useSettings());
+      expect(view.result.current.settings.appIncludePrereleases).toBe(false);
+      act(() => view.result.current.apply({ appIncludePrereleases: true, appAutoDownload: false }));
+      view.unmount();
+      const next = renderHook(() => useSettings());
+      expect(next.result.current.settings.appIncludePrereleases).toBe(true);
+      expect(next.result.current.settings.appAutoDownload).toBe(false);
+    });
+
+    it('defaults to downloading and persists an explicit opt-out', async () => {
+      const { useSettings } = await load();
+      const view = renderHook(() => useSettings());
+      expect(view.result.current.settings.appAutoDownload).toBe(true);
+      act(() => view.result.current.apply({ appAutoDownload: false }));
+      view.unmount();
+      const next = renderHook(() => useSettings());
+      expect(next.result.current.settings.appAutoDownload).toBe(false);
+    });
+  });
+});
 
 beforeEach(() => {
   localStorage.clear();

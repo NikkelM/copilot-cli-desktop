@@ -13,6 +13,7 @@ import type {
 
 import { Changes } from './components/Changes';
 import { Todos } from './components/Todos';
+import { SessionPlan } from './components/SessionPlan';
 import { Composer } from './components/Composer';
 import { ElicitationPrompt } from './components/ElicitationPrompt';
 import { PromptPicker } from './components/PromptPicker';
@@ -73,6 +74,9 @@ import { useMcp } from './lib/useMcp';
 import { useCliSettings } from './lib/useCliSettings';
 import { useCliDisplay } from './lib/useCliDisplay';
 import { SettingsWindow } from './components/SettingsWindow';
+import { AppUpdateNotice } from './components/AppUpdates';
+import { useAppUpdates } from './lib/useAppUpdates';
+import { updateBlockReason } from './lib/appUpdates';
 import { usePanel } from './lib/usePanel';
 import { Confirm } from './components/Confirm';
 import { SidebarGrip } from './components/SidebarGrip';
@@ -80,7 +84,7 @@ import { NotesGrip } from './components/NotesGrip';
 import { SessionNotes } from './components/SessionNotes';
 import { SidebarToggle } from './components/SidebarToggle';
 import { useSidebarWidth } from './lib/useSidebarWidth';
-import { openPath, openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
+import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener';
 import { explain, messageOf } from './lib/errors';
 import { revealPointerForPicker } from './lib/nativePicker';
 import { usageReport } from './lib/usageReport';
@@ -90,6 +94,7 @@ import { stashFiles } from './lib/paste';
 import { nameOf } from './lib/paths';
 import { useFileDrop } from './lib/useFileDrop';
 import { useTodos } from './lib/useTodos';
+import { usePlan } from './lib/usePlan';
 import { usePromptList } from './lib/usePromptList';
 import { useUnseen, type Unseen } from './lib/useUnseen';
 import { useActiveElsewhere } from './lib/useActiveElsewhere';
@@ -135,6 +140,8 @@ import { useTaskbar } from './lib/useTaskbar';
 import { useAttention } from './lib/useAttention';
 import { useBadge, type BadgeTone } from './lib/useBadge';
 import { useNotify } from './lib/useNotify';
+import { SessionSize } from './components/SessionSize';
+import { useDirectoryApplications } from './lib/useDirectoryApplications';
 import { useTranscript } from './lib/useTranscript';
 import { useTreeState } from './lib/useTreeState';
 import { useTauriEvent } from './lib/useTauriEvent';
@@ -375,8 +382,9 @@ export default function App() {
   // Up here with the other hooks because the keyboard reads it: Ctrl+= and Ctrl+- change
   // the text size, which is one of these rather than a value of its own.
   const { settings, apply: applySettings } = useSettings();
+  const directoryApps = useDirectoryApplications(settings.directoryTargets, settings.directoryApplication, setError);
   const width = useSidebarWidth();
-  const { favourites, toggle: toggleFavourite } = useFavourites();
+  const { favourites, toggle: toggleFavourite, reorder: reorderFavourite, order: favouriteOrder } = useFavourites();
   const { archived, toggle: toggleArchived, unarchive } = useArchived();
   const { tags, known: knownTags, toggle: toggleTag, retire: retireTag } = useTags();
   /**
@@ -391,6 +399,7 @@ export default function App() {
   const [tagging, setTagging] = useState<SessionSummary | null>(null);
   /** The session whose name is being changed, if any. */
   const [naming, setNaming] = useState<SessionSummary | null>(null);
+  const [measuring, setMeasuring] = useState<SessionSummary | null>(null);
   /**
    * Using an archived session takes it back out of the archive.
    *
@@ -433,7 +442,7 @@ export default function App() {
    * two different unsaved versions and whichever was saved second would silently take the
    * other's work. One place to be, one set of drafts.
    */
-  const wiki = useWiki(showWiki || notes.open);
+  const wiki = useWiki(showWiki || notes.kind === 'notes');
   /**
    * The words the wiki is already written in, for the picker to offer (#35).
    *
@@ -454,6 +463,7 @@ export default function App() {
    * which is what lets it answer for a session nobody has woken.
    */
   const todos = useTodos(selectedId);
+  const plan = usePlan(selectedId);
 
   /**
    * Which sessions some other Copilot has open (#63).
@@ -462,6 +472,9 @@ export default function App() {
    * in elsewhere is worth seeing before it is opened rather than after.
    */
   const elsewhere = useActiveElsewhere();
+  // A batch can outlive this render, so each deletion checks the latest activity
+  const cleanupActivity = useRef({ working: sessions.working, elsewhere: elsewhere.active });
+  cleanupActivity.current = { working: sessions.working, elsewhere: elsewhere.active };
 
   /**
    * The sessions picked out to be acted on together (#63).
@@ -913,6 +926,22 @@ export default function App() {
   }, [standDown, sessions.refresh]);
 
   const runtime = useRuntimeHealth(standDown, afterRestart);
+  const appUpdateBlocked = updateBlockReason({
+    working: busy || sessions.working.size > 0,
+    loading: creating || sessions.loading.size > 0,
+    questions: prompts.blocking.length > 0,
+    agents: subagents.watched.some((agent) => agent.outcome === undefined && sessions.find(agent.sessionId)?.loaded),
+    queued: Object.values(queue.queues).some((items) => items.length > 0),
+    unsent: drafts.hasUnsent || Object.values(attachments).some((items) => items.length > 0),
+    wiki: wiki.unsaved.length > 0,
+    saving: plan.saving,
+  });
+  const appUpdates = useAppUpdates(
+    settings.appAutoDownload, appUpdateBlocked, settings.appIncludePrereleases,
+    () => applySettings({ appIncludePrereleases: false }),
+  );
+  const installingUpdate = useRef(false);
+  installingUpdate.current = appUpdates.installing;
 
   /** Stop the turn, saying so rather than leaving the press looking unnoticed. */
   const interrupt = useCallback(() => {
@@ -951,6 +980,7 @@ export default function App() {
   useShortcuts(
     useCallback(
       (shortcut) => {
+        if (installingUpdate.current) return;
         if (shortcut === 'help') {
           setHelp((showing) => (showing ? null : 'keys'));
           return;
@@ -1637,7 +1667,11 @@ export default function App() {
 
   useBadge(badge.count, badge.tone);
 
-  /** The same list again, for the one surface that reaches a window behind another (#268). */
+  /**
+   * The same list again, for the one surface that reaches a window behind another (#268).
+   *
+   * Clicking one opens that session, through the same path a sidebar row takes (#273).
+   */
   const notifying = useMemo(
     () =>
       wanting.filter(
@@ -1649,7 +1683,7 @@ export default function App() {
     [wanting, settings.notifyBlocked, settings.notifyFinished, settings.notifyFailed],
   );
 
-  useNotify(notifying);
+  useNotify(notifying, open);
 
   /** Sessions stopped on a question, for the fold control to mark while the sidebar is away. */
   const waitingCount = useMemo(
@@ -1880,6 +1914,7 @@ export default function App() {
         toggleFavourite,
         archived,
         rename: setNaming,
+        measure: setMeasuring,
         tag: setTagging,
         exportTo,
         // Picking over the list rather than reading it: the row is marked and every row
@@ -1912,7 +1947,7 @@ export default function App() {
         copy: (text) => void copyText(text),
         // Not explained: these translations are about the Copilot runtime, and a path that
         // happens to contain "copilot" would be read as the CLI failing to start.
-        openDirectory: (path) => void openPath(path).catch((e: unknown) => setError(messageOf(e))),
+        openDirectory: directoryApps.open,
         remove: (target) => (settings.confirmDelete ? setDeleting(target) : void removeSession(target)),
         fork: forkSession,
       });
@@ -1929,11 +1964,13 @@ export default function App() {
       marked,
       exportMany,
       markedActions,
+      directoryApps.open,
     ],
   );
 
   return (
     <div
+      inert={appUpdates.installing}
       className={[
         'app',
         // A drag is on either edge, and both want the same caret everywhere while it runs.
@@ -1960,6 +1997,9 @@ export default function App() {
         activity={activity}
         unseen={unseen.marks}
         loading={sessions.loading}
+        onReorder={sessions.reorder}
+        onReorderFavourite={reorderFavourite}
+        favouriteOrder={favouriteOrder}
         activeElsewhere={elsewhere.active}
         marked={marked}
         selecting={selecting}
@@ -2197,6 +2237,11 @@ export default function App() {
                   remote={tree.state?.remote ?? null}
                   branch={tree.state?.branch ?? selected.branch}
                   onError={setError}
+                  applications={directoryApps.applications}
+                  target={settings.directoryApplication}
+                  loading={directoryApps.loading}
+                  error={directoryApps.error}
+                  onOpenDirectory={directoryApps.open}
                 />
                 <HeaderTags tags={tags[selected.sessionId] ?? []} onEdit={() => setTagging(selected)} />
                 {/* What this session is about that is already written down, where anything
@@ -2204,11 +2249,11 @@ export default function App() {
                     session - and partly built from them - and silent otherwise. */}
                 <HeaderNotes
                   pages={wikiNotes}
-                  open={notes.open}
+                  open={notes.kind === 'notes'}
                   onOpen={(page) => {
                     // Closing again from the same control, since it is now a thing that is
                     // open rather than somewhere to go.
-                    if (notes.open) {
+                    if (notes.kind === 'notes') {
                       notes.hide();
                       return;
                     }
@@ -2244,6 +2289,17 @@ export default function App() {
                       title="Show what the agent says it is doing"
                     >
                       Todos
+                    </button>
+                  )}
+                  {(plan.plan || plan.draft || plan.failed || plan.notificationFailed) && (
+                    <button
+                      type="button"
+                      className={notes.kind === 'plan' ? 'header-button on' : 'header-button'}
+                      onClick={() => notes.kind === 'plan' ? notes.hide() : notes.show('plan')}
+                      aria-pressed={notes.kind === 'plan'}
+                      title="View or edit the session plan"
+                    >
+                      Plan
                     </button>
                   )}
                   <PromptPicker
@@ -2566,40 +2622,41 @@ export default function App() {
         )}
       </main>
 
-      {/* A note from the wiki beside the session it is about, rather than in place of it
-          (#35). After .main and outside it: it is a column of the app's own grid, so the
-          transcript keeps its width rather than giving up part of it.
-
-          Only where the session has notes at all. A column that opened empty would be a
-          feature arguing with the header control that says there is nothing to show. */}
+      {/* Wiki notes and the session plan share one resizable column */}
       {notes.open && (
         <>
-          <NotesGrip            dragging={notesWidth.dragging}
+          <NotesGrip
+            dragging={notesWidth.dragging}
+            label={notes.kind === 'plan' ? 'Resize the plan' : 'Resize the notes'}
             onStart={notesWidth.start}
             onNudge={notesWidth.nudge}
             onReset={notesWidth.reset}
           />
-          <SessionNotes
-            notes={wikiNotes}
-            pages={wiki.pages}
-            page={wiki.page}
-            loading={wiki.loading}
-            failed={wiki.failed}
-            saving={wiki.saving}
-            draft={wiki.draft}
-            onOpen={wiki.go}
-            onEdit={wiki.edit}
-            onRevert={wiki.revert}
-            onSave={(path) => void wiki.save(path)}
-            onBrowse={() => {
-              // Carrying the session's pages over, so the browser opens on what this column
-              // was showing rather than on the whole wiki. The column is not closed, only
-              // stood down while the browser is up, so coming back brings it with it.
-              setWikiScope(wikiNotes.map((each) => each.path));
-              setShowWiki(true);
-            }}
-            onClose={notes.hide}
-          />
+          {notes.kind === 'plan' ? (
+            <SessionPlan plan={plan} onClose={notes.hide} />
+          ) : (
+            <SessionNotes
+              notes={wikiNotes}
+              pages={wiki.pages}
+              page={wiki.page}
+              loading={wiki.loading}
+              failed={wiki.failed}
+              saving={wiki.saving}
+              draft={wiki.draft}
+              onOpen={wiki.go}
+              onEdit={wiki.edit}
+              onRevert={wiki.revert}
+              onSave={(path) => void wiki.save(path)}
+              onBrowse={() => {
+                // Carrying the session's pages over, so the browser opens on what this column
+                // was showing rather than on the whole wiki. The column is not closed, only
+                // stood down while the browser is up, so coming back brings it with it.
+                setWikiScope(wikiNotes.map((each) => each.path));
+                setShowWiki(true);
+              }}
+              onClose={notes.hide}
+            />
+          )}
         </>
       )}
 
@@ -2625,6 +2682,16 @@ export default function App() {
             ✕
           </button>
         </div>
+      )}
+      <AppUpdateNotice updates={appUpdates} />
+
+      {measuring && (
+        <SessionSize
+          key={measuring.sessionId}
+          sessionId={measuring.sessionId}
+          title={measuring.title}
+          onClose={() => setMeasuring(null)}
+        />
       )}
 
       {naming && (
@@ -2731,6 +2798,7 @@ export default function App() {
 
       {settingsOpen && (
         <SettingsWindow
+          updates={appUpdates}
           settings={settings}
           onSave={applySettings}
           onClose={() => setSettingsOpen(false)}
@@ -2743,6 +2811,43 @@ export default function App() {
           usage={disk.usage}
           usageReading={disk.reading}
           onNeedUsage={disk.refresh}
+          applications={directoryApps.applications}
+          applicationsError={directoryApps.error}
+          onPickApplication={async () => {
+            await revealPointerForPicker();
+            const picked = await pickFolder({
+              directory: false,
+              multiple: false,
+              title: 'Choose an application',
+              filters: [{ name: 'Applications', extensions: ['exe'] }],
+            });
+            return typeof picked === 'string' ? picked : null;
+          }}
+          protectedSessionIds={[...sessions.working, ...elsewhere.active]}
+          onDeleteSessions={async (sessionIds) => {
+            const failures: string[] = [];
+            try {
+              for (const sessionId of sessionIds) {
+                if (cleanupActivity.current.working.has(sessionId) || cleanupActivity.current.elsewhere.includes(sessionId)) {
+                  failures.push(`${sessions.find(sessionId)?.title ?? sessionId}: still working or open in another CLI.`);
+                  continue;
+                }
+                try {
+                  await deleteSession(sessionId);
+                  if (selectedRef.current === sessionId) setSelectedId(null);
+                  sessions.drop(sessionId);
+                  unseen.forget(sessionId);
+                } catch (error) {
+                  failures.push(`${sessions.find(sessionId)?.title ?? sessionId}: ${messageOf(error)}`);
+                }
+              }
+            } finally {
+              disk.refresh();
+              bin.refresh();
+              void sessions.refresh();
+            }
+            if (failures.length > 0) throw new Error(failures.join('\n'));
+          }}
           // Closing the window on the way, since the session is behind it and a list of
           // sizes is not what somebody wants to be looking at once they have chosen one.
           onOpenSession={(sessionId) => {
@@ -2825,15 +2930,3 @@ function describeError(event: TranscriptEvent): string {
   const data = event.data as { message?: unknown } | null;
   return typeof data?.message === 'string' ? explain(data.message) : 'Session error';
 }
-
-
-
-
-
-
-
-
-
-
-
-

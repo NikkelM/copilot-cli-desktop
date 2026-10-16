@@ -3,37 +3,22 @@ import { useCallback, useEffect, useState } from 'react';
 import type { WikiPage } from '../../shared/protocol';
 
 /**
- * Whether a note is open beside the session, and which session that was decided for (#35).
+ * Wiki notes and session plans share one column and replace each other
  *
- * Its own hook because the rule is worth being able to test: it lives in App otherwise,
- * where the only thing that would notice it breaking is somebody using the app.
- *
- * Closed again whenever the session changes, as the panels under the transcript are. A note
- * is open because of what the session is about, so carrying it across would be showing
- * somebody notes on a repository they have just navigated away from. Closed rather than
- * remembered per session for the same reason `usePanel` does not remember: the one rule is
- * enforceable, and a map of which sessions had it open is a thing to keep correct for ever.
+ * Changing sessions closes the column, while browsing the wiki only hides it until returning
  */
 export function useNotesColumn(sessionId: string | null, notes: readonly WikiPage[], browsing = false) {
-  const [wanted, setWanted] = useState(false);
+  const [wanted, setWanted] = useState<'notes' | 'plan' | null>(null);
 
-  useEffect(() => setWanted(false), [sessionId]);
+  useEffect(() => setWanted(null), [sessionId]);
 
-  const show = useCallback(() => setWanted(true), []);
-  const hide = useCallback(() => setWanted(false), []);
+  const show = useCallback((kind: 'notes' | 'plan' = 'notes') => setWanted(kind), []);
+  const hide = useCallback(() => setWanted(null), []);
+  const open = wanted !== null && !browsing && (wanted === 'plan' || notes.length > 0);
 
   return {
-    /**
-     * Whether the column is actually drawn.
-     *
-     * Asked rather than stored, so the grid and the column cannot disagree - and so a
-     * session whose notes have gone cannot leave an empty column behind.
-     *
-     * Stood down rather than closed while the whole browser is up: a note beside the wiki
-     * is the wiki twice, and the browser is itself a tree beside a page. Closing it instead
-     * meant going to the browser and coming back lost the column somebody had opened.
-     */
-    open: wanted && !browsing && notes.length > 0,
+    open,
+    kind: open ? wanted : null,
     show,
     hide,
   };

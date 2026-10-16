@@ -20,6 +20,43 @@ beforeEach(() => {
 });
 
 describe('the sessions someone has favourited', () => {
+  it('reorders from the displayed order without reshuffling other favourites and persists it', async () => {
+    save('sessions', KEY, JSON.stringify(['a', 'b', 'c', 'hidden']));
+    const { useFavourites } = await load();
+    const view = renderHook(() => useFavourites());
+    await waitFor(() => expect(existingSessions).toHaveBeenCalled());
+    expect(view.result.current.order).toBeUndefined();
+    act(() => view.result.current.reorder('a', 'c', false, ['c', 'b', 'a']));
+    expect(view.result.current.favourites).toEqual(['a', 'c', 'b', 'hidden']);
+    expect(view.result.current.order).toEqual(['a', 'c', 'b', 'hidden']);
+    view.unmount();
+    const next = renderHook(() => useFavourites());
+    expect(next.result.current.order).toEqual(['a', 'c', 'b', 'hidden']);
+  });
+
+  it('refuses to reorder ids that are not favourites', async () => {
+    save('sessions', KEY, JSON.stringify(['a', 'b']));
+    const { useFavourites } = await load();
+    const view = renderHook(() => useFavourites());
+    act(() => view.result.current.reorder('other', 'a'));
+    expect(view.result.current.favourites).toEqual(['a', 'b']);
+    expect(view.result.current.order).toBeUndefined();
+  });
+
+  it('forgets an unfavourited position even when favourited again after a restart', async () => {
+    save('sessions', KEY, JSON.stringify(['a', 'b', 'c']));
+    const { useFavourites } = await load();
+    const first = renderHook(() => useFavourites());
+    await waitFor(() => expect(existingSessions).toHaveBeenCalled());
+    act(() => first.result.current.reorder('c', 'a'));
+    act(() => first.result.current.toggle('c'));
+    expect(first.result.current.order).toEqual(['a', 'b']);
+    first.unmount();
+    const next = renderHook(() => useFavourites());
+    act(() => next.result.current.toggle('c'));
+    expect(next.result.current.order).toEqual(['a', 'b', 'c']);
+  });
+
   it('starts with none', async () => {
     const { useFavourites } = await load();
 

@@ -5,40 +5,44 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OpenIn } from './OpenIn';
 
-const openPath = vi.fn();
 const openUrl = vi.fn();
+const onOpenDirectory = vi.fn();
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
-  openPath: (...args: unknown[]) => openPath(...args),
   openUrl: (...args: unknown[]) => openUrl(...args),
 }));
 
 beforeEach(() => {
-  openPath.mockReset().mockResolvedValue(undefined);
   openUrl.mockReset().mockResolvedValue(undefined);
+  onOpenDirectory.mockReset();
 });
 
 const show = (props: Partial<Parameters<typeof OpenIn>[0]> = {}) =>
-  render(<OpenIn cwd={null} remote={null} branch={null} onError={() => {}} {...props} />);
+  render(<OpenIn cwd={null} remote={null} branch={null} onError={() => {}}
+    applications={[{ id: 'folder', label: 'File Explorer' }, { id: 'vscode', label: 'VS Code' }]}
+    target="folder" loading={false} onOpenDirectory={onOpenDirectory} {...props} />);
 
 describe('OpenIn', () => {
   it('opens the working directory', async () => {
     show({ cwd: 'C:\\work\\repo' });
 
-    await userEvent.click(screen.getByRole('button', { name: /Folder/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open in File Explorer' }));
 
-    expect(openPath).toHaveBeenCalledWith('C:\\work\\repo');
+    expect(onOpenDirectory).toHaveBeenCalledWith('C:\\work\\repo');
   });
 
-  // Through the URI rather than the command, which would depend on it being on PATH.
-  // `windowId=_blank` is the part that stops it replacing whatever was open in the window
-  // that happened to be focused, which is what it does without it.
-  it('opens the directory in a new editor window by URI', async () => {
-    show({ cwd: 'C:\\work\\repo' });
+  it('names the configured application without offering a dropdown', async () => {
+    show({ cwd: 'C:\\work\\repo', target: 'vscode' });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Open in VS Code' }));
+    expect(onOpenDirectory).toHaveBeenCalledExactlyOnceWith('C:\\work\\repo');
+  });
 
-    await userEvent.click(screen.getByRole('button', { name: /VS Code/ }));
-
-    expect(openUrl).toHaveBeenCalledWith('vscode-insiders://file/C:/work/repo?windowId=_blank');
+  it('shows only discovered applications and never falls back from a missing preference', () => {
+    show({ cwd: 'C:\\repo', target: 'removed-editor', applications: [{ id: 'folder', label: 'File Explorer' }] });
+    expect((screen.getByRole('button', { name: 'Open in configured application' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole('option', { name: 'VS Code' })).toBeNull();
+    expect(screen.queryByRole('combobox')).toBeNull();
   });
 
   /**
@@ -80,8 +84,8 @@ describe('OpenIn', () => {
     it('offers nothing for a session with no directory', () => {
       show({ remote: 'NikkelM/thing' });
 
-      expect(screen.queryByRole('button', { name: /Folder/ })).toBeNull();
-      expect(screen.queryByRole('button', { name: /VS Code/ })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^Open in/ })).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
     });
 
     it('offers no repository for a folder that is not one', () => {
@@ -98,11 +102,11 @@ describe('OpenIn', () => {
   });
 
   it('reports a refusal rather than swallowing it', async () => {
-    openPath.mockRejectedValue(new Error('not permitted'));
+    openUrl.mockRejectedValue(new Error('not permitted'));
     const onError = vi.fn();
-    show({ cwd: 'C:\\work\\repo', onError });
+    show({ remote: 'NikkelM/thing', onError });
 
-    await userEvent.click(screen.getByRole('button', { name: /Folder/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'GitHub' }));
 
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(expect.stringContaining('not permitted')));
   });

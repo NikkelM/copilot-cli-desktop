@@ -11,7 +11,11 @@ import type { SessionSummary } from '../../shared/protocol';
  *
  * @param activeOrder session ids in activation order, most recently activated first
  */
-export function orderSessions(sessions: SessionSummary[], activeOrder: string[]): SessionSummary[] {
+export function orderSessions(
+  sessions: SessionSummary[],
+  activeOrder: string[],
+  loading: ReadonlySet<string> = new Set(),
+): SessionSummary[] {
   const rank = new Map(activeOrder.map((id, index) => [id, index]));
 
   const active: SessionSummary[] = [];
@@ -19,7 +23,7 @@ export function orderSessions(sessions: SessionSummary[], activeOrder: string[])
 
   for (const session of sessions) {
     // `loaded` is authoritative; activeOrder only decides position within the group.
-    (session.loaded ? active : rest).push(session);
+    (session.loaded || loading.has(session.sessionId) ? active : rest).push(session);
   }
 
   active.sort((a, b) => {

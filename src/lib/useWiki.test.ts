@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useWiki } from './useWiki';
+import { useNotesColumn } from './useNotesColumn';
 import type { WikiPage } from '../../shared/protocol';
 
 const { listWikiPages, readWikiPage, saveWikiPage } = vi.hoisted(() => ({
@@ -33,6 +34,28 @@ beforeEach(() => {
 });
 
 describe('holding the wiki open', () => {
+  it('reads no wiki for the plan and preserves wiki edits when the plan replaces the notes', async () => {
+    const { result } = renderHook(() => {
+      const column = useNotesColumn('one', pages);
+      return { column, wiki: useWiki(column.kind === 'notes') };
+    });
+
+    act(() => result.current.column.show('plan'));
+    expect(listWikiPages).not.toHaveBeenCalled();
+
+    act(() => result.current.column.show());
+    await waitFor(() => expect(result.current.wiki.page?.path).toBe('index.md'));
+    act(() => result.current.wiki.edit('index.md', '# Unsaved wiki edit'));
+
+    act(() => result.current.column.show('plan'));
+    expect(result.current.wiki.draft).toBe('# Unsaved wiki edit');
+
+    act(() => result.current.column.show());
+    expect(result.current.wiki.draft).toBe('# Unsaved wiki edit');
+    expect(result.current.wiki.page?.path).toBe('index.md');
+    expect(listWikiPages).toHaveBeenCalledTimes(1);
+  });
+
   /** Most sessions are worked in without the wiki being looked at, and a walk nobody asked for is a walk. */
   it('reads nothing until it is opened', () => {
     renderHook(({ open }) => useWiki(open), { initialProps: { open: false } });
@@ -344,4 +367,3 @@ describe('editing a page', () => {
     expect(saveWikiPage).not.toHaveBeenCalled();
   });
 });
-

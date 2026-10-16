@@ -1,8 +1,36 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { SessionSummary, TranscriptEvent } from '../../shared/protocol';
 import { orderSessions } from './ordering';
 import { listSessions, runtimeStatus } from './sidecar';
+import { read, save } from './store';
+
+const ACTIVE_ORDER = 'activeSessionOrder';
+const ACTIVE_SEEN = 'activeSessionLastLoaded';
+const ORDER_RETENTION = 7 * 24 * 60 * 60 * 1000;
+
+function rememberedLastLoaded(): Record<string, number> {
+  try {
+    const value: unknown = JSON.parse(read('sessions', ACTIVE_SEEN) ?? '{}');
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(Object.entries(value).filter(([, time]) => typeof time === 'number' && Number.isFinite(time)));
+  } catch (error) {
+    console.error('Could not read active session last-loaded times', error);
+    return {};
+  }
+}
+
+function rememberedOrder(): string[] {
+  const stored = read('sessions', ACTIVE_ORDER);
+  if (!stored) return [];
+  try {
+    const value: unknown = JSON.parse(stored);
+    return Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string'))] : [];
+  } catch (error) {
+    console.error('Could not read active session order', error);
+    return [];
+  }
+}
 
 /**
  * Which sessions exist, in the order the sidebar shows them.
@@ -24,13 +52,42 @@ import { listSessions, runtimeStatus } from './sidecar';
  */
 export function useSessions(onError: (message: string) => void) {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  /** Session ids in activation order, most recent first. Fixes the active group's order. */
-  const [activeOrder, setActiveOrder] = useState<string[]>([]);
+  /** Activation order until manually arranged, then remembered slots across unloads */
+  const [activeOrder, setActiveOrder] = useState<string[]>(rememberedOrder);
+  const manualOrder = useRef(read('sessions', ACTIVE_ORDER) !== null);
+  const [initialLastLoaded] = useState(rememberedLastLoaded);
+  const lastLoaded = useRef(initialLastLoaded);
+  const resident = useRef(new Set<string>());
+  useEffect(() => {
+    if (manualOrder.current) save('sessions', ACTIVE_ORDER, JSON.stringify(activeOrder));
+  }, [activeOrder]);
   const [maxLoaded, setMaxLoaded] = useState<number | undefined>(undefined);
   /** Sessions being resumed, which is neither loaded nor not and is worth saying. */
   const [loading, setLoading] = useState<ReadonlySet<string>>(() => new Set());
   /** Sessions with a turn running, whichever one is on screen. */
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    if (!manualOrder.current) return;
+    const maintainOrder = () => {
+      const now = Date.now();
+      const active = new Set(sessions.filter((session) => session.loaded).map((session) => session.sessionId));
+      for (const id of loading) active.add(id);
+      for (const id of resident.current) {
+        if (!active.has(id)) lastLoaded.current[id] = now;
+      }
+      resident.current = active;
+      const kept = activeOrder.filter((id) => {
+        if (active.has(id) || lastLoaded.current[id] === undefined) lastLoaded.current[id] = now;
+        return now - lastLoaded.current[id] < ORDER_RETENTION;
+      });
+      lastLoaded.current = Object.fromEntries(kept.map((id) => [id, lastLoaded.current[id]]));
+      save('sessions', ACTIVE_SEEN, JSON.stringify(lastLoaded.current));
+      if (kept.length !== activeOrder.length) setActiveOrder(kept);
+    };
+    maintainOrder();
+    const timer = window.setInterval(maintainOrder, 60_000);
+    return () => window.clearInterval(timer);
+  }, [activeOrder, sessions, loading]);
   /**
    * Sessions taken out of the list before disk agrees.
    *
@@ -121,6 +178,11 @@ export function useSessions(onError: (message: string) => void) {
 
   /** Take a session waking or being let go, which moves it between the sidebar's groups. */
   const observeLoaded = useCallback((sessionId: string, loaded: boolean, loading = false) => {
+    const expired = !resident.current.has(sessionId) && lastLoaded.current[sessionId] !== undefined
+      && Date.now() - lastLoaded.current[sessionId] >= ORDER_RETENTION;
+    if (loaded || loading) resident.current.add(sessionId);
+    else resident.current.delete(sessionId);
+    lastLoaded.current[sessionId] = Date.now();
     // Said before anything else, because a resume reports itself starting before it reports
     // itself done and the row should show it for the whole of that rather than at the end.
     setLoading((current) => {
@@ -135,16 +197,13 @@ export function useSessions(onError: (message: string) => void) {
       current.map((session) => (session.sessionId === sessionId ? { ...session, loaded } : session)),
     );
 
-    // A session entering the active group goes to its top; leaving drops it entirely.
-    // Sessions already active keep their position, so the list does not shuffle when
-    // messages are sent.
-    setActiveOrder((current) =>
-      loaded
-        ? current.includes(sessionId)
-          ? current
-          : [sessionId, ...current]
-        : current.filter((id) => id !== sessionId),
-    );
+    // New sessions enter at the top, but manually arranged sessions keep their slots across unloads
+    setActiveOrder((current) => {
+      const order = expired ? current.filter((id) => id !== sessionId) : current;
+      return loaded || loading
+        ? order.includes(sessionId) ? order : [sessionId, ...order]
+        : manualOrder.current ? order : order.filter((id) => id !== sessionId);
+    });
 
     // A session let go cannot still be mid-turn, and it will send no idle event to say so.
     if (!loaded) {
@@ -158,8 +217,8 @@ export function useSessions(onError: (message: string) => void) {
   }, []);
 
   const all = useMemo(
-    () => orderSessions(sessions, activeOrder).filter((session) => !dropped.has(session.sessionId)),
-    [sessions, activeOrder, dropped],
+    () => orderSessions(sessions, activeOrder, loading).filter((session) => !dropped.has(session.sessionId)),
+    [sessions, activeOrder, dropped, loading],
   );
 
   const find = useCallback(
@@ -167,6 +226,17 @@ export function useSessions(onError: (message: string) => void) {
     [all],
   );
 
-  return { all, find, maxLoaded, working, loading, refresh, drop, restore, observe, observeLoaded };
-}
+  const reorder = useCallback((sessionId: string, targetId: string, after = false) => {
+    if (sessionId === targetId) return;
+    const active = all.filter((session) => session.loaded || loading.has(session.sessionId)).map((session) => session.sessionId);
+    if (!active.includes(sessionId) || !active.includes(targetId)) return;
+    manualOrder.current = true;
+    setActiveOrder((current) => {
+      const order = [...current, ...active.filter((id) => !current.includes(id))].filter((id) => id !== sessionId);
+      order.splice(order.indexOf(targetId) + (after ? 1 : 0), 0, sessionId);
+      return order;
+    });
+  }, [all, loading]);
 
+  return { all, find, maxLoaded, working, loading, refresh, drop, restore, observe, observeLoaded, reorder };
+}

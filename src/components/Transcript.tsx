@@ -1214,7 +1214,7 @@ export function Transcript({
                to scroll up a list that could not move. */
             <button
               type="button"
-              className="settings-reset"
+              className="disk-action"
               onClick={() => {
                 // The entries already built come first: they cost nothing to show, where an
                 // older page costs a read and a parse.
@@ -1255,7 +1255,7 @@ export function Transcript({
         {onLatest && (
           <li className="history-edge">
             Showing where this was said.{' '}
-            <button type="button" className="settings-reset" onClick={onLatest}>
+            <button type="button" className="disk-action" onClick={onLatest}>
               Go to the end of the session
             </button>
           </li>

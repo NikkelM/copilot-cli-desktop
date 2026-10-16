@@ -4,6 +4,14 @@ import { ChevronIcon, CloseIcon, FolderIcon, TickIcon } from './Icons';
 import { ModelPicker } from './ModelPicker';
 import type { AutoTier } from '../../shared/protocol';
 import { DiskUsage } from './DiskUsage';
+import { SessionSize } from './SessionSize';
+import { DirectoryApplications } from './DirectoryApplications';
+import { Dropdown } from './Dropdown';
+import { AppUpdateSettings } from './AppUpdates';
+import type { AppUpdates } from '../lib/useAppUpdates';
+import { customDirectoryApplications, type DirectoryApplication } from '../../shared/directoryApplications';
+import { Confirm } from './Confirm';
+import { messageOf } from '../lib/errors';
 import { ShortcutSettings } from './ShortcutSettings';
 import { REBINDABLE } from '../lib/bindings';
 import { LARGEST, SMALLEST, STEP, applyScale, clampScale } from '../lib/scale';
@@ -203,19 +211,13 @@ function CliField({
       )}
 
       {setting.kind === 'enum' && (
-        <select
+        <Dropdown
           id={`cli-${setting.path}`}
-          className="settings-select"
+          label={setting.path}
           value={unset ? '' : String(value)}
-          onChange={(event) => onChange(event.target.value === '' ? null : event.target.value)}
-        >
-          <option value="">Default</option>
-          {setting.options?.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
+          onChange={(value) => onChange(value === '' ? null : value)}
+          options={[{ value: '', label: 'Default' }, ...(setting.options ?? []).map((value) => ({ value, label: value }))]}
+        />
       )}
 
       {(setting.kind === 'string' || setting.kind === 'number') && (
@@ -264,22 +266,16 @@ function ChoiceField<T extends string>({
   hint: string;
 }) {
   return (
-    <label className="settings-row">
+    <div className="settings-row">
       <span className="settings-label">{label}</span>
-      <select
-        className="settings-select"
-        aria-label={label}
+      <Dropdown
+        label={label}
         value={value}
-        onChange={(event) => onChange(event.target.value as T)}
-      >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        options={options}
+      />
       <span className="settings-hint">{hint}</span>
-    </label>
+    </div>
   );
 }
 
@@ -339,13 +335,14 @@ function ScaleField({
  * thing being stopped (#100).
  */
 const CATEGORIES = [
-  { id: 'appearance', label: 'Appearance' },
   { id: 'cli', label: 'Copilot CLI' },
-  { id: 'keyboard', label: 'Keyboard' },
+  { id: 'appearance', label: 'Interface' },
   { id: 'sessions', label: 'New sessions' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'management', label: 'Session management' },
+  { id: 'keyboard', label: 'Shortcuts' },
   { id: 'transcript', label: 'Transcript' },
+  { id: 'updates', label: 'Updates' },
 ] as const satisfies readonly { id: string; label: string }[];
 
 type CategoryId = (typeof CATEGORIES)[number]['id'];
@@ -368,6 +365,7 @@ const LAST_CATEGORY = 'settingsCategory';
 
 function openingCategory(): CategoryId {
   const last = readStore('sessions', LAST_CATEGORY);
+  if (last === 'applications') return 'appearance';
   return CATEGORIES.some((entry) => entry.id === last) ? (last as CategoryId) : OPENS_ON;
 }
 
@@ -392,7 +390,7 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Run tools without asking', keywords: 'allow all yolo permission approve' },
     { label: 'Answer a question for me after', keywords: 'permission timeout wait give up prompt' },
     { label: 'Ask before deleting a session', keywords: 'confirm delete warn' },
-    { label: 'Keep a deleted session for', keywords: 'retention days recycle bin restore' },
+    { label: 'Keep deleted sessions for (days)', keywords: 'retention days recycle bin restore' },
     { label: 'Waiting to be deleted', keywords: 'recycle bin restore purge deleted sessions' },
     { label: 'Disk usage', keywords: 'disk usage size bytes storage space largest' },
   ],
@@ -417,6 +415,8 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Notify when a session fails', keywords: 'notify toast desktop os notification failed error' },
   ],
   appearance: [
+    { label: 'Open working directories in', keywords: 'editor ide folder file explorer terminal vscode cursor jetbrains' },
+    { label: 'Custom applications', keywords: 'command executable arguments folder launch directory' },
     { label: 'App scale', keywords: 'size zoom bigger smaller' },
     { label: 'Text size', keywords: 'font scale reading transcript' },
     { label: 'Show tags in the sidebar', keywords: 'tags sidebar session list hide chips labels' },
@@ -434,6 +434,14 @@ const INDEX: Record<CategoryId, Searchable[]> = {
   })),
   transcript: [
     { label: 'Summarise what a turn changed', keywords: 'diff files changed turn summary edits hide' },
+  ],
+  updates: [
+    { label: 'Automatically download app updates', keywords: 'startup auto upgrade installer background version' },
+    { label: 'Include prerelease updates', keywords: 'beta preview early access unstable opt in channel' },
+    { label: 'Return to latest stable', keywords: 'rollback downgrade leave beta preview release channel' },
+    { label: 'Check for updates', keywords: 'manual latest release download version' },
+    { label: 'Download update', keywords: 'fetch installer version' },
+    { label: 'Install and restart', keywords: 'apply updater reboot relaunch downloaded ready' },
   ],
 };
 
@@ -484,6 +492,12 @@ export function SettingsWindow({
   usageReading = false,
   onNeedUsage,
   onOpenSession,
+  onDeleteSessions,
+  protectedSessionIds,
+  applications = [],
+  applicationsError,
+  onPickApplication,
+  updates,
   cli,
   onNeedCli,
   onWriteCli,
@@ -532,6 +546,12 @@ export function SettingsWindow({
   onNeedUsage?: () => void;
   /** Go to a session, which is where anything can be done about one. */
   onOpenSession?: (sessionId: string) => void;
+  onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
+  protectedSessionIds?: readonly string[];
+  applications?: readonly DirectoryApplication[];
+  applicationsError?: string | null;
+  onPickApplication?: () => Promise<string | null>;
+  updates?: AppUpdates;
   /**
    * The CLI's own settings, or null while they are being read.
    *
@@ -550,6 +570,15 @@ export function SettingsWindow({
   onWriteCli?: (changes: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
+  const previousPrereleases = useRef(settings.appIncludePrereleases);
+  useEffect(() => {
+    const previous = previousPrereleases.current;
+    if (previous === settings.appIncludePrereleases) return;
+    previousPrereleases.current = settings.appIncludePrereleases;
+    setDraft((current) => current.appIncludePrereleases === previous
+      ? { ...current, appIncludePrereleases: settings.appIncludePrereleases }
+      : current);
+  }, [settings.appIncludePrereleases]);
   const [category, setCategory] = useState<CategoryId>(openingCategory);
 
   // Written as it changes rather than on Save: it is where the reader is, not a setting they
@@ -568,11 +597,30 @@ export function SettingsWindow({
   useFocusTrap(box);
   useFocusTrap(asking, pending !== null);
   const [query, setQuery] = useState('');
+  const [diskDetails, setDiskDetails] = useState<SessionDisk | null>(null);
+  const [deletingDisk, setDeletingDisk] = useState<SessionDisk[] | null>(null);
+  const [diskDeleting, setDiskDeleting] = useState(false);
+  const [diskError, setDiskError] = useState<string | null>(null);
+
+  async function deleteDiskSessions(targets: SessionDisk[]) {
+    if (!onDeleteSessions || diskDeleting) return;
+    setDeletingDisk(null);
+    setDiskError(null);
+    setDiskDeleting(true);
+    try {
+      await onDeleteSessions(targets.map((session) => session.sessionId));
+    } catch (error) {
+      setDiskError(messageOf(error));
+    } finally {
+      setDiskDeleting(false);
+    }
+  }
   /**
    * Which nested groups of CLI settings are open. Closed to begin with, which is the point
    * of gathering them: the category opens as a list of subjects rather than a wall of rows.
    */
   const [opened, setOpened] = useState<string[]>([]);
+  const [binExpanded, setBinExpanded] = useState(false);
 
   /**
    * What each category holds, with the CLI's own settings folded into theirs.
@@ -621,6 +669,19 @@ export function SettingsWindow({
     );
 
   const unsaved = (Object.keys(draft) as (keyof Settings)[]).some((key) => draft[key] !== settings[key]);
+  let applicationsValid = true;
+  let draftApplicationIds: Set<string>;
+  try {
+    draftApplicationIds = new Set(customDirectoryApplications(draft.directoryTargets, true).map((app) => app.id));
+  } catch {
+    draftApplicationIds = new Set();
+  }
+  const availableApplications = applications.filter((app) => !app.id.startsWith('custom-') || draftApplicationIds.has(app.id));
+  try {
+    customDirectoryApplications(draft.directoryTargets);
+  } catch {
+    applicationsValid = false;
+  }
 
   /**
    * How many sessions in the bin the draft retention would delete.
@@ -636,7 +697,7 @@ export function SettingsWindow({
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || diskDetails || deletingDisk || diskDeleting) return;
       // A question about leaving is answered before it can be left, or Escape would close
       // the window out from under the question it raised.
       if (pending) setPending(null);
@@ -860,15 +921,15 @@ export function SettingsWindow({
 
                 <h4 className="settings-subhead">Recycle bin</h4>
 
-                {shows('Keep a deleted session for') && (
+                {shows('Keep deleted sessions for (days)') && (
                   <NumberField
-                    label="Keep a deleted session for"
+                    label="Keep deleted sessions for (days)"
                     value={draft.binRetentionDays}
                     onChange={(value) => edit('binRetentionDays', value)}
                     hint={
                       draft.binRetentionDays === 0
                         ? 'Deleted sessions are removed immediately.'
-                        : `Days. Default ${DEFAULT_BIN_RETENTION_DAYS}.`
+                        : `Default ${DEFAULT_BIN_RETENTION_DAYS}.`
                     }
                   />
                 )}
@@ -887,6 +948,18 @@ export function SettingsWindow({
 
                 {shows('Waiting to be deleted') && (
                   <>
+                    <button
+                      type="button"
+                      className="cli-group-head recycle-bin-toggle"
+                      aria-expanded={binExpanded}
+                      aria-controls="settings-recycle-bin"
+                      onClick={() => setBinExpanded((expanded) => !expanded)}
+                    >
+                      <ChevronIcon open={binExpanded} />
+                      Waiting to be deleted{binned ? ` (${binned.length})` : ''}
+                    </button>
+                    {binExpanded && (
+                      <div id="settings-recycle-bin">
                     {binned === null && <p className="settings-note">Reading the bin.</p>}
                     {binned?.length === 0 && <p className="settings-note">Nothing has been deleted.</p>}
 
@@ -901,14 +974,14 @@ export function SettingsWindow({
                         <span className="bin-actions">
                           <button
                             type="button"
-                            className="settings-reset"
+                            className="disk-action"
                             onClick={() => onRestore?.(session.sessionId)}
                           >
                             Restore
                           </button>
                           <button
                             type="button"
-                            className="settings-reset destructive"
+                            className="disk-action destructive"
                             onClick={() => onPurge?.(session.sessionId)}
                           >
                             Delete now
@@ -916,14 +989,30 @@ export function SettingsWindow({
                         </span>
                       </div>
                     ))}
+                      </div>
+                    )}
                   </>
                 )}
 
                 <h4 className="settings-subhead">Disk usage</h4>
 
                 {shows('Disk usage') && (
-                  <DiskUsage usage={usage} reading={usageReading} onRead={onNeedUsage} onOpen={onOpenSession} />
+                  <DiskUsage
+                    usage={usage}
+                    reading={usageReading}
+                    onRead={onNeedUsage}
+                    onOpen={onOpenSession}
+                    onDetails={setDiskDetails}
+                    onDelete={onDeleteSessions ? (targets) => {
+                      if (settings.confirmDelete) setDeletingDisk(targets);
+                      else void deleteDiskSessions(targets);
+                    } : undefined}
+                    protectedIds={protectedSessionIds}
+                    deleting={diskDeleting}
+                  />
                 )}
+                {diskDeleting && <p role="status" className="settings-note">Deleting sessions...</p>}
+                {diskError && <p role="alert" className="error">{diskError}</p>}
               </>
             )}
 
@@ -986,7 +1075,7 @@ export function SettingsWindow({
                   {draft.defaultModel && (
                     <button
                       type="button"
-                      className="settings-reset"
+                      className="disk-action"
                       onClick={() =>
                         setDraft((current) => ({
                           ...current,
@@ -1039,6 +1128,28 @@ export function SettingsWindow({
 
             {shown.id === 'appearance' && (
               <>
+                {shows('Open working directories in') && (
+                  <div className="settings-row">
+                    <span className="settings-label">Open working directories in</span>
+                    <Dropdown label="Open working directories in"
+                      value={draft.directoryApplication}
+                      onChange={(value) => edit('directoryApplication', value)}
+                      options={[
+                        ...(!availableApplications.some((app) => app.id === draft.directoryApplication)
+                          ? [{ value: draft.directoryApplication, label: 'Choose an installed application' }] : []),
+                        ...availableApplications.map((app) => ({ value: app.id, label: app.label })),
+                      ]}
+                    />
+                  </div>
+                )}
+                {applicationsError && <p className="error" role="alert">{applicationsError}</p>}
+                {shows('Custom applications') && (
+                  <DirectoryApplications
+                    value={draft.directoryTargets}
+                    onChange={(value) => edit('directoryTargets', value)}
+                    onPickApplication={onPickApplication}
+                  />
+                )}
                 {shows('App scale') && (
                   <ScaleField
                     label="App scale"
@@ -1064,7 +1175,7 @@ export function SettingsWindow({
                 {(draft.scale !== 1 || draft.textScale !== 1) && (
                   <button
                     type="button"
-                    className="settings-reset"
+                    className="disk-action"
                     onClick={() => setDraft((current) => ({ ...current, scale: 1, textScale: 1 }))}
                   >
                     Reset to default sizes
@@ -1098,7 +1209,7 @@ export function SettingsWindow({
                 {/* Grouped by surface rather than by state, because turning one surface
                     down is the common move: somebody tired of the taskbar flashing wants
                     all of it gone, not the blocked half of it. */}
-                <h4 className="settings-subhead">Flash the taskbar</h4>
+                <h4 className="settings-subhead">Taskbar</h4>
 
                 {shows('Flash the taskbar when a session needs an answer') && (
                   <TickField
@@ -1124,7 +1235,6 @@ export function SettingsWindow({
                   />
                 )}
 
-                <h4 className="settings-subhead">Count on the taskbar icon</h4>
 
                 {shows('Count sessions needing an answer on the taskbar icon') && (
                   <TickField
@@ -1150,7 +1260,7 @@ export function SettingsWindow({
                   />
                 )}
 
-                <h4 className="settings-subhead">Notify outside the app</h4>
+                <h4 className="settings-subhead">Windows notifications</h4>
 
                 {shows('Notify when a session needs an answer') && (
                   <TickField
@@ -1193,6 +1303,28 @@ export function SettingsWindow({
             )}
             {shown.id === 'keyboard' && (
               <ShortcutSettings value={draft.shortcuts} onChange={(next) => edit('shortcuts', next)} shows={shows} />
+            )}
+
+            {shown.id === 'updates' && (
+              <>
+                {shows('Automatically download app updates') && (
+                  <TickField
+                    label="Automatically download app updates"
+                    checked={draft.appAutoDownload}
+                    onChange={(checked) => edit('appAutoDownload', checked)}
+                    hint="Check at startup and download signed updates in the background. Installation waits for your choice or the next app launch."
+                  />
+                )}
+                {shows('Include prerelease updates') && (
+                  <TickField
+                    label="Include prerelease updates"
+                    checked={draft.appIncludePrereleases}
+                    onChange={(checked) => edit('appIncludePrereleases', checked)}
+                    hint="Opt in to beta builds. They may be less reliable than stable releases. You can return to the latest stable release when one is available."
+                  />
+                )}
+                <AppUpdateSettings updates={updates} dirty={unsaved} shows={shows} />
+              </>
             )}
 
             {shown.id === 'cli' && (              <>
@@ -1288,11 +1420,12 @@ export function SettingsWindow({
             <button type="button" className="confirm-cancel" onClick={onClose}>
               Cancel
             </button>
-            <button type="button" className="confirm-cancel" onClick={() => onSave(draft)} disabled={!unsaved}>
+            <button type="button" className="confirm-cancel" onClick={() => onSave(draft)} disabled={!unsaved || !applicationsValid}>
               Save
             </button>
             <button
               type="button"
+              disabled={!applicationsValid}
               onClick={() => {
                 if (unsaved) onSave(draft);
                 onClose();
@@ -1302,6 +1435,38 @@ export function SettingsWindow({
             </button>
           </div>
         </div>
+
+        {deletingDisk && (
+          <Confirm
+            title={deletingDisk.length === 1 ? 'Delete this session?' : `Delete ${deletingDisk.length} sessions?`}
+            body={
+              <>
+                <ul className="confirm-list">
+                  {deletingDisk.map((session) => <li key={session.sessionId}>{session.title ?? 'Untitled session'}</li>)}
+                </ul>
+                <p>
+                  {settings.binRetentionDays > 0
+                    ? 'These sessions and their saved history will move to the recycle bin.'
+                    : 'These sessions and their saved history will be permanently deleted.'}
+                </p>
+                <p>Changes made to your working files are not undone.</p>
+              </>
+            }
+            confirmLabel={deletingDisk.length === 1 ? 'Delete session' : `Delete ${deletingDisk.length} sessions`}
+            onConfirm={() => void deleteDiskSessions(deletingDisk)}
+            onCancel={() => setDeletingDisk(null)}
+          />
+        )}
+
+        {diskDetails && (
+          <SessionSize
+            key={diskDetails.sessionId}
+            sessionId={diskDetails.sessionId}
+            title={diskDetails.title}
+            onClose={() => setDiskDetails(null)}
+            onOpenSession={diskDetails.listed && onOpenSession ? () => onOpenSession(diskDetails.sessionId) : undefined}
+          />
+        )}
 
         {pending && (
           <div
@@ -1324,7 +1489,7 @@ export function SettingsWindow({
               <button type="button" className="confirm-cancel" onClick={() => resume('discard')}>
                 Discard
               </button>
-              <button type="button" onClick={() => resume('save')}>
+              <button type="button" disabled={!applicationsValid} onClick={() => resume('save')}>
                 Save
               </button>
             </div>

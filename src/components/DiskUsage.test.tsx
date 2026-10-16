@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { DiskUsage } from './DiskUsage';
@@ -24,6 +24,66 @@ const shown = (over: Partial<Parameters<typeof DiskUsage>[0]> = {}) =>
  * and the median session holds nothing - so the list shows the few that matter (#29).
  */
 describe('what the sessions are using on disk', () => {
+  it('uses bordered action buttons for measuring, details and opening', () => {
+    const view = shown({ usage: null });
+    expect(screen.getByRole('button', { name: 'Measure disk usage' }).className).toBe('disk-action');
+    view.rerender(<DiskUsage usage={[session('a', 1000)]} reading={false} />);
+    expect(screen.getByRole('button', { name: 'Details' }).className).toBe('disk-action');
+    expect(screen.getByRole('button', { name: 'Open' }).className).toBe('disk-action');
+  });
+
+  it('places Delete after Details and Open and targets only that row', async () => {
+    const onDelete = vi.fn();
+    const target = session('b', 2000);
+    shown({ usage: [session('a', 1000), target], onDelete });
+    const row = screen.getByText('Session b').closest('.disk-row')!;
+    expect(within(row as HTMLElement).getAllByRole('button').map((button) => button.textContent))
+      .toEqual(['Details', 'Open', 'Delete']);
+    await userEvent.click(within(row as HTMLElement).getByRole('button', { name: 'Delete' }));
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith([target]);
+  });
+
+  it('selects rows independently and deletes only the selected shown sessions', async () => {
+    const onDelete = vi.fn();
+    const a = session('a', 1000);
+    const ghost = session('ghost', 2000, { listed: false });
+    shown({ usage: [a, session('b', 3000), ghost], onDelete });
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Session a' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Session ghost' }));
+    expect(screen.getByText('2 selected · 3 kB')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete selected' }));
+    expect(onDelete).toHaveBeenCalledExactlyOnceWith([a, ghost]);
+    await userEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+    expect(screen.queryByRole('button', { name: 'Delete selected' })).toBeNull();
+  });
+
+  it('does not let working sessions be selected or deleted', () => {
+    shown({ onDelete: vi.fn(), protectedIds: ['a'] });
+    expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('disables individual and bulk deletion while cleanup is running', async () => {
+    const onDelete = vi.fn();
+    const rows = [session('a', 1000)];
+    const view = shown({ usage: rows, onDelete });
+    await userEvent.click(screen.getByRole('checkbox'));
+    view.rerender(<DiskUsage usage={rows} reading={false} onDelete={onDelete} deleting />);
+    expect((screen.getByRole('checkbox') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Delete' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Delete selected' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+  it('drops removed or newly protected rows from the bulk action', async () => {
+    const onDelete = vi.fn();
+    const a = session('a', 1000);
+    const b = session('b', 2000);
+    const view = shown({ usage: [a, b], onDelete });
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Session a' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select Session b' }));
+    view.rerender(<DiskUsage usage={[b]} reading={false} onDelete={onDelete} protectedIds={['b']} />);
+    expect(screen.queryByRole('button', { name: 'Delete selected' })).toBeNull();
+  });
+
   describe('before anybody has asked', () => {
     it('offers to measure rather than measuring', () => {
       const onRead = vi.fn();
@@ -113,6 +173,17 @@ describe('what the sessions are using on disk', () => {
     expect(onOpen).toHaveBeenCalledWith('a');
   });
 
+  it('offers details for listed and forgotten sessions without opening them', async () => {
+    const onDetails = vi.fn();
+    const onOpen = vi.fn();
+    const forgotten = session('ghost', 2000, { listed: false });
+    shown({ usage: [session('a', 1000), forgotten], onDetails, onOpen });
+
+    await userEvent.click(screen.getAllByRole('button', { name: 'Details' })[1]!);
+
+    expect(onDetails).toHaveBeenCalledExactlyOnceWith(forgotten);
+    expect(onOpen).not.toHaveBeenCalled();
+  });
   /**
    * A directory the session store has no row for is still taking up room, and nothing else
    * in the app would ever mention it - which is exactly what this is for.

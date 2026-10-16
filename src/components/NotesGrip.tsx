@@ -18,11 +18,13 @@ export function NotesGrip({
   onStart,
   onNudge,
   onReset,
+  label = 'Resize the notes',
 }: {
   dragging: boolean;
   onStart: () => void;
   onNudge: (steps: number) => void;
   onReset: () => void;
+  label?: string;
 }) {
   const grab = (event: ReactPointerEvent) => {
     // The window's own drag-select would otherwise run alongside, selecting the transcript
@@ -46,7 +48,7 @@ export function NotesGrip({
       className={dragging ? 'notes-grip dragging' : 'notes-grip'}
       role="separator"
       aria-orientation="vertical"
-      aria-label="Resize the notes"
+      aria-label={label}
       tabIndex={0}
       onPointerDown={grab}
       onDoubleClick={onReset}

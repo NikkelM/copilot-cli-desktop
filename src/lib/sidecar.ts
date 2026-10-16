@@ -29,6 +29,8 @@ import type {
   SessionDisk,
   Dropped,
   Todo,
+  SessionPlan,
+  SavedSessionPlan,
   PendingElicitation,
   PendingPermission,
   PendingPlanApproval,
@@ -236,6 +238,19 @@ export function binnedSessions(): Promise<BinnedSession[]> {
 export async function sessionDiskUsage(): Promise<SessionDisk[]> {
   const { sessions } = await request('sessions.disk');
   return sessions;
+}
+
+export async function singleSessionDiskUsage(sessionId: string) {
+  return request('sessions.size', { sessionId });
+}
+
+export async function directoryApplications(custom: string) {
+  const { applications } = await request('applications.list', { custom });
+  return applications;
+}
+
+export function openDirectory(cwd: string, target: string, custom: string) {
+  return request('applications.open', { cwd, target, custom });
 }
 
 /** Put a binned session back. False means something is already there under that id. */
@@ -509,6 +524,26 @@ export async function sessionPreviews(sessionIds: string[]): Promise<Record<stri
 export async function sessionTodos(sessionId: string): Promise<Todo[]> {
   const { todos } = await request('sessions.todos', { sessionId });
   return todos;
+}
+
+export function sessionPlan(sessionId: string): Promise<SessionPlan | null> {
+  return request('sessions.plan', { sessionId });
+}
+
+export function saveSessionPlan(sessionId: string, content: string, revision: string): Promise<SavedSessionPlan> {
+  return request('sessions.savePlan', { sessionId, content, revision });
+}
+
+export function prepareAppUpdate(): Promise<void> {
+  return request('runtime.prepareUpdate');
+}
+
+export function cancelAppUpdate(): Promise<void> {
+  return request('runtime.cancelUpdate');
+}
+
+export function watchSessionPlan(sessionId: string | null): Promise<void> {
+  return request('sessions.watchPlan', { sessionId });
 }
 
 /** What a session runs on, read from its log. Costs no Copilot process. */

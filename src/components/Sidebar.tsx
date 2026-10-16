@@ -52,6 +52,9 @@ interface SidebarProps {
    * question reads as blocked, and would otherwise fall back into Not loaded.
    */
   loading?: ReadonlySet<string>;
+  onReorder?: (sessionId: string, targetId: string, after?: boolean) => void;
+  onReorderFavourite?: (sessionId: string, targetId: string, after?: boolean, visibleOrder?: readonly string[]) => void;
+  favouriteOrder?: readonly string[];
   /**
    * Sessions some other Copilot has open, which this app cannot stop (#63).
    *
@@ -259,6 +262,9 @@ export function Sidebar({
   activity,
   unseen,
   loading = EMPTY,
+  onReorder,
+  onReorderFavourite,
+  favouriteOrder,
   activeElsewhere,
   marked,
   selecting = false,
@@ -538,6 +544,10 @@ export function Sidebar({
     // Favourites are what is left of the choice once loadedness has had its say: the ones
     // kept within reach that are not currently costing anything.
     const favoured = around.filter((session) => favourites.includes(session.sessionId));
+    if (favouriteOrder) {
+      const rank = new Map(favouriteOrder.map((id, index) => [id, index]));
+      favoured.sort((left, right) => (rank.get(left.sessionId) ?? Infinity) - (rank.get(right.sessionId) ?? Infinity));
+    }
     const cold = around.filter((session) => !favourites.includes(session.sessionId));
 
     return [
@@ -551,7 +561,13 @@ export function Sidebar({
       },
       { key: 'archived', label: 'Archived', sessions: put, foldedByDefault: true },
     ].filter((group) => group.sessions.length > 0);
-  }, [matches, favourites, archived, loading]);
+  }, [matches, favourites, archived, loading, favouriteOrder]);
+
+  const dragging = useRef<string | null>(null);
+  const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
+  const dragTarget = useRef<{ id: string; after: boolean } | null>(null);
+  const activeRows = groups.find((group) => group.key === 'loaded')?.sessions ?? [];
+  const favouriteRows = groups.find((group) => group.key === 'favourites')?.sessions ?? [];
 
   /**
    * The rows as they are drawn, top to bottom, for what a Shift range means (#63).
@@ -863,6 +879,22 @@ export function Sidebar({
    */
   const onRowKey = useCallback(
     (sessionId: string, open: () => void, event: ReactKeyboardEvent) => {
+      if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        const isActive = activeRows.some((session) => session.sessionId === sessionId);
+        const rows = isActive ? activeRows : favouriteRows;
+        const move = isActive ? onReorder : onReorderFavourite;
+        const index = move ? rows.findIndex((session) => session.sessionId === sessionId) : -1;
+        if (index !== -1) {
+          event.preventDefault();
+          event.stopPropagation();
+          const target = rows[index + (event.key === 'ArrowUp' ? -1 : 1)];
+          if (target) {
+            if (isActive) onReorder?.(sessionId, target.sessionId, event.key === 'ArrowDown');
+            else onReorderFavourite?.(sessionId, target.sessionId, event.key === 'ArrowDown', rows.map((session) => session.sessionId));
+          }
+          return;
+        }
+      }
       const from = stops.indexOf(sessionId);
 
       switch (event.key) {
@@ -898,7 +930,7 @@ export function Sidebar({
           return;
       }
     },
-    [stops, drawn, stepTo, onMark, menuForRow],
+    [stops, drawn, stepTo, onMark, menuForRow, onReorder, activeRows, onReorderFavourite, favouriteRows],
   );
 
   /** Built once so it is the same element wherever the row has room to put it. */
@@ -1113,6 +1145,7 @@ export function Sidebar({
                           // while the row is somewhere a reader could read it (#240).
                           ref={rowRef(session.sessionId)}
                           role="option"
+                          data-session-id={session.sessionId}
                           aria-selected={session.sessionId === selectedId}
                           // One stop for the whole list, moved by the arrows (#247).
                           tabIndex={session.sessionId === at ? 0 : -1}
@@ -1133,7 +1166,7 @@ export function Sidebar({
                           // cursor follows: leaving it behind would send the next arrow
                           // press back to wherever it used to be.
                           onFocus={() => setCursor(session.sessionId)}
-                          className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}`}
+                          className={`session-row${session.sessionId === selectedId ? ' selected' : ''}${marked?.includes(session.sessionId) ? ' marked' : ''}${dropAt?.id === session.sessionId ? dropAt.after ? ' drop-after' : ' drop-before' : ''}`}
                           // A row the name did not find was found by something said in it,
                           // so opening it means opening it there rather than at the end.
                           onClick={(event) => {
@@ -1151,6 +1184,53 @@ export function Sidebar({
                           onContextMenu={openMenu(session.sessionId)}
                         >
                           <div className="session-line">
+                            {((group.key === 'loaded' && onReorder) || (group.key === 'favourites' && onReorderFavourite)) && (
+                              <button
+                                type="button"
+                                className="session-drag"
+                                tabIndex={-1}
+                                aria-label={`Reorder ${session.title ?? 'Untitled session'}`}
+                                title="Drag to reorder. Alt+Up/Down moves the focused session."
+                                onClick={(event) => event.stopPropagation()}
+                                onPointerDown={(event) => {
+                                  if (event.button !== 0) return;
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  dragging.current = session.sessionId;
+                                  dragTarget.current = null;
+                                  event.currentTarget.setPointerCapture(event.pointerId);
+                                }}
+                                onPointerMove={(event) => {
+                                  if (!dragging.current) return;
+                                  const row = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-session-id]');
+                                  const id = row?.dataset.sessionId;
+                                  const target = id && group.sessions.some((session) => session.sessionId === id) && id !== dragging.current
+                                    ? { id, after: event.clientY > row!.getBoundingClientRect().top + row!.getBoundingClientRect().height / 2 }
+                                    : null;
+                                  dragTarget.current = target;
+                                  setDropAt(target);
+                                }}
+                                onPointerUp={(event) => {
+                                  const source = dragging.current;
+                                  const target = dragTarget.current;
+                                  dragging.current = null;
+                                  dragTarget.current = null;
+                                  setDropAt(null);
+                                  event.currentTarget.releasePointerCapture(event.pointerId);
+                                  if (source && target) {
+                                    if (group.key === 'loaded') onReorder?.(source, target.id, target.after);
+                                    else onReorderFavourite?.(source, target.id, target.after, group.sessions.map((session) => session.sessionId));
+                                  }
+                                }}
+                                onPointerCancel={() => {
+                                  dragging.current = null;
+                                  dragTarget.current = null;
+                                  setDropAt(null);
+                                }}
+                              >
+                                <span aria-hidden>⋮⋮</span>
+                              </button>
+                            )}
                             {selecting && (
                               <Check
                                 on={marked?.includes(session.sessionId) ?? false}
@@ -1716,9 +1796,6 @@ function Row({
     </button>
   );
 }
-
-
-
 
 
 

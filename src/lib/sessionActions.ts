@@ -12,6 +12,7 @@ export interface SessionActionDeps {
   tag: (session: SessionSummary) => void;
   /** Writes the session out as a bundle, which means asking where to put it first (#63). */
   exportTo: (session: SessionSummary) => void;
+  measure: (session: SessionSummary) => void;
   /** Begin marking sessions with this one, for somebody who has not met Ctrl-click (#63). */
   select: (sessionId: string) => void;
   /** Which sessions are put away, and how to change that. */
@@ -75,6 +76,11 @@ export function sessionActions(session: SessionSummary, deps: SessionActionDeps)
       id: 'export',
       label: 'Export…',
       run: () => deps.exportTo(session),
+    },
+    {
+      id: 'size',
+      label: 'Calculate size...',
+      run: () => deps.measure(session),
     },
     {
       id: 'select',

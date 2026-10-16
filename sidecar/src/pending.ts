@@ -10,6 +10,10 @@ export class PendingRequests<T> {
   private readonly entries = new Map<string, { sessionId: string; resolve: (value: T) => void; timer?: NodeJS.Timeout }>();
   private nextId = 1;
 
+  get size(): number {
+    return this.entries.size;
+  }
+
   /**
    * @param prefix distinguishes ids between registries
    * @param timeoutMs how long to wait before giving up on the user, asked each time

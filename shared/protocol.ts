@@ -147,6 +147,15 @@ export interface SessionDisk {
   listed: boolean;
 }
 
+export interface SessionDiskDetails {
+  bytes: number;
+  files: number;
+  logBytes: number;
+  rewindBytes: number;
+  otherBytes: number;
+  directory: string;
+}
+
 /** How long a question to the reader waits when nobody has said otherwise. */
 export const DEFAULT_PERMISSION_TIMEOUT_MS = 5 * 60_000;
 
@@ -394,6 +403,17 @@ export interface Attachment {
  * It is the agent's own word, written by whatever wrote the row, and a value nobody here
  * anticipated is better shown as it stands than folded into one that was.
  */
+export interface SessionPlan {
+  path: string;
+  content: string;
+  revision: string;
+}
+
+export interface SavedSessionPlan extends SessionPlan {
+  /** Bounded section and line hints, omitted when the whole plan should be reread */
+  changedSections?: string;
+}
+
 export interface Todo {
   id: string;
   title: string;
@@ -1329,6 +1349,8 @@ export interface SessionUsageModel {
 
 /** Requests the frontend may issue. */
 export interface SidecarRequests {
+  'runtime.prepareUpdate': { params: void; result: void };
+  'runtime.cancelUpdate': { params: void; result: void };
   'sessions.list': { params: void; result: ListSessionsResult };
   /** Sessions matching the start of an id, including the ones the list hides. */
   'sessions.find': { params: { prefix: string }; result: ListSessionsResult };
@@ -1507,6 +1529,12 @@ export interface SidecarRequests {
    * on every refresh of a sidebar that never shows it.
    */
   'sessions.disk': { params: void; result: { sessions: SessionDisk[] } };
+  'sessions.size': { params: { sessionId: string }; result: SessionDiskDetails };
+  'applications.list': {
+    params: { custom: string };
+    result: { applications: import('./directoryApplications.js').DirectoryApplication[] };
+  };
+  'applications.open': { params: { cwd: string; target: string; custom: string }; result: void };
   /**
    * The CLI's own settings: what it knows about, and what it is set to.
    *
@@ -1949,6 +1977,9 @@ export interface SidecarRequests {
    * would have meant an empty list for every session in the sidebar.
    */
   'sessions.todos': { params: { sessionId: string }; result: { todos: Todo[] } };
+  'sessions.plan': { params: { sessionId: string }; result: SessionPlan | null };
+  'sessions.savePlan': { params: { sessionId: string; content: string; revision: string }; result: SavedSessionPlan };
+  'sessions.watchPlan': { params: { sessionId: string | null }; result: void };
   /** How full the window is. Null for a session that is not loaded, which is not resumed to ask. */
   'sessions.context': { params: { sessionId: string }; result: { usage: SessionContextUsage | null } };
   /**
@@ -2046,6 +2077,8 @@ export interface SidecarRequests {
  * the version below.
  */
 export const SIDECAR_METHODS = [
+  'runtime.prepareUpdate',
+  'runtime.cancelUpdate',
   'sessions.list',
   'sessions.find',
   'sessions.exist',
@@ -2070,6 +2103,9 @@ export const SIDECAR_METHODS = [
   'bin.restore',
   'bin.purge',
   'sessions.disk',
+  'sessions.size',
+  'applications.list',
+  'applications.open',
   'cliSettings.list',
   'cliSettings.values',
   'cliSettings.write',
@@ -2131,6 +2167,9 @@ export const SIDECAR_METHODS = [
   'sessions.active',
   'sessions.previews',
   'sessions.todos',
+  'sessions.plan',
+  'sessions.savePlan',
+  'sessions.watchPlan',
   'sessions.context',
   'sessions.usage',
   'sessions.model',

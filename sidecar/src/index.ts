@@ -24,6 +24,7 @@ import type { Channel } from './devChannel.js';
 import { createHandlers, dispatch } from './dispatch.js';
 import { SessionRuntime } from './runtime.js';
 import { watchSessionStore } from './storeWatcher.js';
+import { createPlanWatcher } from './plans.js';
 
 /** Anything written to stdout is protocol, so diagnostics must go to stderr. */
 function log(message: string): void {
@@ -91,10 +92,13 @@ const runtime = new SessionRuntime({
   onPlanResolved: (requestId) => notify(NOTIFY_PLAN_RESOLVED, { requestId }),
 });
 
-const handlers = createHandlers(runtime);
-
+const plans = createPlanWatcher((sessionId, failed) => notify(NOTIFY_SESSION_EVENT, {
+  sessionId,
+  event: { type: 'session.plan_file_changed', data: failed ? { failed } : {} },
+}));
 /** Requests still running, so shutdown can wait for them to settle. */
 const inFlight = new Set<Promise<void>>();
+const handlers = createHandlers(runtime, plans.watch, () => inFlight.size === 0);
 
 /**
  * Parse and execute one request line, replying on the channel it arrived from.
@@ -111,7 +115,7 @@ function handle(line: string, channel: Channel): void {
 
   const reply = (response: JsonRpcResponse) => channel.write(response);
 
-  const task = dispatch(handlers, request)
+  const task = dispatch(handlers, request, runtime.updating)
     .then((result) => reply({ jsonrpc: '2.0', id: request.id, result }))
     .catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
@@ -143,6 +147,7 @@ function main(): void {
   // issued just before stdin closes still gets a response.
   rl.on('close', () => {
     watcher?.close();
+    plans.close();
     void Promise.allSettled([...inFlight])
       .then(() => runtime.shutdown())
       .catch(() => undefined)

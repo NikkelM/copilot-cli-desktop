@@ -34,6 +34,77 @@ function sources(dir = fileURLToPath(new URL('.', import.meta.url))): string[] {
 
 const css = readFileSync(new URL('./App.css', import.meta.url), 'utf8');
 
+describe('shared form control styling', () => {
+  it('uses the same button font for Prompts as Todos and Plan', () => {
+    for (const selector of ['.prompts-current {', '.header-button {']) {
+      const at = css.indexOf(`\n${selector}`);
+      expect(at).toBeGreaterThan(-1);
+      const rule = css.slice(at, css.indexOf('\n}', at));
+      expect(rule).toContain('font-size: var(--font-sm);');
+      expect(rule).not.toMatch(/\bfont(?:-family)?:/);
+    }
+  });
+
+  it('centres reorder handles against the entire sidebar row without overlapping content', () => {
+    const at = css.indexOf('.session-drag {');
+    const rule = css.slice(at, css.indexOf('\n}', at));
+    expect(rule).toContain('position: absolute;');
+    expect(rule).toContain('top: 50%;');
+    expect(rule).toContain('transform: translateY(-50%);');
+    const row = css.indexOf('.session-row {');
+    const rowRule = css.slice(row, css.indexOf('\n}', row));
+    expect(rowRule).toContain('position: relative;');
+    expect(rowRule).toContain('padding-left: 10px;');
+    expect(css).not.toContain('.session-row:has(.session-drag)');
+  });
+
+  it('distinguishes prominent settings fields from compact toolbar dropdowns', () => {
+    const at = css.indexOf('.app-dropdown.field {');
+    expect(at).toBeGreaterThan(-1);
+    const rule = css.slice(at, css.indexOf('\n}', at));
+    expect(rule).toContain('padding: 6px 10px;');
+    expect(rule).toContain('color: var(--text);');
+    expect(rule).toContain('font-size: var(--font-md);');
+    expect(css).toContain('.app-dropdown-menu.field .app-dropdown-option {');
+  });
+
+  it('separates the custom application button from its note and aligns checkbox ink with labels', () => {
+    const at = css.indexOf('.directory-applications > button {');
+    expect(css.slice(at, css.indexOf('\n}', at))).toContain('margin-bottom: 12px;');
+    const tick = css.indexOf('.tick-row .tickbox {');
+    expect(css.slice(tick, css.indexOf('\n}', tick))).toContain('transform: translateY(2px);');
+  });
+
+  it('customizes every checkbox rather than only those wrapped in tickbox', () => {
+    for (const selector of [
+      "input[type='checkbox']", "input[type='checkbox']:checked",
+      "input[type='checkbox']:indeterminate", "input[type='checkbox']:disabled",
+      "input[type='checkbox']:focus-visible",
+    ]) expect(css).toContain(`${selector} {`);
+    const start = css.search(/^input\[type='checkbox'\] \{/m);
+    expect(css.slice(start, css.indexOf('\n}', start))).toContain('appearance: none;');
+    expect(css).toContain('data:image/svg+xml');
+  });
+
+  it('leaves no native select dropdowns in production components', () => {
+    const native = sources().filter((file) => /<select\b/.test(readFileSync(file, 'utf8')));
+    expect(native).toEqual([]);
+  });
+});
+
+describe('disk usage action styling', () => {
+  it('draws visible button borders and a disabled state rather than bare reset links', () => {
+    const at = css.search(/\.disk-action,\s*\.mcp-action \{/);
+    expect(at).toBeGreaterThan(-1);
+    const rule = css.slice(at, css.indexOf('\n}', at));
+    expect(rule).toContain('border: 1px solid var(--border);');
+    expect(rule).toContain('border-radius: 5px;');
+    expect(rule).toContain('padding: 1px 7px;');
+    expect(css).toMatch(/\.disk-action:disabled,\s*\.mcp-action:disabled \{/);
+    expect(css).toContain('.disk-action.destructive {');
+  });
+});
+
 describe('custom properties', () => {
   /** `--name:` at the start of a declaration, which is where one is defined. */
   const defined = new Set([...css.matchAll(/^\s*(--[\w-]+)\s*:/gm)].map((match) => match[1]!));

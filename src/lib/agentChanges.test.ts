@@ -113,8 +113,8 @@ describe('agentChanges', () => {
    * A completion does not say which tool it belongs to, so the start is what decides. Without
    * that pairing anything reporting something diff-shaped would be counted as a write.
    */
-  it('leaves out a tool that does not write files', () => {
-    expect(agentChanges(wrote('c1', 'view', edited('a.ts'))).changes).toEqual([]);
+  it.each(['view', 'powershell', 'bash', 'git_diff'])('leaves %s inspection output out of the run changes', (toolName) => {
+    expect(agentChanges(wrote('c1', toolName, edited('a.ts'))).changes).toEqual([]);
   });
 
   it('leaves out a completion with no start behind it', () => {

@@ -23,6 +23,7 @@ const edited = (key: string, path: string, added: number, removed: number): Entr
     summary: path,
     output: null,
     status: 'ok',
+    writesFiles: true,
     path,
     patch: patch(added, removed),
   }) as Entry;
@@ -31,6 +32,26 @@ const ran = (key: string): Entry =>
   ({ kind: 'tool', key, name: 'shell', summary: 'ls', output: 'x', status: 'ok' }) as Entry;
 
 describe('what a turn changed', () => {
+  it('does not count a read-only diff inspection as edits', () => {
+    const inspected: Entry = {
+      kind: 'tool', key: 'read', name: 'Shell', summary: 'git diff', output: 'existing changes',
+      status: 'ok',
+      patch: [
+        'diff --git a/parent.ts b/parent.ts',
+        '--- a/parent.ts', '+++ b/parent.ts', '@@ -1 +1 @@', '-before', '+after',
+      ].join('\n'),
+    };
+
+    expect(changesByTurn([asked('a'), inspected, said('done')]).size).toBe(0);
+    expect(changesByTurn([asked('a'), { ...inspected, writesFiles: true }, said('done')]).get(2)?.files[0]?.path).toBe('parent.ts');
+  });
+
+  it('does not count a failed write even if its diagnostics include a diff', () => {
+    const failed = { ...edited('failed', 'one.ts', 2, 1), status: 'failed' as const };
+
+    expect(changesByTurn([asked('a'), failed, said('done')]).size).toBe(0);
+  });
+
   it('gathers a turn at the row it ends on', () => {
     const entries = [asked('a'), edited('b', 'one.ts', 3, 1), edited('c', 'two.ts', 2, 0), said('d')];
 
@@ -198,6 +219,7 @@ describe('a turn that applied patches', () => {
       summary: '',
       output: null,
       status: 'ok',
+      writesFiles: true,
       patch,
     }) as Entry;
 
@@ -250,7 +272,7 @@ describe('a turn that applied patches', () => {
    */
   it('prefers the row path where the patch is about one file', () => {
     const named = (key: string, path: string, patch: string): Entry =>
-      ({ kind: 'tool', key, name: 'Editing', summary: '', output: null, status: 'ok', path, patch }) as Entry;
+      ({ kind: 'tool', key, name: 'Editing', summary: '', output: null, status: 'ok', writesFiles: true, path, patch }) as Entry;
     const entries = [asked('a'), named('b', 'C:\\w\\one.ts', diff('C:/w/one.ts', 1, 0))];
 
     expect(changesByTurn(entries, 'always').get(1)?.files[0]?.path).toBe('C:\\w\\one.ts');

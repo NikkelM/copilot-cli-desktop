@@ -2056,7 +2056,7 @@ describe('summarising what a turn changed', () => {
   const edit = (path: string, id: string, added: number) => [
     {
       type: 'tool.execution_start',
-      data: { toolCallId: id, toolName: 'str_replace_editor', arguments: { path } },
+      data: { toolCallId: id, toolName: 'edit', arguments: { path } },
       id: `${id}-start`,
     } as unknown as TranscriptEvent,
     {
@@ -2079,6 +2079,82 @@ describe('summarising what a turn changed', () => {
         {...props}
       />,
     );
+
+  it('does not count a read-only subagent inspecting its parent session diff as eight edits', async () => {
+    const agentId = 'read-only-audit';
+    const parentDiff = Array.from({ length: 8 }, (_, index) => [
+      `diff --git a/parent-${index}.ts b/parent-${index}.ts`,
+      `--- a/parent-${index}.ts`,
+      `+++ b/parent-${index}.ts`,
+      '@@ -1 +1 @@',
+      '-before',
+      `+parent edit ${index}`,
+    ].join('\n')).join('\n');
+    const { container } = show([
+      { ...asked('Review the changes without editing files', 'q'), agentId },
+      {
+        type: 'tool.execution_start', id: 'inspect-start', agentId,
+        data: {
+          toolCallId: 'inspect', toolName: 'powershell',
+          arguments: { command: 'git diff', description: 'Inspect existing changes' },
+        },
+      },
+      {
+        type: 'tool.execution_complete', id: 'inspect-done', agentId,
+        data: { toolCallId: 'inspect', success: true, result: { content: parentDiff, detailedContent: parentDiff } },
+      },
+    ], { sessionId: agentId, ofAgent: agentId });
+
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /Inspect existing changes/ })).toBeTruthy());
+    expect(container.querySelector('.turn-summary')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: /Inspect existing changes/ }));
+    expect(container.querySelector('.tool-diff')).toBeTruthy();
+  });
+
+  it('keeps live subagent inspection output separate from a genuine subagent write', async () => {
+    const agentId = 'live-reviewer';
+    const inspected = [
+      'diff --git a/parent.ts b/parent.ts',
+      '--- a/parent.ts', '+++ b/parent.ts', '@@ -1 +1 @@', '-before', '+parent change',
+    ].join('\n');
+    const reading: TranscriptEvent[] = [
+      { ...asked('Review without changing unrelated files', 'q'), agentId },
+      {
+        type: 'tool.execution_start', id: 'read-start', agentId,
+        data: {
+          toolCallId: 'read', toolName: 'powershell',
+          arguments: { command: 'git diff', description: 'Inspect parent changes' },
+        },
+      },
+    ];
+    const draw = (events: TranscriptEvent[]) => (
+      <Transcript events={events} sessionId={agentId} ofAgent={agentId} cwd={null} display={ASSUMED_DISPLAY} />
+    );
+    const view = render(draw(reading));
+    expect(view.container.querySelector('.turn-summary')).toBeNull();
+    const read: TranscriptEvent[] = [
+      ...reading,
+      {
+        type: 'tool.execution_complete', id: 'read-done', agentId,
+        data: { toolCallId: 'read', success: true, result: { content: inspected, detailedContent: inspected } },
+      },
+    ];
+    view.rerender(draw(read));
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: /Inspect parent changes/ })).toBeTruthy());
+    await userEvent.click(screen.getByRole('button', { name: /Inspect parent changes/ }));
+    await vi.waitFor(() => expect(view.container.querySelector('.tool-diff')).toBeTruthy());
+    expect(view.container.querySelector('.turn-summary')).toBeNull();
+
+    const written = edit('child.ts', 'child-edit', 1).map((event) => ({ ...event, agentId }));
+    view.rerender(draw([...read, written[0]!]));
+    expect(view.container.querySelector('.turn-summary')).toBeNull();
+    view.rerender(draw([...read, ...written]));
+    await vi.waitFor(() => expect(screen.getByText('1 file changed')).toBeTruthy());
+    await userEvent.click(screen.getByRole('button', { name: /1 file changed/ }));
+    const summary = view.container.querySelector('.turn-summary')!;
+    expect(summary.textContent).toContain('child.ts');
+    expect(summary.textContent).not.toContain('parent.ts');
+  });
 
   it('says what a turn came to, at the end of the turn', async () => {
     show([

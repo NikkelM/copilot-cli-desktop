@@ -454,6 +454,8 @@ body {
    made the column look assembled rather than laid out. Hover and selection sit here too: the
    star is outside the button, so lighting the button alone drew a seam down the row. */
 .session-row {
+  position: relative;
+  padding-left: 10px;
   display: flex;
   /* A column: the title and its mark sit on one line, and what is true about the session
      goes under both rather than beside either. */
@@ -819,6 +821,37 @@ body {
 .session-meta {
   color: var(--text-muted);
   font-size: var(--font-md);
+}
+
+.session-drag {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  flex-shrink: 0;
+  padding: 2px 3px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: grab;
+  touch-action: none;
+}
+
+.session-drag:hover {
+  color: var(--text);
+}
+
+.session-drag:active {
+  cursor: grabbing;
+}
+
+.session-row.drop-before {
+  box-shadow: 0 -2px var(--accent);
+}
+
+.session-row.drop-after {
+  box-shadow: 0 2px var(--accent);
 }
 
 /*
@@ -2577,6 +2610,31 @@ body {
   border-color: var(--text-muted);
 }
 
+.open-in button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.directory-custom {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.directory-custom label {
+  display: grid;
+  gap: 4px;
+}
+
+.directory-applications > button {
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
 /*
  * The boundary between sessions holding memory and sessions costing nothing, which is the
  * distinction the whole app is built on and was previously a four-pixel dot.
@@ -3414,6 +3472,7 @@ button.group:hover {
 
 /* Over whatever is showing rather than in the grid, because it can arrive at any moment and
    must not move the thing the reader is looking at. Development only. */
+.app-update-banner,
 .behind-bar {
   position: fixed;
   z-index: 100;
@@ -3446,6 +3505,44 @@ button.group:hover {
 
 .behind-bar button:hover {
   color: var(--text);
+}
+
+.app-update-banner {
+  z-index: 30;
+  top: auto;
+  bottom: 12px;
+  flex-wrap: wrap;
+  max-width: calc(100% - 32px);
+  border-color: var(--accent);
+}
+
+.app-update-progress {
+  width: 100%;
+  height: 10px;
+  margin-bottom: 12px;
+  appearance: none;
+  border: none;
+  border-radius: 6px;
+  background: var(--border);
+  accent-color: var(--accent);
+  overflow: hidden;
+}
+
+.app-update-progress::-webkit-progress-bar {
+  background: var(--border);
+}
+
+.app-update-progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.app-update-notes {
+  margin-top: 16px;
+}
+
+.app-update-notes > .markdown {
+  max-height: 30vh;
+  overflow: auto;
 }
 
 /* Used both for a boundary that caught a render and for a start-up failure written straight
@@ -5036,6 +5133,21 @@ pre.fatal,
   font-size: var(--font-2xl);
 }
 
+.session-size-breakdown {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 16px;
+}
+
+.session-size-breakdown dd {
+  margin: 0;
+  text-align: right;
+}
+
+.session-size-actions {
+  flex-wrap: wrap;
+}
+
 .confirm-body {
   margin: 0 0 16px;
   color: var(--text-muted);
@@ -5936,6 +6048,57 @@ pre.fatal,
 
    The box and the tick are two elements stacked, rather than a box with a pseudo-element:
    an input is a replaced element, and what it does with ::after is up to the engine. */
+input[type='checkbox'] {
+  appearance: none;
+  display: inline-block;
+  flex-shrink: 0;
+  width: 1.05em;
+  height: 1.05em;
+  padding: 0;
+  border: 1px solid var(--text-muted);
+  border-radius: 4px;
+  background: var(--bg);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+input[type='checkbox']:checked {
+  border-color: var(--accent);
+  background: var(--accent) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m3 8 3 3 7-7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+
+input[type='checkbox']:indeterminate {
+  border-color: var(--accent);
+  background: var(--accent) linear-gradient(white, white) center / 60% 2px no-repeat;
+}
+
+input[type='checkbox']:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input[type='checkbox']:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.app-dropdown {
+  margin-left: 0;
+  justify-content: space-between;
+  min-width: 0;
+  max-width: 100%;
+  font-size: var(--font-md);
+}
+
+.app-dropdown:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .tickbox {
   position: relative;
   display: grid;
@@ -5998,6 +6161,10 @@ pre.fatal,
   justify-self: start;
   gap: 8px;
   cursor: pointer;
+}
+
+.tick-row .tickbox {
+  transform: translateY(2px);
 }
 
 /* A path or anything else written out, beside the labels that name it. */
@@ -6076,6 +6243,7 @@ pre.fatal,
  * Drawn like the toggle beside them rather than like the bare links in the settings window,
  * whose `settings-reset` they borrowed and which reads as unstyled text out here.
  */
+.disk-action,
 .mcp-action {
   flex: none;
   padding: 1px 7px;
@@ -6088,15 +6256,18 @@ pre.fatal,
   cursor: pointer;
 }
 
-.mcp-action:hover {
+.mcp-action:hover,
+.disk-action:hover:not(:disabled) {
   border-color: var(--text-muted);
 }
 
-.mcp-action.destructive {
+.mcp-action.destructive,
+.disk-action.destructive {
   color: var(--danger);
 }
 
-.mcp-action.destructive:hover {
+.mcp-action.destructive:hover,
+.disk-action.destructive:hover:not(:disabled) {
   border-color: var(--danger);
 }
 
@@ -6303,6 +6474,7 @@ pre.fatal,
 }
 
 /* Nothing to save yet, which the Save button should look like rather than only behave like. */
+.disk-action:disabled,
 .mcp-action:disabled {
   opacity: 0.4;
   cursor: default;
@@ -6568,6 +6740,31 @@ pre.fatal,
   font-size: var(--font-md);
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+
+.disk-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+}
+
+.disk-select {
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.disk-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.disk-selection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 /*
@@ -7131,6 +7328,7 @@ pre.fatal,
 }
 
 /* Takes the space, so the controls sit together at the far end rather than spread across. */
+.app-dropdown,
 .todos-sort {
   display: flex;
   align-items: center;
@@ -7146,6 +7344,27 @@ pre.fatal,
   cursor: pointer;
 }
 
+.app-dropdown.field {
+  min-width: calc(var(--font-base) * 14);
+  max-width: 100%;
+  margin-left: 0;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: var(--font-md);
+}
+
+.app-dropdown.field:hover:not(:disabled),
+.app-dropdown.field.open {
+  border-color: var(--accent);
+}
+
+.app-dropdown-menu.field .app-dropdown-option {
+  padding: 7px 10px;
+  font-size: var(--font-md);
+}
+
 /*
  * Open counts as pointed at.
  *
@@ -7154,11 +7373,14 @@ pre.fatal,
  * reads as the press not having landed.
  */
 .todos-sort:hover,
+.app-dropdown:hover:not(:disabled),
+.app-dropdown.open,
 .todos-sort.open {
   border-color: var(--text-muted);
   color: var(--text);
 }
 
+.app-dropdown-menu,
 .todos-sort-menu {
   min-width: calc(var(--font-base) * 11);
   overflow-y: auto;
@@ -7169,6 +7391,7 @@ pre.fatal,
   box-shadow: 0 8px 24px rgba(1, 4, 9, 0.6);
 }
 
+.app-dropdown-option,
 .todos-sort-option {
   display: flex;
   align-items: center;
@@ -7187,20 +7410,33 @@ pre.fatal,
 
 /* The colour the session rows and the sidebar's groups hover in, which is what makes this
    read as a list rather than as a panel of buttons. */
+.app-dropdown-option:hover,
 .todos-sort-option:hover {
   background: #1c2128;
 }
 
 /* The one in force, which the tick says and the weight says again at a glance. */
+.app-dropdown-option.chosen,
 .todos-sort-option.chosen {
   font-weight: 600;
 }
 
 /* Holds the tick's place on every row, so the labels line up whichever one is in force. */
+.app-dropdown-tick,
 .todos-sort-tick {
   display: inline-flex;
   width: var(--font-sm);
   color: var(--accent);
+}
+
+.app-dropdown-tick {
+  width: 1.2em;
+  flex-shrink: 0;
+}
+
+.app-dropdown-tick .tick {
+  width: 1.2em;
+  height: 1.2em;
 }
 
 /* The box and its word read as one control, which is what clicking either of them gets. */
@@ -7606,14 +7842,20 @@ pre.fatal,
 /* And again for an open one, whose own background is a class deeper and would otherwise
    win on specificity however late this rule comes. */
 .tool.open .tool-head:focus,
+.app-dropdown-option:focus,
 .todos-sort-option:focus,
 .reasoning-head:focus,
 .turn-changes-head:focus,
-.cli-group-head:focus,
+.cli-group-head:not(.recycle-bin-toggle):focus,
 .wiki-folder-head:focus {
   outline: none;
   background: var(--cursor-wash);
   color: var(--text);
+}
+
+.recycle-bin-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* The prompts of a session, to navigate it by (#96). A dropdown rather than a panel: it is
@@ -7632,7 +7874,6 @@ pre.fatal,
   border-radius: 6px;
   background: none;
   color: var(--text-muted);
-  font-family: ui-monospace, monospace;
   font-size: var(--font-sm);
   cursor: pointer;
 }

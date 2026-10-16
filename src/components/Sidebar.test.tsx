@@ -47,6 +47,104 @@ const show = (query?: string) => {
 
 const titles = () => screen.getAllByRole('button').map((b) => b.textContent);
 
+describe('reordering active sessions', () => {
+  it('reorders favourites independently and keeps active favourites in the active group', () => {
+    const activeMove = vi.fn();
+    const favouriteMove = vi.fn();
+    render(<Sidebar
+      sessions={[
+        session({ sessionId: 'active', title: 'Active favourite', loaded: true }),
+        session({ sessionId: 'a', title: 'Favourite A' }),
+        session({ sessionId: 'b', title: 'Favourite B' }),
+        session({ sessionId: 'cold', title: 'Cold' }),
+      ]}
+      favourites={['active', 'a', 'b']}
+      favouriteOrder={['b', 'active', 'a']}
+      selectedId={null} onSelect={vi.fn()} onCreate={vi.fn()} onWiki={vi.fn()} creating={false}
+      activity={{}} onReorder={activeMove} onReorderFavourite={favouriteMove}
+    />);
+    const labels = [...document.querySelectorAll('.session-title')].map((node) => node.textContent?.trim());
+    expect(labels).toEqual(['Active favourite', 'Favourite B', 'Favourite A', 'Cold']);
+    expect(screen.getByRole('button', { name: 'Reorder Favourite A' })).toBeTruthy();
+    const a = screen.getByText('Favourite A').closest('[role="option"]')!;
+    fireEvent.keyDown(a, { key: 'ArrowUp', altKey: true });
+    expect(favouriteMove).toHaveBeenCalledExactlyOnceWith('a', 'b', false, ['b', 'a']);
+    expect(activeMove).not.toHaveBeenCalled();
+  });
+
+  const rows = [
+    session({ sessionId: 'a', title: 'Active A', loaded: true }),
+    session({ sessionId: 'b', title: 'Active B', loaded: true }),
+    session({ sessionId: 'cold', title: 'Cold' }),
+  ];
+  const draw = (onReorder = vi.fn()) => {
+    render(<Sidebar sessions={rows} selectedId={null} onSelect={vi.fn()} onCreate={vi.fn()}
+      onWiki={vi.fn()} creating={false} activity={{}} onReorder={onReorder} />);
+    return onReorder;
+  };
+
+  it('provides drag handles only in the active group', () => {
+    draw();
+    expect(screen.getByRole('button', { name: 'Reorder Active A' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Reorder Active B' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reorder Cold' })).toBeNull();
+  });
+
+  it('moves a focused active row with Alt+Up and Alt+Down without selecting it', () => {
+    const reorder = draw();
+    const a = screen.getByText('Active A').closest('[role="option"]')!;
+    const b = screen.getByText('Active B').closest('[role="option"]')!;
+    fireEvent.keyDown(a, { key: 'ArrowDown', altKey: true });
+    fireEvent.keyDown(b, { key: 'ArrowUp', altKey: true });
+    expect(reorder.mock.calls).toEqual([['a', 'b', true], ['b', 'a', false]]);
+    fireEvent.keyDown(a, { key: 'ArrowUp', altKey: true });
+    fireEvent.keyDown(screen.getByText('Cold').closest('[role="option"]')!, { key: 'ArrowUp', altKey: true });
+    expect(reorder).toHaveBeenCalledTimes(2);
+  });
+
+  it('moves a dragged session before or after an active target on release', () => {
+    const reorder = draw();
+    const handle = screen.getByRole('button', { name: 'Reorder Active A' });
+    const target = screen.getByText('Active B').closest<HTMLElement>('[role="option"]')!;
+    handle.setPointerCapture = vi.fn();
+    handle.releasePointerCapture = vi.fn();
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: vi.fn(() => target) });
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: 100, height: 40, bottom: 140, left: 0, right: 200, width: 200, x: 0, y: 100, toJSON: () => {},
+    });
+    const pointer = (type: string, y: number) => {
+      const event = new Event(type, { bubbles: true });
+      Object.assign(event, { button: 0, pointerId: 1, clientX: 10, clientY: y });
+      fireEvent(handle, event);
+    };
+    pointer('pointerdown', 50);
+    pointer('pointermove', 130);
+    expect(reorder).not.toHaveBeenCalled();
+    expect(target.classList.contains('drop-after')).toBe(true);
+    pointer('pointerup', 130);
+    expect(reorder).toHaveBeenCalledExactlyOnceWith('a', 'b', true);
+    expect(target.classList.contains('drop-after')).toBe(false);
+    reorder.mockClear();
+    pointer('pointerdown', 50);
+    pointer('pointermove', 105);
+    expect(target.classList.contains('drop-before')).toBe(true);
+    pointer('pointerup', 105);
+    expect(reorder).toHaveBeenCalledExactlyOnceWith('a', 'b', false);
+    reorder.mockClear();
+    pointer('pointerdown', 50);
+    pointer('pointermove', 130);
+    pointer('pointercancel', 130);
+    pointer('pointerup', 130);
+    expect(reorder).not.toHaveBeenCalled();
+    const cold = screen.getByText('Cold').closest<HTMLElement>('[role="option"]')!;
+    Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: vi.fn(() => cold) });
+    pointer('pointerdown', 50);
+    pointer('pointermove', 130);
+    pointer('pointerup', 130);
+    expect(reorder).not.toHaveBeenCalled();
+  });
+});
+
 /** The session rows in the order they are drawn, by first word of each title. */
 const order = () =>
   [...document.querySelectorAll('.session .session-title')].map((n) => n.textContent?.trim().split(/\s/)[0]);

@@ -28,6 +28,10 @@ tauri-plugin-dialog = "2.7.3"
 tauri-plugin-single-instance = "2.4.4"
 tauri-plugin-window-state = "2.4.1"
 tauri-plugin-notification = "^2"
+tauri-plugin-updater = { version = "2.14.0", default-features = false, features = ["rustls-tls", "system-proxy"] }
+semver = "1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider", "system-proxy"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
@@ -37,3 +41,7 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+tempfile = "3"

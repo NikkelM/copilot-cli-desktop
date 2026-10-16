@@ -88,7 +88,7 @@ export function changesByTurn(entries: Entry[], show: ShowTurnChanges = 'always'
       continue;
     }
 
-    if (entry.kind === 'tool' && entry.patch) edits.push(entry);
+    if (entry.kind === 'tool' && entry.writesFiles && entry.status === 'ok' && entry.patch) edits.push(entry);
   }
 
   // The turn in progress ends where the rows do.

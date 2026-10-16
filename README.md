@@ -2,11 +2,23 @@
 
 [![CI](https://github.com/NikkelM/copilot-cli-desktop/actions/workflows/ci.yml/badge.svg)](https://github.com/NikkelM/copilot-cli-desktop/actions/workflows/ci.yml)
 
-A low-footprint desktop shell for the [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli).
+> [!WARNING]
+> This project is still under development - expect bugs and changing behaviour.
+> Development is AI-assisted.
+> There are no published releases yet - see [Development](#development) to build from source.
+> This is an unofficial project and isn't affiliated with or endorsed by GitHub.
 
-Sessions are listed in a sidebar ordered by last use. Browsing them costs nothing:
-a session is only loaded into a running Copilot process when you actually send it a
-message, so a week-old session you never open never consumes memory.
+A low-footprint desktop shell for the [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli).
+You can browse existing sessions and their history without resuming them in the CLI.
+Sending a message or changing runtime-owned settings resumes the session when needed.
+
+## At a glance
+
+- Browse sessions in active/favourite order with rich Markdown transcripts.
+- Handle permissions and questions, queue messages, and use agents, skills and models.
+- Preview and edit local wiki pages and plans.
+- Review Git diffs, stage changes, commit and push.
+- Notifications and support for signed app updates.
 
 ## Why
 
@@ -90,9 +102,16 @@ alongside the installed CLI, keeping SDK and CLI versions in lockstep.
 
 ## Requirements
 
-- [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), logged in
-- Node.js 24+ (uses the built-in `node:sqlite`, so there are no native dependencies)
-- Rust toolchain and a platform WebView, per the [Tauri v2 prerequisites](https://tauri.app/start/prerequisites/)
+To run the app, you'll need:
+
+- [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), installed and signed in
+- Node.js 24+
+- The system Microsoft Edge WebView2 Runtime on Windows
+
+For source builds, you'll also need Rust and the platform-specific [Tauri v2 build prerequisites](https://tauri.app/start/prerequisites/).
+You don't need Rust or the build toolchain to run an installed build.
+Windows is the only validated installer and testing platform.
+macOS and Linux haven't been manually validated.
 
 ## Development
 
@@ -203,18 +222,21 @@ display reports virtualised window coordinates and the capture comes out cropped
 
 ## Roadmap
 
-Work is tracked in [issues](https://github.com/NikkelM/copilot-cli-desktop/issues),
-grouped under epics:
+I'm prioritising release validation and easier setup, with no delivery schedule.
+Sessions must stay lazy to keep resource use low, and missing events or content must be recoverable.
+The signed updater and release workflow are implemented locally - there's no published release yet.
+Next is a real installed `0.1.0` -> published `0.1.1` update test covering automatic/manual checks and downloads, immediate/next-launch installation, data preservation and recovery ([#121](https://github.com/NikkelM/copilot-cli-desktop/issues/121)).
+[First-run setup](https://github.com/NikkelM/copilot-cli-desktop/issues/120) should detect missing `Node.js 24+` or Copilot CLI, explain sign-in and offer installation or updates with your approval.
 
-- [x] Zero-process session browser: sidebar and history replay from disk
-- [ ] [#1 Live session runtime](https://github.com/NikkelM/copilot-cli-desktop/issues/1) - lazy resume on first send, LRU and idle eviction
-- [ ] [#7 Rich transcript rendering](https://github.com/NikkelM/copilot-cli-desktop/issues/7) - markdown, tool calls, reasoning, usage meters
-- [ ] [#14 Session interaction and control](https://github.com/NikkelM/copilot-cli-desktop/issues/14) - permissions, elicitation, queued messages, slash commands, model and mode
-- [ ] [#21 Environment and configuration](https://github.com/NikkelM/copilot-cli-desktop/issues/21) - skills, agents, MCP servers, working directories
-- [ ] [#27 Session lifecycle management](https://github.com/NikkelM/copilot-cli-desktop/issues/27) - create, rename, fork, delete, search
-- [ ] [#31 Wiki browser](https://github.com/NikkelM/copilot-cli-desktop/issues/31) - browse the local `~/.copilot/wiki` with a markdown viewer
-- [ ] [#36 In-app file diffs](https://github.com/NikkelM/copilot-cli-desktop/issues/36) - show only the changes the current agent made
-- [ ] [#41 In-app git editor](https://github.com/NikkelM/copilot-cli-desktop/issues/41) - stage, commit and push
+Next are [terminal handover](https://github.com/NikkelM/copilot-cli-desktop/issues/88) without competing session owners, plus editor workspace and open-file context.
+Plugin management needs install/update/remove and marketplace controls, with clear trust and scope before running third-party code.
+Skills need installation and removal with clear project/user scope and source information.
+Wiki settings should let you change the path without silently moving data.
+Optional conversational setup should launch a session using an editable starter prompt.
+
+Further out, [cross-machine sync](https://github.com/NikkelM/copilot-cli-desktop/issues/98) needs decisions on integrity, conflicts, privacy and session lifecycle.
+Dictation and read-aloud remain exploratory - existing OS functionality and transcription/hosting tradeoffs need assessing, with no commitment to a bundled speech model.
+Tell me which workflows you'd find useful in the [issue tracker](https://github.com/NikkelM/copilot-cli-desktop/issues).
 
 ## The wiki browser
 
@@ -263,6 +285,54 @@ all still read as pages rather than as filenames.
 With no wiki on the machine, the button explains what one is and offers to create it - a
 folder and a first page, which is then editable in place.
 
+## Session plans
+
+When the selected session has a root `plan.md`, a recovered local draft, or a read/watch error, the **Plan** button appears beside Todos.
+The panel renders Markdown and provides Edit, Preview, and Source views, plus Save and `Ctrl+S`.
+Plan and wiki notes share the resizable right-hand column, so opening either view replaces the other.
+Your plan and wiki drafts are kept when you switch views.
+
+The app reads and writes the plan on disk without loading the CLI, and watches the selected session directory without polling.
+Drafts stay in the app's sessions store when you close the panel, switch sessions, or restart the app.
+Before saving, the app checks the disk content revision with SHA256 and rejects the save if the plan changed or was deleted; you can copy the preserved draft, or discard it after confirming.
+Reload is available, and the panel only saves existing plans - it has no create or delete controls.
+
+A successful manual save in the Plan panel automatically asks the agent to reread the plan, adapt its remaining work and preserve your edits.
+The session resumes automatically if needed.
+For safely located narrow edits, the sidecar appends compact heading paths and saved-revision line ranges, with limits of 6 diff hunks and 320 hint characters.
+The prompt never includes the plan body.
+Broad changes, renamed or deleted headings, and oversized or ambiguous documents use a whole-plan fallback.
+If saving fails, no notification is sent; if sending fails, your file stays saved and a pending notice offers **Retry notification**.
+Reading, typing, previews, reloads and agent file writes don't notify, avoiding feedback loops.
+The existing file-conflict check still applies.
+
+## Ordering active sessions
+
+Reorder loaded or loading sessions in the `In memory` group by dragging the handle on the left and dropping before or after another active session.
+You can also focus an active row and press `Alt+Up` or `Alt+Down`.
+A newly activated session with no saved position is added at the top.
+The saved order for a session persists across restarts, but expires after seven consecutive days without the session being loaded.
+A loading active favourite stays in `In memory`, while inactive favourites remain in their own group.
+Cold sessions keep their last-used order.
+You can also reorder sessions in Favourites independently with the drag handle or Alt+Up/Down, and the order is saved.
+Active favourites stay in In memory with their own order, then return to their saved position in Favourites when inactive.
+Unfavouriting a session immediately removes its saved position; favouriting it again adds it to the end of the favourites list.
+
+## Opening working directories
+
+Use the **Open in {configured application}** button in the session header to open the working directory.
+Choose an application in Settings > Interface; your choice is remembered globally and used by Open working directory in the session context menu.
+The session view has no application dropdown or separate choice, and GitHub is unchanged.
+
+In Settings > Interface, choose a default application, add one by selecting an executable in the native file picker, edit its name and arguments, or remove an entry.
+Only installed or detected applications appear in the list.
+Enter custom application arguments in the single-line field, using double quotes to keep arguments with spaces together; Windows-style backslash-before-quote handling is supported, and Save is disabled while a quote is unclosed.
+`{cwd}` is replaced after parsing, so a folder path with spaces stays one argument; arguments are passed without shell execution or variable expansion.
+Windows `.cmd` and `.bat` wrappers aren't launched; use the actual `.exe`.
+
+If a saved application can't be found, you'll see an explicit failure rather than a silent fallback.
+The Windows implementation has been tested; Linux and macOS discovery paths haven't been manually validated.
+
 ## Design constraints
 
 Two rules that outrank any single feature:
@@ -277,10 +347,12 @@ capability may exist only as a click target: whatever a widget does must also be
 by keyboard, and in time by slash command
 ([#72](https://github.com/NikkelM/copilot-cli-desktop/issues/72),
 [#19](https://github.com/NikkelM/copilot-cli-desktop/issues/19)). Press `?` for the list,
-and change any of them under Settings > Keyboard
+and change any of them under Settings > Shortcuts
 ([#246](https://github.com/NikkelM/copilot-cli-desktop/issues/246)).
 
 ## Notes
+
+You'll find startup and sidecar logs at `%LOCALAPPDATA%\com.nikkelm.copilot-cli-desktop\logs\copilot-cli-desktop.log`, including native panic details captured after startup logging is initialised.
 
 Reads the CLI's own state directory, so existing instructions, agents, skills and
 hooks apply unchanged. Session data is only ever read; the CLI remains the owner.
@@ -290,16 +362,66 @@ Not affiliated with GitHub. GitHub also ships an official
 which is repository-centric; this project targets lightweight session management
 across arbitrary folders, including ones that are not git repositories.
 
+## Updates
+
+Open `Settings > Updates` to check for updates.
+The app checks automatically at startup, and automatic downloads are enabled by default; you can disable them through saved settings.
+A manual `Check for updates` downloads a new update even when automatic downloads are off, and `Download update` is also offered for a discovered candidate.
+
+A ready download opens a nonmodal prompt with `Install and restart` or `Later`; Settings also has an install button.
+Installed Windows builds cache the signed package and install it on the next launch before the Node sidecar starts.
+Development builds can check and download into a separate `updates-dev` cache, but can't install themselves.
+
+Installation is blocked while sessions, subagents, loading, questions, queues, unsent or stashed messages, attachments, unsaved wiki edits or saves are present.
+Save or discard settings changes before using the Settings install button.
+Persisted app stores are flushed before installation; on failure, the runtime is unlocked and errors remain visible.
+
+`Include prerelease updates` is off by default, so update checks only consider stable releases.
+To try beta builds, enable it in `Settings > Updates` and save your settings.
+The app then selects the highest eligible version across stable and prerelease releases, with prereleases clearly labelled.
+
+If you're running a prerelease, turning the option off or choosing `Return to latest stable` offers a confirmation when a published stable release is available.
+Confirmation turns prerelease updates off and downloads stable, even at a lower version; installation still waits for your choice or the next launch, with the usual safeguards and version-bound signature verification.
+Normal updates don't allow arbitrary downgrades.
+Opting out blocks cached prereleases from installing; opting back in cancels a pending return to stable.
+Returning to stable changes the app binaries - it won't restore older copies of your files, and prerelease app data may be incompatible with stable.
+
+Each update downloads the full compressed NSIS/MSI installer, without delta patches or a separate uncompressed 120 MB SDK download.
+Existing installations without updater support need one manual updater-enabled NSIS install before future in-app updates can work.
+Update checks discover releases through the public GitHub Releases API, excluding drafts and releases without `latest.json` updater metadata, then fetch the selected immutable version's `latest.json`.
+Older stable clients continue to use `https://github.com/NikkelM/copilot-cli-desktop/releases/latest/download/latest.json`.
+
 ## Releases
 
-Built by the `Release` workflow, started by hand with a version number. The tag is created
-only after the build has passed its tests, so a tag here always names something that built.
-Run it as a dry run first: it produces the installers as workflow artifacts and publishes
-nothing. Release notes come from `CHANGELOG.md`, between the `Releasenotes` markers.
+Run the `Release` workflow manually through `workflow_dispatch` with a plain `X.Y.Z` version.
+It defaults to `dry-run=true`, validates the version and that the new tag doesn't already exist, then stamps the npm, package-lock, Tauri and Cargo versions.
+It builds installers, detached signatures and `latest.json`, and runs an explicit native integration test to verify the actual installers against the public key and signed app version.
+Workflow artifacts are uploaded even on dry runs, which publish nothing.
+
+A non-dry run retains the CI bot's version commit/tag/push and creates a draft GitHub release.
+The tag is created only after the build and tests pass.
+Review the release notes taken from `CHANGELOG.md` between the `Releasenotes` markers, then publish the draft to expose updates.
+
+Enable the prerelease option with a base version such as `0.1.1` to generate `0.1.1-beta.N`, using the `Release` workflow's `GITHUB_RUN_NUMBER` for `N`; project versions and updater metadata are stamped automatically.
+Use a new workflow run for each beta while keeping the same base - new runs get increasing numbers, with possible gaps after dry runs or stable runs.
+Rerunning an existing run keeps its number, and existing tags are rejected; versions, tags and installers are immutable, so don't retag or replace published assets.
+A non-dry run creates a draft prerelease with `--prerelease --latest=false`; publish it before opted-in apps can discover it.
+Under [SemVer](https://semver.org/), `0.1.1` sorts above `0.1.1-beta.N`, and `+build` metadata doesn't advance update order.
+For MSI packaging only, betas map to numeric `X.Y.Z.N` (`N` in `1..65534`) and stable builds to `X.Y.Z.65535`; the signed and displayed app version remains the resolved SemVer.
+
+The updater keypair was generated outside the repository, with the private key and password stored in the repository's Actions secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+Only the public key goes in `tauri.conf.json`.
+Securely back up the original private key and password - losing them breaks signing continuity for existing installations.
+
+> [!NOTE]
+> Automatic updates require a public GitHub repository with published updater-signed installers and `latest.json`.
+> Keep the private signing key outside the repository and configure the release signing secrets.
+> You'll need to manually install an updater-enabled build once to bootstrap updates, then validate an update end to end against a published release.
 
 ### On signing
 
-The installers are **not signed**, so Windows warns on first launch.
+Updater signatures are free and separate from Windows Authenticode code signing.
+There's no Windows code-signing certificate, so the first downloaded installer still triggers a Windows warning.
 
 SignTool is not the missing piece - Tauri already calls it, through
 `bundle.windows.certificateThumbprint` for a certificate in the Windows store, or
@@ -315,10 +437,8 @@ options are worse than they used to be:
 - **EV certificates** have the same hardware requirement and cost more, but carry SmartScreen
   reputation immediately, which OV does not: an OV signature still warns until the download
   count builds reputation.
-- **[SignPath Foundation](https://signpath.org/apply.html)** signs open source projects for
-  free, from CI, via `signCommand`. It requires an OSI-approved licence, which GPL-3.0 is,
-  and a **public** repository, which this is not yet. That is the route worth taking if this
-  ever goes public.
+- [SignPath Foundation](https://signpath.org/apply.html) is a candidate to evaluate for CI code signing now that this GPL-3.0 repository is public.
+  Eligibility and approval aren't guaranteed.
 
 ## Licence
 
@@ -332,4 +452,3 @@ See [LICENSE](LICENSE).
 Every dependency is permissively licensed - MIT, ISC, BSD, Apache-2.0 or MPL-2.0 -
 so nothing here conflicts with that choice. Note that Apache-2.0 is compatible with
 GPL version 3 but not version 2, which is one reason this is v3.
-

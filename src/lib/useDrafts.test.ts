@@ -6,6 +6,19 @@ import { placeholder, written } from './longPaste';
 import { useDrafts } from './useDrafts';
 
 describe('writing that has not been sent', () => {
+  it('reports unsent work in every session and in the stash before an app update', () => {
+    const { result } = renderHook(() => useDrafts());
+    expect(result.current.hasUnsent).toBe(false);
+    act(() => result.current.write('other', 'do not lose this'));
+    expect(result.current.hasUnsent).toBe(true);
+    act(() => result.current.swap('other'));
+    expect(result.current.textOf('other')).toBe('');
+    expect(result.current.hasUnsent).toBe(true);
+    act(() => result.current.swap('other'));
+    act(() => result.current.clear('other'));
+    expect(result.current.hasUnsent).toBe(false);
+  });
+
   it('keeps each session\u2019s text to itself, so it cannot be sent to the wrong one', () => {
     const { result } = renderHook(() => useDrafts());
 

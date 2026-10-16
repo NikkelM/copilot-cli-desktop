@@ -1,4 +1,5 @@
-import { openPath, openUrl } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import type { DirectoryApplication } from '../../shared/directoryApplications';
 
 /**
  * The page a checkout's GitHub remote has, on the branch the session is on.
@@ -27,12 +28,22 @@ export function OpenIn({
   remote,
   branch,
   onError,
+  applications,
+  target,
+  loading,
+  onOpenDirectory,
+  error,
 }: {
   cwd: string | null;
   /** The `owner/repo` on GitHub, from the checkout's own remote. Null when there is none. */
   remote: string | null;
   branch: string | null;
   onError: (message: string) => void;
+  applications: readonly DirectoryApplication[];
+  target: string;
+  loading: boolean;
+  onOpenDirectory: (cwd: string) => void;
+  error?: string | null;
 }) {
   if (!cwd && !remote) return null;
 
@@ -42,29 +53,15 @@ export function OpenIn({
     <span className="open-in">
       {cwd && (
         <>
-          <button type="button" onClick={() => openPath(cwd).catch(failed)} title={`Open ${cwd}`}>
-            Folder
-          </button>
-          {/* Through its URI rather than the command, which would depend on code-insiders
-              being on PATH. `windowId=_blank` is what stops it throwing the folder into
-              whichever window was focused last, replacing what was open there - measured,
-              the plain URI leaves the window count unchanged and this raises it. */}
           <button
             type="button"
-            onClick={() =>
-              openUrl(
-                // Encoded, but with the separators and the drive colon put back: a folder
-                // called `C#` or `notes (old)` would otherwise be cut short at the `#` or
-                // read as a query string, while `C%3A/` is not a path VS Code recognises.
-                `vscode-insiders://file/${encodeURIComponent(cwd.replace(/\\/g, '/'))
-                  .replace(/%2F/g, '/')
-                  .replace(/%3A/g, ':')}?windowId=_blank`,
-              ).catch(failed)
-            }
-            title="Open in a new VS Code Insiders window"
+            onClick={() => onOpenDirectory(cwd)}
+            disabled={loading || !applications.some((app) => app.id === target)}
+            title={`Open ${cwd} in ${applications.find((app) => app.id === target)?.label ?? 'the selected application'}`}
           >
-            VS Code
+            Open in {applications.find((app) => app.id === target)?.label ?? 'configured application'}
           </button>
+          {error && <span role="alert" className="error">{error}</span>}
         </>
       )}
 

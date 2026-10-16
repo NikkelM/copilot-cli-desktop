@@ -22,6 +22,7 @@ const deps = (over: Partial<SessionActionDeps> = {}): SessionActionDeps => ({
   toggleArchived: vi.fn(),
   tag: vi.fn(),
   exportTo: vi.fn(),
+  measure: vi.fn(),
   select: vi.fn(),
   rename: vi.fn(),
   working: new Set(),
@@ -40,6 +41,15 @@ const byId = (session: SessionSummary, d: SessionActionDeps) =>
   Object.fromEntries(sessionActions(session, d).map((a) => [a.id, a]));
 
 describe('sessionActions', () => {
+  it('measures the session under the menu even while it is working', () => {
+    const measure = vi.fn();
+    const target = session({ sessionId: 'chosen', loaded: true });
+    const action = byId(target, deps({ measure, working: new Set(['chosen']) })).size;
+    expect(action.refused).toBeUndefined();
+    action.run();
+    expect(measure).toHaveBeenCalledExactlyOnceWith(target);
+  });
+
   it('offers only what the app can do today', () => {
     expect(sessionActions(session(), deps()).map((a) => a.id)).toEqual([
       'favourite',
@@ -47,6 +57,7 @@ describe('sessionActions', () => {
       'rename',
       'tag',
       'export',
+      'size',
       'select',
       'fork',
       'subagents',

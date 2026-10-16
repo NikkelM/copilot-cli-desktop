@@ -25,6 +25,10 @@ export function DiskUsage({
   reading,
   onRead,
   onOpen,
+  onDetails,
+  onDelete,
+  protectedIds = [],
+  deleting = false,
 }: {
   /** What was measured, or null before anybody has asked. */
   usage: SessionDisk[] | null;
@@ -32,12 +36,17 @@ export function DiskUsage({
   onRead?: () => void;
   /** Go to a session, which is where anything can actually be done about it. */
   onOpen?: (sessionId: string) => void;
+  onDetails?: (session: SessionDisk) => void;
+  onDelete?: (sessions: SessionDisk[]) => void;
+  protectedIds?: readonly string[];
+  deleting?: boolean;
 }) {
   const [all, setAll] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
 
   if (usage === null) {
     return (
-      <button type="button" className="settings-reset" onClick={onRead} disabled={reading}>
+      <button type="button" className="disk-action" onClick={onRead} disabled={reading}>
         {reading ? 'Measuring…' : 'Measure disk usage'}
       </button>
     );
@@ -50,6 +59,7 @@ export function DiskUsage({
   const shown = all ? usage : usage.slice(0, LISTED);
   const rest = usage.length - shown.length;
   const restBytes = totalBytes(usage) - totalBytes(shown);
+  const picked = shown.filter((session) => selected.includes(session.sessionId) && !protectedIds.includes(session.sessionId));
 
   return (
     <>
@@ -57,8 +67,37 @@ export function DiskUsage({
         Sessions: {usage.length} · Disk usage: {bytes(totalBytes(usage))}
       </p>
 
+      {picked.length > 0 && (
+        <div className="disk-selection">
+          <span>{picked.length} selected · {bytes(totalBytes(picked))}</span>
+          <button
+            type="button"
+            className="disk-action destructive"
+            disabled={deleting || reading || !onDelete}
+            onClick={() => onDelete?.(picked)}
+          >
+            Delete selected
+          </button>
+          <button type="button" className="disk-action" disabled={deleting} onClick={() => setSelected([])}>
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {shown.map((session) => (
-        <div className="settings-row bin-row" key={session.sessionId}>
+        <div className="settings-row bin-row disk-row" key={session.sessionId}>
+          <input
+            type="checkbox"
+            className="disk-select"
+            aria-label={`Select ${session.title ?? 'Untitled session'}`}
+            checked={selected.includes(session.sessionId)}
+            disabled={deleting || reading || protectedIds.includes(session.sessionId) || !onDelete}
+            title={protectedIds.includes(session.sessionId) ? 'This session is working or open in another CLI.' : undefined}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setSelected((current) => checked ? [...current, session.sessionId] : current.filter((id) => id !== session.sessionId));
+            }}
+          />
           <span className="bin-what">
             <span className="bin-title">{session.title ?? 'Untitled session'}</span>
             <span className="settings-hint">
@@ -68,13 +107,25 @@ export function DiskUsage({
               {!session.listed && ' · not in the session list'}
             </span>
           </span>
-          <span className="bin-actions">
+          <span className="bin-actions disk-actions">
             <span className="disk-size">{bytes(session.bytes)}</span>
+            <button type="button" className="disk-action" onClick={() => onDetails?.(session)}>
+              Details
+            </button>
             {session.listed && (
-              <button type="button" className="settings-reset" onClick={() => onOpen?.(session.sessionId)}>
+              <button type="button" className="disk-action" onClick={() => onOpen?.(session.sessionId)}>
                 Open
               </button>
             )}
+            <button
+              type="button"
+              className="disk-action destructive"
+              disabled={deleting || reading || protectedIds.includes(session.sessionId) || !onDelete}
+              title={protectedIds.includes(session.sessionId) ? 'This session is working or open in another CLI.' : undefined}
+              onClick={() => onDelete?.([session])}
+            >
+              Delete
+            </button>
           </span>
         </div>
       ))}

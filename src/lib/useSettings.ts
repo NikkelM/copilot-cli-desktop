@@ -47,6 +47,8 @@ export const DEFAULT_AUTO_TIER = 'defaultAutoTier';
 
 /** Whether to bring the Copilot CLI up to date when the app starts. */
 export const UPDATE_ON_START = 'updateOnStart';
+export const APP_AUTO_DOWNLOAD = 'appAutoDownload';
+export const APP_INCLUDE_PRERELEASES = 'appIncludePrereleases';
 
 /** When a turn should end with a line saying what it changed. */
 export const TURN_SUMMARY = 'turnSummary';
@@ -59,6 +61,8 @@ export const SIDEBAR_PREVIEW_LINES = 'sidebarPreviewLines';
 
 /** The keys a reader moved, as JSON of shortcut to chord. Empty means none were moved. */
 export const SHORTCUTS = 'shortcuts';
+export const DIRECTORY_APPLICATION = 'directoryApplication';
+export const DIRECTORY_TARGETS = 'directoryTargets';
 
 /**
  * Which surfaces say what, when a session wants something (#270).
@@ -148,6 +152,8 @@ export interface Settings {
   /** Which way auto routes, or empty for the provider's own. Only auto can carry one. */
   defaultAutoTier: string;
   updateOnStart: boolean;
+  appAutoDownload: boolean;
+  appIncludePrereleases: boolean;
   /**
    * When a turn ends with a line saying what it changed.
    *
@@ -189,6 +195,8 @@ export interface Settings {
    * a settings key. Parsed by `readOverrides`, which drops anything it cannot make sense of.
    */
   shortcuts: string;
+  directoryApplication: string;
+  directoryTargets: string;
   /**
    * Which surfaces say what, when a session wants something (#270).
    *
@@ -247,6 +255,8 @@ export function readSettings(): Settings {
     defaultContext: read('settings', DEFAULT_CONTEXT) ?? '',
     defaultAutoTier: read('settings', DEFAULT_AUTO_TIER) ?? '',
     updateOnStart: read('settings', UPDATE_ON_START) === 'true',
+    appAutoDownload: read('settings', APP_AUTO_DOWNLOAD) !== 'false',
+    appIncludePrereleases: read('settings', APP_INCLUDE_PRERELEASES) === 'true',
     // Only the two answers that withhold something are honoured from the file. Anything
     // else, including a key written by a later version, leaves the line showing rather
     // than quietly hiding what a turn did.
@@ -262,6 +272,8 @@ export function readSettings(): Settings {
     scale: readScale(),
     textScale: readTextScale(),
     shortcuts: read('settings', SHORTCUTS) ?? '',
+    directoryApplication: read('settings', DIRECTORY_APPLICATION) ?? 'folder',
+    directoryTargets: read('settings', DIRECTORY_TARGETS) ?? '[]',
     /*
      * Each on unless it was turned off outright, except the three that start off, which
      * only the exact stored true turns on. Either way nothing unexpected in the file can
@@ -421,12 +433,16 @@ const KEYS: Record<keyof Settings, string> = {
   defaultContext: DEFAULT_CONTEXT,
   defaultAutoTier: DEFAULT_AUTO_TIER,
   updateOnStart: UPDATE_ON_START,
+  appAutoDownload: APP_AUTO_DOWNLOAD,
+  appIncludePrereleases: APP_INCLUDE_PRERELEASES,
   turnSummary: TURN_SUMMARY,
   sidebarTags: SIDEBAR_TAGS,
   sidebarPreviewLines: SIDEBAR_PREVIEW_LINES,
   scale: SCALE_KEY,
   textScale: TEXT_SCALE_KEY,
   shortcuts: SHORTCUTS,
+  directoryApplication: DIRECTORY_APPLICATION,
+  directoryTargets: DIRECTORY_TARGETS,
   flashBlocked: FLASH_BLOCKED,
   flashFinished: FLASH_FINISHED,
   flashFailed: FLASH_FAILED,

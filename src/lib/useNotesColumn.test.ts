@@ -3,9 +3,94 @@ import { act, renderHook } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { useNotesColumn } from './useNotesColumn';
+import { usePanel } from './usePanel';
 import type { WikiPage } from '../../shared/protocol';
 
 const NOTES: WikiPage[] = [{ path: 'a.md', title: 'A' }];
+
+describe('sharing the right-hand column with the plan', () => {
+  it('opens the plan even for a session with no wiki notes', () => {
+    const { result } = renderHook(() => useNotesColumn('one', []));
+    expect(result.current.kind).toBeNull();
+
+    act(() => result.current.show('plan'));
+
+    expect(result.current.open).toBe(true);
+    expect(result.current.kind).toBe('plan');
+  });
+
+  it('replaces wiki notes with the plan and the plan with wiki notes', () => {
+    const { result } = renderHook(() => useNotesColumn('one', NOTES));
+    act(() => result.current.show());
+    expect(result.current.kind).toBe('notes');
+
+    act(() => result.current.show('plan'));
+    expect(result.current.open).toBe(true);
+    expect(result.current.kind).toBe('plan');
+
+    act(() => result.current.show());
+    expect(result.current.open).toBe(true);
+    expect(result.current.kind).toBe('notes');
+
+    act(() => result.current.hide());
+    expect(result.current.open).toBe(false);
+    expect(result.current.kind).toBeNull();
+  });
+
+  it('does not close the plan when the session loses its wiki notes', () => {
+    const { result, rerender } = renderHook(({ notes }) => useNotesColumn('one', notes), {
+      initialProps: { notes: NOTES },
+    });
+    act(() => result.current.show('plan'));
+
+    rerender({ notes: [] });
+
+    expect(result.current.open).toBe(true);
+    expect(result.current.kind).toBe('plan');
+  });
+
+  it('closes the plan on session change rather than showing another session its plan', () => {
+    const { result, rerender } = renderHook(({ id }) => useNotesColumn(id, NOTES), {
+      initialProps: { id: 'one' },
+    });
+    act(() => result.current.show('plan'));
+
+    rerender({ id: 'two' });
+
+    expect(result.current.open).toBe(false);
+    expect(result.current.kind).toBeNull();
+  });
+
+  it('hides the plan while the wiki browser is open and restores the plan rather than the notes', () => {
+    const { result, rerender } = renderHook(({ browsing }) => useNotesColumn('one', NOTES, browsing), {
+      initialProps: { browsing: false },
+    });
+    act(() => result.current.show('plan'));
+
+    rerender({ browsing: true });
+    expect(result.current.open).toBe(false);
+    expect(result.current.kind).toBeNull();
+
+    rerender({ browsing: false });
+    expect(result.current.open).toBe(true);
+    expect(result.current.kind).toBe('plan');
+  });
+
+  it('does not close or replace panels under the transcript when either document opens', () => {
+    const { result } = renderHook(() => ({
+      column: useNotesColumn('one', NOTES),
+      panels: usePanel('one'),
+    }));
+    act(() => result.current.panels.show('changes'));
+    act(() => result.current.panels.show('todos'));
+
+    act(() => result.current.column.show('plan'));
+    expect(result.current.panels.open).toEqual(['changes', 'todos']);
+
+    act(() => result.current.column.show());
+    expect(result.current.panels.open).toEqual(['changes', 'todos']);
+  });
+});
 
 describe('whether a note is drawn beside the session', () => {
   it('is not, before anybody has asked for one', () => {

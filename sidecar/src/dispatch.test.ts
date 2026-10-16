@@ -34,6 +34,20 @@ vi.mock('./directories.js', () => ({
 vi.mock('./git.js', () => ({ treeStateOf: vi.fn(async () => null) }));
 vi.mock('./images.js', () => ({ previewImage: vi.fn(() => null) }));
 vi.mock('./pastes.js', () => ({ stashPaste: vi.fn(() => 'C:\\stashed.png') }));
+vi.mock('./diskUsage.js', () => ({
+  sessionDiskUsage: vi.fn(async () => []),
+  singleSessionDiskUsage: vi.fn(async () => ({
+    bytes: 1234, files: 1, logBytes: 1234, rewindBytes: 0, otherBytes: 0, directory: 'C:\\session',
+  })),
+}));
+vi.mock('./directoryApplications.js', () => ({
+  directoryApplications: vi.fn(async () => [{ id: 'folder', label: 'File Explorer' }]),
+  openDirectory: vi.fn(async () => {}),
+}));
+vi.mock('./plans.js', () => ({
+  readSessionPlan: vi.fn(() => ({ content: '# Plan', revision: 'r1', path: 'C:\\session\\plan.md' })),
+  writeSessionPlan: vi.fn((_id: string, content: string, revision: string) => ({ content, revision, path: 'C:\\session\\plan.md' })),
+}));
 
 const { sessionChanges, sessionDiff } = await import('./changes.js');
 const { listDirectories } = await import('./directories.js');
@@ -45,6 +59,20 @@ const ask = (method: string, params?: unknown) =>
 const table = (entries: Record<string, (params: unknown) => unknown>) => entries as unknown as SidecarHandlers;
 
 describe('routing a request to its handler', () => {
+  it('rejects new work after update preparation while still allowing cancellation and status', async () => {
+    const send = vi.fn();
+    const cancel = vi.fn();
+    const status = vi.fn(() => ({ serverRunning: false }));
+    const handlers = table({
+      'sessions.send': send, 'runtime.cancelUpdate': cancel, 'runtime.status': status,
+    });
+    await expect(dispatch(handlers, ask('sessions.send', { sessionId: 'a', prompt: 'work' }), true)).rejects.toThrow('preparing');
+    expect(send).not.toHaveBeenCalled();
+    await expect(dispatch(handlers, ask('runtime.cancelUpdate'), true)).resolves.toBeNull();
+    await expect(dispatch(handlers, ask('runtime.status'), true)).resolves.toEqual({ serverRunning: false });
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
   it('calls the named handler with the parameters as they arrived', async () => {
     const handler = vi.fn(() => 'answered');
 
@@ -101,6 +129,8 @@ describe('what the sidecar answers', () => {
     status: vi.fn(() => ({ activeSessionIds: ['warm'] })),
     isActive: vi.fn((id: string) => id === 'warm'),
     flushChanges: vi.fn(async () => undefined),
+    prepareUpdate: vi.fn(async () => undefined),
+    cancelUpdate: vi.fn(),
   } as unknown as SessionRuntime;
 
   let handlers: SidecarHandlers;
@@ -110,6 +140,49 @@ describe('what the sidecar answers', () => {
     handlers = createHandlers(runtime);
   });
 
+  it('refuses update preparation while earlier requests are still outstanding', async () => {
+    const handlers = createHandlers(runtime, vi.fn(), () => false);
+    await expect(dispatch(handlers, ask('runtime.prepareUpdate'))).rejects.toThrow('outstanding requests');
+    expect(runtime.prepareUpdate).not.toHaveBeenCalled();
+  });
+
+
+  it('reads, saves and watches plans without asking the runtime to load a session', async () => {
+    const { readSessionPlan, writeSessionPlan } = await import('./plans.js');
+    const watch = vi.fn();
+    const handlers = createHandlers(runtime, watch);
+    expect(handlers['sessions.plan']({ sessionId: 'cold' })).toEqual({
+      content: '# Plan', revision: 'r1', path: 'C:\\session\\plan.md',
+    });
+    expect(readSessionPlan).toHaveBeenCalledWith('cold');
+    handlers['sessions.savePlan']({ sessionId: 'cold', content: '# Edited', revision: 'r1' });
+    expect(writeSessionPlan).toHaveBeenCalledExactlyOnceWith('cold', '# Edited', 'r1');
+    handlers['sessions.watchPlan']({ sessionId: 'cold' });
+    handlers['sessions.watchPlan']({ sessionId: null });
+    expect(watch.mock.calls).toEqual([['cold'], [null]]);
+    expect(runtime.status).not.toHaveBeenCalled();
+    expect(runtime.isActive).not.toHaveBeenCalled();
+  });
+
+  it('routes a size request to the single-session measurement without resuming it', async () => {
+    const { singleSessionDiskUsage, sessionDiskUsage } = await import('./diskUsage.js');
+    await expect(handlers['sessions.size']({ sessionId: 'cold' })).resolves.toEqual({
+      bytes: 1234, files: 1, logBytes: 1234, rewindBytes: 0, otherBytes: 0, directory: 'C:\\session',
+    });
+    expect(singleSessionDiskUsage).toHaveBeenCalledExactlyOnceWith('cold');
+    expect(sessionDiskUsage).not.toHaveBeenCalled();
+  });
+
+  it('discovers and launches directory applications without touching the session runtime', async () => {
+    const { directoryApplications, openDirectory } = await import('./directoryApplications.js');
+    await expect(handlers['applications.list']({ custom: '[]' })).resolves.toEqual({
+      applications: [{ id: 'folder', label: 'File Explorer' }],
+    });
+    await handlers['applications.open']({ cwd: 'C:\\repo', target: 'folder', custom: '[]' });
+    expect(directoryApplications).toHaveBeenCalledExactlyOnceWith('[]');
+    expect(openDirectory).toHaveBeenCalledExactlyOnceWith('C:\\repo', 'folder', '[]');
+    expect(runtime.status).not.toHaveBeenCalled();
+  });
   /**
    * Where to open a session, asked two ways (#225).
    *

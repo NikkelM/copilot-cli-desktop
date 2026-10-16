@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fs::{create_dir_all, read_to_string, remove_file, rename, write, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{channel, Sender};
@@ -10,6 +10,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
+
+mod app_updates;
+mod update_releases;
 
 /// Where anything worth reading after the fact is written, once the app knows where that is.
 static LOG: OnceLock<Mutex<Option<File>>> = OnceLock::new();
@@ -42,6 +45,17 @@ fn log(line: &str) {
             }
         }
     }
+}
+
+fn install_panic_logger() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log(&format!(
+            "native panic: {info}\n{}",
+            std::backtrace::Backtrace::force_capture()
+        ));
+        previous(info);
+    }));
 }
 
 /// Open the log file for this run, appending to whatever previous runs left.
@@ -250,6 +264,7 @@ impl Supervisor {
             fail_all(&supervisor.pending, SIDECAR_RESTARTING);
 
             let restarted = match next_attempt(attempt, started.elapsed()) {
+                _ if supervisor.stopped.load(Ordering::Relaxed) => false,
                 Some(next) => supervisor.start(next).is_ok(),
                 None => false,
             };
@@ -334,6 +349,12 @@ struct Sidecar {
 }
 
 impl Sidecar {
+    fn stop(&self) {
+        self.stopped.store(true, Ordering::Relaxed);
+        *self.link.lock().unwrap() = None;
+        fail_all(&self.pending, SIDECAR_STOPPED);
+    }
+
     fn spawn(script: PathBuf, app: tauri::AppHandle) -> Result<Self, String> {
         let supervisor = Supervisor {
             script: Arc::new(Mutex::new(script)),
@@ -576,6 +597,18 @@ fn read_store(app: tauri::AppHandle, store: Store) -> Result<Option<String>, Str
     }
 }
 
+fn replace_file(path: &Path, contents: &[u8]) -> Result<(), String> {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".writing");
+    let temporary = PathBuf::from(name);
+    write(&temporary, contents)
+        .map_err(|error| format!("could not write {}: {error}", temporary.display()))?;
+    rename(&temporary, path).map_err(|error| {
+        let _ = remove_file(&temporary);
+        format!("could not replace {}: {error}", path.display())
+    })
+}
+
 /**
  * Write one of the stores, replacing what was there.
  *
@@ -588,15 +621,7 @@ fn read_store(app: tauri::AppHandle, store: Store) -> Result<Option<String>, Str
 fn write_store(app: tauri::AppHandle, store: Store, contents: String) -> Result<(), String> {
     let dir = store_dir(&app)?;
     let path = dir.join(store.file());
-    let temporary = dir.join(format!("{}.writing", store.file()));
-
-    write(&temporary, contents)
-        .map_err(|e| format!("could not write {}: {e}", temporary.display()))?;
-    rename(&temporary, &path).map_err(|e| {
-        // Leaving the half-written file behind would have it tried again next time.
-        let _ = remove_file(&temporary);
-        format!("could not replace {}: {e}", path.display())
-    })
+    replace_file(&path, contents.as_bytes())
 }
 
 #[tauri::command]
@@ -618,6 +643,7 @@ fn restart_runtime(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_logger();
     tauri::Builder::default()
         // Registered before anything else, which is what the plugin requires: a second
         // launch has to be turned away before it can start a sidecar of its own. Two of
@@ -633,6 +659,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Restores the size, position and maximised state the window was left in. The
         // plugin clamps a restored position to a monitor that still exists, which doing
         // this by hand would have to get right for an unplugged screen or a resolution
@@ -640,6 +667,10 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             open_log(app.handle());
+
+            let updates = app_updates::AppUpdates::new(app.handle());
+            app.manage(updates.clone());
+            updates.install_on_start(app.handle());
 
             app.manage(Sidecar::spawn(
                 sidecar_script(app.handle()),
@@ -651,7 +682,11 @@ pub fn run() {
             sidecar_request,
             restart_runtime,
             read_store,
-            write_store
+            write_store,
+            app_updates::app_update_status,
+            app_updates::app_update_check,
+            app_updates::app_update_download,
+            app_updates::app_update_install
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -660,6 +695,30 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn native_panics_reach_the_app_log() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("panic.log");
+        let slot = LOG.get_or_init(|| Mutex::new(None));
+        *slot.lock().unwrap() = Some(File::create(&path).unwrap());
+        let previous = std::panic::take_hook();
+        let previous_called = Arc::new(AtomicBool::new(false));
+        let called = Arc::clone(&previous_called);
+        std::panic::set_hook(Box::new(move |_| {
+            called.store(true, Ordering::Relaxed);
+        }));
+        install_panic_logger();
+        let result = std::panic::catch_unwind(|| panic!("native diagnostic probe"));
+        std::panic::set_hook(previous);
+        *slot.lock().unwrap() = None;
+
+        assert!(result.is_err());
+        assert!(previous_called.load(Ordering::Relaxed));
+        let logged = read_to_string(path).unwrap();
+        assert!(logged.contains("native panic:"));
+        assert!(logged.contains("native diagnostic probe"));
+    }
 
     /**
      * The two stores are two files, and the window names which by an enum rather than by a

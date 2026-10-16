@@ -34,11 +34,12 @@ import {
 import { previewImage } from './images.js';
 import { classifyDropped } from './dropped.js';
 import { readTodos } from './todos.js';
+import { readSessionPlan, writeSessionPlan } from './plans.js';
 import { heldSessions } from './activeSessions.js';
 import { exportSession, exportSize, importSession } from './transfer.js';
 import { cliSettingsSchema, readCliSettings, writeCliSettings } from './cliSettings.js';
 import { purgeSession } from './recycleBin.js';
-import { sessionDiskUsage } from './diskUsage.js';
+import { sessionDiskUsage, singleSessionDiskUsage } from './diskUsage.js';
 import { momentAfter, searchSessions } from './sessionSearch.js';
 import { stashPaste } from './pastes.js';
 import type { SessionRuntime } from './runtime.js';
@@ -54,8 +55,13 @@ import {
 } from './wiki.js';
 import { pagesForSession, repositoryName, wikiTags } from './wikiSubject.js';
 import { sessionPreviews } from './sessionPreview.js';
+import { directoryApplications, openDirectory } from './directoryApplications.js';
 
-export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
+export function createHandlers(
+  runtime: SessionRuntime,
+  watchPlan: (sessionId: string | null) => void = () => { throw new Error('Plan watcher unavailable'); },
+  canPrepareUpdate: () => boolean = () => true,
+): SidecarHandlers {
   return {
     /**
      * Answered from the build this process came from, not from the request.
@@ -65,6 +71,13 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
      * so is its entire job.
      */
     'protocol.version': () => ({ version: PROTOCOL_VERSION }),
+    'runtime.prepareUpdate': () => {
+      if (!canPrepareUpdate()) throw new Error('Wait for outstanding requests before installing an app update');
+      return runtime.prepareUpdate();
+    },
+    'runtime.cancelUpdate': () => runtime.cancelUpdate(),
+    'applications.list': async ({ custom }) => ({ applications: await directoryApplications(custom) }),
+    'applications.open': ({ cwd, target, custom }) => openDirectory(cwd, target, custom),
 
     'sessions.list': () => {
       // The sessions the runtime holds are listed even when the database would hide them:
@@ -145,6 +158,7 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'bin.purge': ({ sessionId }) => purgeSession(sessionId),
 
     'sessions.disk': async () => ({ sessions: await sessionDiskUsage() }),
+    'sessions.size': ({ sessionId }) => singleSessionDiskUsage(sessionId),
 
     'sessions.search': ({ query }) => ({ matches: searchSessions(query) }),
 
@@ -281,6 +295,9 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
     'sessions.import': ({ fromPath }) => importSession(fromPath),
 
     'sessions.todos': ({ sessionId }) => ({ todos: readTodos(sessionId) }),
+    'sessions.plan': ({ sessionId }) => readSessionPlan(sessionId),
+    'sessions.savePlan': ({ sessionId, content, revision }) => writeSessionPlan(sessionId, content, revision),
+    'sessions.watchPlan': ({ sessionId }) => watchPlan(sessionId),
 
     // Params are read defensively for the same reason `commands.list` reads them that way:
     // a caller browsing agents outside any session has nothing to say and may send nothing.
@@ -372,7 +389,10 @@ export function createHandlers(runtime: SessionRuntime): SidecarHandlers {
 }
 
 /** Route one request to its handler. Errors are the caller's to turn into a reply. */
-export async function dispatch(handlers: SidecarHandlers, request: JsonRpcRequest): Promise<unknown> {
+export async function dispatch(handlers: SidecarHandlers, request: JsonRpcRequest, updating = false): Promise<unknown> {
+  if (updating && !['runtime.cancelUpdate', 'runtime.status', 'protocol.version'].includes(request.method)) {
+    throw new Error('The app is preparing to install an update');
+  }
   // Own properties only: the method arrives as text, and a plain lookup would answer
   // "constructor" or "toString" with something inherited and then call it.
   const handler = Object.hasOwn(handlers, request.method)
@@ -384,4 +404,3 @@ export async function dispatch(handlers: SidecarHandlers, request: JsonRpcReques
   // `result` is not the same thing as an empty one once it has been through JSON.
   return (await handler(request.params)) ?? null;
 }
-

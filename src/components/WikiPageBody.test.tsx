@@ -40,6 +40,27 @@ const show = (over: Partial<Parameters<typeof WikiPageBody>[0]> = {}) => {
  * session could come to disagree about what a page looks like.
  */
 describe('a wiki page', () => {
+  it('renders plain-document frontmatter once without treating it as Markdown prose', () => {
+    show({
+      page: { path: 'plan.md' }, pages: null, onOpen: undefined,
+      source: '---\ntitle: A plain plan\n---\n\n# Implementation',
+    });
+
+    expect(screen.getByRole('heading', { name: 'Implementation' })).toBeTruthy();
+    expect(screen.getAllByText(/A plain plan/)).toHaveLength(1);
+    expect(document.querySelector('.wiki-meta')).toBeTruthy();
+  });
+
+  it('also renders and edits a plain Markdown document without a wiki page list', () => {
+    show({
+      page: { path: 'plan.md' }, pages: null,
+      raw: true, sourceLabel: 'Plan Markdown', disabled: true,
+    });
+    const editor = screen.getByRole('textbox', { name: 'Plan Markdown' }) as HTMLTextAreaElement;
+    expect(editor.className).toBe('wiki-source');
+    expect(editor.disabled).toBe(true);
+  });
+
   it('renders what it says', () => {
     show();
 

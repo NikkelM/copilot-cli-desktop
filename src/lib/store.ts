@@ -55,13 +55,16 @@ interface Kept {
   held: Record<StoreName, Contents>;
   loaded: boolean;
   writing: Partial<Record<StoreName, ReturnType<typeof setTimeout>>>;
+  pending: Partial<Record<StoreName, Promise<void>>>;
 }
 
 const kept: Kept = ((globalThis as Record<symbol, unknown>)[HELD] as Kept | undefined) ?? {
   held: { settings: {}, sessions: {} },
   loaded: false,
   writing: {},
+  pending: {},
 };
+kept.pending ??= {};
 (globalThis as Record<symbol, unknown>)[HELD] = kept;
 
 const { held, writing } = kept;
@@ -158,11 +161,30 @@ function flush(name: StoreName): void {
   writing[name] = setTimeout(() => {
     delete writing[name];
     if (!inTauri()) return;
-    void ask('write_store', { store: name, contents: JSON.stringify(held[name], null, 2) }).catch(() => {
-      // Nothing useful to do about it: the value is in memory and will be written again on
-      // the next change, and a dialog about a settings file would be worse than the failure.
-    });
+    void persist(name).catch((error: unknown) => console.error(`Could not write the app's ${name} store`, error));
   }, SETTLE_MS);
+}
+
+function persist(name: StoreName): Promise<void> {
+  const contents = JSON.stringify(held[name], null, 2);
+  const previous = kept.pending[name] ?? Promise.resolve();
+  const task = previous
+    .catch(() => undefined)
+    .then(() => ask<void>('write_store', { store: name, contents }))
+    .finally(() => {
+      if (kept.pending[name] === task) delete kept.pending[name];
+    });
+  kept.pending[name] = task;
+  return task;
+}
+
+/** Await the latest snapshots before an installer closes the app */
+export async function flushStores(): Promise<void> {
+  for (const name of ['settings', 'sessions'] as const) {
+    clearTimeout(writing[name]);
+    delete writing[name];
+    if (inTauri()) await persist(name);
+  }
 }
 
 /** What a store holds under this key, or null when it holds nothing. */
@@ -193,5 +215,6 @@ export function resetStores(): void {
   for (const name of ['settings', 'sessions'] as const) {
     clearTimeout(writing[name]);
     delete writing[name];
+    delete kept.pending[name];
   }
 }

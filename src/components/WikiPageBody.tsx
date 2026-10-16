@@ -1,39 +1,40 @@
 import { useCallback, useMemo } from 'react';
 
-import type { WikiPage, WikiPageContent } from '../../shared/protocol';
+import type { WikiPage } from '../../shared/protocol';
 import { splitFrontmatter } from '../../shared/frontmatter';
 import { isWikiLink, resolveWikiLink, withResolvedLinks } from '../lib/wikiLinks';
 import { Markdown } from './Markdown';
 import { readFrontmatter } from './frontmatterFields';
 
 /**
- * A wiki page, as the file it is or as what it renders to.
+ * The shared Markdown preview and source editor for wiki pages and session plans
  *
- * Its own component because a page is now read in two places - the browser, and the column
- * beside a session (#35) - and every one of the steps below is a way the two could come to
- * disagree. A page that rendered its links in one and showed `[[like this]]` in the other
- * would be the same page looking like two.
+ * Wiki links are only resolved when the caller supplies a page list
  */
 export function WikiPageBody({
   page,
-  pages,
+  pages = null,
   source,
   raw,
   loading,
   onEdit,
   onOpen,
+  sourceLabel,
+  disabled = false,
   empty = 'Choose a page.',
 }: {
-  page: WikiPageContent | null;
+  page: { path: string } | null;
   /** Every page there is, which is what a wikilink is resolved against. */
-  pages: WikiPage[] | null;
+  pages?: WikiPage[] | null;
   /** What to show: the draft where there is one, otherwise what is on disk. */
   source: string;
   /** Whether to show the file rather than what it renders to. */
   raw: boolean;
   loading: boolean;
   onEdit: (path: string, source: string) => void;
-  onOpen: (path: string) => void;
+  onOpen?: (path: string) => void;
+  sourceLabel?: string;
+  disabled?: boolean;
   /** What to say where no page has been chosen, which differs by where this is drawn. */
   empty?: string;
 }) {
@@ -73,7 +74,7 @@ export function WikiPageBody({
       // The hash half of this is belt and braces: the renderer intercepts a link to a
       // heading before it asks, so one never arrives here. It is kept because what may be
       // followed is this component's rule rather than the renderer's order.
-      if (!page || !pages || !isWikiLink(href)) return false;
+      if (!page || !pages || !onOpen || !isWikiLink(href)) return false;
       const found = resolveWikiLink(decodeURI(href), page.path, pages);
       // Handed back rather than claimed, so a link naming no page falls to the ordinary
       // rules instead of being swallowed by a handler that does nothing.
@@ -91,7 +92,8 @@ export function WikiPageBody({
         className="wiki-source"
         value={source}
         spellCheck={false}
-        aria-label={`Source of ${page.path}`}
+        aria-label={sourceLabel ?? `Source of ${page.path}`}
+        disabled={disabled}
         onChange={(event) => onEdit(page.path, event.target.value)}
       />
     );

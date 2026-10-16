@@ -1,5 +1,5 @@
 name: Release
-run-name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag) }}
+run-name: ${{ format('{0} {1}{2}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag, (inputs.prerelease && ' beta') || '') }}
 
 # Started by hand rather than by pushing a tag, so the tag is created only once everything
 # has passed. A tag in this repository therefore always names something that built.
@@ -7,15 +7,28 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag / Version number"
+        description: "Base version (Major.Minor.Patch)"
         required: true
+      prerelease:
+        description: "Build a beta prerelease with an automatic build number"
+        type: boolean
+        default: false
       is-dry-run:
         description: "Dry-run (build and check only, publish nothing)"
         type: boolean
         default: true
 
 permissions:
-  contents: write # required for pushing the release commit and tag, and creating the release
+  contents: read
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_BASE_VERSION: ${{ inputs.tag }}
+  PRERELEASE: ${{ inputs.prerelease }}
+  RELEASE_BRANCH: ${{ github.ref_name }}
 
 jobs:
   # Fails before anything is built, so a malformed version number costs seconds rather than
@@ -23,12 +36,44 @@ jobs:
   version:
     name: Check the version number
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
     steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
       - name: Check input tag format
+        id: resolve
         run: |
-          if ! echo "${{ inputs.tag }}" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error title=Invalid version number::Version numbers must follow the Major.Minor.Patch format (e.g. 0.2.0), without a leading v."
+          args=()
+          if [ "$PRERELEASE" = true ]; then
+            args=(--prerelease --build "$GITHUB_RUN_NUMBER")
+          fi
+          version="$(node scripts/release-version.mjs "$RELEASE_BASE_VERSION" "${args[@]}")"
+          if [ "$PRERELEASE" != true ] && [[ "$version" == *-* ]]; then
+            echo "::error::Use a base Major.Minor.Patch version and the prerelease option."
             exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse an existing release tag
+        env:
+          RELEASE_VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" != branch ]; then
+            echo "::error::Run releases from a branch, not an existing tag."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$RELEASE_VERSION" > /dev/null; then
+            echo "::error::The release tag already exists. Choose a new version."
+            exit 1
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then
+              echo "::error::Could not check existing release tags."
+              exit "$status"
+            fi
           fi
 
   # The same two jobs CI runs, from the same file. A release passes exactly what a push
@@ -41,9 +86,13 @@ jobs:
       windows: true
 
   release:
-    name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', inputs.tag) }}
-    needs: checks
+    name: ${{ format('{0} {1}', (inputs.is-dry-run && 'Dry-run') || 'Release', needs.version.outputs.version) }}
+    needs: [checks, version]
     runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_VERSION: ${{ needs.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@v7
@@ -61,49 +110,65 @@ jobs:
 
       - run: npm ci
 
-      # Three files carry the version and all three are read by something: npm, the bundler,
-      # and cargo. Setting them here means a release never depends on remembering to.
+      - name: Check updater signing credentials
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Configure TAURI_SIGNING_PRIVATE_KEY before building a release."
+            exit 1
+          fi
+          probe="$RUNNER_TEMP/updater-signing-probe.txt"
+          printf 'Updater signing configuration check\n' > "$probe"
+          npm run tauri -- signer sign --app-version "$RELEASE_VERSION" "$probe"
+          rm -f "$probe" "$probe.sig"
+
+      # Stamp the npm, bundler and Cargo versions together before signing
       - name: Set the version
         shell: bash
         run: |
-          node -e "
-            const fs = require('node:fs');
-            for (const f of ['package.json', 'src-tauri/tauri.conf.json']) {
-              const j = JSON.parse(fs.readFileSync(f, 'utf8'));
-              j.version = '${{ inputs.tag }}';
-              fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
-            }
-          "
-          sed -i 's/^version = ".*"/version = "${{ inputs.tag }}"/' src-tauri/Cargo.toml
+          npm version "$RELEASE_VERSION" --no-git-tag-version --ignore-scripts --allow-same-version
+          node scripts/release-version.mjs "$RELEASE_VERSION" --set
           cargo update --package copilot-cli-desktop --manifest-path src-tauri/Cargo.toml
 
       # Builds the frontend, compiles the sidecar, assembles its dependency bundle and
       # packages the lot - tauri.conf.json's beforeBuildCommand does the first three.
       #
-      # Unsigned. SignTool is not what is missing - Tauri already calls it, through
-      # bundle.windows.certificateThumbprint or signCommand. A certificate CI can reach is,
-      # and since 2023 a bought one lives on hardware. The README explains the options.
-      - name: Build the installers
+      # Detached updater signatures are separate from Windows code signing
+      - name: Build installers and updater signatures
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build
 
-      - name: Collect what was built
-        id: artifacts
+      - name: Prepare signed update artifacts and release notes
         shell: bash
         run: |
-          {
-            echo 'paths<<EOF'
-            find src-tauri/target/release/bundle -type f \( -name '*.msi' -o -name '*-setup.exe' \)
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+          node scripts/updater-manifest.mjs \
+            --version "$RELEASE_VERSION" \
+            --repository "$GITHUB_REPOSITORY" \
+            --bundle src-tauri/target/release/bundle \
+            --output release-artifacts \
+            --changelog CHANGELOG.md
+          cat release-artifacts/RELEASE_NOTES.md
+
+      - name: Verify updater signatures and signed versions
+        env:
+          UPDATER_ARTIFACTS_DIR: ${{ github.workspace }}/release-artifacts
+        run: cargo test --manifest-path src-tauri/Cargo.toml app_updates::tests::release_artifacts_match_the_configured_public_key_and_version -- --ignored --exact
 
       # Kept even on a dry run, which is most of the point of one: the installer can be
       # downloaded and tried before anything is published.
       - name: Upload installers to the workflow
         uses: actions/upload-artifact@v7
         with:
-          name: installers-${{ inputs.tag }}
-          path: ${{ steps.artifacts.outputs.paths }}
+          name: installers-${{ env.RELEASE_VERSION }}
+          path: release-artifacts
           retention-days: 7
+          compression-level: 0
+          if-no-files-found: error
 
       - name: Tag and push
         if: ${{ !inputs.is-dry-run }}
@@ -111,21 +176,12 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
-          git commit --message "Release ${{ inputs.tag }}"
-          git tag "v${{ inputs.tag }}" --annotate --message "Release ${{ inputs.tag }}"
-          git push origin HEAD:${{ github.ref_name }} --tags
-
-      # Taken from CHANGELOG.md between the markers, so the notes are written and reviewed in
-      # the repository rather than typed into a release form once and never seen again.
-      - name: Create release notes
-        if: ${{ !inputs.is-dry-run }}
-        shell: bash
-        run: |
-          sed -n '/<!--Releasenotes start-->/,/<!--Releasenotes end-->/p' CHANGELOG.md \
-            | sed '/<!--Releasenotes/d' > RELEASE_NOTES.md
-          printf '\n**[Full changelog](CHANGELOG.md)**\n' >> RELEASE_NOTES.md
-          cat RELEASE_NOTES.md
+          git add package.json package-lock.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          if ! git diff --cached --quiet; then
+            git commit --message "Release $RELEASE_VERSION"
+          fi
+          git tag "v$RELEASE_VERSION" --annotate --message "Release $RELEASE_VERSION"
+          git push origin "HEAD:$RELEASE_BRANCH" --tags
 
       # A draft, so the notes can be read before anyone is told there is something to download.
       - name: Create the release
@@ -134,13 +190,14 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
-          # The same list the upload step collected, which is the one a dry run exercises.
-          # Read into an array rather than left to word splitting: the product name has a
-          # space in it, so each installer path would otherwise arrive as three arguments
-          # and the release would be created with none of them.
-          mapfile -t installers <<< "${{ steps.artifacts.outputs.paths }}"
-          gh release create "v${{ inputs.tag }}" \
-            --title "v${{ inputs.tag }}" \
-            --notes-file RELEASE_NOTES.md \
-            --draft \
-            "${installers[@]}"
+          shopt -s nullglob
+          assets=(release-artifacts/*.exe release-artifacts/*.msi release-artifacts/*.sig release-artifacts/latest.json)
+          options=(--draft)
+          if [ "$PRERELEASE" = true ]; then
+            options+=(--prerelease --latest=false)
+          fi
+          gh release create "v$RELEASE_VERSION" \
+            --title "v$RELEASE_VERSION" \
+            --notes-file release-artifacts/RELEASE_NOTES.md \
+            "${options[@]}" \
+            "${assets[@]}"

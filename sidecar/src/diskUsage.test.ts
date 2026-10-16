@@ -62,6 +62,61 @@ describe('what each session is using', () => {
     expect(await sessionDiskUsage()).toEqual([]);
   });
 
+  describe('measuring just one session', () => {
+    it('counts its log and nested backups without consulting the session index', async () => {
+      makeSession('chosen', 100, [200, 300]);
+      makeSession('other', 9000);
+      const { singleSessionDiskUsage } = await load();
+
+      expect(await singleSessionDiskUsage('chosen')).toEqual({
+        bytes: 600, files: 3, logBytes: 100, rewindBytes: 0, otherBytes: 500,
+        directory: join(home, 'session-state', 'chosen'),
+      });
+      expect(listSessions).not.toHaveBeenCalled();
+    });
+
+    it('measures fresh after the session grows', async () => {
+      makeSession('chosen', 100);
+      const { singleSessionDiskUsage } = await load();
+      expect((await singleSessionDiskUsage('chosen')).bytes).toBe(100);
+      makeSession('chosen', 200);
+      expect((await singleSessionDiskUsage('chosen')).bytes).toBe(200);
+    });
+
+    it('counts a session with no saved files as zero', async () => {
+      const { singleSessionDiskUsage } = await load();
+      expect(await singleSessionDiskUsage('unsaved')).toMatchObject({
+        bytes: 0, files: 0, logBytes: 0, rewindBytes: 0, otherBytes: 0,
+      });
+    });
+
+    it('separates the root log, rewind snapshots and all remaining files in one walk', async () => {
+      makeSession('chosen', 100, [40]);
+      const root = join(home, 'session-state', 'chosen');
+      mkdirSync(join(root, 'rewind-file-snapshots', 'nested'), { recursive: true });
+      writeFileSync(join(root, 'rewind-file-snapshots', 'index.json'), 'x'.repeat(20));
+      writeFileSync(join(root, 'rewind-file-snapshots', 'nested', 'events.jsonl'), 'x'.repeat(30));
+      writeFileSync(join(root, 'session.db'), 'x'.repeat(10));
+      const { singleSessionDiskUsage } = await load();
+
+      expect(await singleSessionDiskUsage('chosen')).toEqual({
+        bytes: 200, files: 5, logBytes: 100, rewindBytes: 50, otherBytes: 50, directory: root,
+      });
+    });
+
+    it('reports filesystem errors rather than treating an unreadable path as empty', async () => {
+      mkdirSync(join(home, 'session-state'), { recursive: true });
+      writeFileSync(join(home, 'session-state', 'not-a-directory'), 'data');
+      const { singleSessionDiskUsage } = await load();
+      await expect(singleSessionDiskUsage('not-a-directory')).rejects.toMatchObject({ code: 'ENOTDIR' });
+    });
+
+    it.each(['', '..', '..\\other', '../other', 'C:\\other', 'a/b'])('rejects invalid session id %j', async (id) => {
+      const { singleSessionDiskUsage } = await load();
+      await expect(singleSessionDiskUsage(id)).rejects.toThrow('Invalid session id');
+    });
+  });
+
   it('adds up what a session holds', async () => {
     makeSession('s1', 1000);
     const { sessionDiskUsage } = await load();

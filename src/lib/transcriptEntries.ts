@@ -1,6 +1,7 @@
 import type { Attachment, TranscriptEvent } from '../../shared/protocol';
 import { hookFailed } from '../../shared/protocol';
 import { stripAnsi } from '../../shared/ansi';
+import { WRITE_TOOLS } from '../../shared/patch';
 import { relativise } from './paths';
 
 /** The three events that describe a delegation rather than the work inside it. */
@@ -93,13 +94,15 @@ export interface ToolEntry {
    */
   command?: string;
   /**
-   * The change a file tool made, as it reported it.
+   * A diff the tool reported, whether it wrote files or only inspected them
    *
    * Read from the log rather than computed, so a session opened weeks later shows the
    * same change it showed when it happened, wherever the file was and whether or not it
    * is still there.
    */
   patch?: string;
+  /** Identified from the raw tool name rather than from diff-shaped output */
+  writesFiles?: boolean;
   /**
    * The file a file tool named, kept apart from the summary.
    *
@@ -753,6 +756,7 @@ export function toEntries(
               output: null,
               status: 'running',
               startedAt: event.timestamp,
+              ...(typeof data.toolName === 'string' && WRITE_TOOLS.has(data.toolName) ? { writesFiles: true } : {}),
               command,
               path: typeof args?.path === 'string' && args.path.trim() ? args.path : undefined,
               search: search || undefined,
@@ -1268,6 +1272,7 @@ export function sameEntry(a: Entry, b: Entry): boolean {
     a.answer === other.answer &&
     a.command === other.command &&
     a.patch === other.patch &&
+    a.writesFiles === other.writesFiles &&
     a.path === other.path &&
     a.search === other.search &&
     a.startedAt === other.startedAt &&

@@ -34,7 +34,7 @@ import type {  McpServerState,
   SessionMode,
   SlashCommand,
 } from '../../shared/protocol.js';
-import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS } from '../../shared/protocol.js';
+import { DEFAULT_BIN_RETENTION_DAYS, DEFAULT_PERMISSION_TIMEOUT_MS, isSidekick } from '../../shared/protocol.js';
 import type { BinnedSession } from '../../shared/protocol.js';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
@@ -349,6 +349,8 @@ export class SessionRuntime {
   private client: CopilotClient | null = null;
   /** In-flight client start, so concurrent sends share one server. */
   private starting: Promise<CopilotClient> | null = null;
+  private updateState: 'idle' | 'preparing' | 'prepared' = 'idle';
+  private readonly activeAgents = new Map<string, string>();
   /**
    * What the machine offers, as against what a conversation holds.
    *
@@ -548,6 +550,74 @@ export class SessionRuntime {
     return this.loaded.has(sessionId);
   }
 
+  get updating(): boolean {
+    return this.updateState !== 'idle';
+  }
+
+  async prepareUpdate(): Promise<void> {
+    if (this.updating) throw new Error('The session runtime is already preparing for an app update');
+    this.updateState = 'preparing';
+    const paused: CopilotSession[] = [];
+    const requireIdle = () => {
+      if (
+        this.starting || this.resuming.size || this.activeAgents.size
+        || [...this.loaded.values()].some((entry) => entry.busy)
+        || this.permissions.size || this.elicitations.size || this.userInputs.size || this.plans.size
+      ) {
+        throw new Error('Wait for running sessions, subagents and pending questions before installing an update');
+      }
+    };
+    try {
+      requireIdle();
+      for (const { session } of this.loaded.values()) {
+        try {
+          await session.rpc.queue.setDrainPaused({ paused: true });
+          paused.push(session);
+        } catch (error) {
+          if (!String(error).includes('queue_already_paused')) throw error;
+        }
+      }
+      requireIdle();
+      for (const id of this.loaded.keys()) {
+        if ((await this.queue(id)).length) {
+          throw new Error('Send or clear queued messages before installing an update');
+        }
+      }
+      requireIdle();
+      // Leave queues the user had already paused in their original state
+      while (paused.length) {
+        await paused[0]!.rpc.queue.setDrainPaused({ paused: false });
+        paused.shift();
+      }
+      requireIdle();
+      for (const id of [...this.order]) await this.evict(id);
+      const client = this.client;
+      if (client) await client.stop();
+      this.client = null;
+      this.discovery.forget();
+      this.updateState = 'prepared';
+    } catch (error) {
+      const failures: string[] = [];
+      for (const session of paused) {
+        try {
+          await session.rpc.queue.setDrainPaused({ paused: false });
+        } catch (releaseError) {
+          failures.push(String(releaseError));
+        }
+      }
+      this.updateState = 'idle';
+      if (failures.length) {
+        throw new Error(`${String(error)} Could not release update queue pauses: ${failures.join('; ')}`);
+      }
+      throw error;
+    }
+  }
+
+  cancelUpdate(): void {
+    if (this.updateState === 'preparing') throw new Error('The session runtime is still preparing for an update');
+    this.updateState = 'idle';
+  }
+
   /**
    * Start the shared CLI server, or return the running one.
    *
@@ -555,6 +625,7 @@ export class SessionRuntime {
    * nothing beyond the shell itself.
    */
   private async ensureClient(): Promise<CopilotClient> {
+    if (this.updating) throw new Error('The app is preparing to install an update');
     if (this.client) return this.client;
     if (this.starting) return this.starting;
 
@@ -705,6 +776,7 @@ export class SessionRuntime {
 
   /** Resume a session if it is not already loaded, evicting another if needed. */
   private async ensureSession(sessionId: string): Promise<CopilotSession> {
+    if (this.updating) throw new Error('The app is preparing to install an update');
     const existing = this.loaded.get(sessionId);
     if (existing) {
       this.touch(sessionId);
@@ -1137,6 +1209,12 @@ export class SessionRuntime {
   private handleEvent(sessionId: string, event: SessionEvent): void {
     const entry = this.loaded.get(sessionId);
 
+    if (entry && event.agentId && !isSidekick(event.agentId)) {
+      const key = `${sessionId}:${event.agentId}`;
+      if (event.type === 'subagent.started') this.activeAgents.set(key, sessionId);
+      if (event.type === 'subagent.completed' || event.type === 'subagent.failed') this.activeAgents.delete(key);
+    }
+
     this.noteAgent(sessionId, event);
 
     if (entry) {
@@ -1146,8 +1224,10 @@ export class SessionRuntime {
       // session could be evicted underneath itself and a typed-ahead message could be
       // spliced into the run it was meant to follow, so what counts as busy here is the
       // whole request, which is what `session.idle` marks the end of.
-      if (event.type === 'assistant.turn_start') entry.busy = true;
-      if (event.type === 'session.idle' || event.type === 'abort') entry.busy = false;
+      if (!event.agentId) {
+        if (event.type === 'assistant.turn_start' || event.type === 'user.message') entry.busy = true;
+        if (event.type === 'session.idle' || event.type === 'abort') entry.busy = false;
+      }
 
       /*
        * What the running turn has touched, which the store will not know until the turn
@@ -1455,6 +1535,9 @@ export class SessionRuntime {
     if (entry.idleTimer) clearTimeout(entry.idleTimer);
     entry.unsubscribe();
     this.loaded.delete(sessionId);
+    for (const [agent, owner] of this.activeAgents) {
+      if (owner === sessionId) this.activeAgents.delete(agent);
+    }
     this.abandonPending(sessionId);
     // What the turn had changed so far, which is only ever an account of a turn in progress.
     // A session let go mid-request keeps it otherwise, and the next resume merges it into

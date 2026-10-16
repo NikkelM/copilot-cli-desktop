@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import {
+  isPermissionGranted,
+  onAction,
+  requestPermission,
+  sendNotification,
+} from '@tauri-apps/plugin-notification';
 
 import type { Unseen } from './useUnseen';
 
@@ -22,6 +28,20 @@ const SAYS: Record<Unseen, string> = {
 const told = (wanted: Wanted) => `${wanted.sessionId}:${wanted.mark}`;
 
 /**
+ * What the notification carries home, so a click knows which session it was about (#273).
+ *
+ * The runtime hands `extra` back verbatim on the click, which is why there is no table of
+ * sent notifications here. Measured rather than assumed: a tap reported
+ * `extra: {"sessionId":"a13395b7-…"}`, the same value that went out with it. The numeric
+ * `id` the plugin also reports would have meant keeping a map from it to the session, and
+ * bounding that map, for no gain.
+ */
+const SESSION = 'sessionId';
+
+/** The action a click on the notification itself reports, as against one of its buttons. */
+const TAP = 'tap';
+
+/**
  * Say which session wants the reader, over whatever is on screen (#268).
  *
  * The only surface here that works while the window is behind something else: a flash and a
@@ -32,8 +52,12 @@ const told = (wanted: Wanted) => `${wanted.sessionId}:${wanted.mark}`;
  * stops being wanted and is wanted again later is a new thing to say, so the record is the
  * set of what is currently owed rather than everything ever said - which also keeps it from
  * growing for the life of the app.
+ *
+ * Clicking one opens the session it was about (#273). The listener lives here rather than
+ * in the caller because the key under `extra` is written and read in this file, and a
+ * contract with one end somewhere else is one that drifts.
  */
-export function useNotify(wanted: readonly Wanted[]): void {
+export function useNotify(wanted: readonly Wanted[], onOpen: (sessionId: string) => void | Promise<void>): void {
   /**
    * What the reader has already been told, as session and state.
    *
@@ -51,6 +75,55 @@ export function useNotify(wanted: readonly Wanted[]): void {
    * asked - and would leave the rule below defended by that timing rather than by itself.
    */
   const [allowed, setAllowed] = useState(false);
+
+  /**
+   * Held in a ref so the listener below is registered once and never again.
+   *
+   * Opening a session depends on the app's own state, so this callback changes identity on
+   * every render that touches it. Re-subscribing on each of those would tear a plugin
+   * listener down and build it again constantly, and a click landing in the gap is a click
+   * nobody hears.
+   */
+  const open = useRef(onOpen);
+  open.current = onOpen;
+
+  /**
+   * Take a click on a notification back to the session it was about (#273).
+   *
+   * The unregister is held behind a flag rather than awaited, because the cleanup can run
+   * before the listener has finished registering - React mounts every effect twice in
+   * development and does exactly that - and a cleanup that found nothing to drop would
+   * leave a listener behind for the life of the app.
+   */
+  useEffect(() => {
+    let live = true;
+    let drop: (() => void) | undefined;
+
+    void onAction((event) => {
+      // Only the notification itself. Nothing here registers buttons, so any other action
+      // is a kind this build does not know about and should not guess at.
+      if (!live || event.actionId !== TAP) return;
+      const sessionId = event.notification?.extra?.[SESSION];
+      if (typeof sessionId !== 'string' || !sessionId.trim()) return;
+      void (async () => {
+        await open.current(sessionId);
+        const window = getCurrentWindow();
+        await window.unminimize();
+        await window.show();
+        await window.setFocus();
+      })().catch((error: unknown) => console.error('Could not open the notification session', error));
+    })
+      .then((listener) => {
+        if (live) drop = () => void listener.unregister();
+        else void listener.unregister();
+      })
+      .catch((error: unknown) => console.error('Could not listen for notification clicks', error));
+
+    return () => {
+      live = false;
+      drop?.();
+    };
+  }, []);
 
   // Asked once, on the way in. A reader who said no is not asked again every time a session
   // finishes, and `sendNotification` on a refusal is a call that quietly does nothing.
@@ -86,7 +159,12 @@ export function useNotify(wanted: readonly Wanted[]): void {
       // Failure is swallowed: a notification that does not arrive is worth less than the
       // turn it would interrupt to report.
       try {
-        sendNotification({ title: each.title ?? 'Untitled session', body: SAYS[each.mark] });
+        sendNotification({
+          title: each.title ?? 'Untitled session',
+          body: SAYS[each.mark],
+          // Handed back verbatim on a click, which is what makes the session findable.
+          extra: { [SESSION]: each.sessionId },
+        });
       } catch {
         // A platform with no notifications, or a refusal that arrived late.
       }

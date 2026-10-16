@@ -441,6 +441,7 @@ describe('sameEntry', () => {
     command: 'echo hi',
     search: true,
     patch: 'diff --git a/x b/x',
+    writesFiles: true,
     path: 'src/a.ts',
     startedAt: '2026-09-05T12:00:00.000Z',
     endedAt: '2026-09-05T12:01:19.000Z',
@@ -487,6 +488,7 @@ describe('sameEntry', () => {
       command: 'echo bye',
       search: undefined,
       patch: undefined,
+      writesFiles: undefined,
       path: 'src/b.tsx',
       startedAt: '2026-09-05T12:00:01.000Z',
       endedAt: undefined,
@@ -734,6 +736,52 @@ describe('a change made by a tool', () => {
       'e2',
     ),
   ];
+
+  it.each(['edit', 'create', 'apply_patch'])('identifies %s as a write from its start event', (toolName) => {
+    const events = [
+      event('tool.execution_start', { toolCallId: 'write', toolName }, 'start'),
+      event('tool.execution_complete', {
+        toolCallId: 'write', success: true, result: { content: 'done', detailedContent: patch },
+      }, 'end'),
+    ];
+
+    expect(toEntries(events, null)[0]).toMatchObject({ kind: 'tool', writesFiles: true, patch });
+  });
+
+  it.each(['view', 'powershell', 'bash', 'git_diff'])('keeps %s diff output without identifying it as a write', (toolName) => {
+    const events = [
+      event('tool.execution_start', { toolCallId: 'read', toolName }, 'start'),
+      event('tool.execution_complete', {
+        toolCallId: 'read', success: true, result: { content: 'inspected', detailedContent: patch },
+      }, 'end'),
+    ];
+    const entry = toEntries(events, null)[0] as ToolEntry;
+
+    expect(entry.patch).toBe(patch);
+    expect(entry.writesFiles).toBeUndefined();
+  });
+
+  it('does not attribute a diff to a write when its start event is missing', () => {
+    const entry = toEntries([event('tool.execution_complete', {
+      toolCallId: 'unknown', success: true, result: { content: 'done', detailedContent: patch },
+    }, 'end')], null)[0] as ToolEntry;
+
+    expect(entry.patch).toBe(patch);
+    expect(entry.writesFiles).toBeUndefined();
+  });
+
+  it('does not identify an MCP inspection as a built-in writer merely because its short name is edit', () => {
+    const events = [
+      event('tool.execution_start', { toolCallId: 'mcp', mcpToolName: 'edit' }, 'start'),
+      event('tool.execution_complete', {
+        toolCallId: 'mcp', success: true, result: { content: 'inspected', detailedContent: patch },
+      }, 'end'),
+    ];
+    const entry = toEntries(events, null)[0] as ToolEntry;
+
+    expect(entry.patch).toBe(patch);
+    expect(entry.writesFiles).toBeUndefined();
+  });
 
   it('keeps the change the tool reported', () => {
     const entries = toEntries(edited(patch), null);

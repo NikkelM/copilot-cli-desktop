@@ -71,5 +71,18 @@ export function useMarkedSessions(key: string) {
     [key],
   );
 
-  return { ids, toggle, drop };
+  const reorder = useCallback((sessionId: string, targetId: string, after = false, visibleOrder?: readonly string[]) => {
+    setIds((current) => {
+      if (sessionId === targetId || !current.includes(sessionId) || !current.includes(targetId)) return current;
+      const visible = visibleOrder?.filter((id) => current.includes(id));
+      let at = 0;
+      const ordered = visible ? current.map((id) => visible.includes(id) ? visible[at++]! : id) : current;
+      const next = ordered.filter((id) => id !== sessionId);
+      next.splice(next.indexOf(targetId) + (after ? 1 : 0), 0, sessionId);
+      save('sessions', key, JSON.stringify(next));
+      return next;
+    });
+  }, [key]);
+
+  return { ids, toggle, drop, reorder };
 }

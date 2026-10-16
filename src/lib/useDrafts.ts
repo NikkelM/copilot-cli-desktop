@@ -157,6 +157,7 @@ export function useDrafts() {
   }, []);
 
   return {
+    hasUnsent: Object.values(drafts).some(Boolean) || Object.values(stash).some(Boolean),
     /** What is in a session's box, for the composer to show. */
     textOf: (sessionId: string | null) => (sessionId && drafts[sessionId]) || '',
     /** Whether a session has a prompt set aside, which the composer says so it is not invisible. */
