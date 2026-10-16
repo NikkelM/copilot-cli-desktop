@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { appLogDir } from '@tauri-apps/api/path';
+import { openPath } from '@tauri-apps/plugin-opener';
 
 import type { AppUpdates } from '../lib/useAppUpdates';
+import { messageOf } from '../lib/errors';
 import { bytes } from '../lib/units';
 import { formatRelative } from '../lib/time';
 import { Markdown } from './Markdown';
@@ -15,6 +18,7 @@ export function AppUpdateSettings({
   shows: (label: string) => boolean;
 }) {
   const [notesOpen, setNotesOpen] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
   const status = updates?.status;
   const busy = updates?.busy || (!!status && status.action !== 'idle');
   const blocked = dirty ? 'Save or discard your settings changes before installing.' : updates?.blocked;
@@ -79,7 +83,22 @@ export function AppUpdateSettings({
             Return to latest stable
           </button>
         )}
+        {shows('Open logs folder') && (
+          <button
+            type="button"
+            className="disk-action"
+            onClick={() => {
+              setLogsError(null);
+              void appLogDir().then(openPath).catch((error: unknown) => {
+                setLogsError(`Could not open logs folder: ${messageOf(error)}`);
+              });
+            }}
+          >
+            Open logs folder
+          </button>
+        )}
       </div>
+      {logsError && shows('Open logs folder') && <p className="error" role="alert">{logsError}</p>}
       {status?.ready && (
         <p className="settings-note">{installReason ?? 'The downloaded update will also install the next time the app starts.'}</p>
       )}

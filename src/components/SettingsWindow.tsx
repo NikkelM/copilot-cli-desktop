@@ -442,6 +442,7 @@ const INDEX: Record<CategoryId, Searchable[]> = {
     { label: 'Check for updates', keywords: 'manual latest release download version' },
     { label: 'Download update', keywords: 'fetch installer version' },
     { label: 'Install and restart', keywords: 'apply updater reboot relaunch downloaded ready' },
+    { label: 'Open logs folder', keywords: 'logs logging diagnostics crash startup debug troubleshooting explorer' },
   ],
 };
 

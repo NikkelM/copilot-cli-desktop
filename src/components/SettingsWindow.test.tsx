@@ -290,6 +290,16 @@ describe('desktop update settings', () => {
     expect(screen.getByRole('checkbox', { name: 'Automatically download app updates' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Check for updates' })).toBeTruthy();
   });
+
+  it('finds the logs folder through diagnostic search without unrelated update controls', async () => {
+    show();
+    await userEvent.type(screen.getByRole('searchbox'), 'diagnostics');
+    await userEvent.click(tab('Updates'));
+
+    expect(screen.getByRole('button', { name: 'Open logs folder' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Check for updates' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Automatically download app updates' })).toBeNull();
+  });
 });
 
 const kept = () => screen.getByLabelText('Sessions kept in memory') as HTMLInputElement;

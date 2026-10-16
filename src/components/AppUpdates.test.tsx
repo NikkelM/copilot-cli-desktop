@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppUpdates } from '../lib/useAppUpdates';
 import { AppUpdateNotice, AppUpdateSettings } from './AppUpdates';
 
+const { appLogDir, openPath } = vi.hoisted(() => ({ appLogDir: vi.fn(), openPath: vi.fn() }));
+vi.mock('@tauri-apps/api/path', () => ({ appLogDir }));
+vi.mock('@tauri-apps/plugin-opener', () => ({ openPath }));
 vi.mock('./Markdown', () => ({ Markdown: ({ body }: { body: string }) => <div data-testid="release-notes">{body}</div> }));
+
+beforeEach(() => {
+  appLogDir.mockReset().mockResolvedValue('D:\\App data\\logs');
+  openPath.mockReset().mockResolvedValue(undefined);
+});
 
 function updates(over: Partial<AppUpdates> = {}): AppUpdates {
   return {
@@ -105,6 +113,69 @@ describe('Updates settings', () => {
     render(<AppUpdateSettings updates={updates({ failed: 'Feed unavailable' })} dirty={false} shows={() => true} />);
     expect(screen.getByRole('alert').textContent).toBe('Feed unavailable');
     expect(screen.queryByText('You have the latest published version.')).toBeNull();
+  });
+
+  it('resolves and opens the app logs only when requested, without checking or installing updates', async () => {
+    const state = updates();
+    render(<AppUpdateSettings updates={state} dirty={false} shows={() => true} />);
+    expect(appLogDir).not.toHaveBeenCalled();
+    expect(openPath).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open logs folder' }));
+
+    await waitFor(() => expect(openPath).toHaveBeenCalledExactlyOnceWith('D:\\App data\\logs'));
+    expect(appLogDir).toHaveBeenCalledOnce();
+    expect(state.check).not.toHaveBeenCalled();
+    expect(state.install).not.toHaveBeenCalled();
+  });
+
+  it('can open logs with unavailable updater status, active work and unsaved settings', async () => {
+    const state = updates({ status: null, busy: true, failed: 'Status unavailable', blocked: 'A session is working' });
+    render(<AppUpdateSettings updates={state} dirty shows={() => true} />);
+    const button = screen.getByRole('button', { name: 'Open logs folder' });
+    expect(button).toHaveProperty('disabled', false);
+
+    fireEvent.click(button);
+
+    await waitFor(() => expect(openPath).toHaveBeenCalledExactlyOnceWith('D:\\App data\\logs'));
+  });
+
+  it('reports a log directory lookup failure without opening another location', async () => {
+    appLogDir.mockRejectedValueOnce(new Error('Logs directory unavailable'));
+    render(<AppUpdateSettings updates={updates()} dirty={false} shows={() => true} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open logs folder' }));
+
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not open logs folder: Logs directory unavailable');
+    expect(openPath).not.toHaveBeenCalled();
+  });
+
+  it('reports a failed folder open and clears the error after a successful retry', async () => {
+    openPath.mockRejectedValueOnce('Access denied');
+    render(<AppUpdateSettings updates={updates()} dirty={false} shows={() => true} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open logs folder' }));
+    expect((await screen.findByRole('alert')).textContent).toBe('Could not open logs folder: Access denied');
+    fireEvent.click(screen.getByRole('button', { name: 'Open logs folder' }));
+
+    await waitFor(() => expect(openPath).toHaveBeenCalledTimes(2));
+    expect(appLogDir).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('hides the logs action and its error when settings search filters it out', async () => {
+    openPath.mockRejectedValueOnce('Access denied');
+    const view = render(<AppUpdateSettings updates={updates()} dirty={false} shows={() => true} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open logs folder' }));
+    await screen.findByRole('alert');
+
+    view.rerender(<AppUpdateSettings
+      updates={updates()} dirty={false} shows={(label) => label !== 'Open logs folder'}
+    />);
+
+    expect(screen.queryByRole('button', { name: 'Open logs folder' })).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(appLogDir).toHaveBeenCalledOnce();
   });
 });
 
