@@ -1145,7 +1145,7 @@ describe('a page too short to scroll', () => {
         ...events,
         ...Array.from(
           { length: 150 },
-          (_, index) => ({ type: 'assistant.message', id: `p${page}-${index}`, data: { content: 'x' } }) as TranscriptEvent,
+          (_, index) => ({ type: 'assistant.message', id: `p${page}-${index}`, agentId: 'a1', data: { content: 'x' } }) as TranscriptEvent,
         ),
       ];
       act(() => view.rerender(
@@ -1155,6 +1155,7 @@ describe('a page too short to scroll', () => {
 
     // Six pages' worth, so the seventh render is the one that stops asking.
     expect(onLoadOlder.mock.calls.length).toBeLessThanOrEqual(7);
+    expect(view.container.querySelectorAll('ol.transcript > li.entry')).toHaveLength(2);
   });
 });
 
@@ -1283,7 +1284,7 @@ describe('coming back to a workable window while the reader follows along', () =
 
     const settled = (withHeights: boolean) => {
       const t = mounted(said(4));
-      t.grow(400);
+      t.grow(200);
       if (withHeights) measured(t.view);
 
       t.scrollTo(BOTTOM);
@@ -1301,7 +1302,7 @@ describe('coming back to a workable window while the reader follows along', () =
 
     // Still a trim: what the view does not need is still given back.
     it('gives back everything above what the view needs', () => {
-      expect(settled(true)).toBeLessThan(400);
+      expect(settled(true)).toBeLessThan(200);
     });
   });
 
