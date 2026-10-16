@@ -402,9 +402,11 @@ Review the release notes in `CHANGELOG.md` between the `Releasenotes` markers be
 After the build, tests, updater signing and artifact verification succeed, a non-dry run creates and pushes the CI bot's version commit and tag, then automatically publishes the GitHub release.
 Dry runs publish nothing and only upload workflow artifacts.
 
-Enable the prerelease option with a base version such as `0.1.1` to generate `0.1.1-beta.N`, using the `Release` workflow's `GITHUB_RUN_NUMBER` for `N`; project versions and updater metadata are stamped automatically.
-Use a new workflow run for each beta while keeping the same base - new runs get increasing numbers, with possible gaps after dry runs or stable runs.
-Rerunning an existing run keeps its number, and existing tags are rejected; versions, tags and installers are immutable, so don't retag or replace published assets.
+Enable the prerelease option in the `Release` workflow with a plain base version such as `0.1.1`; project versions and updater metadata are stamped automatically.
+After validating the base, the workflow checks fresh remote tags for that exact base and chooses one above the highest canonical numeric beta suffix, starting at `beta.1` if none exist.
+For example, `0.1.1-beta.1` is followed by `0.1.1-beta.2`, while `0.1.2` starts independently at `0.1.2-beta.1`.
+Calculating or building a dry run doesn't create a tag or consume a number.
+Once a version tag exists, that version stays reserved even if release creation later fails - versions, tags and installers remain immutable, so don't retag or replace published assets.
 A successful non-dry prerelease run automatically publishes the beta with `--prerelease --latest=false`, making it discoverable by opted-in apps while keeping the stable Latest release unchanged.
 Under [SemVer](https://semver.org/), `0.1.1` sorts above `0.1.1-beta.N`, and `+build` metadata doesn't advance update order.
 For MSI packaging only, betas map to numeric `X.Y.Z.N` (`N` in `1..65534`) and stable builds to `X.Y.Z.65535`; the signed and displayed app version remains the resolved SemVer.

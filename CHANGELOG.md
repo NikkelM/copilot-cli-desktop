@@ -6,6 +6,10 @@
 ### Added
 
 - Added an 'Open logs folder' button in Settings > Updates so you can access the app's logs for troubleshooting.
+
+### Changed
+
+- Beta numbering now increments independently per base release version using remote beta tags, replacing the `Release` workflow's `GITHUB_RUN_NUMBER`.
 <!--Releasenotes end-->
 
 ## v0.1.0

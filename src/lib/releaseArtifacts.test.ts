@@ -11,15 +11,18 @@ let root: string;
 let bundle: string;
 let output: string;
 let changelog: string;
+let tagsFile: string;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'desktop-release-'));
   bundle = join(root, 'bundle');
   output = join(root, 'published');
   changelog = join(root, 'CHANGELOG.md');
+  tagsFile = join(root, 'beta-tags.txt');
   mkdirSync(join(bundle, 'nsis'), { recursive: true });
   mkdirSync(join(bundle, 'msi'), { recursive: true });
   writeFileSync(changelog, '# Changes\n<!--Releasenotes start-->\nReviewed release notes.\n<!--Releasenotes end-->\n');
+  writeFileSync(tagsFile, '');
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
@@ -38,6 +41,12 @@ function manifest(version = '1.2.3') {
   return spawnSync(process.execPath, [
     manifestScript, '--version', version, '--repository', 'NikkelM/copilot-cli-desktop',
     '--bundle', bundle, '--output', output, '--changelog', changelog,
+  ], { cwd: root, encoding: 'utf8' });
+}
+
+function prerelease(version = '1.2.3') {
+  return spawnSync(process.execPath, [
+    versionScript, version, '--prerelease', '--tags-file', tagsFile,
   ], { cwd: root, encoding: 'utf8' });
 }
 
@@ -129,19 +138,100 @@ describe('signed updater release artifacts', () => {
 });
 
 describe('release version stamping', () => {
-  it('assigns a unique prerelease version from the workflow build number', () => {
-    for (const build of ['41', '42', '65534']) {
+  it('starts at beta.1 regardless of the workflow run number', () => {
+    for (const run of ['1', '42', '99999']) {
       const result = spawnSync(process.execPath, [
-        versionScript, '1.2.3', '--prerelease', '--build', build,
-      ], { encoding: 'utf8' });
+        versionScript, '1.2.3', '--prerelease', '--tags-file', tagsFile,
+      ], { encoding: 'utf8', env: { ...process.env, GITHUB_RUN_NUMBER: run } });
       expect(result.status, result.stderr).toBe(0);
-      expect(result.stdout.trim()).toBe(`1.2.3-beta.${build}`);
+      expect(result.stdout.trim()).toBe('1.2.3-beta.1');
     }
   });
 
-  it.each(['0', '01', '65535', '-1', 'text'])('rejects invalid numeric beta build %s', (build) => {
+  it('increments the highest numeric beta suffix for the requested base only', () => {
+    writeFileSync(tagsFile, [
+      'v1.2.3-beta.2', 'v1.2.3-beta.10', 'v1.2.3-beta.9', 'v1.2.4-beta.99',
+      'v1.2.3', 'v1.2.3-alpha.80', 'v1.2.3-beta.01', 'v1.2.3-beta.200^{}',
+    ].map((tag) => `${'a'.repeat(40)}\trefs/tags/${tag}`).join('\r\n'));
+    const result = prerelease();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout.trim()).toBe('1.2.3-beta.11');
+  });
+
+  it('keeps independent counters for each base version', () => {
+    writeFileSync(tagsFile, [
+      'v1.2.3-beta.7', 'v1.2.4-beta.2',
+    ].map((tag) => `${'a'.repeat(40)}\trefs/tags/${tag}`).join('\n'));
+    for (const [base, next] of [['1.2.3', '8'], ['1.2.4', '3'], ['1.2.5', '1']]) {
+      const result = prerelease(base);
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim()).toBe(`${base}-beta.${next}`);
+    }
+  });
+
+  it('does not consume numbers until a release tag exists', () => {
+    const existing = `${'a'.repeat(40)}\trefs/tags/v1.2.3-beta.2\n`;
+    writeFileSync(tagsFile, existing);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const result = prerelease();
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout.trim()).toBe('1.2.3-beta.3');
+      expect(readFileSync(tagsFile, 'utf8')).toBe(existing);
+    }
+    writeFileSync(tagsFile, `${existing}${'b'.repeat(40)}\trefs/tags/v1.2.3-beta.3\n`);
+    expect(prerelease().stdout.trim()).toBe('1.2.3-beta.4');
+  });
+
+  it('permits the last MSI beta number but rejects an exhausted sequence', () => {
+    writeFileSync(tagsFile, `${'a'.repeat(40)}\trefs/tags/v1.2.3-beta.65533\n`);
+    const last = prerelease();
+    expect(last.status, last.stderr).toBe(0);
+    expect(last.stdout.trim()).toBe('1.2.3-beta.65534');
+    writeFileSync(tagsFile, `${'a'.repeat(40)}\trefs/tags/v1.2.3-beta.65534\n`);
+    const exhausted = prerelease();
+    expect(exhausted.status).not.toBe(0);
+    expect(exhausted.stderr).toContain('between 1 and 65534');
+  });
+
+  it('requires a readable remote-tag snapshot rather than guessing beta.1', () => {
+    const missing = spawnSync(process.execPath, [
+      versionScript, '1.2.3', '--prerelease',
+    ], { encoding: 'utf8' });
+    expect(missing.status).not.toBe(0);
+    expect(missing.stderr).toContain('--tags-file');
+    const unreadable = spawnSync(process.execPath, [
+      versionScript, '1.2.3', '--prerelease', '--tags-file', join(root, 'missing.txt'),
+    ], { encoding: 'utf8' });
+    expect(unreadable.status).not.toBe(0);
+    expect(unreadable.stderr).toContain('ENOENT');
+  });
+
+  it('rejects malformed tag listings rather than resetting the counter', () => {
+    writeFileSync(tagsFile, 'fatal: could not read from remote repository\n');
+    const result = prerelease();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('Invalid Git tag listing');
+  });
+
+  it('rejects existing beta numbers beyond safe numeric precision', () => {
+    writeFileSync(tagsFile, `${'a'.repeat(40)}\trefs/tags/v1.2.3-beta.9007199254740993\n`);
+    const result = prerelease();
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('supported numeric range');
+  });
+
+  it('requires the base version and rejects tag input for a non-beta run', () => {
+    expect(prerelease('1.2.3-beta.2').stderr).toContain('Enter the base version');
     const result = spawnSync(process.execPath, [
-      versionScript, '1.2.3', '--prerelease', '--build', build,
+      versionScript, '1.2.3', '--tags-file', tagsFile,
+    ], { encoding: 'utf8' });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain('--tags-file requires --prerelease');
+  });
+
+  it.each(['0', '01', '65535', '-1', 'text'])('rejects invalid numeric beta version %s', (number) => {
+    const result = spawnSync(process.execPath, [
+      versionScript, `1.2.3-beta.${number}`,
     ], { encoding: 'utf8' });
     expect(result.status).not.toBe(0);
   });

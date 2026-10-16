@@ -14,7 +14,7 @@ export function releaseVersion(value) {
     throw new Error('Windows installers require major and minor at most 255, and patch at most 65535');
   }
   if (matched[4] && Number(matched[4]) >= 65535) {
-    throw new Error('Prerelease build numbers must be between 1 and 65534 for Windows installers');
+    throw new Error('Prerelease numbers must be between 1 and 65534 for Windows installers');
   }
   return value;
 }
@@ -52,15 +52,29 @@ if (import.meta.main) {
       options: {
         set: { type: 'boolean', default: false },
         prerelease: { type: 'boolean', default: false },
-        build: { type: 'string' },
+        'tags-file': { type: 'string' },
       },
     });
     let version = releaseVersion(positionals[0]);
     if (values.prerelease) {
       if (version.includes('-')) throw new Error('Enter the base version when assigning an automatic prerelease number');
-      version = releaseVersion(`${version}-beta.${values.build ?? ''}`);
-    } else if (values.build) {
-      throw new Error('--build requires --prerelease');
+      if (!values['tags-file']) throw new Error('--prerelease requires --tags-file from a successful remote tag lookup');
+      const prefix = `refs/tags/v${version}-beta.`;
+      let next = 1;
+      for (const line of readFileSync(values['tags-file'], 'utf8').split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        const tag = /^(?:[0-9a-f]{40}|[0-9a-f]{64})\s+(refs\/tags\/\S+)$/i.exec(line.trim())?.[1];
+        if (!tag) throw new Error('Invalid Git tag listing for prerelease numbering');
+        if (!tag.startsWith(prefix)) continue;
+        const suffix = tag.slice(prefix.length);
+        if (!/^[1-9]\d*$/.test(suffix)) continue;
+        const number = Number(suffix);
+        if (!Number.isSafeInteger(number)) throw new Error('Existing beta number exceeds the supported numeric range');
+        next = Math.max(next, number + 1);
+      }
+      version = releaseVersion(`${version}-beta.${next}`);
+    } else if (values['tags-file']) {
+      throw new Error('--tags-file requires --prerelease');
     }
     if (values.set) setReleaseVersion(process.cwd(), version);
     console.log(version);

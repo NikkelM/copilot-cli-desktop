@@ -46,14 +46,15 @@ jobs:
       - name: Check input tag format
         id: resolve
         run: |
-          args=()
-          if [ "$PRERELEASE" = true ]; then
-            args=(--prerelease --build "$GITHUB_RUN_NUMBER")
-          fi
-          version="$(node scripts/release-version.mjs "$RELEASE_BASE_VERSION" "${args[@]}")"
-          if [ "$PRERELEASE" != true ] && [[ "$version" == *-* ]]; then
+          version="$(node scripts/release-version.mjs "$RELEASE_BASE_VERSION")"
+          if [[ "$version" == *-* ]]; then
             echo "::error::Use a base Major.Minor.Patch version and the prerelease option."
             exit 1
+          fi
+          if [ "$PRERELEASE" = true ]; then
+            tags="$RUNNER_TEMP/prerelease-tags.txt"
+            git ls-remote --tags --refs origin "refs/tags/v$version-beta.*" > "$tags"
+            version="$(node scripts/release-version.mjs "$version" --prerelease --tags-file "$tags")"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
