@@ -1,8 +1,15 @@
 # Changelog
 
-## v0.1.0
+## Unreleased
 
 <!--Releasenotes start-->
+### Added
+
+- Added an 'Open logs folder' button in Settings > Updates so you can access the app's logs for troubleshooting.
+<!--Releasenotes end-->
+
+## v0.1.0
+
 The first release worth installing.
 
 ### What it does
@@ -39,4 +46,3 @@ The plain CLI with eight sessions open, only two of them working, measured on Wi
 Needs [Node.js](https://nodejs.org) 24 or newer and the
 [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), signed in. The
 installer is unsigned, so Windows will warn the first time it runs.
-<!--Releasenotes end-->
