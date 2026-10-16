@@ -571,6 +571,7 @@ export function SettingsWindow({
   onWriteCli?: (changes: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
+  const requestedUpdateChannel = useRef<boolean | null>(null);
   const previousPrereleases = useRef(settings.appIncludePrereleases);
   useEffect(() => {
     const previous = previousPrereleases.current;
@@ -763,6 +764,17 @@ export function SettingsWindow({
 
   const edit = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+
+  useEffect(() => {
+    if (!updates?.status) return;
+    if (updates.status.includePrereleases === draft.appIncludePrereleases) {
+      requestedUpdateChannel.current = null;
+      return;
+    }
+    if (requestedUpdateChannel.current === draft.appIncludePrereleases) return;
+    requestedUpdateChannel.current = draft.appIncludePrereleases;
+    void updates.selectChannel(draft.appIncludePrereleases);
+  }, [draft.appIncludePrereleases, updates?.selectChannel, updates?.status]);
 
   /**
    * Draw at the size being chosen, before it is saved.
@@ -1324,7 +1336,12 @@ export function SettingsWindow({
                     hint="Opt in to beta builds. They may be less reliable than stable releases. You can return to the latest stable release when one is available."
                   />
                 )}
-                <AppUpdateSettings updates={updates} dirty={unsaved} shows={shows} />
+                <AppUpdateSettings
+                  updates={updates}
+                  dirty={unsaved}
+                  includePrereleases={draft.appIncludePrereleases}
+                  shows={shows}
+                />
               </>
             )}
 

@@ -663,6 +663,32 @@ describe('the settings headings', () => {
     expect(block('.settings-body > .settings-subhead:first-child')).toContain('border-top: none;');
   });
 });
+
+describe('update settings actions', () => {
+  const block = (selector: string) => {
+    const at = css.indexOf(selector);
+    expect(at, `${selector} should be in the stylesheet`).toBeGreaterThan(-1);
+    return css.slice(at, css.indexOf('\n}', at));
+  };
+
+  it('gives the update and Debug action rows real flex spacing', () => {
+    const actions = block('.app-update-actions,');
+    expect(actions).toContain('display: flex;');
+    expect(actions).toContain('gap: 12px;');
+  });
+
+  it('makes update buttons larger than the compact shared disk action', () => {
+    const actions = block('.app-update-actions .disk-action,');
+    expect(actions).toContain('min-height: 34px;');
+    expect(actions).toContain('padding: 6px 12px;');
+    expect(actions).toContain('font-size: var(--font-md);');
+  });
+
+  it('leaves space between the primary update actions and the ready note', () => {
+    expect(block('.app-update-actions {')).toContain('margin: 18px 0 16px;');
+    expect(block('.app-update-ready-note {')).toContain('margin-top: 4px;');
+  });
+});
 /**
  * The controls on an MCP row sit beside what they act on.
  *

@@ -25,7 +25,7 @@ function updates(over: Partial<AppUpdates> = {}): AppUpdates {
     },
     busy: false, failed: null, installing: false, installFailed: null, blocked: null, showNotice: true,
     offerRollback: false, requestStable: vi.fn(), returnToStable: vi.fn(), dismissRollback: vi.fn(),
-    check: vi.fn(), download: vi.fn(), install: vi.fn(), dismiss: vi.fn(),
+    check: vi.fn(), selectChannel: vi.fn(), download: vi.fn(), install: vi.fn(), dismiss: vi.fn(),
     ...over,
   };
 }
@@ -35,7 +35,7 @@ describe('Updates settings', () => {
     const state = updates({
       status: { ...updates().status!, currentVersion: '2.1.0-beta.2', currentPrerelease: true, stableVersion: '2.0.0' },
     });
-    render(<AppUpdateSettings updates={state} dirty={false} shows={() => true} />);
+    render(<AppUpdateSettings updates={state} dirty={false} includePrereleases={false} shows={() => true} />);
     const button = screen.getByRole('button', { name: 'Return to latest stable' });
     expect(button.title).toBe('Return to 2.0.0');
     fireEvent.click(button);
@@ -44,32 +44,32 @@ describe('Updates settings', () => {
   });
 
   it('does not offer stable rollback to a stable build or when no stable release exists', () => {
-    const view = render(<AppUpdateSettings updates={updates()} dirty={false} shows={() => true} />);
+    const view = render(<AppUpdateSettings updates={updates()} dirty={false} includePrereleases={false} shows={() => true} />);
     expect(screen.queryByRole('button', { name: 'Return to latest stable' })).toBeNull();
     view.rerender(<AppUpdateSettings
       updates={updates({ status: { ...updates().status!, currentPrerelease: true, stableVersion: null } })}
-      dirty={false} shows={() => true}
+      dirty={false} includePrereleases={false} shows={() => true}
     />);
     expect(screen.getByRole('button', { name: 'Return to latest stable' })).toHaveProperty('disabled', true);
   });
 
   it('allows retrying a check when the initial status could not be read', () => {
     const state = updates({ status: null, failed: 'Status unavailable' });
-    render(<AppUpdateSettings updates={state} dirty={false} shows={() => true} />);
+    render(<AppUpdateSettings updates={state} dirty={false} includePrereleases={false} shows={() => true} />);
     const check = screen.getByRole('button', { name: 'Check for updates' }) as HTMLButtonElement;
     expect(check.disabled).toBe(false);
     fireEvent.click(check);
-    expect(state.check).toHaveBeenCalledOnce();
+    expect(state.check).toHaveBeenCalledExactlyOnceWith(false);
   });
 
   it('shows the installed and downloaded versions with check and install actions', () => {
     const state = updates();
-    render(<AppUpdateSettings updates={state} dirty={false} shows={() => true} />);
+    render(<AppUpdateSettings updates={state} dirty={false} includePrereleases={false} shows={() => true} />);
     expect(screen.getByText('Installed version: 1.0.0')).toBeTruthy();
     expect(screen.getByRole('status').textContent).toContain('2.0.0');
     fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
     fireEvent.click(screen.getByRole('button', { name: 'Install and restart' }));
-    expect(state.check).toHaveBeenCalledOnce();
+    expect(state.check).toHaveBeenCalledExactlyOnceWith(false);
     expect(state.install).toHaveBeenCalledOnce();
   });
 
@@ -82,7 +82,7 @@ describe('Updates settings', () => {
       reason: 'installed Windows build',
     },
   ])('does not install when %s', ({ dirty, state, reason }) => {
-    render(<AppUpdateSettings updates={state} dirty={dirty} shows={() => true} />);
+    render(<AppUpdateSettings updates={state} dirty={dirty} includePrereleases={false} shows={() => true} />);
     const install = screen.getByRole('button', { name: 'Install and restart' }) as HTMLButtonElement;
     expect(install.disabled).toBe(true);
     expect(install.title).toContain(reason);
@@ -92,32 +92,62 @@ describe('Updates settings', () => {
 
   it('offers a download for an available update and reports download progress', () => {
     const state = updates({ status: { ...updates().status!, ready: false } });
-    const view = render(<AppUpdateSettings updates={state} dirty={false} shows={() => true} />);
+    const view = render(<AppUpdateSettings updates={state} dirty={false} includePrereleases={false} shows={() => true} />);
     fireEvent.click(screen.getByRole('button', { name: 'Download update' }));
-    expect(state.download).toHaveBeenCalledOnce();
+    expect(state.download).toHaveBeenCalledExactlyOnceWith(false);
     view.rerender(<AppUpdateSettings
       updates={updates({ status: { ...state.status!, action: 'downloading', downloaded: 512, total: 1024 } })}
-      dirty={false} shows={() => true}
+      dirty={false} includePrereleases={false} shows={() => true}
     />);
     expect(screen.getByRole('progressbar', { name: 'Downloading app update' })).toHaveProperty('value', 512);
   });
 
   it('does not parse or draw release notes until requested', () => {
-    render(<AppUpdateSettings updates={updates()} dirty={false} shows={() => true} />);
+    render(<AppUpdateSettings updates={updates()} dirty={false} includePrereleases={false} shows={() => true} />);
     expect(screen.queryByTestId('release-notes')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Release notes' }));
     expect(screen.getByTestId('release-notes').textContent).toBe('Release notes content');
   });
 
   it('shows failures rather than claiming the app is up to date', () => {
-    render(<AppUpdateSettings updates={updates({ failed: 'Feed unavailable' })} dirty={false} shows={() => true} />);
+    render(<AppUpdateSettings
+      updates={updates({ failed: 'Feed unavailable' })}
+      dirty={false}
+      includePrereleases={false}
+      shows={() => true}
+    />);
     expect(screen.getByRole('alert').textContent).toBe('Feed unavailable');
     expect(screen.queryByText('You have the latest published version.')).toBeNull();
   });
 
+  it('checks and downloads against the prerelease channel shown in the unsaved draft', () => {
+    const state = updates({ status: { ...updates().status!, ready: false } });
+    render(<AppUpdateSettings updates={state} dirty includePrereleases shows={() => true} />);
+    expect(screen.getByText('Update channel: Stable and prerelease')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download update' }));
+
+    expect(state.check).toHaveBeenCalledExactlyOnceWith(true);
+    expect(state.download).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('separates larger update actions, the ready note and the Debug action', () => {
+    render(<AppUpdateSettings updates={updates()} dirty={false} includePrereleases={false} shows={() => true} />);
+    const check = screen.getByRole('button', { name: 'Check for updates' });
+    const logs = screen.getByRole('button', { name: 'Open logs folder' });
+    const readyNote = screen.getByText('The downloaded update will also install the next time the app starts.');
+
+    expect(check.closest('.app-update-actions')).toBeTruthy();
+    expect(logs.closest('.app-update-actions')).toBeNull();
+    expect(logs.closest('.app-update-debug-actions')).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'Debug' })).toBeTruthy();
+    expect(readyNote.classList.contains('app-update-ready-note')).toBe(true);
+  });
+
   it('resolves and opens the app logs only when requested, without checking or installing updates', async () => {
     const state = updates();
-    render(<AppUpdateSettings updates={state} dirty={false} shows={() => true} />);
+    render(<AppUpdateSettings updates={state} dirty={false} includePrereleases={false} shows={() => true} />);
     expect(appLogDir).not.toHaveBeenCalled();
     expect(openPath).not.toHaveBeenCalled();
 
@@ -131,7 +161,7 @@ describe('Updates settings', () => {
 
   it('can open logs with unavailable updater status, active work and unsaved settings', async () => {
     const state = updates({ status: null, busy: true, failed: 'Status unavailable', blocked: 'A session is working' });
-    render(<AppUpdateSettings updates={state} dirty shows={() => true} />);
+    render(<AppUpdateSettings updates={state} dirty includePrereleases={false} shows={() => true} />);
     const button = screen.getByRole('button', { name: 'Open logs folder' });
     expect(button).toHaveProperty('disabled', false);
 
@@ -142,7 +172,7 @@ describe('Updates settings', () => {
 
   it('reports a log directory lookup failure without opening another location', async () => {
     appLogDir.mockRejectedValueOnce(new Error('Logs directory unavailable'));
-    render(<AppUpdateSettings updates={updates()} dirty={false} shows={() => true} />);
+    render(<AppUpdateSettings updates={updates()} dirty={false} includePrereleases={false} shows={() => true} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open logs folder' }));
 
@@ -152,7 +182,7 @@ describe('Updates settings', () => {
 
   it('reports a failed folder open and clears the error after a successful retry', async () => {
     openPath.mockRejectedValueOnce('Access denied');
-    render(<AppUpdateSettings updates={updates()} dirty={false} shows={() => true} />);
+    render(<AppUpdateSettings updates={updates()} dirty={false} includePrereleases={false} shows={() => true} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open logs folder' }));
     expect((await screen.findByRole('alert')).textContent).toBe('Could not open logs folder: Access denied');
@@ -165,12 +195,13 @@ describe('Updates settings', () => {
 
   it('hides the logs action and its error when settings search filters it out', async () => {
     openPath.mockRejectedValueOnce('Access denied');
-    const view = render(<AppUpdateSettings updates={updates()} dirty={false} shows={() => true} />);
+    const view = render(<AppUpdateSettings updates={updates()} dirty={false} includePrereleases={false} shows={() => true} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open logs folder' }));
     await screen.findByRole('alert');
 
     view.rerender(<AppUpdateSettings
       updates={updates()} dirty={false} shows={(label) => label !== 'Open logs folder'}
+      includePrereleases={false}
     />);
 
     expect(screen.queryByRole('button', { name: 'Open logs folder' })).toBeNull();
@@ -204,13 +235,17 @@ describe('downloaded update prompt', () => {
 
   it('keeps a dismissed ready prompt out of the interface', () => {
     render(<AppUpdateNotice updates={updates({ showNotice: false })} />);
-    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Install and restart' })).toBeNull();
   });
 
-  it('offers installation and Later without starting installation by itself', () => {
+  it('prompts over the app to install an automatically downloaded startup update', () => {
     const state = updates();
-    render(<AppUpdateNotice updates={state} />);
+    const { container } = render(<div inert><AppUpdateNotice updates={state} /></div>);
+    const prompt = screen.getByRole('alertdialog', { name: 'Install app update?' });
+    expect(container.contains(prompt)).toBe(false);
+    expect(prompt.closest('[inert]')).toBeNull();
+    expect(screen.getByText('Version 2.0.0 was downloaded. Install it now and restart the app?')).toBeTruthy();
     expect(state.install).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Later' }));
     expect(state.dismiss).toHaveBeenCalledOnce();

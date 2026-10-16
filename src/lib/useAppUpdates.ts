@@ -10,6 +10,12 @@ import { APP_INCLUDE_PRERELEASES } from './useSettings';
 import { messageOf } from './errors';
 import { useTauriEvent } from './useTauriEvent';
 
+interface CheckRequest {
+  includePrereleases: boolean;
+  manual: boolean;
+  promptAfterDownload: boolean;
+}
+
 export function useAppUpdates(
   autoDownload: boolean,
   blocked: string | null,
@@ -21,6 +27,7 @@ export function useAppUpdates(
   const [busy, setBusy] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installFailed, setInstallFailed] = useState<string | null>(null);
+  const [prompted, setPrompted] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const [offerRollback, setOfferRollback] = useState(false);
   const pendingRollbackOffer = useRef(false);
@@ -28,7 +35,9 @@ export function useAppUpdates(
   const previousChannel = useRef(includePrereleases);
   const current = useRef<AppUpdateStatus | null>(null);
   const running = useRef(false);
+  const queuedCheck = useRef<CheckRequest | null>(null);
   const started = useRef(false);
+  const startupPrompt = useRef(true);
   const latest = useRef({ autoDownload, blocked, includePrereleases, onStable });
   latest.current = { autoDownload, blocked, includePrereleases, onStable };
 
@@ -36,40 +45,67 @@ export function useAppUpdates(
     if (current.current && next.revision < current.current.revision) return;
     current.current = next;
     setStatus(next);
+    if (startupPrompt.current && next.ready && next.available) {
+      startupPrompt.current = false;
+      setPrompted(next.available.version);
+    }
   }, []);
   useTauriEvent(() => onAppUpdate(accept), [accept]);
 
-  const check = useCallback(async (manual = true) => {
-    if (running.current || (current.current && current.current.action !== 'idle')) return;
-    if (manual) started.current = true;
+  const runCheck = useCallback(async (request: CheckRequest) => {
     running.current = true;
     setBusy(true);
     setFailed(null);
     try {
       const found = await checkAppUpdate(
-        latest.current.includePrereleases,
-        !!current.current?.rollback && !latest.current.includePrereleases,
+        request.includePrereleases,
+        !!current.current?.rollback && !request.includePrereleases,
       );
       accept(found);
       const seen = current.current;
       if (
-        seen?.action === 'idle' && seen.available && !seen.ready
-        && seen.includePrereleases === latest.current.includePrereleases
-        && (manual || latest.current.autoDownload)
+        !queuedCheck.current && seen?.action === 'idle' && seen.available && !seen.ready
+        && seen.includePrereleases === request.includePrereleases
+        && (request.manual || latest.current.autoDownload)
       ) {
         accept(await downloadAppUpdate());
+        if (request.promptAfterDownload && current.current?.available) {
+          setPrompted(current.current.available.version);
+        }
+      } else if (request.promptAfterDownload) {
+        startupPrompt.current = false;
       }
     } catch (error) {
       setFailed(messageOf(error));
+      if (request.promptAfterDownload) startupPrompt.current = false;
     } finally {
       running.current = false;
       setBusy(false);
     }
   }, [accept]);
 
-  const download = useCallback(async () => {
+  const requestCheck = useCallback((request: CheckRequest): Promise<void> => {
+    queuedCheck.current = request;
+    if (running.current || (current.current && current.current.action !== 'idle')) return Promise.resolve();
+    queuedCheck.current = null;
+    return runCheck(request);
+  }, [runCheck]);
+
+  const check = useCallback((channel = latest.current.includePrereleases) => {
+    started.current = true;
+    startupPrompt.current = false;
+    return requestCheck({ includePrereleases: channel, manual: true, promptAfterDownload: false });
+  }, [requestCheck]);
+
+  const selectChannel = useCallback((channel: boolean) => {
+    started.current = true;
+    startupPrompt.current = false;
+    return requestCheck({ includePrereleases: channel, manual: false, promptAfterDownload: false });
+  }, [requestCheck]);
+
+  const runDownload = useCallback(async (channel: boolean, prompt: boolean) => {
     if (running.current || !current.current?.available || current.current.ready || current.current.action !== 'idle') return;
-    if (current.current.available.prerelease && !latest.current.includePrereleases) {
+    if (current.current.available.prerelease && !channel) {
       setFailed('Prerelease updates are disabled. Check for a stable release instead.');
       return;
     }
@@ -78,13 +114,20 @@ export function useAppUpdates(
     setFailed(null);
     try {
       accept(await downloadAppUpdate());
+      if (prompt && current.current?.available) setPrompted(current.current.available.version);
     } catch (error) {
       setFailed(messageOf(error));
+      if (prompt) startupPrompt.current = false;
     } finally {
       running.current = false;
       setBusy(false);
     }
   }, [accept]);
+
+  const download = useCallback((channel = latest.current.includePrereleases) => {
+    startupPrompt.current = false;
+    return runDownload(channel, false);
+  }, [runDownload]);
 
   const install = useCallback(async () => {
     if (running.current || !current.current?.ready || current.current.action !== 'idle') return;
@@ -162,17 +205,25 @@ export function useAppUpdates(
 
   useEffect(() => {
     if (previousChannel.current !== includePrereleases) {
-      if (!includePrereleases && !suppressRollbackOffer.current) pendingRollbackOffer.current = true;
+      const handledByStableReturn = suppressRollbackOffer.current;
+      if (!includePrereleases && !handledByStableReturn) pendingRollbackOffer.current = true;
       suppressRollbackOffer.current = false;
       previousChannel.current = includePrereleases;
       setFailed(null);
+      if (
+        started.current && !handledByStableReturn
+        && current.current?.includePrereleases !== includePrereleases
+      ) {
+        void requestCheck({
+          includePrereleases,
+          manual: false,
+          promptAfterDownload: false,
+        });
+      }
     }
-    if (
-      started.current && status?.action === 'idle' && !busy && !running.current && !failed
-      && status.includePrereleases !== includePrereleases
-    ) {
-      void check(false);
-    }
+  }, [includePrereleases, requestCheck]);
+
+  useEffect(() => {
     if (
       pendingRollbackOffer.current && status?.action === 'idle'
       && status.includePrereleases === false && !busy && !running.current
@@ -180,7 +231,14 @@ export function useAppUpdates(
       pendingRollbackOffer.current = false;
       if (status.currentPrerelease && status.stableVersion) setOfferRollback(true);
     }
-  }, [includePrereleases, status, busy, failed, check]);
+  }, [status, busy]);
+
+  useEffect(() => {
+    if (busy || running.current || status?.action !== 'idle' || !queuedCheck.current) return;
+    const request = queuedCheck.current;
+    queuedCheck.current = null;
+    void runCheck(request);
+  }, [busy, status?.action, runCheck]);
 
   useEffect(() => {
     if (
@@ -188,9 +246,18 @@ export function useAppUpdates(
       && status.includePrereleases === includePrereleases
       && !status.error && !failed && !running.current
     ) {
-      void download();
+      void runDownload(includePrereleases, startupPrompt.current);
     }
-  }, [autoDownload, includePrereleases, status, failed, busy, download]);
+  }, [autoDownload, includePrereleases, status, failed, busy, runDownload]);
+
+  useEffect(() => {
+    if (
+      startupPrompt.current && status?.action === 'idle' && status.checkedAt
+      && (!status.available || !autoDownload)
+    ) {
+      startupPrompt.current = false;
+    }
+  }, [autoDownload, status]);
 
   useEffect(() => {
     let live = true;
@@ -200,23 +267,30 @@ export function useAppUpdates(
         accept(found);
         if (!started.current) {
           started.current = true;
-          void check(false);
+          if (found.action === 'idle') {
+            void requestCheck({
+              includePrereleases: latest.current.includePrereleases,
+              manual: false,
+              promptAfterDownload: true,
+            });
+          }
         }
       })
       .catch((error: unknown) => {
         if (live) setFailed(messageOf(error));
       });
     return () => { live = false; };
-  }, [accept, check]);
+  }, [accept, requestCheck]);
 
   return {
     status, busy, installing, installFailed, offerRollback,
     failed: failed ?? status?.error ?? null,
     blocked,
-    showNotice: !!status?.ready && status.installSupported && dismissed !== status.available?.version
+    showNotice: !!status?.ready && status.installSupported && prompted === status.available?.version
+      && dismissed !== status.available?.version
       && (!status.available?.prerelease || includePrereleases)
       && (!status.rollback || !includePrereleases),
-    check, download, install,
+    check, selectChannel, download, install,
     requestStable: () => setOfferRollback(true),
     returnToStable,
     dismissRollback: () => setOfferRollback(false),

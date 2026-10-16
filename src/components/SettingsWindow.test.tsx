@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { SettingsWindow } from './SettingsWindow';
 import type { Settings } from '../lib/useSettings';
 import type { BinnedSession, CliSetting } from '../../shared/protocol';
 import type { CliSettingsState } from '../lib/useCliSettings';
+import type { AppUpdates } from '../lib/useAppUpdates';
 import { save } from '../lib/store';
 import * as sidecar from '../lib/sidecar';
 
@@ -240,15 +241,29 @@ const SAVED: Settings = {
   notifyFailed: false,
   };
 
-const show = (over: Partial<Settings> = {}) => {
+const updateState = (over: Partial<AppUpdates> = {}): AppUpdates => ({
+  status: {
+    revision: 1, currentVersion: '1.0.0', action: 'idle', available: null, ready: false,
+    downloaded: 0, total: null, checkedAt: null, error: null, installSupported: true,
+    currentPrerelease: false, includePrereleases: false, stableVersion: '1.0.0', rollback: false,
+  },
+  busy: false, failed: null, installing: false, installFailed: null, blocked: null, showNotice: false,
+  offerRollback: false, requestStable: vi.fn(), returnToStable: vi.fn(), dismissRollback: vi.fn(),
+  check: vi.fn(), selectChannel: vi.fn(), download: vi.fn(), install: vi.fn(), dismiss: vi.fn(),
+  ...over,
+});
+
+const show = (over: Partial<Settings> = {}, updates?: AppUpdates) => {
   const onSave = vi.fn();
   const onClose = vi.fn();
   const settings = { ...SAVED, ...over };
-  const { rerender, unmount } = render(<SettingsWindow settings={settings} onSave={onSave} onClose={onClose} />);
+  const { rerender, unmount } = render(
+    <SettingsWindow settings={settings} onSave={onSave} onClose={onClose} updates={updates} />,
+  );
 
   /** What the app does after a save: hands back the settings it now holds. */
   const saved = (next: Settings) =>
-    rerender(<SettingsWindow settings={next} onSave={onSave} onClose={onClose} />);
+    rerender(<SettingsWindow settings={next} onSave={onSave} onClose={onClose} updates={updates} />);
 
   return { onSave, onClose, saved, unmount };
 };
@@ -263,6 +278,32 @@ describe('desktop update settings', () => {
     expect(view.onSave).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(view.onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ appIncludePrereleases: true }));
+  });
+
+  it('checks the displayed prerelease channel immediately without saving it', async () => {
+    const updates = updateState();
+    const view = show({}, updates);
+    await userEvent.click(tab('Updates'));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Include prerelease updates' }));
+
+    await waitFor(() => expect(updates.selectChannel).toHaveBeenCalledExactlyOnceWith(true));
+    expect(view.onSave).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(updates.check).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('checks stable immediately when an unsaved prerelease opt-in is cleared', async () => {
+    const updates = updateState({
+      status: { ...updateState().status!, includePrereleases: true },
+    });
+    const view = show({ appIncludePrereleases: true }, updates);
+    await userEvent.click(tab('Updates'));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Include prerelease updates' }));
+
+    await waitFor(() => expect(updates.selectChannel).toHaveBeenCalledExactlyOnceWith(false));
+    expect(view.onSave).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
+    expect(updates.check).toHaveBeenCalledExactlyOnceWith(false);
   });
 
   it('reflects an externally confirmed stable return without re-enabling prereleases in the draft', async () => {

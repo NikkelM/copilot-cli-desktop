@@ -101,6 +101,64 @@ describe('desktop app updates', () => {
       expect(api.installAppUpdate).not.toHaveBeenCalled();
     });
 
+    it('checks an unsaved displayed channel without changing the saved preference', async () => {
+      const view = mounted(false);
+      await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledWith(false, false));
+      api.checkAppUpdate.mockClear();
+
+      await act(async () => { await view.result.current.updates.selectChannel(true); });
+
+      expect(view.result.current.include).toBe(false);
+      expect(save).not.toHaveBeenCalled();
+      expect(api.checkAppUpdate).toHaveBeenCalledExactlyOnceWith(true, false);
+      expect(api.downloadAppUpdate).not.toHaveBeenCalled();
+      expect(view.result.current.updates.status?.includePrereleases).toBe(true);
+    });
+
+    it('commits an already-checked displayed channel without checking it twice', async () => {
+      const view = mounted(false);
+      await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledWith(false, false));
+      api.checkAppUpdate.mockClear();
+      await act(async () => { await view.result.current.updates.selectChannel(true); });
+      expect(api.checkAppUpdate).toHaveBeenCalledOnce();
+
+      act(() => view.result.current.setInclude(true));
+      await act(async () => { await Promise.resolve(); });
+
+      expect(view.result.current.include).toBe(true);
+      expect(api.checkAppUpdate).toHaveBeenCalledOnce();
+    });
+
+    it('manual checking downloads from the displayed channel without raising the startup prompt', async () => {
+      const view = mounted(false);
+      await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledWith(false, false));
+      api.checkAppUpdate.mockClear();
+
+      await act(async () => { await view.result.current.updates.check(true); });
+
+      expect(api.checkAppUpdate).toHaveBeenCalledExactlyOnceWith(true, false);
+      expect(api.downloadAppUpdate).toHaveBeenCalledOnce();
+      expect(view.result.current.updates.status?.ready).toBe(true);
+      expect(view.result.current.updates.showNotice).toBe(false);
+    });
+
+    it('queues the newest displayed channel while another selection is still checking', async () => {
+      let finish!: (status: AppUpdateStatus) => void;
+      api.checkAppUpdate.mockReturnValueOnce(new Promise<AppUpdateStatus>((resolve) => { finish = resolve; }));
+      const view = mounted(false);
+      await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledOnce());
+
+      act(() => {
+        void view.result.current.updates.selectChannel(true);
+        void view.result.current.updates.selectChannel(false);
+      });
+      await act(async () => finish(channelState(false)));
+      await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledTimes(2));
+
+      expect(api.checkAppUpdate).toHaveBeenLastCalledWith(false, false);
+      expect(api.downloadAppUpdate).not.toHaveBeenCalled();
+    });
+
     it('offers a confirmed stable return after opt-out without automatically downgrading', async () => {
       const view = mounted();
       await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledOnce());
@@ -197,6 +255,7 @@ describe('desktop app updates', () => {
     expect(api.checkAppUpdate).toHaveBeenCalledTimes(2);
     expect(api.downloadAppUpdate).toHaveBeenCalledOnce();
     expect(view.result.current.status?.ready).toBe(true);
+    expect(view.result.current.showNotice).toBe(false);
   });
 
   it('allows downloading an already-found update without repeating the check', async () => {
@@ -261,6 +320,7 @@ describe('desktop app updates', () => {
     emit(available());
     await waitFor(() => expect(view.result.current.status?.ready).toBe(true));
     expect(api.downloadAppUpdate).toHaveBeenCalledOnce();
+    expect(view.result.current.showNotice).toBe(true);
   });
 
   it('prepares the runtime and flushes stores before invoking the installer', async () => {
@@ -353,13 +413,13 @@ describe('desktop app updates', () => {
     expect(api.installAppUpdate).toHaveBeenCalledOnce();
   });
 
-  it('does not nag again about the same downloaded version after Later', async () => {
+  it('does not reopen a dismissed startup prompt for unrelated ready events', async () => {
     const view = watching();
     await waitFor(() => expect(view.result.current.showNotice).toBe(true));
     act(() => view.result.current.dismiss());
     emit({ ...ready(), revision: 5 });
     expect(view.result.current.showNotice).toBe(false);
     emit({ ...ready(), revision: 6, available: { version: '3.0.0', notes: null, prerelease: false } });
-    expect(view.result.current.showNotice).toBe(true);
+    expect(view.result.current.showNotice).toBe(false);
   });
 });

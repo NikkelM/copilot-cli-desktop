@@ -52,6 +52,14 @@ describe('Confirm', () => {
     expect(screen.queryByRole('checkbox')).toBeNull();
   });
 
+  it('can name the safe way out for the decision being asked', () => {
+    show({ cancelLabel: 'Later' });
+
+    expect(screen.getByRole('button', { name: 'Later' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    expect(document.activeElement?.textContent).toBe('Later');
+  });
+
   it('cancels rather than confirming on Escape', () => {
     const onCancel = vi.fn();
     const onConfirm = vi.fn();

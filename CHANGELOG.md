@@ -1,14 +1,20 @@
 # Changelog
 
-## Unreleased
+## v0.1.1
 
 <!--Releasenotes start-->
 ### Added
 
-- Added an 'Open logs folder' button in Settings > Updates so you can access the app's logs for troubleshooting.
+- Added the `Open logs folder` action under a new `Debug` subsection in `Settings > Updates`; it remains searchable using diagnostics terms.
 
 ### Changed
 
+- Changing `Include prerelease updates` now checks the displayed channel immediately, whether you turn it on or off, without saving first.
+  Manual `Check for updates` and `Download update` use that displayed state, while `Save` controls whether the choice persists and whether prerelease installation remains allowed after you leave Settings or restart.
+  Rapid changes only queue the newest requested channel, and saving a channel that was already checked doesn't repeat the check.
+- Updates downloaded automatically during startup now open a modal with `Install and restart` or `Later`.
+  Manual checks and downloads stay in Settings and don't open this prompt, while installer failures remain visible.
+- Increased the size of the main update action buttons, set 12px gaps between them and added more space before the next-launch note.
 - Beta numbering now increments independently per base release version using remote beta tags, replacing the `Release` workflow's `GITHUB_RUN_NUMBER`.
 <!--Releasenotes end-->
 

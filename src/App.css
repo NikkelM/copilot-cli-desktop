@@ -6759,6 +6759,28 @@ input[type='checkbox']:disabled {
   gap: 8px;
 }
 
+.app-update-actions,
+.app-update-debug-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 12px;
+}
+
+.app-update-actions {
+  margin: 18px 0 16px;
+}
+
+.app-update-actions .disk-action,
+.app-update-debug-actions .disk-action {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: var(--font-md);
+}
+
+.app-update-ready-note {
+  margin-top: 4px;
+}
+
 .disk-selection {
   display: flex;
   flex-wrap: wrap;

@@ -11,10 +11,11 @@ import { Markdown } from './Markdown';
 import { Confirm } from './Confirm';
 
 export function AppUpdateSettings({
-  updates, dirty, shows,
+  updates, dirty, includePrereleases, shows,
 }: {
   updates?: AppUpdates;
   dirty: boolean;
+  includePrereleases: boolean;
   shows: (label: string) => boolean;
 }) {
   const [notesOpen, setNotesOpen] = useState(false);
@@ -38,7 +39,7 @@ export function AppUpdateSettings({
   return (
     <>
       <p className="settings-note">Installed version: {status?.currentVersion ?? 'Reading...'}</p>
-      <p className="settings-note">Update channel: {status?.includePrereleases ? 'Stable and prerelease' : 'Stable only'}</p>
+      <p className="settings-note">Update channel: {includePrereleases ? 'Stable and prerelease' : 'Stable only'}</p>
       <p className="settings-note" role="status">{detail}</p>
       {status?.checkedAt && <p className="settings-note">Last checked {formatRelative(status.checkedAt)}.</p>}
       {status?.action === 'downloading' && (
@@ -50,14 +51,24 @@ export function AppUpdateSettings({
         />
       )}
       {updates?.failed && <p className="error" role="alert">{updates.failed}</p>}
-      <div className="disk-actions">
+      <div className="disk-actions app-update-actions">
         {shows('Check for updates') && (
-          <button type="button" className="disk-action" disabled={!updates || busy} onClick={() => void updates?.check()}>
+          <button
+            type="button"
+            className="disk-action"
+            disabled={!updates || busy}
+            onClick={() => void updates?.check(includePrereleases)}
+          >
             Check for updates
           </button>
         )}
         {status?.available && !status.ready && shows('Download update') && (
-          <button type="button" className="disk-action" disabled={busy} onClick={() => void updates?.download()}>
+          <button
+            type="button"
+            className="disk-action"
+            disabled={busy}
+            onClick={() => void updates?.download(includePrereleases)}
+          >
             Download update
           </button>
         )}
@@ -83,24 +94,11 @@ export function AppUpdateSettings({
             Return to latest stable
           </button>
         )}
-        {shows('Open logs folder') && (
-          <button
-            type="button"
-            className="disk-action"
-            onClick={() => {
-              setLogsError(null);
-              void appLogDir().then(openPath).catch((error: unknown) => {
-                setLogsError(`Could not open logs folder: ${messageOf(error)}`);
-              });
-            }}
-          >
-            Open logs folder
-          </button>
-        )}
       </div>
-      {logsError && shows('Open logs folder') && <p className="error" role="alert">{logsError}</p>}
       {status?.ready && (
-        <p className="settings-note">{installReason ?? 'The downloaded update will also install the next time the app starts.'}</p>
+        <p className="settings-note app-update-ready-note">
+          {installReason ?? 'The downloaded update will also install the next time the app starts.'}
+        </p>
       )}
       <p className="settings-note">Manual checks download any available update. Installation closes the app.</p>
       {status?.available?.notes && (
@@ -110,6 +108,26 @@ export function AppUpdateSettings({
           </button>
           {notesOpen && <Markdown body={status.available.notes} />}
         </div>
+      )}
+      {shows('Open logs folder') && (
+        <>
+          <h4 className="settings-subhead">Debug</h4>
+          <div className="disk-actions app-update-debug-actions">
+            <button
+              type="button"
+              className="disk-action"
+              onClick={() => {
+                setLogsError(null);
+                void appLogDir().then(openPath).catch((error: unknown) => {
+                  setLogsError(`Could not open logs folder: ${messageOf(error)}`);
+                });
+              }}
+            >
+              Open logs folder
+            </button>
+          </div>
+          {logsError && <p className="error" role="alert">{logsError}</p>}
+        </>
       )}
     </>
   );
@@ -136,12 +154,23 @@ export function AppUpdateNotice({ updates }: { updates: AppUpdates }) {
       document.body,
     );
   }
-  if ((!updates.showNotice && !updates.installFailed) || !updates.status?.available) return null;
+  if (updates.showNotice && updates.status?.ready && updates.status.available) {
+    return createPortal(
+      <Confirm
+        title="Install app update?"
+        body={`Version ${updates.status.available.version} was downloaded. Install it now and restart the app?`}
+        confirmLabel="Install and restart"
+        cancelLabel="Later"
+        onConfirm={() => void updates.install()}
+        onCancel={updates.dismiss}
+      />,
+      document.body,
+    );
+  }
+  if (!updates.installFailed || !updates.status?.available) return null;
   return (
     <div className="app-update-banner" role="status">
-      <span>{updates.status.ready
-        ? `Version ${updates.status.available.version} is downloaded.`
-        : `Version ${updates.status.available.version} could not be installed.`}</span>
+      <span>Version {updates.status.available.version} could not be installed.</span>
       <button
         type="button"
         className="changes-action primary"
