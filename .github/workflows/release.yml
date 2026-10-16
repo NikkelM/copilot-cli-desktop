@@ -183,7 +183,6 @@ jobs:
           git tag "v$RELEASE_VERSION" --annotate --message "Release $RELEASE_VERSION"
           git push origin "HEAD:$RELEASE_BRANCH" --tags
 
-      # A draft, so the notes can be read before anyone is told there is something to download.
       - name: Create the release
         if: ${{ !inputs.is-dry-run }}
         env:
@@ -192,7 +191,7 @@ jobs:
         run: |
           shopt -s nullglob
           assets=(release-artifacts/*.exe release-artifacts/*.msi release-artifacts/*.sig release-artifacts/latest.json)
-          options=(--draft)
+          options=()
           if [ "$PRERELEASE" = true ]; then
             options+=(--prerelease --latest=false)
           fi

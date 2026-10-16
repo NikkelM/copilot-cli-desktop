@@ -5,7 +5,7 @@
 > [!WARNING]
 > This project is still under development - expect bugs and changing behaviour.
 > Development is AI-assisted.
-> There are no published releases yet - see [Development](#development) to build from source.
+> Windows installers are available in [Releases](https://github.com/NikkelM/copilot-cli-desktop/releases) - the app is still in development.
 > This is an unofficial project and isn't affiliated with or endorsed by GitHub.
 
 A low-footprint desktop shell for the [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli).
@@ -224,8 +224,8 @@ display reports virtualised window coordinates and the capture comes out cropped
 
 I'm prioritising release validation and easier setup, with no delivery schedule.
 Sessions must stay lazy to keep resource use low, and missing events or content must be recoverable.
-The signed updater and release workflow are implemented locally - there's no published release yet.
-Next is a real installed `0.1.0` -> published `0.1.1` update test covering automatic/manual checks and downloads, immediate/next-launch installation, data preservation and recovery ([#121](https://github.com/NikkelM/copilot-cli-desktop/issues/121)).
+Stable `v0.1.0` is published, with verified Windows `NSIS`/`MSI` packages and version-bound updater signatures.
+The full installed update trial isn't complete yet - it covers the `0.1.0` -> `0.1.1` update, prereleases and rollback, including automatic/manual checks and downloads, immediate/next-launch installation, data preservation and recovery ([#121](https://github.com/NikkelM/copilot-cli-desktop/issues/121)).
 [First-run setup](https://github.com/NikkelM/copilot-cli-desktop/issues/120) should detect missing `Node.js 24+` or Copilot CLI, explain sign-in and offer installation or updates with your approval.
 
 Next are [terminal handover](https://github.com/NikkelM/copilot-cli-desktop/issues/88) without competing session owners, plus editor workspace and open-file context.
@@ -398,14 +398,14 @@ It defaults to `dry-run=true`, validates the version and that the new tag doesn'
 It builds installers, detached signatures and `latest.json`, and runs an explicit native integration test to verify the actual installers against the public key and signed app version.
 Workflow artifacts are uploaded even on dry runs, which publish nothing.
 
-A non-dry run retains the CI bot's version commit/tag/push and creates a draft GitHub release.
-The tag is created only after the build and tests pass.
-Review the release notes taken from `CHANGELOG.md` between the `Releasenotes` markers, then publish the draft to expose updates.
+Review the release notes in `CHANGELOG.md` between the `Releasenotes` markers before starting a non-dry run.
+After the build, tests, updater signing and artifact verification succeed, a non-dry run creates and pushes the CI bot's version commit and tag, then automatically publishes the GitHub release.
+Dry runs publish nothing and only upload workflow artifacts.
 
 Enable the prerelease option with a base version such as `0.1.1` to generate `0.1.1-beta.N`, using the `Release` workflow's `GITHUB_RUN_NUMBER` for `N`; project versions and updater metadata are stamped automatically.
 Use a new workflow run for each beta while keeping the same base - new runs get increasing numbers, with possible gaps after dry runs or stable runs.
 Rerunning an existing run keeps its number, and existing tags are rejected; versions, tags and installers are immutable, so don't retag or replace published assets.
-A non-dry run creates a draft prerelease with `--prerelease --latest=false`; publish it before opted-in apps can discover it.
+A successful non-dry prerelease run automatically publishes the beta with `--prerelease --latest=false`, making it discoverable by opted-in apps while keeping the stable Latest release unchanged.
 Under [SemVer](https://semver.org/), `0.1.1` sorts above `0.1.1-beta.N`, and `+build` metadata doesn't advance update order.
 For MSI packaging only, betas map to numeric `X.Y.Z.N` (`N` in `1..65534`) and stable builds to `X.Y.Z.65535`; the signed and displayed app version remains the resolved SemVer.
 
