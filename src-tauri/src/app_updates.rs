@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use super::update_releases::{eligible, published_releases};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{utils::config::BundleType, AppHandle, Emitter, Manager, State};
 use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 
 const EVENT: &str = "app-update";
@@ -250,6 +250,12 @@ fn configured_updater<R: tauri::Runtime>(
                 sidecar.stop();
             }
         });
+    if matches!(
+        tauri::utils::platform::bundle_type(),
+        Some(BundleType::Nsis)
+    ) {
+        builder = builder.installer_arg("/S");
+    }
     if let Some(manifest) = manifest {
         builder = builder
             .endpoints(vec![manifest])

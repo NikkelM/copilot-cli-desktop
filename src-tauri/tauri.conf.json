@@ -56,7 +56,7 @@
       ],
       "requireSignedVersion": true,
       "windows": {
-        "installMode": "quiet"
+        "installMode": "passive"
       }
     }
   }
