@@ -366,9 +366,8 @@ across arbitrary folders, including ones that are not git repositories.
 
 Open `Settings > Updates` to check for updates.
 The app checks automatically at startup, and automatic downloads are enabled by default; you can disable them through saved settings.
-Manual `Check for updates` only discovers and displays an update for the channel currently shown in Settings; the separate `Download update` button downloads it, while the saved `Automatically download app updates` preference controls background downloads following startup checks.
-
-A ready download opens a nonmodal prompt with `Install and restart` or `Later`; Settings also has an install button.
+Manual `Check for updates` only displays an update for the channel shown in `Settings > Updates` and never downloads it; `Download update` starts a manual download that remains there for installation, while a download started automatically by a startup check opens a modal with `Install and restart` or `Later`.
+Current-user NSIS updates install silently without an installer or progress window, while per-machine MSI updates use passive mode so Windows can request UAC and show progress.
 Installed Windows builds cache the signed package and install it on the next launch before the Node sidecar starts.
 Development builds can check and download into a separate `updates-dev` cache, but can't install themselves.
 

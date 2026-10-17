@@ -1,8 +1,38 @@
 # Changelog
 
-## v0.1.1
+## Unreleased
 
 <!--Releasenotes start-->
+Copilot CLI Desktop remains in development; this beta focuses on update discovery and installation on Windows.
+
+### Release notes
+
+- `Settings > Updates` now has independent `Installed release notes` and `Available release notes` controls.
+  Each expanded block begins with `Version X.Y.Z`, with more space below its button.
+- `Installed release notes` is shown only when GitHub release discovery finds an exact published release matching the running version after validating draft status, prerelease flags, `latest.json`, version metadata, and the expected repository URL.
+  Empty or unpublished notes aren't shown.
+
+### Update checks and downloads
+
+- `Check for updates` now only discovers and displays an update for the channel currently shown in `Settings > Updates`, and never downloads it.
+  Use `Download update` for an explicit manual download, even when automatic downloads are enabled.
+- Saved automatic downloads continue to apply to startup checks.
+  Manual downloads remain in `Settings > Updates` and don't open the startup modal.
+
+### Install and restart
+
+- The modal `Install and restart` confirmation now uses normal accent styling rather than destructive red.
+- Intentional sidecar shutdown during updater exit no longer flashes a red stopped-runtime error, while unexpected sidecar failures remain visible.
+
+### Windows installation
+
+- Current-user NSIS updates run silently, without an installer or progress window.
+- Per-machine MSI updates use passive mode so Windows can request UAC and show progress.
+  Standalone installers keep their normal behaviour.
+<!--Releasenotes end-->
+
+## v0.1.1
+
 ### Added
 
 - Added the `Open logs folder` action under a new `Debug` subsection in `Settings > Updates`; it remains searchable using diagnostics terms.
@@ -16,7 +46,6 @@
   Manual checks and downloads stay in Settings and don't open this prompt, while installer failures remain visible.
 - Increased the size of the main update action buttons, set 12px gaps between them and added more space before the next-launch note.
 - Beta numbering now increments independently per base release version using remote beta tags, replacing the `Release` workflow's `GITHUB_RUN_NUMBER`.
-<!--Releasenotes end-->
 
 ## v0.1.0
 
