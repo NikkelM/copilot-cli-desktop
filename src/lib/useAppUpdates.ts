@@ -108,16 +108,6 @@ export function useAppUpdates(
     });
   }, [requestCheck]);
 
-  const selectChannel = useCallback((channel: boolean) => {
-    started.current = true;
-    startupPrompt.current = false;
-    return requestCheck({
-      includePrereleases: channel,
-      downloadAutomatically: false,
-      promptAfterDownload: false,
-    });
-  }, [requestCheck]);
-
   const runDownload = useCallback(async (channel: boolean, prompt: boolean) => {
     if (running.current || !current.current?.available || current.current.ready || current.current.action !== 'idle') return;
     if (current.current.available.prerelease && !channel) {
@@ -309,7 +299,7 @@ export function useAppUpdates(
       && dismissed !== status.available?.version
       && (!status.available?.prerelease || includePrereleases)
       && (!status.rollback || !includePrereleases),
-    check, selectChannel, download, install,
+    check, download, install,
     requestStable: () => setOfferRollback(true),
     returnToStable,
     dismissRollback: () => setOfferRollback(false),

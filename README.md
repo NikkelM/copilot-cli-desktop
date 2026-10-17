@@ -376,8 +376,9 @@ Save or discard settings changes before using the Settings install button.
 Persisted app stores are flushed before installation; on failure, the runtime is unlocked and errors remain visible.
 
 `Include prerelease updates` is off by default, so the app checks the stable channel.
-Changing the checkbox in `Settings > Updates` immediately checks the channel shown, and manual `Check for updates` follows that displayed state even before you save.
-`Save` persists the displayed choice; enabling prereleases without saving doesn't allow a prerelease to install after you leave Settings or restart the app.
+`Include prerelease updates` and `Automatically download app updates` save immediately when toggled, while unrelated Settings changes still use `Save` or `Discard`.
+Changing `Include prerelease updates` immediately checks the newly saved channel, and `Check for updates` follows the channel shown without downloading anything.
+`Download update` remains explicit, and a downloaded prerelease can be installed immediately unless another Settings change is unsaved or a separate blocker applies.
 If an update is downloaded automatically during startup, the app asks you to choose `Install and restart` or `Later`.
 
 If you're running a prerelease, turning the option off or choosing `Return to latest stable` offers a confirmation when a published stable release is available.

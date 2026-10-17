@@ -571,7 +571,6 @@ export function SettingsWindow({
   onWriteCli?: (changes: Record<string, unknown>) => void;
 }) {
   const [draft, setDraft] = useState<Settings>(settings);
-  const requestedUpdateChannel = useRef<boolean | null>(null);
   const previousPrereleases = useRef(settings.appIncludePrereleases);
   useEffect(() => {
     const previous = previousPrereleases.current;
@@ -765,16 +764,13 @@ export function SettingsWindow({
   const edit = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
-  useEffect(() => {
-    if (!updates?.status) return;
-    if (updates.status.includePrereleases === draft.appIncludePrereleases) {
-      requestedUpdateChannel.current = null;
-      return;
-    }
-    if (requestedUpdateChannel.current === draft.appIncludePrereleases) return;
-    requestedUpdateChannel.current = draft.appIncludePrereleases;
-    void updates.selectChannel(draft.appIncludePrereleases);
-  }, [draft.appIncludePrereleases, updates?.selectChannel, updates?.status]);
+  const saveUpdateSetting = <K extends 'appAutoDownload' | 'appIncludePrereleases'>(
+    key: K,
+    value: Settings[K],
+  ) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    onSave({ ...settings, [key]: value });
+  };
 
   /**
    * Draw at the size being chosen, before it is saved.
@@ -1324,7 +1320,7 @@ export function SettingsWindow({
                   <TickField
                     label="Automatically download app updates"
                     checked={draft.appAutoDownload}
-                    onChange={(checked) => edit('appAutoDownload', checked)}
+                    onChange={(checked) => saveUpdateSetting('appAutoDownload', checked)}
                     hint="Check at startup and download signed updates in the background. Installation waits for your choice or the next app launch."
                   />
                 )}
@@ -1332,7 +1328,7 @@ export function SettingsWindow({
                   <TickField
                     label="Include prerelease updates"
                     checked={draft.appIncludePrereleases}
-                    onChange={(checked) => edit('appIncludePrereleases', checked)}
+                    onChange={(checked) => saveUpdateSetting('appIncludePrereleases', checked)}
                     hint="Opt in to beta builds. They may be less reliable than stable releases. You can return to the latest stable release when one is available."
                   />
                 )}

@@ -26,7 +26,7 @@ function updates(over: Partial<AppUpdates> = {}): AppUpdates {
     },
     busy: false, failed: null, installing: false, installFailed: null, blocked: null, showNotice: true,
     offerRollback: false, requestStable: vi.fn(), returnToStable: vi.fn(), dismissRollback: vi.fn(),
-    check: vi.fn(), selectChannel: vi.fn(), download: vi.fn(), install: vi.fn(), dismiss: vi.fn(),
+    check: vi.fn(), download: vi.fn(), install: vi.fn(), dismiss: vi.fn(),
     ...over,
   };
 }

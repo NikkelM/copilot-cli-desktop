@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { SettingsWindow } from './SettingsWindow';
@@ -250,7 +250,7 @@ const updateState = (over: Partial<AppUpdates> = {}): AppUpdates => ({
   },
   busy: false, failed: null, installing: false, installFailed: null, blocked: null, showNotice: false,
   offerRollback: false, requestStable: vi.fn(), returnToStable: vi.fn(), dismissRollback: vi.fn(),
-  check: vi.fn(), selectChannel: vi.fn(), download: vi.fn(), install: vi.fn(), dismiss: vi.fn(),
+  check: vi.fn(), download: vi.fn(), install: vi.fn(), dismiss: vi.fn(),
   ...over,
 });
 
@@ -270,30 +270,29 @@ const show = (over: Partial<Settings> = {}, updates?: AppUpdates) => {
 };
 
 describe('desktop update settings', () => {
-  it('keeps the prerelease opt-in as an unsaved draft until Save', async () => {
+  it('saves the prerelease opt-in immediately without the Settings Save button', async () => {
     const view = show();
     await userEvent.click(tab('Updates'));
     const field = screen.getByRole('checkbox', { name: 'Include prerelease updates' });
     expect(field).toHaveProperty('checked', false);
     await userEvent.click(field);
-    expect(view.onSave).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(view.onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ appIncludePrereleases: true }));
+    view.saved({ ...SAVED, appIncludePrereleases: true });
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true);
   });
 
-  it('checks the displayed prerelease channel immediately without saving it', async () => {
+  it('checks the displayed prerelease channel immediately after applying it', async () => {
     const updates = updateState();
     const view = show({}, updates);
     await userEvent.click(tab('Updates'));
     await userEvent.click(screen.getByRole('checkbox', { name: 'Include prerelease updates' }));
 
-    await waitFor(() => expect(updates.selectChannel).toHaveBeenCalledExactlyOnceWith(true));
-    expect(view.onSave).not.toHaveBeenCalled();
+    expect(view.onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ appIncludePrereleases: true }));
     await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
     expect(updates.check).toHaveBeenCalledExactlyOnceWith(true);
   });
 
-  it('checks stable immediately when an unsaved prerelease opt-in is cleared', async () => {
+  it('checks stable immediately when the prerelease opt-in is cleared', async () => {
     const updates = updateState({
       status: { ...updateState().status!, includePrereleases: true },
     });
@@ -301,8 +300,7 @@ describe('desktop update settings', () => {
     await userEvent.click(tab('Updates'));
     await userEvent.click(screen.getByRole('checkbox', { name: 'Include prerelease updates' }));
 
-    await waitFor(() => expect(updates.selectChannel).toHaveBeenCalledExactlyOnceWith(false));
-    expect(view.onSave).not.toHaveBeenCalled();
+    expect(view.onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ appIncludePrereleases: false }));
     await userEvent.click(screen.getByRole('button', { name: 'Check for updates' }));
     expect(updates.check).toHaveBeenCalledExactlyOnceWith(false);
   });
@@ -314,15 +312,29 @@ describe('desktop update settings', () => {
     expect(screen.getByRole('checkbox', { name: 'Include prerelease updates' })).toHaveProperty('checked', false);
   });
 
-  it('keeps automatic downloads in the settings draft until Save', async () => {
+  it('saves automatic downloads immediately without the Settings Save button', async () => {
     const view = show();
     await userEvent.click(tab('Updates'));
     const field = screen.getByRole('checkbox', { name: 'Automatically download app updates' });
     expect((field as HTMLInputElement).checked).toBe(true);
     await userEvent.click(field);
-    expect(view.onSave).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
     expect(view.onSave).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ appAutoDownload: false }));
+    view.saved({ ...SAVED, appAutoDownload: false });
+    expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', true);
+  });
+
+  it('does not save an unrelated Settings draft with an immediate update preference', async () => {
+    const view = show();
+    await userEvent.click(tab('Updates'));
+    view.saved({ ...SAVED, scale: 1.25 });
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Automatically download app updates' }));
+
+    expect(view.onSave).toHaveBeenCalledExactlyOnceWith({
+      ...SAVED,
+      scale: 1.25,
+      appAutoDownload: false,
+    });
   });
 
   it('finds the update controls through settings search', async () => {

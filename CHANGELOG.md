@@ -18,6 +18,7 @@ Copilot CLI Desktop remains in development; this beta focuses on update discover
   Use `Download update` for an explicit manual download, even when automatic downloads are enabled.
 - Saved automatic downloads continue to apply to startup checks.
   Manual downloads remain in `Settings > Updates` and don't open the startup modal.
+- `Automatically download app updates` and `Include prerelease updates` now save immediately when toggled, without saving unrelated Settings changes that are still waiting for `Save`.
 
 ### Install and restart
 

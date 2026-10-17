@@ -103,34 +103,6 @@ describe('desktop app updates', () => {
       expect(api.installAppUpdate).not.toHaveBeenCalled();
     });
 
-    it('checks an unsaved displayed channel without changing the saved preference', async () => {
-      const view = mounted(false);
-      await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledWith(false, false));
-      api.checkAppUpdate.mockClear();
-
-      await act(async () => { await view.result.current.updates.selectChannel(true); });
-
-      expect(view.result.current.include).toBe(false);
-      expect(save).not.toHaveBeenCalled();
-      expect(api.checkAppUpdate).toHaveBeenCalledExactlyOnceWith(true, false);
-      expect(api.downloadAppUpdate).not.toHaveBeenCalled();
-      expect(view.result.current.updates.status?.includePrereleases).toBe(true);
-    });
-
-    it('commits an already-checked displayed channel without checking it twice', async () => {
-      const view = mounted(false);
-      await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledWith(false, false));
-      api.checkAppUpdate.mockClear();
-      await act(async () => { await view.result.current.updates.selectChannel(true); });
-      expect(api.checkAppUpdate).toHaveBeenCalledOnce();
-
-      act(() => view.result.current.setInclude(true));
-      await act(async () => { await Promise.resolve(); });
-
-      expect(view.result.current.include).toBe(true);
-      expect(api.checkAppUpdate).toHaveBeenCalledOnce();
-    });
-
     it('manual checking only discovers from the displayed channel', async () => {
       const view = mounted(false, true);
       await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledWith(false, false));
@@ -151,10 +123,8 @@ describe('desktop app updates', () => {
       const view = mounted(false);
       await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledOnce());
 
-      act(() => {
-        void view.result.current.updates.selectChannel(true);
-        void view.result.current.updates.selectChannel(false);
-      });
+      act(() => view.result.current.setInclude(true));
+      act(() => view.result.current.setInclude(false));
       await act(async () => finish(channelState(false)));
       await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledTimes(2));
 
