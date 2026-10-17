@@ -1,6 +1,6 @@
 [package]
 name = "copilot-cli-desktop"
-version = "0.1.1"
+version = "0.1.2-beta.1"
 description = "Low-footprint desktop shell for the GitHub Copilot CLI"
 authors = ["NikkelM"]
 license = "GPL-3.0-or-later"
