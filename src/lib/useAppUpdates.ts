@@ -12,7 +12,7 @@ import { useTauriEvent } from './useTauriEvent';
 
 interface CheckRequest {
   includePrereleases: boolean;
-  manual: boolean;
+  downloadAutomatically: boolean;
   promptAfterDownload: boolean;
 }
 
@@ -36,6 +36,7 @@ export function useAppUpdates(
   const current = useRef<AppUpdateStatus | null>(null);
   const running = useRef(false);
   const queuedCheck = useRef<CheckRequest | null>(null);
+  const automaticDownloadPending = useRef(false);
   const started = useRef(false);
   const startupPrompt = useRef(true);
   const latest = useRef({ autoDownload, blocked, includePrereleases, onStable });
@@ -66,18 +67,23 @@ export function useAppUpdates(
       if (
         !queuedCheck.current && seen?.action === 'idle' && seen.available && !seen.ready
         && seen.includePrereleases === request.includePrereleases
-        && (request.manual || latest.current.autoDownload)
+        && request.downloadAutomatically && latest.current.autoDownload
       ) {
+        automaticDownloadPending.current = false;
         accept(await downloadAppUpdate());
         if (request.promptAfterDownload && current.current?.available) {
           setPrompted(current.current.available.version);
         }
-      } else if (request.promptAfterDownload) {
-        startupPrompt.current = false;
+      } else if (!queuedCheck.current) {
+        automaticDownloadPending.current = false;
+        if (request.promptAfterDownload) startupPrompt.current = false;
       }
     } catch (error) {
       setFailed(messageOf(error));
-      if (request.promptAfterDownload) startupPrompt.current = false;
+      if (!queuedCheck.current) {
+        automaticDownloadPending.current = false;
+        if (request.promptAfterDownload) startupPrompt.current = false;
+      }
     } finally {
       running.current = false;
       setBusy(false);
@@ -86,6 +92,7 @@ export function useAppUpdates(
 
   const requestCheck = useCallback((request: CheckRequest): Promise<void> => {
     queuedCheck.current = request;
+    automaticDownloadPending.current = request.downloadAutomatically;
     if (running.current || (current.current && current.current.action !== 'idle')) return Promise.resolve();
     queuedCheck.current = null;
     return runCheck(request);
@@ -94,13 +101,21 @@ export function useAppUpdates(
   const check = useCallback((channel = latest.current.includePrereleases) => {
     started.current = true;
     startupPrompt.current = false;
-    return requestCheck({ includePrereleases: channel, manual: true, promptAfterDownload: false });
+    return requestCheck({
+      includePrereleases: channel,
+      downloadAutomatically: false,
+      promptAfterDownload: false,
+    });
   }, [requestCheck]);
 
   const selectChannel = useCallback((channel: boolean) => {
     started.current = true;
     startupPrompt.current = false;
-    return requestCheck({ includePrereleases: channel, manual: false, promptAfterDownload: false });
+    return requestCheck({
+      includePrereleases: channel,
+      downloadAutomatically: false,
+      promptAfterDownload: false,
+    });
   }, [requestCheck]);
 
   const runDownload = useCallback(async (channel: boolean, prompt: boolean) => {
@@ -216,7 +231,7 @@ export function useAppUpdates(
       ) {
         void requestCheck({
           includePrereleases,
-          manual: false,
+          downloadAutomatically: false,
           promptAfterDownload: false,
         });
       }
@@ -242,10 +257,12 @@ export function useAppUpdates(
 
   useEffect(() => {
     if (
-      autoDownload && status?.action === 'idle' && status.available && !status.ready
+      automaticDownloadPending.current && autoDownload
+      && status?.action === 'idle' && status.available && !status.ready
       && status.includePrereleases === includePrereleases
       && !status.error && !failed && !running.current
     ) {
+      automaticDownloadPending.current = false;
       void runDownload(includePrereleases, startupPrompt.current);
     }
   }, [autoDownload, includePrereleases, status, failed, busy, runDownload]);
@@ -270,9 +287,11 @@ export function useAppUpdates(
           if (found.action === 'idle') {
             void requestCheck({
               includePrereleases: latest.current.includePrereleases,
-              manual: false,
+              downloadAutomatically: true,
               promptAfterDownload: true,
             });
+          } else {
+            automaticDownloadPending.current = true;
           }
         }
       })

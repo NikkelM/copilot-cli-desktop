@@ -122,7 +122,9 @@ export function AppUpdateSettings({
           {installReason ?? 'The downloaded update will also install the next time the app starts.'}
         </p>
       )}
-      <p className="settings-note">Manual checks download any available update. Installation closes the app.</p>
+      <p className="settings-note">
+        Manual checks only show available updates for the displayed channel; use Download update or enable automatic downloads for startup checks, and installation closes the app.
+      </p>
       {status?.currentRelease?.notes && (
         <ReleaseNotes
           label="Installed release notes"

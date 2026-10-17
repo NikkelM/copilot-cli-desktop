@@ -56,8 +56,10 @@ describe('desktop app updates', () => {
     const view = watching();
     await waitFor(() => expect(view.result.current.failed).toBe('Status unavailable'));
     await act(async () => { await view.result.current.check(); });
-    expect(view.result.current.status?.ready).toBe(true);
+    expect(view.result.current.status?.available?.version).toBe('2.0.0');
+    expect(view.result.current.status?.ready).toBe(false);
     expect(api.checkAppUpdate).toHaveBeenCalledOnce();
+    expect(api.downloadAppUpdate).not.toHaveBeenCalled();
     expect(view.result.current.failed).toBeNull();
   });
 
@@ -129,16 +131,17 @@ describe('desktop app updates', () => {
       expect(api.checkAppUpdate).toHaveBeenCalledOnce();
     });
 
-    it('manual checking downloads from the displayed channel without raising the startup prompt', async () => {
-      const view = mounted(false);
+    it('manual checking only discovers from the displayed channel', async () => {
+      const view = mounted(false, true);
       await waitFor(() => expect(api.checkAppUpdate).toHaveBeenCalledWith(false, false));
       api.checkAppUpdate.mockClear();
 
       await act(async () => { await view.result.current.updates.check(true); });
 
       expect(api.checkAppUpdate).toHaveBeenCalledExactlyOnceWith(true, false);
-      expect(api.downloadAppUpdate).toHaveBeenCalledOnce();
-      expect(view.result.current.updates.status?.ready).toBe(true);
+      expect(api.downloadAppUpdate).not.toHaveBeenCalled();
+      expect(view.result.current.updates.status?.available?.prerelease).toBe(true);
+      expect(view.result.current.updates.status?.ready).toBe(false);
       expect(view.result.current.updates.showNotice).toBe(false);
     });
 
@@ -246,13 +249,17 @@ describe('desktop app updates', () => {
     expect(view.result.current.showNotice).toBe(true);
   });
 
-  it('still checks when automatic downloads are disabled, and a manual check downloads the update', async () => {
+  it('keeps manual checking separate from downloading when automatic downloads are disabled', async () => {
     const view = watching(false);
     await waitFor(() => expect(view.result.current.status?.available?.version).toBe('2.0.0'));
     expect(api.downloadAppUpdate).not.toHaveBeenCalled();
 
     await act(async () => { await view.result.current.check(); });
     expect(api.checkAppUpdate).toHaveBeenCalledTimes(2);
+    expect(api.downloadAppUpdate).not.toHaveBeenCalled();
+    expect(view.result.current.status?.ready).toBe(false);
+
+    await act(async () => { await view.result.current.download(); });
     expect(api.downloadAppUpdate).toHaveBeenCalledOnce();
     expect(view.result.current.status?.ready).toBe(true);
     expect(view.result.current.showNotice).toBe(false);

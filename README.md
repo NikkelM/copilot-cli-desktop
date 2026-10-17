@@ -366,7 +366,7 @@ across arbitrary folders, including ones that are not git repositories.
 
 Open `Settings > Updates` to check for updates.
 The app checks automatically at startup, and automatic downloads are enabled by default; you can disable them through saved settings.
-A manual `Check for updates` downloads a new update even when automatic downloads are off, and `Download update` is also offered for a discovered candidate.
+Manual `Check for updates` only discovers and displays an update for the channel currently shown in Settings; the separate `Download update` button downloads it, while the saved `Automatically download app updates` preference controls background downloads following startup checks.
 
 A ready download opens a nonmodal prompt with `Install and restart` or `Later`; Settings also has an install button.
 Installed Windows builds cache the signed package and install it on the next launch before the Node sidecar starts.
