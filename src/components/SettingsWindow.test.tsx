@@ -243,7 +243,8 @@ const SAVED: Settings = {
 
 const updateState = (over: Partial<AppUpdates> = {}): AppUpdates => ({
   status: {
-    revision: 1, currentVersion: '1.0.0', action: 'idle', available: null, ready: false,
+    revision: 1, currentVersion: '1.0.0', currentRelease: null,
+    action: 'idle', available: null, ready: false,
     downloaded: 0, total: null, checkedAt: null, error: null, installSupported: true,
     currentPrerelease: false, includePrereleases: false, stableVersion: '1.0.0', rollback: false,
   },

@@ -49,8 +49,12 @@ beforeEach(() => {
   });
 });
 
-const mounted = (onLost = vi.fn(), onReplaced = vi.fn()) => ({
-  ...renderHook(() => useRuntimeHealth(onLost, onReplaced)),
+const mounted = (
+  onLost = vi.fn(),
+  onReplaced = vi.fn(),
+  expectedStop: { current: boolean } = { current: false },
+) => ({
+  ...renderHook(() => useRuntimeHealth(onLost, onReplaced, expectedStop)),
   onLost,
   onReplaced,
 });
@@ -78,6 +82,28 @@ describe('whether the runtime is there', () => {
     act(() => fireStopped('gone'));
 
     expect(t.onLost).toHaveBeenCalled();
+  });
+
+  it('stands down without showing an error when installer exit expects the sidecar to stop', () => {
+    const expectedStop = { current: true };
+    const t = mounted(vi.fn(), vi.fn(), expectedStop);
+
+    act(() => fireStopped('the sidecar stopped and will not be replaced'));
+
+    expect(t.result.current.stopped).toBeNull();
+    expect(t.onLost).toHaveBeenCalledOnce();
+  });
+
+  it('still reports a later unexpected stop through the same subscription', () => {
+    const expectedStop = { current: true };
+    const t = mounted(vi.fn(), vi.fn(), expectedStop);
+    act(() => fireStopped('expected'));
+    expectedStop.current = false;
+
+    act(() => fireStopped('unexpected'));
+
+    expect(t.result.current.stopped).toBe('unexpected');
+    expect(t.onLost).toHaveBeenCalledTimes(2);
   });
 
   it('clears the message when a replacement is up', () => {
@@ -218,4 +244,3 @@ describe('whether it is a version behind the source', () => {
     expect(result.current.rebuilding).toBe(false);
   });
 });
-

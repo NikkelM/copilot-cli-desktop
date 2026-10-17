@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 export interface AppUpdateStatus {
   revision: number;
   currentVersion: string;
+  currentRelease: { version: string; notes: string | null; prerelease: boolean } | null;
   action: 'idle' | 'checking' | 'downloading' | 'installing';
   available: { version: string; notes: string | null; prerelease: boolean } | null;
   ready: boolean;

@@ -3540,7 +3540,16 @@ button.group:hover {
   margin-top: 16px;
 }
 
-.app-update-notes > .markdown {
+.app-update-notes-body {
+  margin-top: 12px;
+}
+
+.app-update-notes-version {
+  margin: 0 0 8px;
+  font-size: var(--font-lg);
+}
+
+.app-update-notes-body > .markdown {
   max-height: 30vh;
   overflow: auto;
 }

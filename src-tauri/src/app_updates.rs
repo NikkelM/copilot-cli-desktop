@@ -34,6 +34,7 @@ pub struct Release {
 pub struct Status {
     pub revision: u64,
     pub current_version: String,
+    pub current_release: Option<Release>,
     pub action: Action,
     pub available: Option<Release>,
     pub ready: bool,
@@ -277,6 +278,7 @@ impl AppUpdates {
         let mut status = Status {
             revision: 0,
             current_version: app.package_info().version.to_string(),
+            current_release: None,
             action: Action::Idle,
             available: None,
             ready: false,
@@ -411,7 +413,12 @@ impl AppUpdates {
                 inner.status.revision += 1;
             }
             self.emit(app);
-            let releases = published_releases().await?;
+            let releases = published_releases(&app.package_info().version).await?;
+            let current_release = releases.current.as_ref().map(|release| Release {
+                version: release.version.to_string(),
+                notes: release.notes.clone(),
+                prerelease: !release.version.pre.is_empty(),
+            });
             let stable_version = releases
                 .stable
                 .as_ref()
@@ -455,6 +462,7 @@ impl AppUpdates {
                 None
             };
             let mut inner = self.inner.lock().unwrap();
+            inner.status.current_release = current_release;
             inner.status.stable_version = stable_version;
             inner.replace_offer(update, self.cache.as_ref())
         }
@@ -739,6 +747,7 @@ mod tests {
                 status: Status {
                     revision: 1,
                     current_version: update.current_version.clone(),
+                    current_release: None,
                     action: Action::Idle,
                     available: Some(release(&update)),
                     ready: true,

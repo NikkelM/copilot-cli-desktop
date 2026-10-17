@@ -17,7 +17,7 @@ vi.mock('./sidecar', () => runtime);
 vi.mock('./store', () => ({ flushStores, save }));
 
 const state = (over: Partial<AppUpdateStatus> = {}): AppUpdateStatus => ({
-  revision: 0, currentVersion: '1.0.0', action: 'idle', available: null,
+  revision: 0, currentVersion: '1.0.0', currentRelease: null, action: 'idle', available: null,
   ready: false, downloaded: 0, total: null, checkedAt: null, error: null,
   installSupported: true,
   currentPrerelease: false, includePrereleases: false, stableVersion: '2.0.0', rollback: false,

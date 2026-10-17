@@ -17,6 +17,7 @@ export function Confirm({
   body,
   confirmLabel,
   cancelLabel = 'Cancel',
+  destructive = true,
   remember,
   onConfirm,
   onCancel,
@@ -26,6 +27,7 @@ export function Confirm({
   body: React.ReactNode;
   confirmLabel: string;
   cancelLabel?: string;
+  destructive?: boolean;
   /** Offers to stop asking. Absent leaves the question unskippable, which some are. */
   remember?: string;
   /** Told whether the reader asked not to be asked again. */
@@ -74,7 +76,11 @@ export function Confirm({
           <button type="button" ref={cancel} className="confirm-cancel" onClick={onCancel}>
             {cancelLabel}
           </button>
-          <button type="button" className="confirm-go" onClick={() => onConfirm(dontAsk)}>
+          <button
+            type="button"
+            className={destructive ? 'confirm-go' : undefined}
+            onClick={() => onConfirm(dontAsk)}
+          >
             {confirmLabel}
           </button>
         </div>

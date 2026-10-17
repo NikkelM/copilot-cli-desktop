@@ -10,6 +10,29 @@ import { formatRelative } from '../lib/time';
 import { Markdown } from './Markdown';
 import { Confirm } from './Confirm';
 
+function ReleaseNotes({
+  label,
+  release,
+}: {
+  label: string;
+  release: { version: string; notes: string };
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="app-update-notes">
+      <button type="button" className="changes-action" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {label}
+      </button>
+      {open && (
+        <div className="app-update-notes-body">
+          <h4 className="app-update-notes-version">Version {release.version}</h4>
+          <Markdown body={release.notes} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AppUpdateSettings({
   updates, dirty, includePrereleases, shows,
 }: {
@@ -18,7 +41,6 @@ export function AppUpdateSettings({
   includePrereleases: boolean;
   shows: (label: string) => boolean;
 }) {
-  const [notesOpen, setNotesOpen] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
   const status = updates?.status;
   const busy = updates?.busy || (!!status && status.action !== 'idle');
@@ -101,13 +123,17 @@ export function AppUpdateSettings({
         </p>
       )}
       <p className="settings-note">Manual checks download any available update. Installation closes the app.</p>
+      {status?.currentRelease?.notes && (
+        <ReleaseNotes
+          label="Installed release notes"
+          release={{ version: status.currentRelease.version, notes: status.currentRelease.notes }}
+        />
+      )}
       {status?.available?.notes && (
-        <div className="app-update-notes">
-          <button type="button" className="changes-action" aria-expanded={notesOpen} onClick={() => setNotesOpen(!notesOpen)}>
-            Release notes
-          </button>
-          {notesOpen && <Markdown body={status.available.notes} />}
-        </div>
+        <ReleaseNotes
+          label="Available release notes"
+          release={{ version: status.available.version, notes: status.available.notes }}
+        />
       )}
       {shows('Open logs folder') && (
         <>
@@ -161,6 +187,7 @@ export function AppUpdateNotice({ updates }: { updates: AppUpdates }) {
         body={`Version ${updates.status.available.version} was downloaded. Install it now and restart the app?`}
         confirmLabel="Install and restart"
         cancelLabel="Later"
+        destructive={false}
         onConfirm={() => void updates.install()}
         onCancel={updates.dismiss}
       />,

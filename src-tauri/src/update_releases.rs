@@ -17,6 +17,7 @@ struct GitHubRelease {
     tag_name: String,
     draft: bool,
     prerelease: bool,
+    body: Option<String>,
     assets: Vec<Asset>,
 }
 
@@ -24,16 +25,18 @@ struct GitHubRelease {
 pub struct PublishedRelease {
     pub version: Version,
     pub manifest: Url,
+    pub notes: Option<String>,
 }
 
 #[derive(Default)]
 pub struct Releases {
     pub stable: Option<PublishedRelease>,
     pub preview: Option<PublishedRelease>,
+    pub current: Option<PublishedRelease>,
 }
 
 impl Releases {
-    fn include(&mut self, release: GitHubRelease) -> Result<(), String> {
+    fn include(&mut self, release: GitHubRelease, current: &Version) -> Result<(), String> {
         if release.draft {
             return Ok(());
         }
@@ -70,6 +73,14 @@ impl Releases {
                 release.tag_name
             ));
         }
+        let published = PublishedRelease {
+            version: version.clone(),
+            manifest: asset.browser_download_url,
+            notes: release.body.filter(|notes| !notes.trim().is_empty()),
+        };
+        if version == *current {
+            self.current = Some(published.clone());
+        }
         let destination = if release.prerelease {
             &mut self.preview
         } else {
@@ -79,10 +90,7 @@ impl Releases {
             .as_ref()
             .is_none_or(|previous| version > previous.version)
         {
-            *destination = Some(PublishedRelease {
-                version,
-                manifest: asset.browser_download_url,
-            });
+            *destination = Some(published);
         }
         Ok(())
     }
@@ -125,7 +133,7 @@ fn release_client() -> Result<reqwest::Client, String> {
         .map_err(|error| format!("Could not initialise release discovery: {error}"))
 }
 
-pub async fn published_releases() -> Result<Releases, String> {
+pub async fn published_releases(current: &Version) -> Result<Releases, String> {
     let client = release_client()?;
     let mut found = Releases::default();
     for page in 1..=20 {
@@ -142,7 +150,7 @@ pub async fn published_releases() -> Result<Releases, String> {
             .map_err(|error| format!("Could not read app release metadata: {error}"))?;
         let last_page = releases.len() < 100;
         for release in releases {
-            found.include(release)?;
+            found.include(release, current)?;
         }
         if last_page {
             return Ok(found);
@@ -172,6 +180,7 @@ mod tests {
             tag_name: format!("v{version}"),
             draft: false,
             prerelease,
+            body: Some(format!("Notes for {version}")),
             assets: vec![Asset {
                 name: "latest.json".into(),
                 browser_download_url: format!(
@@ -184,39 +193,71 @@ mod tests {
     #[test]
     fn prereleases_are_opt_in_and_numerically_ordered() {
         let mut found = Releases::default();
-        found.include(release("1.0.0", false)).unwrap();
-        found.include(release("1.1.0-beta.10", true)).unwrap();
-        found.include(release("1.1.0-beta.2", true)).unwrap();
+        let current = Version::parse("1.0.0").unwrap();
+        found.include(release("1.0.0", false), &current).unwrap();
+        found
+            .include(release("1.1.0-beta.10", true), &current)
+            .unwrap();
+        found
+            .include(release("1.1.0-beta.2", true), &current)
+            .unwrap();
         assert_eq!(found.newest(false).unwrap().version.to_string(), "1.0.0");
         assert_eq!(
             found.newest(true).unwrap().version.to_string(),
             "1.1.0-beta.10"
         );
-        found.include(release("1.1.0", false)).unwrap();
+        found.include(release("1.1.0", false), &current).unwrap();
         assert_eq!(found.newest(true).unwrap().version.to_string(), "1.1.0");
+        assert_eq!(
+            found.current.as_ref().unwrap().notes.as_deref(),
+            Some("Notes for 1.0.0")
+        );
     }
 
     #[test]
     fn drafts_and_releases_without_updater_assets_are_not_offered() {
         let mut found = Releases::default();
+        let current = Version::parse("1.0.0").unwrap();
         let mut draft = release("1.0.0", false);
         draft.draft = true;
-        found.include(draft).unwrap();
+        found.include(draft, &current).unwrap();
         let mut unsigned = release("1.1.0", false);
         unsigned.assets.clear();
-        found.include(unsigned).unwrap();
+        found.include(unsigned, &current).unwrap();
         assert!(found.newest(true).is_none());
+        assert!(found.current.is_none());
+    }
+
+    #[test]
+    fn current_release_requires_an_exact_valid_updater_release() {
+        let current = Version::parse("1.1.0-beta.2").unwrap();
+        let mut found = Releases::default();
+        found
+            .include(release("1.1.0-beta.1", true), &current)
+            .unwrap();
+        found.include(release("1.1.0", false), &current).unwrap();
+        assert!(found.current.is_none());
+
+        let mut exact = release("1.1.0-beta.2", true);
+        exact.body = Some("  ".into());
+        found.include(exact, &current).unwrap();
+        let release = found.current.unwrap();
+        assert_eq!(release.version, current);
+        assert_eq!(release.notes, None);
     }
 
     #[test]
     fn channel_flags_and_manifest_origins_are_validated() {
         let mut found = Releases::default();
-        assert!(found.include(release("1.0.0-beta.1", false)).is_err());
-        assert!(found.include(release("1.0.0", true)).is_err());
+        let current = Version::parse("1.0.0").unwrap();
+        assert!(found
+            .include(release("1.0.0-beta.1", false), &current)
+            .is_err());
+        assert!(found.include(release("1.0.0", true), &current).is_err());
         let mut unexpected = release("1.0.0", false);
         unexpected.assets[0].browser_download_url =
             "https://example.invalid/latest.json".parse().unwrap();
-        assert!(found.include(unexpected).is_err());
+        assert!(found.include(unexpected, &current).is_err());
     }
 
     #[test]

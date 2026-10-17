@@ -60,6 +60,12 @@ describe('Confirm', () => {
     expect(document.activeElement?.textContent).toBe('Later');
   });
 
+  it('can keep a reversible confirmation out of destructive styling', () => {
+    show({ destructive: false });
+
+    expect(screen.getByRole('button', { name: 'Delete session' }).classList.contains('confirm-go')).toBe(false);
+  });
+
   it('cancels rather than confirming on Escape', () => {
     const onCancel = vi.fn();
     const onConfirm = vi.fn();

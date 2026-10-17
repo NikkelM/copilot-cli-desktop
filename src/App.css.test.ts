@@ -688,6 +688,12 @@ describe('update settings actions', () => {
     expect(block('.app-update-actions {')).toContain('margin: 18px 0 16px;');
     expect(block('.app-update-ready-note {')).toContain('margin-top: 4px;');
   });
+
+  it('separates expanded release notes from their button and labels their version', () => {
+    expect(block('.app-update-notes-body {')).toContain('margin-top: 12px;');
+    expect(block('.app-update-notes-version {')).toContain('margin: 0 0 8px;');
+    expect(block('.app-update-notes-body > .markdown {')).toContain('max-height: 30vh;');
+  });
 });
 /**
  * The controls on an MCP row sit beside what they act on.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type RefObject } from 'react';
 
 import { messageOf } from './errors';
 import { staleRuntime } from './protocolCheck';
@@ -34,7 +34,11 @@ interface RuntimeHealth {
  * @param onLost   the runtime has gone: whatever was waiting on it never will be answered
  * @param onReplaced a new one is up, and knows nothing the old one was told
  */
-export function useRuntimeHealth(onLost: () => void, onReplaced: () => void): RuntimeHealth {
+export function useRuntimeHealth(
+  onLost: () => void,
+  onReplaced: () => void,
+  expectedStop?: RefObject<boolean>,
+): RuntimeHealth {
   const [stopped, setStopped] = useState<string | null>(null);
   const [behind, setBehind] = useState<string | null>(null);
   const [rebuilding, setRebuilding] = useState(false);
@@ -61,10 +65,10 @@ export function useRuntimeHealth(onLost: () => void, onReplaced: () => void): Ru
   useTauriEvent(
     () =>
       onSidecarStopped((reason) => {
-        setStopped(reason);
+        if (!expectedStop?.current) setStopped(reason);
         onLost();
       }),
-    [onLost],
+    [expectedStop, onLost],
   );
 
   // A replacement is up. Nothing it was told survives, so whatever was concluded about the

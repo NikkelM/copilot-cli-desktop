@@ -18,6 +18,7 @@ function updates(over: Partial<AppUpdates> = {}): AppUpdates {
   return {
     status: {
       revision: 4, currentVersion: '1.0.0', action: 'idle',
+      currentRelease: { version: '1.0.0', notes: 'Installed release notes', prerelease: false },
       available: { version: '2.0.0', notes: 'Release notes content', prerelease: false },
       ready: true, downloaded: 1024, total: 1024, checkedAt: null, error: null,
       installSupported: true,
@@ -102,11 +103,42 @@ describe('Updates settings', () => {
     expect(screen.getByRole('progressbar', { name: 'Downloading app update' })).toHaveProperty('value', 512);
   });
 
-  it('does not parse or draw release notes until requested', () => {
+  it('shows separate versioned notes for the installed and available releases', () => {
     render(<AppUpdateSettings updates={updates()} dirty={false} includePrereleases={false} shows={() => true} />);
     expect(screen.queryByTestId('release-notes')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Release notes' }));
-    expect(screen.getByTestId('release-notes').textContent).toBe('Release notes content');
+    fireEvent.click(screen.getByRole('button', { name: 'Installed release notes' }));
+    expect(screen.getByRole('heading', { name: 'Version 1.0.0' })).toBeTruthy();
+    expect(screen.getByTestId('release-notes').textContent).toBe('Installed release notes');
+    expect(screen.queryByRole('heading', { name: 'Version 2.0.0' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Available release notes' }));
+    expect(screen.getByRole('heading', { name: 'Version 2.0.0' })).toBeTruthy();
+    expect(screen.getAllByTestId('release-notes').map((notes) => notes.textContent)).toEqual([
+      'Installed release notes',
+      'Release notes content',
+    ]);
+  });
+
+  it('only offers installed release notes when the exact published version supplied them', () => {
+    const view = render(<AppUpdateSettings
+      updates={updates({ status: { ...updates().status!, currentRelease: null } })}
+      dirty={false}
+      includePrereleases={false}
+      shows={() => true}
+    />);
+    expect(screen.queryByRole('button', { name: 'Installed release notes' })).toBeNull();
+    view.rerender(<AppUpdateSettings
+      updates={updates({
+        status: {
+          ...updates().status!,
+          currentRelease: { version: '1.0.0', notes: null, prerelease: false },
+        },
+      })}
+      dirty={false}
+      includePrereleases={false}
+      shows={() => true}
+    />);
+    expect(screen.queryByRole('button', { name: 'Installed release notes' })).toBeNull();
   });
 
   it('shows failures rather than claiming the app is up to date', () => {
@@ -245,6 +277,7 @@ describe('downloaded update prompt', () => {
     const prompt = screen.getByRole('alertdialog', { name: 'Install app update?' });
     expect(container.contains(prompt)).toBe(false);
     expect(prompt.closest('[inert]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Install and restart' }).classList.contains('confirm-go')).toBe(false);
     expect(screen.getByText('Version 2.0.0 was downloaded. Install it now and restart the app?')).toBeTruthy();
     expect(state.install).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Later' }));

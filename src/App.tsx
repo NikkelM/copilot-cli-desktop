@@ -925,7 +925,8 @@ export default function App() {
     sessions.refresh();
   }, [standDown, sessions.refresh]);
 
-  const runtime = useRuntimeHealth(standDown, afterRestart);
+  const installingUpdate = useRef(false);
+  const runtime = useRuntimeHealth(standDown, afterRestart, installingUpdate);
   const appUpdateBlocked = updateBlockReason({
     working: busy || sessions.working.size > 0,
     loading: creating || sessions.loading.size > 0,
@@ -940,7 +941,6 @@ export default function App() {
     settings.appAutoDownload, appUpdateBlocked, settings.appIncludePrereleases,
     () => applySettings({ appIncludePrereleases: false }),
   );
-  const installingUpdate = useRef(false);
   installingUpdate.current = appUpdates.installing;
 
   /** Stop the turn, saying so rather than leaving the press looking unnoticed. */
